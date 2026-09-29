@@ -1,0 +1,21 @@
+# служебные файлы локальной работы — в репозиторий не попадают
+HANDOVER*.md
+SESSION*.md
+START-HERE.md
+BACKLOG.md
+DARK-AREAS*.md
+NAMING-DEBTS.md
+ROADMAP*.md
+NOTES*.md
+CLAUDE.md
+.claude/
+scratchpad/
+*.bak
+*~
+__pycache__/
+*.pyc
+# тулчейн ARC — tools/get-toolchain.sh или ссылка на готовый
+/toolchain
+build/
+.pc/
+6.4/patches/series-*

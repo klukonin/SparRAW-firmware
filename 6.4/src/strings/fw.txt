@@ -1,0 +1,65 @@
+# Строки журнала прошивки 6.4, которых нет в таблице строк 6.2.
+# Формат: ИМЯ<пробелы>текст (printf-формат, как у вендорских строк); текст в
+# двойных кавычках берётся дословно, с пробелами по краям.
+# tools/gen_strings.py дописывает их за вендорской таблицей ref/strings-fw.bin;
+# в коде на C — константа ИМЯ из <strings-fw.h>, декодер журнала берёт
+# build/strings-fw.bin.  Порядок строк не менять: смещения только растут.
+MSG64_BCON_INTERVAL_PUBLISHED   pcp_start: beacon interval %d TU published in BSS
+MSG64_SEND_CMD2_LMAC            send_cmd2_lmac: type 0x%x, curr tsf 0x%08x %08x
+MSG64_TEMP_SENSE_DONE           <<---- [HOST EVENT] WMI_TEMP_SENSE_DONE_EVENTID: Baseband=%d[mili-Celcius] RF=%d[mili-Celcius]
+# Отчёт MAC_MON (как lmac_if__mac_monitor_report 4.1), тексты 1:1 с таблицей 4.1.
+MSG64_MM_BTI                    [BTI] | start time 0x%08x%08x | duration %d 
+MSG64_MM_BCON                   [NNL] | tx bcon %d | rx bcon %d | detected %d 
+MSG64_MM_SNR                    [NNL] | rx snr valid %d | rx snr %d
+MSG64_MM_BCON_BITMAP            [NNL] | bcon bitmap 0x%08x %08x 
+MSG64_MM_AW                     [AW ] | start time 0x%08x%08x | duration %d 
+MSG64_MM_AW_ATIM_RX             [NNL] | backoff %d | rx atim %d | bcons_atim_fail_vec 0x%x
+MSG64_MM_AW_ATIM_TX             [NNL] | tx atim pass %d | tx atim fail %d | tx atim counter %d 
+MSG64_MM_DTI                    [DTI] | start time 0x%08x%08x | duration %d 
+MSG64_MM_DTI_NAV                [NNL] | nav accumulator %d | backoff %d | cf end %d 
+MSG64_MM_DTI_TX_RTS             [NNL] | tx rts %d | rx cts %d | rx dts %d 
+MSG64_MM_DTI_RX_RTS             [NNL] | rx rts %d | tx cts %d | tx dts %d 
+MSG64_MM_DTI_KA                 [NNL] | ka pass %d | ka fail %d | rx off duration %d
+# Имена событий ucode, которые 6.2 обрабатывает молча (как в диспетчере 4.1).
+MSG64_UCODE_RS_DONE_EVT         Ucode->RS_DONE_EVT      : type 0x0%x, curr tsf 0x%08x %08x
+MSG64_UCODE_MAC_MONITOR_EVT     Ucode->MAC_MONITOR_EVT: type 0x0%x, curr tsf 0x%08x %08x
+# Сводка LINK_STATS 4.1 (link_stats__report / link_stats__phy_counters).
+MSG64_LS_PPDU                   LINK_STATS PPDU_REP_CNT=%d CCA2_TO_CCA3=%d HANDLED_PPDUS=%d
+MSG64_LS_FA_IN                  LINK_STATS FA_IN_TXOP_AD=%d FA_IN_TXOP_CD=%d FA_IN_TXOP_DD=%d
+MSG64_LS_FA_OUT                 LINK_STATS FA_OUT_TXOP_AD=%d FA_OUT_TXOP_CD=%d FA_OUT_TXOP_DD=%d
+MSG64_LS_INA_SYNC               LINK_STATS PHY_INA_SYNC_CP=%d PHY_INA_SYNC_DP=%d
+MSG64_LS_SFD_SYNC               LINK_STATS PHY_SFD_SYNC_CP=%d PHY_SFD_SYNC_DP=%d
+# Поотчётные строки LINK_STATS 4.1 (Neighbor Beacon не возвращена: в 6.2 счётчика нет).
+MSG64_LS_NAV                    "    ### LINK STATS:NAV ### beacon_nav=%5d "
+MSG64_LS_KA                     "    ### LINK STATS:Keep Alive### KA_cnt     =%5d    KA_fail_cnt=%5d"
+MSG64_LS_RX_RTS                 "    ### LINK STATS:receive RTS### rx_txop_rts =%5d "
+# Дамп PHY 4.1 (phy_monitor__task_step); опечатка 4.1 «HY_RX_STAT_» в SFD_SYNC исправлена.
+MSG64_PHY_TIME                  [PHY_LOG] curr_tm %d | last_clear_tm %d | duration_from_last_clear_usec %d
+MSG64_PHY_TSF_INA               [PHY_LOG] tsf 0x%08x | INA_SYNC_COUNTER_CP %d | INA_SYNC_COUNTER_DP %d |
+MSG64_PHY_SFD_TIMEOUT           [NNL] SFD_TIMEOUT_COUNTER_CP %d | SFD_TIMEOUT_COUNTER_DP %d |
+MSG64_PHY_HDR_CRC_OK            [NNL] HEADER_CRC_OK_COUNTER_CP %d | HEADER_CRC_OK_COUNTER_SC %d |
+MSG64_PHY_SFD_SYNC              [NNL] SFD_SYNC_COUNTER_CP %d | SFD_SYNC_COUNTER_SC %d |
+MSG64_PHY_BER_LAST_ZERO         [NNL] BER_LAST_ZERO_COUNTER_CP %d | BER_LAST_ZERO_COUNTER_SC %d |
+MSG64_PHY_FALSE_ALARMS          [NNL] false_alarms.out_txop_ad %d | false_alarms.total_fa %d |
+MSG64_PHY_TEMPERATURE           [NNL] rf_temperature %d | baseband_temperature %d |
+# Безролевой линк 6.4.
+MSG64_ROLELESS_ADOPT            roleless link: CID %d adopted as direct PBSS member (at %d)
+# Прошивка apsta: режимы кроме AP и STA недоступны.
+MSG64_APSTA_PCP_REFUSED         apsta: PCP start with network type 0x%x refused, only AP (0x10) and PBSS (0x20) are supported
+MSG64_APSTA_CONNECT_REFUSED     apsta: connect with network type 0x%x refused, only infrastructure (0x1) and PBSS (0x20) are supported
+# Прошивка mesh: только DMG IBSS.
+MSG64_MESH_PCP_REFUSED          mesh: start with network type 0x%x refused, only IBSS (0x2/0x4) is supported
+MSG64_MESH_CONNECT_REFUSED      mesh: connect refused, only IBSS is supported (network type 0x%x)
+MSG64_MESH_IBSS_START           mesh: DMG IBSS started (network type 0x%x), BSS Type 1
+MSG64_IBSS_BSSID                mesh: IBSS BSSID set to ADDR-%04X%08X
+# Энергосбережение без графика (11.2.7.2.2), прошивка apsta.
+MSG64_UPSIM_BCON                PS: sleeping CIDs 0x%x -> 0x%x, DMG Beacon rebuilt with UPSIM
+# Расписание ESE: больше 3 своих аллокаций (предел ucode) — лишние отбрасываются.
+MSG64_ESE_SLOT_DROPPED          ESE: slot table full (%d), allocation 0x%02x not scheduled
+# Переассоциация (точка/PCP, прошивка apsta).
+MSG64_REASSOC_REQ               reassoc: Reassociation Request, current AP ADDR-%04X%08X, handled as association, response subtype 3
+MSG64_REASSOC_SEND              reassoc: connect as Reassociation Request, current AP ADDR-%04X%08X
+MSG64_REASSOC_INPLACE           reassoc: CID %d already associated, %d, answered in place (same AID)
+MSG64_REASSOC_INPLACE_TXFAIL    reassoc: CID %d in-place response not acknowledged (status %d), state unchanged
+MSG64_REASSOC_INPLACE_CFG       reassoc: in-place reassociation %d (WMI 0x85b)
+MSG64_STA_BI_FROM_BEACON        connect: beacon interval %d TU from AP beacon (host value %d)

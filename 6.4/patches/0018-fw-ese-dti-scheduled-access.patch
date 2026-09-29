@@ -1,0 +1,85 @@
+fw: станция соблюдает расписание ESE точки (отбор окон, флаг DTI)
+
+802.11-2020 10.39.4, 10.39.5, 10.39.6.2.  Разбор ESE из маяка брал все
+поля, где станция источник или назначение либо адрес 255, без типа, и
+ставил записи бит «источник» при Source AID = свой или 255; изменение
+расписания замечалось только по ID и адресам первого поля.  Теперь
+(src/c/fw/new/ese_rx.cpp):
+- в таблицу идут SP, где станция источник или назначение, и CBAP с
+  Source AID = свой или 255 либо Destination AID = свой; прочие типы,
+  чужие окна и SP с адресом 255 не берутся;
+- бит 7 записи — «инициировать можно» (свой SP-источник, разрешённый CBAP);
+- сравнивается всё ESE;
+- по каждому маяку своей точки ставится флаг «DTI расписан» (ESE есть и
+  CBAP Only = 0, не вендорское фиксированное расписание) для ucode.
+--- a/src/asm/fw/_unknown/dmg_bcon__rx_handler.S
++++ b/src/asm/fw/_unknown/dmg_bcon__rx_handler.S
+@@ -369,7 +369,9 @@ L_8c95e0:
+ L_8c95e4:
+ 	mov_s r0,r15
+ L_8c95e6:
+-	bl.d L_8c47e0
++	/* 6.4: флаг «DTI расписан» для ucode, затем штатный впрыск BCON_RX
++	 * (src/c/fw/new/ese_rx.cpp) */
++	bl.d ese_rx__on_own_beacon
+ L_8c95ea:
+ 	mov_s r1,r14
+ L_8c95ec:
+--- a/src/asm/fw/_unknown/ese__alloc_to_slot.S
++++ b/src/asm/fw/_unknown/ese__alloc_to_slot.S
+@@ -48,21 +48,23 @@ L_8c7d72:
+ L_8c7d74:
+ 	st_s r0,[sp,0x0]
+ L_8c7d76:
+-	ld_s r3,[r14,0x10]
+-L_8c7d78:
+-	ldb_s r2,[r13,0x4]
++	/* 6.4: бит 7 — «инициировать можно», а не «Source AID = свой или 255»
++	 * (src/c/fw/new/ese_rx.cpp); r1 = 0/1, r0 сохранён */
++	bl ese_rx__may_initiate_entry
+ L_8c7d7a:
+-	ldb_s r3,[r3,0x8]
++	nop_s
+ L_8c7d7c:
+-	cmp_s r2,r3
++	nop_s
+ L_8c7d7e:
+-	mov_s r12,0xff
++	nop_s
+ L_8c7d80:
+-	cmp.ne r2,r12
++	nop_s
++	nop_s
+ L_8c7d84:
+-	mov.eq r1,0x1
++	nop_s
++	nop_s
+ L_8c7d88:
+-	bmsk_s r1,r1,0x0
++	nop_s
+ L_8c7d8a:
+ 	bclr_s r0,r0,0x7
+ L_8c7d8c:
+--- a/src/asm/fw/_unknown/schedule_scheme_builder__build_allocations_from_beacon.S
++++ b/src/asm/fw/_unknown/schedule_scheme_builder__build_allocations_from_beacon.S
+@@ -46,7 +46,8 @@ L_8c526a:
+ L_8c526c:
+ 	mov_s r1,r13
+ L_8c526e:
+-	bl.d L_8da3f4
++	/* 6.4: сравнение всего ESE (src/c/fw/new/ese_rx.cpp) */
++	bl.d ese_rx__alloc_changed
+ L_8c5272:
+ 	mov_s r2,r16
+ L_8c5274:
+@@ -73,7 +74,9 @@ L_8c528c:
+ L_8c528e:
+ 	mov_s r0,r14
+ L_8c5290:
+-	bl.d L_8da62c
++	/* 6.4: отбор аллокаций по типу, 802.11-2020 10.39.5, 10.39.6.2
++	 * (src/c/fw/new/ese_rx.cpp) */
++	bl.d ese_rx__alloc_wanted_entry
+ L_8c5294:
+ 	ldb_s r2,[r13,0x5]
+ L_8c5296:

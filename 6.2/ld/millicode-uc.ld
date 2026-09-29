@@ -1,0 +1,30 @@
+/* Милли-код ARC, уже присутствующий в образе: адреса под именами,
+ * которыми его зовёт gcc. Сгенерировано gen_millicode_ld.py. */
+PROVIDE(__st_r13_to_r13 = 0x00920238);
+PROVIDE(__st_r13_to_r14 = 0x00920234);
+PROVIDE(__st_r13_to_r15 = 0x00920230);
+PROVIDE(__st_r13_to_r16 = 0x0092022c);
+PROVIDE(__st_r13_to_r17 = 0x00920228);
+PROVIDE(__st_r13_to_r18 = 0x00920224);
+PROVIDE(__st_r13_to_r19 = 0x00920220);
+PROVIDE(__st_r13_to_r20 = 0x0092021c);
+PROVIDE(__st_r13_to_r21 = 0x00920218);
+PROVIDE(__st_r13_to_r22 = 0x00920214);
+PROVIDE(__st_r13_to_r23 = 0x00920210);
+PROVIDE(__st_r13_to_r24 = 0x0092020c);
+PROVIDE(__st_r13_to_r25 = 0x00920208);
+PROVIDE(__st_r13_to_gp = 0x00920204);
+PROVIDE(__ld_r13_to_gp_ret = 0x00920244);
+PROVIDE(__ld_r13_to_r25_ret = 0x0092024c);
+PROVIDE(__ld_r13_to_r24_ret = 0x00920254);
+PROVIDE(__ld_r13_to_r23_ret = 0x0092025c);
+PROVIDE(__ld_r13_to_r22_ret = 0x00920264);
+PROVIDE(__ld_r13_to_r21_ret = 0x0092026c);
+PROVIDE(__ld_r13_to_r20_ret = 0x00920274);
+PROVIDE(__ld_r13_to_r19_ret = 0x0092027c);
+PROVIDE(__ld_r13_to_r18_ret = 0x00920284);
+PROVIDE(__ld_r13_to_r17_ret = 0x0092028c);
+PROVIDE(__ld_r13_to_r16_ret = 0x00920294);
+PROVIDE(__ld_r13_to_r15_ret = 0x0092029c);
+PROVIDE(__ld_r13_to_r14_ret = 0x009202a4);
+PROVIDE(__ld_r13_to_r13_ret = 0x009202ac);

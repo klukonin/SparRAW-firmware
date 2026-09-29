@@ -1,0 +1,100 @@
+Всего мест ожидания: 95
+
+вызывающий                               адрес      примитив                   биты
+abft_responder__tx_ssw                   0x930b04   uc_spin_until_event        tx_end
+bcon_txss_sweep_step                     0x93b604   uc_spin_until_event        tx_end
+bcon_txss_sweep_step                     0x93b690   uc_spin_until_event4       ext_gp_3_4_5_end
+bcon_txss_sweep_step                     0x93b832   uc_spin_until_event        tx_end
+brp_initiator_brp_transaction_flow       0x9225ce   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+brp_responder_flow_enter                 0x922fbc   uc_wait_event1_or_event4   ?   | r54: gp0_end
+brp_responder_flow_enter                 0x923088   uc_spin_until_event        busy2
+brp_responder_transmission_flow          0x923530   uc_spin_until_event        tx_end
+brp_responder_transmission_flow          0x923536   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+bti__bi2_event_step                      0x936e94   uc_wait_event_busy         rx_frame
+bti_worker__bti_transmitter_beacon_sweep_flow 0x923e74   uc_wait_event_busy         busy2
+bti_worker__bti_transmitter_beacon_sweep_flow 0x924148   uc_wait_two_events         sifs,start_sifs_rifs_bifs
+mac__prepare_txrx_window                 0x920c60   uc_wait_event_busy         busy2
+mac_cmd_0x02__9228d4                     0x9228da   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__923280                     0x923286   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__923a84                     0x923a92   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__924c78                     0x924c90   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+mac_cmd_0x02__924c78                     0x924caa   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__92c568                     0x92c570   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__92e260                     0x92e266   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__92e2bc                     0x92e2c2   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__92e318                     0x92e320   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__92e388                     0x92e38e   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__92e3e0                     0x92e3e6   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__93061c                     0x93062c   uc_wait_event_busy         ppdu_report
+mac_cmd_0x02__93dbb0                     0x93dbc8   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+mac_cmd_0x02__93df4c                     0x93df74   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+mac_cmd_0x02__93dfb0                     0x93dfc8   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+mac_cmd_0x38__93b9c0                     0x93ba62   uc_wait_event1_or_event4   busy   | r54: gp1_end
+mac_cmd_0x49__922928                     0x922954   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+mac_cmd_0x49__93bf1c                     0x93bfca   uc_wait_event1_or_event4   busy   | r54: txss_end,gp1_end
+mac_mode_program_c                       0x92c144   uc_wait_event1_or_event4   rx_frame   | r54: gp1_end
+macreg_r40__9336d8                       0x9338b8   uc_spin_until_event        tx_end
+macreg_r42__93c818                       0x93c844   uc_wait_two_events         sifs,start_sifs_rifs_bifs
+macreg_r45__9229c0                       0x922a3e   uc_spin_until_event        slot
+macreg_r45__9229c0                       0x922cca   uc_spin_until_event        tx_end
+macreg_r45__9229c0                       0x922cd0   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+macreg_r45__92c3a4                       0x92c554   uc_spin_until_event        tx_end
+macreg_r45__934424                       0x93455e   uc_spin_until_event        tx_end
+macreg_r45__93c0d4                       0x93c2ea   uc_spin_until_event        tx_end
+rx_flow__handle_frame                    0x931f34   uc_wait_event_busy         ppdu_report
+rx_flow__run                             0x9310c8   uc_wait_two_events         sifs   | r54: txss_end
+rx_flow__run                             0x931140   uc_wait_event_busy         sfd_sync,busy2
+rx_flow__run                             0x9313a8   uc_spin_until_event        ppdu_report
+rx_flow_step                             0x931b3c   uc_wait_event_busy         ppdu_report
+rx_funcs__handle_ppdu_report             0x9316ee   uc_wait_event_busy         ppdu_report
+sub_920b14                               0x920b14   uc_spin_until_event4       gp2_end
+sub_9210b0                               0x92127e   uc_spin_until_event        tx_end
+sub_9210b0                               0x921292   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+sub_9249b4                               0x924a3a   uc_sleep_until_event       busy2
+sub_9249b4                               0x924a48   uc_spin_until_event        tx_end
+sub_9249b4                               0x924af2   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+sub_9249b4                               0x924b8a   uc_sleep_until_event       busy2
+sub_9249b4                               0x924b9e   uc_spin_until_event        tx_end
+sub_9249b4                               0x924bc4   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+sub_9249b4                               0x924c34   uc_spin_until_event        txop
+sub_926cc4                               0x92709a   uc_spin_until_event        tx_end
+sub_926cc4                               0x9270dc   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+sub_930370                               0x930440   uc_spin_until_event4       ?
+sub_930370                               0x93046c   uc_spin_until_event4       ?
+sub_930370                               0x9304fc   uc_wait_event1_or_event4   rx_frame   | r54: gp1_end
+sub_93768c                               0x937718   uc_spin_until_event        txop
+sub_93869c                               0x938872   uc_spin_until_event        tx_end
+sub_938b90                               0x938d78   uc_wait_event_busy         busy2
+sub_938b90                               0x938de0   uc_spin_until_event        tx_end
+sub_938b90                               0x938df4   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+sub_93c2f8                               0x93c5c8   uc_wait_event_busy         busy2
+sub_93dbec                               0x93dc06   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+sub_93dc80                               0x93dcc4   uc_wait_event1_or_event4   rx_frame
+sub_93dfec                               0x93e006   uc_wait_event1_or_event4   rx_frame   | r54: gp0_end
+sub_93e084                               0x93e0c0   uc_wait_event1_or_event4   busy2   | r54: gp0_end
+sub_93e0dc                               0x93e110   uc_wait_two_events         sifs,start_sifs_rifs_bifs
+sxd_hal__wait_slot2_busy                 0x936db8   uc_wait_event_busy         slot2,busy
+sxd_hal__wait_slot2_busy2                0x936d3c   uc_wait_event_busy         slot2,busy2
+tail_uc_wait_two_events                  0x93658c   uc_wait_two_events         busy2
+tx_bcast_flow                            0x937a38   uc_spin_until_event        tx_end
+tx_bcast_flow                            0x937a3e   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+tx_bcast_flow                            0x937b30   uc_spin_until_event        tx_end
+tx_bcast_flow                            0x937b3c   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+tx_mtp_queue_gate                        0x939c24   uc_spin_until_event        busy2
+tx_mtp_queue_gate                        0x939c7e   uc_spin_until_event        tx_end
+tx_mtp_queue_gate                        0x939c92   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+txop_initiator_open_txop_flow            0x93a522   uc_spin_until_event        busy2
+txop_initiator_open_txop_flow            0x93a598   uc_spin_until_event        tx_end
+txop_initiator_open_txop_flow            0x93a5ba   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+txss__prepare_frames                     0x93bb72   uc_wait_event1_or_event4   busy   | r54: txss_end,gp0_end,gp1_end
+uc_spin_until_event                      0x9366e4   uc_spin_until_event        ?
+uc_spin_until_event4                     0x9366d8   uc_spin_until_event4       ?
+uc_wait_two_events                       0x9365e8   uc_wait_event_busy         busy2
+uses_g_8004e0_9361bc                     0x9361f8   uc_spin_until_event        busy2
+uses_g_8004e0_936544                     0x936580   uc_spin_until_event        busy2
+uses_g_8004e0_936870                     0x9368a4   uc_wait_event_busy         busy2
+uses_rgf_886d00_92c018                   0x92c05c   uc_spin_until_event4       gp0_end,gp2_end
+uses_rgf_889480_934b14                   0x934b56   uc_spin_until_event        tx_end
+uses_rgf_889480_934b14                   0x934b5c   tail_uc_wait_two_events    slot,start_sifs_rifs_bifs
+
+мест, где ждут бит 6 r42 (tsf_event): 0

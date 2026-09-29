@@ -1,0 +1,21 @@
+uc: точка шлёт ATIM станциям, уснувшим по PM (PS без графика)
+
+aw__start_window собирает цели ATIM вызовом
+aw_worker__collect_awake_peers; станция в UPM-doze без договора PSC в
+вектор не попадала, ATIM ей не шёл (стенд: tx atim counter 0), и
+нисходящие кадры стояли.  Вызов идёт через upm__collect_awake_peers: она
+добавляет спящие по upm_vector станции с буферизованными кадрами
+(802.11-2020 11.2.7.4).  Длина команды та же, код не сдвигается.
+--- a/src/asm/uc/_unknown/aw__start_window.S
++++ b/src/asm/uc/_unknown/aw__start_window.S
+@@ -59,7 +59,9 @@ L_935b2e:
+ L_935b30:
+ 	mov r0,r13
+ L_935b34:
+-	bl.d L_927a44
++	/* 6.4: цели ATIM на точке — через upm__collect_awake_peers
++	 * (src/c/uc/new/upm_wake.cpp), дальше тот же collect_awake_peers */
++	bl.d upm__collect_awake_peers
+ L_935b38:
+ 	mov r1,r15
+ L_935b3c:

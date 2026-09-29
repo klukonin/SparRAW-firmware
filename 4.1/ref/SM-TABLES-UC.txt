@@ -1,0 +1,21 @@
+== BI_AP_MONITOR_SM  init=bi_ap_mon__init @0x928130  trans=0x800adc  events=0x800b40 x5  states=0x800b54 x4
+   BI_STATE_BTI         x BI_EVENT_DTI_TO_BTI      -> bi_ap_mon__bti_event                 next=BI_STATE_BTI      
+   BI_STATE_ABFT        x BI_EVENT_DTI_TO_BTI      -> basic_sm__assert_bad_event_uc        next=BI_STATE_ABFT       (не начало блока!)
+   BI_STATE_DTI         x BI_EVENT_DTI_TO_BTI      -> bi_ap_mon__bti_event                 next=BI_STATE_BTI      
+   BI_STATE_AW          x BI_EVENT_DTI_TO_BTI      -> bi_ap_mon__aw_on_dti_to_bti          next=BI_STATE_AW       
+   BI_STATE_BTI         x BI_EVENT_BTI_TO_ABFT     -> bi_ap_mon__bti_to_abft               next=BI_STATE_ABFT     
+   BI_STATE_ABFT        x BI_EVENT_BTI_TO_ABFT     -> basic_sm__assert_bad_event_uc        next=BI_STATE_ABFT       (не начало блока!)
+   BI_STATE_DTI         x BI_EVENT_BTI_TO_ABFT     -> uc_dbg__emit_marker                  next=BI_STATE_DTI      
+   BI_STATE_AW          x BI_EVENT_BTI_TO_ABFT     -> basic_sm__assert_bad_event_uc        next=BI_STATE_AW         (не начало блока!)
+   BI_STATE_BTI         x BI_EVENT_BHI_TO_DTI      -> bi_ap_mon__dti_event                 next=BI_STATE_DTI      
+   BI_STATE_ABFT        x BI_EVENT_BHI_TO_DTI      -> bi_ap_mon__dti_event                 next=BI_STATE_DTI      
+   BI_STATE_DTI         x BI_EVENT_BHI_TO_DTI      -> uc_dbg__emit_marker                  next=BI_STATE_DTI      
+   BI_STATE_AW          x BI_EVENT_BHI_TO_DTI      -> bi_ap_mon__aw_on_bhi_to_dti          next=BI_STATE_AW       
+   BI_STATE_BTI         x BI_EVENT_BHI_TO_AW       -> bi_ap_mon__aw_event                  next=BI_STATE_AW       
+   BI_STATE_ABFT        x BI_EVENT_BHI_TO_AW       -> bi_ap_mon__aw_event                  next=BI_STATE_AW       
+   BI_STATE_DTI         x BI_EVENT_BHI_TO_AW       -> uc_dbg__emit_marker                  next=BI_STATE_DTI      
+   BI_STATE_AW          x BI_EVENT_BHI_TO_AW       -> bi_ap_mon__aw_on_bhi_to_aw           next=BI_STATE_AW       
+   BI_STATE_BTI         x BI_EVENT_AW_TO_DTI       -> bi_ap_mon__bti_on_aw_to_dti          next=BI_STATE_BTI      
+   BI_STATE_ABFT        x BI_EVENT_AW_TO_DTI       -> basic_sm__assert_bad_event_uc        next=BI_STATE_ABFT       (не начало блока!)
+   BI_STATE_DTI         x BI_EVENT_AW_TO_DTI       -> uc_dbg__emit_marker                  next=BI_STATE_DTI      
+   BI_STATE_AW          x BI_EVENT_AW_TO_DTI       -> bi_ap_mon__dti_event                 next=BI_STATE_DTI      

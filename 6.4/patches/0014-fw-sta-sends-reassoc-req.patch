@@ -1,0 +1,30 @@
+fw: станция шлёт Reassociation Request
+
+802.11-2020 11.3.5.4, PICS PC14.4/FT3.  В mgmt_tx__build_assoc_req две
+команды bl.d получают новые цели той же длины: заголовок через
+assoc_req__build_mac_header (подтип 2 при переассоциации), фиксированные
+поля через mgmt_tx__assoc_req_fixed_fields_reassoc (+ Current AP
+Address).  Решение о переассоциации — reassoc__on_connect из wmi_connect
+(флаг WMI_CONNECT_SEND_REASSOC).  src/c/fw/new/reassoc.cpp.
+--- a/src/asm/fw/_unknown/mgmt_tx__build_assoc_req.S
++++ b/src/asm/fw/_unknown/mgmt_tx__build_assoc_req.S
+@@ -41,7 +41,8 @@ L_8f9d72:
+ L_8f9d74:
+ 	mov_s r1,r14
+ L_8f9d76:
+-	bl.d L_8d7db8
++	/* 6.4: подтип 2 при переассоциации (assoc_req__build_mac_header) */
++	bl.d assoc_req__build_mac_header
+ L_8f9d7a:
+ 	mov_s r2,0x0
+ L_8f9d7c:
+@@ -55,7 +56,8 @@ L_8f9d84:
+ L_8f9d86:
+ 	mov_s r1,r15
+ L_8f9d88:
+-	bl.d L_8f4e9c
++	/* 6.4: + Current AP Address при переассоциации */
++	bl.d mgmt_tx__assoc_req_fixed_fields_reassoc
+ L_8f9d8c:
+ 	mov_s r2,r16
+ L_8f9d8e:

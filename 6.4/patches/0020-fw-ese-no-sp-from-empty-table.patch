@@ -1,0 +1,40 @@
+fw: ESE — не закладывать окна SP из пустой таблицы
+
+После снятия расписания (num_of_allocations = 0) ucode продолжал
+просить подложить записи в аппаратный массив SP (событие 0x29), и
+lmac_if__evt_walk закладывал 4 нулевые записи.  Без бита «источник»
+они идут с start/end_mask_ind — аппаратной маской передачи на время
+SP, — и так без конца: после снятия ESE точкой передача вставала у
+точки и у станции.  Все три вызова lmac_if__evt_walk переведены на
+ese__evt_walk_if_any (src/c/fw/new/ese_walk.cpp), который пропускает
+закладку при пустой таблице.
+--- a/src/asm/fw/_unknown/lmac_if__ucode_event_dispatch.S
++++ b/src/asm/fw/_unknown/lmac_if__ucode_event_dispatch.S
+@@ -500,7 +500,8 @@ L_8df37c:
+ L_8df37e:
+ 	bl L_8ccb7c
+ L_8df382:
+-	bl L_8e1cd8
++	/* 6.4: не закладывать SP из пустой таблицы (src/c/fw/new/ese_rx.cpp) */
++	bl ese__evt_walk_if_any
+ L_8df386:
+ 	ld r4,[sp]
+ L_8df38a:
+--- a/src/asm/fw/_unknown/schedule_scheme__sum_two.S
++++ b/src/asm/fw/_unknown/schedule_scheme__sum_two.S
+@@ -28,11 +28,13 @@ L_8e0d58:
+ L_8e0d5a:
+ 	st_s r0,[r13,0x8]
+ L_8e0d5c:
+-	bl.d L_8e1cd8
++	/* 6.4: не закладывать SP из пустой таблицы (src/c/fw/new/ese_rx.cpp) */
++	bl.d ese__evt_walk_if_any
+ L_8e0d60:
+ 	mov_s r0,r13
+ L_8e0d62:
+-	bl.d L_8e1cd8
++	/* 6.4: не закладывать SP из пустой таблицы (src/c/fw/new/ese_rx.cpp) */
++	bl.d ese__evt_walk_if_any
+ L_8e0d66:
+ 	mov_s r0,r13
+ L_8e0d68:

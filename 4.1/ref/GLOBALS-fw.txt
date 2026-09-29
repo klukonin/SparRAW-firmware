@@ -1,0 +1,231 @@
+# Глобальные переменные сегмента fw, адресуемые через gp=0x800170.
+# Формат: адрес, число блоков, блоки. Сгенерировано из ANNO-fw.json.
+0x800170   2  low_sme__handle_rf_kill low_sme__termination_check
+0x800174   4  fwlog_Temp_sense_is_currently sub_8dfc98 sub_8e2d9c timer_exp_handler
+0x800178   1  sub_8de094
+0x80017c   5  SW_TX_MGMT_API__link_up_evt SW_TX_MGMT_API__send_packet fwlog_SW_TX_MGMT_link fwlog_SW_TX_MGMT_tx_complete_cb_m_cur_metadata sub_8de5b8
+0x800180   3  sub_8ea1aa sub_8ebd7c sub_8f2948
+0x800184   3  sub_8ea1aa sub_8ebd7c sub_8f2948
+0x800188   4  fwlog_HOST_EVENT_WMI_TRAFFIC_DEFERRAL_EVENTID_status fwlog_pcie_device_power_if_init pcie_device_power_if__pcie_power_pcie_interrupt pcie_device_power_if__pcie_power_wake_signal
+0x80018c   2  sub_8c65d8 sub_8c850e
+0x800190   3  fwlog_LARGE_TASK_FUNC_address sub_8ca30c sub_8dc8ec
+0x800194   1  sub_8d5c7c
+0x800198   1  sub_8d5ad4
+0x80019c   1  sub_8d6050
+0x8001a0   1  sub_8d596c
+0x8001a4   1  sub_8d5a0c
+0x8001a8   1  sub_8d5924
+0x8001ac   1  fwlog_Initializing_RF_KILL_SM_with_W_DISABLE
+0x8001b0   1  sub_8ed454
+0x8001b4   1  sub_8d5b1c
+0x8001b8   1  sub_8ed188
+0x8001bc   1  sub_8d61f0
+0x8001c0   1  sub_8ed0d0
+0x8001c4   1  sub_8d5c4c
+0x8001c8   1  sub_8ed244
+0x8001cc   1  sub_8ed1c0
+0x8001d0   1  sub_8d59b8
+0x8001d4   1  sub_8d5d48
+0x8001d8   1  sub_8ed454
+0x8001dc   1  sub_8cabe0
+0x8001e4   1  sub_8ca0e4
+0x8001e6   1  sub_8ca10c
+0x8001e8   2  sub_8ca0d8 sub_8e3524
+0x8001ea   2  sub_8ca120 sub_8e3524
+0x8001ec   1  sub_8ca124
+0x8001ee   1  POWER_MNGR__init
+0x8001f0   1  fwlog_PLL5_UNLOCK_interrupt
+0x8001f2   1  find_mng__search
+0x8001f4   2  sub_8cabcc sub_8e212c
+0x8001f6   2  TEMPERATURE_SERVICE__consume_bb_sensor_calibration_parameters sub_8e159c
+0x8001f8   2  TEMPERATURE_SERVICE__consume_bb_sensor_calibration_parameters sub_8e159c
+0x8001fa   2  fwlog_l2_mgr_channel_locked_cb_unlocking_radio l2_mgr__connect
+0x8001fc   5  regulatory_domain__set_country_code sub_8d7364 sub_8d7380 sub_8d749c sub_8d7550
+0x8001ff   2  calib_lo_power_measure sub_8d40c0
+0x800201   1  sub_8d508c
+0x800202   1  sub_8d508c
+0x800205   1  sub_8ccb48
+0x800206   1  fwlog_HWF_CALIB_ALL_LO_POWER
+0x800207   1  fwlog_HWF_CALIB_ALL_LO_POWER
+0x800208   1  calib_lo_power_step
+0x800209   1  calib_lo_power_step
+0x80020b   1  fwlog_IF_GAIN_FinEst_CAL_CORRECTION_NON_CONVERGED
+0x80020c   2  fwlog_IF_GAIN_FinEst_CAL_CORRECTION_NON_CONVERGED sub_8d2780
+0x80020e   1  IF_GAIN__GAIN
+0x80020f   2  fwlog_MAINTAIN_SM_FBF_DELAYED_END_Start_Rate_S sub_8efc78
+0x800214   1  sub_8f0ccc
+0x800216   1  sub_8d0394
+0x800217   1  fwlog_PLL5_UNLOCK_interrupt
+0x800218   1  sub_8cf588
+0x800219   1  sub_8cf588
+0x80021a   1  sub_8cf588
+0x80021b   1  sub_8cf588
+0x80021e   1  power_halt_seq
+0x80021f   1  fwlog_calib_mngr_cpp_8dfcd4
+0x800220   1  sub_8ca0d0
+0x800221   1  sub_8ca0dc
+0x800222   1  sub_8ca0d4
+0x800224   1  fwlog_PLL5_UNLOCK_interrupt
+0x800225   1  sub_8d653c
+0x800226   1  sub_8eafd0
+0x800227   1  sub_8ca80c
+0x800228   1  marlon_r_if_class__load_brd_rf_cfg_section
+0x800229   3  agc_start_index fwlog_IF_GAIN_FinEst_CAL_CORRECTION_NON_CONVERGED sub_8c6a3c
+0x80022b   2  agc_start_index calib_silent_rssi_sparrow
+0x80022c   1  agc_start_index
+0x800230   1  sub_8cabdc
+0x800231   1  fwlog_NNL_line
+0x800232   1  fwlog_To_enable_WMI_commands
+0x800233   2  fwlog_NNL_line fwlog_To_enable_WMI_commands
+0x800234   1  fwlog_HOST_TIMESTAMP_SYNC
+0x800236   1  sub_8c9898
+0x800238   1  SW_TX_MGMT_API__link_up_evt
+0x800239   1  fwlog_Switching_to_channel
+0x80023a   1  sub_8e9f6a
+0x80023b   4  fwlog_Switching_to_channel sub_8c4aea sub_8c4b34 sub_8dfdd8
+0x80023d   1  sub_8ca164
+0x80023e   1  sub_8ca178
+0x80023f   1  sub_8ca17c
+0x800240   1  sub_8ca1a4
+0x800242   2  sub_8ca258 sub_8e1248
+0x800243   3  l2_mgr__pcp_start l2_mgr__send_pcp_start_status_evt sub_8d73b8
+0x800244   1  sub_8e238c
+0x800245   2  sub_8c7794 sub_8e435c
+0x800248   1  hwd_PHY_STORE_TXRX_SWAP_IQ
+0x80024c   1  hwd_PHY_STORE_TXRX_SWAP_IQ
+0x800250   1  g_dbg_psc_transition
+0x800251   1  g_dbg_psc_transition
+0x800254   1  fwlog_Sending_CMD_SELECTIVE_NEIGHBOR_CFG_selective_det
+0x800255   1  fwlog_Sending_CMD_SELECTIVE_NEIGHBOR_CFG_selective_det
+0x800258   1  sub_8e3524
+0x80025c   2  sub_8c338a sub_8c79c6
+0x800270   1  sub_8ce0c8
+0x800274   1  sub_8ce0c8
+0x800278   1  sub_8ce0c8
+0x80027c   1  sub_8ce0c8
+0x800280   1  sub_8c0eee
+0x800282   1  sub_8c0eee
+0x800284   1  fwlog_To_enable_WMI_commands
+0x800286   1  fwlog_PLL5_UNLOCK_interrupt
+0x800288   1  sub_8ca0cc
+0x80028c   1  sub_8c165c
+0x800290   1  sub_8ed0c0
+0x800294   8  fwlog_L2MGR_Data_port_open_failed_stream_of_CI fwlog_VRING_d_received_TX_MACQ_delete_notifica fwlog_rx_macq_cpp_8ded90 fwlog_sw_vring_ba_agreed_win_size_d_msdu_max_s live_Opening_sniffer_mode sub_8df50c sub_8df5fc sub_8df680
+0x800298   1  sub_8e91f6
+0x80029c   1  fwlog_ba_setup_sm_addba_req_sent_tsf_0x_08x_08
+0x8002a0   1  fwlog_ESE_CFG_CMD_ESE
+0x8002a4   1  sub_8f169c
+0x8002a8   1  sub_8df9fc
+0x8002ac   1  fwlog_Check_bad_link_max_mcs_d_success_bf_cnt_
+0x8002b0   1  fwlog_Check_bad_link_max_mcs_d_success_bf_cnt_
+0x8002b4   1  sub_8e25dc
+0x8002b8   3  TEMPERATURE_SERVICE__consume_bb_sensor_calibration_parameters perform_first_measurement_operations sub_8d190c
+0x8002bc   1  TEMPERATURE_SERVICE__consume_bb_sensor_calibration_parameters
+0x8002c0   6  fwlog_PCP_Start_failed_MAC l2_mgr__connect l2mgr_mac_start_step live_Opening_sniffer_mode tx_mgmt_build_step wmi_pcp_start_cmd_handler
+0x8002c4   2  WBE_DRIVER__pcie_boot_init fwlog_LMAC_READY_driver_is_up_sts
+0x8002c8   2  sub_8d6a08 sub_8d9ad8
+0x8002cc   2  sub_8d6a08 sub_8d9afc
+0x8002d0   3  hw_sysapi_config_short_vec hwd_rfc_tx_power_cfg maintain_sm__config_mcs_en_vec
+0x8002d4   2  fwlog_PCP_Assoc_Req_OLD_VS_networkType_x_test_ fwlog_Send_ASSOC_RESP_len_d
+0x8002d8   1  sub_8c63b0
+0x8002dc   1  sub_8c1820
+0x8002e0   1  assoc_ready_check_trig
+0x8002e4   1  fwlog_NNL_CID
+0x8002e8   1  fwlog_rm_ch_switch_sm_switch_on_call_ucode_RX_
+0x8002ec   1  fwlog_Not_Understood_BUG_5661_WA_hwd_phy_dbg_clk_enabl
+0x8002f0   1  sub_8de71c
+0x8002f4   1  POWER_MNGR__init
+0x8002f8   1  fwlog_NNL_CID
+0x8002fc   1  sub_8c0964
+0x800300   1  sub_8ee6cc
+0x800304   1  fwlog_NNL_CID
+0x800308   1  fwlog_UN_HANDLED_PCIE_DEBUG_INTERRUPT_CAUSE_0X
+0x80030c   1  g_dbg_psc_transition
+0x800310   1  g_dbg_psc_transition
+0x800314   1  fwlog_PCIE_DEBUG_INTERRUPT_port1_tx_fifo_pcpl_full_int
+0x800318   1  fwlog_LINK_STATS_TX_GOODPUT_RX_GOODPUT_PER
+0x80031c   2  fwlog_Debug_MBOX_init sub_8cb460
+0x800320   2  fwlog_To_enable_WMI_commands sub_8ded5c
+0x800324   2  POWER_MNGR__halt power_deep_sleep_exit_step
+0x800328   1  fwlog_txrx_manager_cpp
+0x80032c   1  sub_8c7e64
+0x800330   1  sub_8c7e64
+0x800334   3  fwlog_sm_pring_connectivity_cpp sub_8c810a sub_8e5358
+0x800338   1  fwlog_NNL_line
+0x80033c   1  fwlog_NNL_line
+0x800340   1  fwlog_NNL_line
+0x800344   2  TX_API__send_packet fwlog_CMD_TX_DATA_failed
+0x800348   1  sub_8c8858
+0x80034c   2  fwlog_check_high_false_alarm_aging_cb_g_high_f fwlog_l2_mgr_high_false_alarm_secondary_lock_c
+0x800350   1  fwlog_l2_mgr_high_false_alarm_secondary_lock_c
+0x800354   2  WBE_DRIVER__pcie_boot_init fwlog_PCIE_ISR_could_not_handle_perst_deassert
+0x800358   1  pcie_perst_handler_step
+0x80035c   4  sub_8ca008 sub_8d5b80 sub_8e1928 sub_8e1934
+0x800360   1  hwd_abif_rfc_divider_restart
+0x800364   1  fwlog_calib_mngr_cpp_8dfcd4
+0x800368   2  fwlog_TEMPERATURE_SERVICE_radio_locked_cb_m_se perform_first_measurement_operations
+0x80036c   1  fwlog_ESE_CFG_CMD_ESE
+0x800370   3  sub_8ca0e4 sub_8ca10c sub_8ca124
+0x800374   1  sub_8ca0c4
+0x800378   1  sub_8ca0c8
+0x80037c   1  sub_8ca0e0
+0x800380   1  sub_8ca0f8
+0x800384   1  sub_8ca138
+0x800388   1  fwlog_hwf_sector_rf_chain_set_dist_num_is_x16_on_activ
+0x80038c   1  sub_8ca0f8
+0x800390   1  fwlog_hw_drivers_user_led_c_8d7694
+0x800394   1  sub_8d77e4
+0x800398   1  sub_8d77e4
+0x80039c   3  fwlog_led_scheme_cpp fwlog_led_scheme_cpp_8d775c sub_8d77d0
+0x8003a0   2  sub_8d98f8 sub_8dfa40
+0x8003a4   2  fwlog_ka_necessity_detector_task_Neccesity_for fwlog_tx_ppdu_ageing_timeout_detector_task_Tas
+0x8003a8   4  fwlog_Initializing_uCode_interface fwlog_LMAC_READY_driver_is_up_sts send_cmd2_lmac sub_8d8b40
+0x8003ac   1  schedule_long_term_trigger
+0x8003b0   5  sub_8d9aec sub_8d9af4 sub_8d9b08 sub_8d9b1c sub_8d9b24
+0x8003b4   6  sub_8d6a08 sub_8d9ac8 sub_8d9ad0 sub_8d9ad8 sub_8d9afc sub_8d9b14
+0x8003b8   1  fwlog_cnt_handler_c
+0x8003bc   1  sub_8ca198
+0x8003c0   1  marlon_r_if_class__rf_write_with_block_retries
+0x8003c4   1  marlon_r_if_class__rf_write_with_block_retries
+0x8003c8   1  marlon_r_if_class__rf_write_with_block_retries
+0x8003cc   1  fwlog_RF_retry_in_write
+0x8003d0   1  fwlog_RF_retry_in_write
+0x8003d4   1  fwlog_RF_retry_in_write
+0x8003d8   2  l2_mgr__pcp_start wmi_pcp_start_cmd_handler
+0x8003dc   1  sub_8d87b8
+0x8003e0   1  fwlog_mgmt_parse_failed_to_allocate_EI_buffer
+0x8003e4   1  fwlog_PCP_Start_failed_MAC
+0x8003e8   1  WMI_ADD_CIPHER_KEY_CMD
+0x8003ec   1  fwlog_lm_main_sm_linkup_failed_m_failed_bf_cnt
+0x8003f0   2  fwlog_To_enable_WMI_commands sub_8ded20
+0x8003f4   1  fwlog_stats_timer_exp_L1_WA_Took
+0x8003f8   1  fwlog_stats_timer_exp_L1_WA_Took
+0x8003fc   1  live_DO_WHILE_WITH_MAX_ITER_OCCUR_curr_blink_x_8e4894
+0x800400   1  sub_8e48e8
+0x800404   1  TX_API__handle_completed_packets
+0x800408   1  deep_sleep_enter
+0x80040c   8  sub_8c3720 sub_8c7984 sub_8c80bc sub_8d5924 sub_8d596c sub_8d5a0c sub_8d5ad4 sub_8d5c7c
+0x800410   1  discovery_handle_probe_resp
+0x800414   1  WBE_DRIVER__pcie_boot_init
+0x800418   1  sta_psc_sm__send_psc_req_flow_sm
+0x80041c   1  fwlog_pcp_psc_sm_send_psc_resp_flow
+0x800420   1  fwlog_sta_psc_sm_psc_req_tx_complete_success_d
+0x800424   3  sub_8c338a sub_8c7984 sub_8c80bc
+0x800428   1  fwlog_WBE_DRIVER_ACTIVATING_PXE
+0x80042c   1  fwlog_WBE_DRIVER_ACTIVATING_PXE
+0x800430   1  WBE_DRIVER__link_down
+0x800434   1  sub_8e91c4
+0x800438   1  sub_8cb590
+0x80043c   2  TEMPERATURE_SERVICE__read_rf_sensor_calibration_parameters perform_first_measurement_operations
+0x800440   1  TEMPERATURE_SERVICE__read_rf_sensor_calibration_parameters
+0x800444   1  sub_8ed114
+0x800448   1  fwlog_RX_SRVS_pkt_for
+0x80044c   1  sub_8ee9cc
+0x800450   1  sub_8e243c
+0x800454   1  sniffer_mode_step
+0x800458   1  TX_API__handle_completed_packets
+0x80045c   2  fwlog_channels_switch_sm_action_allocate_radio sub_8c18b2
+0x800460   2  fwlog_channels_switch_sm_action_allocate_radio sub_8c18b2
+0x800464   1  l2_mgr__validate_scan
+0x800468   1  deep_sleep_enter
+0x80046c   1  deep_sleep_enter

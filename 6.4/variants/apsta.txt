@@ -1,0 +1,34 @@
+# Прошивка 6.4 apsta: режимы AP и STA, приоритет — надёжность.  Всё, кроме
+# меш-режима, включая возвращённую печать 4.1.  Здесь перечислено, чего в apsta
+# НЕТ: «fw/<блок>», «uc/<блок>» — блок на C из src/c (с каталогом new/),
+# «patch <файл>» — патч quilt.
+
+# безролевой линк (PBSS между PCP без ассоциации; драйвер: roleless_link)
+fw/wmi_pcp_start
+fw/conn_main_sm__linkup_ntf
+fw/conn_main_sm__action_8c4898
+fw/conn_main_sm__action_8c3bf4
+
+# Режимы apsta: AP, STA и PBSS (PCP и станция PBSS, тип сети P2P).  DMG IBSS
+# недоступен (код под FW64_APSTA): WMI_PCP_START с типом ADHOC и прочими
+# получает отказ (l2_mgr__pcp_start_flow), WMI_CONNECT — WMI_DISCONNECT
+# (wmi_connect).
+
+# DMG IBSS (прошивка mesh)
+fw/new/ibss
+fw/bss_set_mode__capinfo
+fw/new/wmi_ibss_bssid
+# BSSID ячейки в своих кадрах до активации BSS
+fw/mid__copy_bssid
+# синхронизация TSF 11.1.5 (грубая ступень, fw)
+fw/new/ibss_tsf
+patch 0021-fw-ibss-tsf-adopt.patch
+# случайная задержка и отмена маяка 11.1.3.5 (ucode)
+uc/bti__prepare_sweep_set
+uc/uc_bi_counter_in_window
+patch 0005-fw-wmi-0x85a-ibss-bssid.patch
+
+# интервал маяка станции из маяка точки — пока только в 6.2-fix (в 6.4 его
+# присылает драйвер, патч 914)
+fw/new/sta_bi
+patch 0022-fw-sta-bi-from-beacon.patch

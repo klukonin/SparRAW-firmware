@@ -1,0 +1,38 @@
+only
+# Прошивка 6.2-fix: вендорская 6.2.0.1000 с исправлениями ошибок и ничем больше.
+# Список перечисляет, что в неё ВХОДИТ (строка «only»).  Новых функций, режимов
+# и возвращённой печати 4.1 нет: поведение вендора меняется только там, где
+# вендор ошибается.  Режимы — как у вендора (AP, STA, PBSS, IBSS не запрещён).
+
+# Станция глуха в DTI: после BRP приём через «направленный omni» (96 + sta);
+# всегда quasi-omni 0x7fff, как у точки.
+uc/brp_update_omni_sector_idx
+# Probe Response сообщал интервал маяка 100 TU при любом beacon_int.
+fw/l2_mgr__pcp_start_flow
+# Четвёртая аллокация ESE — фатальная ошибка 0x11bb (чужая точка с богатым
+# расписанием роняла станцию); лишняя аллокация пропускается.
+fw/ese__slot_table_add
+# Конец слота A-BFT на 20 мкс дальше aSSSlotTime (10.42.5.2).
+patch 0003-uc-abft-slot-end-per-standard.patch
+# Слот A-BFT выбирался из [0, поле): при двух слотах всегда первый, при одном
+# диапазон пуст (9.3.4.2).
+uc/new/abft_slots
+patch 0008-uc-abft-length-is-slot-count.patch
+# Reassociation Request/Response от соседа — fw_sysassert_fatal; теперь кадр
+# отбрасывается.
+patch 0009-fw-reassoc-rx-drop-not-fatal.patch
+# Станция отбрасывала маяки точки с CBAP Only = 0 (стандартная точка с ESE).
+patch 0011-fw-bcon-accept-ese-cbap-only-0.patch
+# Split MAC: кадр хоста без соединения (широковещательный Disassociation от
+# hostapd) — нет WMI_SW_TX_COMPLETE, драйвер ждёт 2 с, кадр теряется в пуле.
+fw/new/splitmac_orphan
+patch 0017-fw-splitmac-no-conn-complete.patch
+# После снятия ESE ucode закладывал нулевые окна SP — передача вставала.
+fw/new/ese_walk
+patch 0020-fw-ese-no-sp-from-empty-table.patch
+# Интервал маяка станции брался только из команды хоста 0x803; мейнлайн шлёт
+# в ней WMI_ECHO 0x12345678 → BI 0x5678 TU, разрыв каждые 2–4 с.  Теперь —
+# из маяка выбранной точки (11.1.3.3.1).
+fw/wmi_connect
+fw/new/sta_bi
+patch 0022-fw-sta-bi-from-beacon.patch

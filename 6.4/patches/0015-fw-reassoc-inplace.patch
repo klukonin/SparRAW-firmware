@@ -1,0 +1,38 @@
+fw: переассоциация связанной станции на месте (apsta)
+
+802.11-2020 11.3.5.5.  rx_pkt_handler зовёт basic_sm__handle_event через
+rx_pkt__mlme_event (src/c/fw/new/reassoc_inplace.cpp): (Re)Assoc Request
+станции в ASSOCIATED при включённом режиме — ответ успехом тем же AID
+без разрыва; иначе штатный путь.  Запись 0x85b таблицы переходов
+диспетчера WMI (0x802124) ведёт на wmi_branch_0x85b (слот 02 зазора) —
+включение режима драйвером.  Длины команд те же.
+--- a/src/asm/fw/_unknown/rx_pkt_handler.S
++++ b/src/asm/fw/_unknown/rx_pkt_handler.S
+@@ -329,7 +329,9 @@ L_8e3ecc:
+ L_8e3ece:
+ 	mov_s r3,0x0
+ L_8e3ed0:
+-	bl.d L_8d9b6c
++	/* 6.4: события mlme_sm — через rx_pkt__mlme_event (src/c/fw/new/
++	 * reassoc_inplace.cpp): (Re)Assoc Request связанной станции — на месте */
++	bl.d rx_pkt__mlme_event
+ L_8e3ed4:
+ 	mov_s r4,r3
+ L_8e3ed6:
+--- a/src/data/fw_data.S
++++ b/src/data/fw_data.S
+@@ -711,8 +711,12 @@ fw_data:
+  * стала 0x7be1 — ветка wmi_branch_0x859 @0x8edd18
+  * (src/c/fw/new/wmi_brp_rf_chains_limit.cpp) */
+ 	.hword 0x7be1
+-	.byte 0x88,0x05,0x88 /* 902122 */
+-	.byte 0x05,0x62,0x05,0x3a,0x01,0x00,0x00,0xa8,0x04,0x73,0x05,0x73,0x05,0xf6,0x02,0xfd /* 902125 .b.:.....s.s.... */
++	.byte 0x88,0x05 /* 902122 */
++/* 902124: запись 0x85b таблицы переходов диспетчера WMI (REASSOC_INPLACE_CFG,
++ * прошивка apsta): была 0x0588 — «нет команды», стала 0x7bf1 — ветка
++ * wmi_branch_0x85b @0x8edd38, слот 02 зазора (src/c/fw/new/reassoc_inplace.cpp) */
++	.hword 0x7bf1
++	.byte 0x62,0x05,0x3a,0x01,0x00,0x00,0xa8,0x04,0x73,0x05,0x73,0x05,0xf6,0x02,0xfd /* 902125 .b.:.....s.s.... */
+ 	.byte 0x02,0x83,0x03,0x73,0x05,0x6b,0x03,0x39,0x03,0x5f,0x05,0x5f,0x05,0x5f,0x05,0xe8 /* 902135 ...s.k.9._._._.. */
+ 	.byte 0x03,0xf4,0x03,0x5f,0x05,0x5f,0x05,0x5f,0x05,0x5f,0x05,0x5f,0x05,0x5f,0x05,0x5f /* 902145 ..._._._._._._._ */
+ 	.byte 0x05,0x5f,0x05,0x5f,0x05,0x5f,0x05,0xf0,0x01,0xfc,0x01,0xa7,0x01,0xb2,0x01,0xbd /* 902155 ._._._.......... */

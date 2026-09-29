@@ -1,0 +1,68 @@
+# Глобальные переменные сегмента uc, адресуемые через gp=0x800528.
+# Формат: адрес, число блоков, блоки. Сгенерировано из ANNO-uc.json.
+0x800528   1  sub_9248e8
+0x80052c   1  uclog_rx_flow_c
+0x800530   1  uclog_rx_flow_c
+0x800534   3  rx_flow_step tx_mtp_queue_gate uclog_GRANT_DETECTED
+0x800538   4  rx_rfc_step sub_92f280 uclog_rx_flow_c_92de68 uclog_tx_flows_optimized_size_c
+0x80053c   3  l1_bi_trigger_step sub_928bd4 sub_935068
+0x800540  12  rx_flow_step rx_nav_bi_step sub_92f280 sub_930d2c tx_flow_size_step tx_initiator_substep uclog_BI2_event uclog_Error_MTP_Queue_is uclog_bti_worker_cpp uclog_rfc_ctrl_c uclog_rx_flow_c uclog_rx_flow_c_92de68
+0x800544   3  non_idle_mask perform_shallow_sleep uclog_power_manager_cpp
+0x800548   1  uclog_GRANT_DETECTED
+0x80054c   2  sub_931c98 sub_937054
+0x800550   2  sub_92ce0c uclog_rfc_ctrl_c
+0x800554   2  sub_928d28 sub_928df4
+0x800558   1  sub_92bacc
+0x80055c   2  uclog_Crash_TSF_curr_tsf uclog_l1_task_c
+0x800560   1  sub_931ef8
+0x800564   1  uclog_Crash_TSF_curr_tsf
+0x800568   2  rx_funcs_copy_step sub_92a0c4
+0x80056c   6  cf_end_mtp_step rx_flow_step sub_9354d4 tx_initiator_step tx_mtp_queue_gate uclog_rx_flow_c_92de68
+0x800570   7  bi_tx_initiator_wrap rx_nav_update rx_rfc_step tx_mtp_queue_gate txop_initiator_open_txop_flow uclog_rx_flow_c uclog_tx_flows_optimized_size_c
+0x800574   8  internal_tx_step sub_9224a8 sub_9251d4 sub_926354 sub_933d2c sub_933d78 uclog_aw_worker_cpp uclog_power_manager_cpp
+0x800578   1  uclog_rx_flow_c
+0x80057c   9  abft_responder_substep bti_worker_bi2_step fwlog_SYSTEM sub_922e74 sub_92359c sub_92abac sub_92ac08 uclog_hw_modes_mac_c uclog_rx_flow_c
+0x800580   1  background_bi_step
+0x800584   1  background_bi_step
+0x800588   2  sub_921f84 uclog_background_task_c_921e2e
+0x80058c   6  background_bi_step bi_tx_initiator_wrap sub_936b2c sub_936ca8 sub_936d40 uclog_l1_task_c
+0x800590   1  uclog_background_task_c_921e2e
+0x800594   1  uclog_hw_modes_mac_c
+0x800598   1  uclog_hw_modes_mac_c
+0x80059c   2  uclog_BI2_event uclog_bti_worker_cpp
+0x8005a0   1  bi__decide_beacon_kind
+0x8005a4   2  sub_92bd80 sub_92c05c
+0x8005a8   2  bi_cfg_apply_helper_9331d8 sub_933280
+0x8005ac   2  bi_cfg_apply_helper_9331d8 sub_933280
+0x8005b0   4  fwlog_BF_state_failure_but_the_BRP_mode_was_al sub_9221f8 sub_92f280 uclog_internal_tx_c
+0x8005b4   1  rx_nav_bi_step
+0x8005b8   3  sub_92f280 tx_initiator_step txop_initiator_open_txop_flow
+0x8005bc   1  sub_92b9b8
+0x8005c0   2  sub_92b9b8 uclog_rfc_ctrl_c
+0x8005c4   1  sub_928130
+0x8005c8   2  rx_funcs_copy_step sub_92a0c4
+0x8005ca   1  sub_92aa7c
+0x8005cc   1  uclog_power_manager_cpp
+0x8005ce   1  uclog_power_manager_cpp
+0x8005d0   3  brp_helper_a sub_92271a umac_if_cmd_handler
+0x8005d2   5  brp_flow_step brp_helper_a fwlog_BF_state_failure_but_the_BRP_mode_was_al sub_922850 umac_if_cmd_handler
+0x8005d4   1  sub_924ea8
+0x8005d6   7  l1_bi_trigger_step sub_925a50 sub_928bd4 sub_93504c sub_935068 sub_936b2c uclog_l1_task_c
+0x8005d8  11  mac_mode_kick sub_926858 sub_9290b4 sub_92f280 txss_flow_helper txss_flow_step_b uclog_beamforming_flows_txss_c uclog_beamforming_flows_txss_c_9363dc uclog_rx_flow_c_92de68 uclog_rx_funcs_optimized_size_c uclog_rx_funcs_optimized_size_c_92d740
+0x8005dc   1  umac_if_cmd_handler
+0x8005e0   5  internal_tx_step tx_flow_size_step tx_initiator_step tx_initiator_substep umac_if_cmd_handler
+0x8005ec   6  sub_9220a4 sub_922268 sub_922500 sub_92271a sub_92b63c umac_if_cmd_handler
+0x8005f0   3  sub_9220a4 sub_922500 umac_if_cmd_handler
+0x8005f4   1  sub_934f68
+0x8005f6   1  sub_934f68
+0x8005f8   1  sub_934f68
+0x8005f9   1  uclog_rx_flow_c_92de68
+0x8005fc   1  uclog_tx_flows_optimized_size_c_933e90
+0x800600   1  uclog_tx_flows_optimized_size_c_933e90
+0x800604  34  bcon_txss_sweep_step bi_manager_rx_helper bi_manager_rx_step bi_tx_initiator_wrap brp_flow_step bti_worker__bti_transmitter_beacon_sweep_flow cf_end_mtp_step direct_tx_step mac_mode_program_a mac_mode_program_b rx_funcs_step rx_nav_update rx_rfc_step sub_9221a4 sub_9224c4 sub_92f280 sub_9329fc tx_mtp_queue_gate txop_initiator_open_txop_flow txrx_common_helper txss_flow_helper txss_flow_step txss_flow_step_b uclog_Error_MTP_Queue_is uclog_GRANT_DETECTED uclog_abft_worker_responder_funcs_cpp uclog_beamforming_flows_txss_c uclog_mtp_service_cpp uclog_rx_flow_c uclog_rx_flow_c_92de68 uclog_rx_funcs_optimized_size_c uclog_rx_funcs_optimized_size_c_92d740 uclog_tx_flows_optimized_size_c uclog_txss_c_936864
+0x800608  36  bi_manager_rx_helper bi_manager_rx_step bi_tx_initiator_wrap brp_flow_step bti_worker__bti_transmitter_beacon_sweep_flow cf_end_mtp_step rx_flow_step rx_nav_update rx_rfc_step sub_9221a4 sub_9224c4 sub_92ee48 sub_92ef40 sub_92f280 sub_9329fc tx_flow_size_step tx_initiator_flow tx_initiator_rx_step tx_initiator_step tx_initiator_substep tx_mtp_common_helper tx_mtp_queue_gate txop_initiator_open_txop_flow txrx_common_helper txss_flow_helper txss_flow_step_b txss_rx_step uclog_beamforming_flows_txss_c uclog_beamforming_flows_txss_c_9363dc uclog_l2_task_c uclog_l2_task_c_929bfc uclog_rx_flow_c uclog_rx_flow_c_92de68 uclog_rx_funcs_optimized_size_c uclog_rx_funcs_optimized_size_c_92d740 uclog_tx_flows_optimized_size_c
+0x80060c   1  uclog_beamforming_substate_sm_c
+0x80060d   1  uclog_beamforming_substate_sm_c
+0x80060e   1  uclog_beamforming_substate_sm_c
+0x800610  27  bcon_sweep_step_a bcon_txss_sweep_step cf_end_mtp_step direct_tx_step internal_tx_step mac_mode_program_a mac_mode_program_b rx_funcs_step sub_92e7d8 sub_92e89c sub_92e950 sub_92f280 sub_9329fc sub_933454 sub_933dd8 sub_933e3c sub_933f90 sub_9354d4 tx_mtp_queue_gate txop_initiator_open_txop_flow txss_flow_step uclog_Error_MTP_Queue_is uclog_abft_worker_responder_funcs_cpp uclog_rx_flow_c uclog_tx_flows_optimized_size_c uclog_txss_c_936864 ucode_cmd__bi_config
+0x800614  27  bcon_sweep_step_a bcon_txss_sweep_step cf_end_mtp_step direct_tx_step internal_tx_step mac_mode_program_a mac_mode_program_b rx_funcs_step sub_92e7d8 sub_92e89c sub_92e950 sub_92f280 sub_9329fc sub_933454 sub_933dd8 sub_933e3c sub_933f90 sub_9354d4 tx_mtp_queue_gate txop_initiator_open_txop_flow txss_flow_step uclog_Error_MTP_Queue_is uclog_abft_worker_responder_funcs_cpp uclog_rx_flow_c uclog_tx_flows_optimized_size_c uclog_txss_c_936864 ucode_cmd__bi_config

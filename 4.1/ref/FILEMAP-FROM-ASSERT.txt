@@ -1,0 +1,248 @@
+# блок -> файл вендорского исходника
+# по строке __FILE__ в sysassert: 95 блоков (доказано)
+# интерполяцией между якорями одного файла: 62 блоков (вероятно)
+
+== abft_worker_responder_funcs.cpp  (1 блоков)
+   abft_responder__tx_ssw
+
+== aw_worker.cpp  (1 блоков)
+   aw_worker__collect_awake_peers
+
+== background_task.c  (1 блоков)
+   background_task__dispatch
+
+== basic_if.cpp  (2 блоков)
+   basic_if__alloc_evt_slot
+   basic_if__post_to_fw_mailbox
+
+== basic_sm.cpp  (1 блоков)
+   basic_sm__dispatch_loop
+
+== beacon_tx.c  (1 блоков)
+   beacon_tx__build_slot_bitmap
+
+== beamforming_flows_brp.c  (2 блоков)
+   brp__flow_main
+   brp__program_and_measure
+
+== beamforming_flows_txss.c  (2 блоков)
+   txss__init_sweep
+   txss__init_sweep_b
+
+== beamforming_sm.c  (12 блоков)
+   bf_sm__assert_and_clear
+   bf_sm__background_step   [интерполяция]
+   bf_sm__check_sta_timeout   [интерполяция]
+   bf_sm__mark_sta_active
+   bf_sm__pop_request_fifo   [интерполяция]
+   bf_sm__process_request_fifo
+   bf_sm__release_sta   [интерполяция]
+   bf_sm__start_request   [интерполяция]
+   bf_sm__state_failure_path   [интерполяция]
+   bf_sm__substate_advance   [интерполяция]
+   bf_sm__trigger
+   mem_8571dc__or_bit   [интерполяция]
+
+== beamforming_substate_sm.c  (2 блоков)
+   bf_substate_sm__is_state_9_11
+   bf_substate_sm__step
+
+== bf_gpc_service.cpp  (2 блоков)
+   bf_gpc__program_mac_by_mode
+   bf_gpc__program_mac_by_mode_b
+
+== bi_ap_mon_if.cpp  (2 блоков)
+   bi_ap_mon__window_code
+   bi_ap_mon_if__trigger_dti_to_bti
+
+== bi_manager.cpp  (11 блоков)
+   bi_manager__enter_dti
+   bi_manager__kind_switch
+   bi_manager__l1_entry_b
+   bi_manager__l1_rx_entry
+   bi_manager__on_aw
+   bi_manager__on_dti
+   bi_manager__run_rx_flow_by_kind
+   bi_manager__rx_bi_flow   [интерполяция]
+   bi_manager__start_tx_or_initiator   [интерполяция]
+   epi_928a4c   [интерполяция]
+   tail_ps_awake_peer__build_evt   [интерполяция]
+
+== bti_worker.cpp  (2 блоков)
+   bti_worker__bti_transmitter_beacon_sweep_flow
+   bti_worker__collect_bf_metric
+
+== cf_end_flow.c  (1 блоков)
+   cf_end__tx_flow
+
+== direct_tx.c  (3 блоков)
+   direct_tx__issue_cmd_33
+   direct_tx__program_cmd34   [интерполяция]
+   direct_tx__push_payload
+
+== fw_mailbox.cpp  (2 блоков)
+   uc_mailbox__advance
+   uc_mailbox__next_slot
+
+== hw_drivers_abif.c  (4 блоков)
+   hwd_abif__rgf_880800_926ad0   [интерполяция]
+   hwd_abif__rgf_880800_926b00
+   hwd_abif__rgf_88a000
+   hwd_abif__rgf_88b000
+
+== hw_drivers_dma.c  (1 блоков)
+   hwd_dma__set_mode_map
+
+== hw_drivers_mac.c  (2 блоков)
+   hwd_mac__apply_timing_entry
+   hwd_mac__set_mode_map
+
+== hw_drivers_phy.c  (12 блоков)
+   dma_mac__cfg_880c2c   [интерполяция]
+   hwd_phy__get_883830   [интерполяция]
+   hwd_phy__rgf_881000   [интерполяция]
+   hwd_phy__rgf_883000_9272b8
+   hwd_phy__rgf_883000_92749c
+   hwd_phy__rgf_884000
+   hwd_phy__set_881000
+   hwd_phy__set_883000_92748c   [интерполяция]
+   hwd_phy__set_mode_uc
+   hwd_phy_init__2
+   set_reg_883150   [интерполяция]
+   uc_hwd_phy_pwr
+
+== hw_drivers_rfc.c  (1 блоков)
+   uc_hwd_rfc_write_core
+
+== hw_modes_mac.c  (1 блоков)
+   hw_modes_mac__switch_core
+
+== internal_tx.c  (1 блоков)
+   internal_tx__pending_sm
+
+== l1_task.c  (1 блоков)
+   l1_task__entry
+
+== l2_task.c  (1 блоков)
+   l2_task__run
+
+== log.c  (1 блоков)
+   uc_log__init
+
+== mtp_service.cpp  (1 блоков)
+   mtp_service__dispatch
+
+== nav_db.c  (1 блоков)
+   nav_db__update
+
+== power_manager.cpp  (17 блоков)
+   bi_ap_mon__trigger_tail   [интерполяция]
+   bi_manager__assert_line42   [интерполяция]
+   cf_end__pulse_883150   [интерполяция]
+   get_g_800724   [интерполяция]
+   get_g_800ebc   [интерполяция]
+   list_800b90__insert_sorted   [интерполяция]
+   perform_shallow_sleep
+   power_manager__decide_shallow_sleep
+   power_manager__scale_counters_ms   [интерполяция]
+   power_manager__snapshot_marks   [интерполяция]
+   power_manager__tick_if_elapsed   [интерполяция]
+   power_manager__update_deltas   [интерполяция]
+   psc_pending_agreement_cmd
+   stub_ret_92b304   [интерполяция]
+   tail_bi_manager__enter_dti   [интерполяция]
+   ucode_cmd_0x1b_handler   [интерполяция]
+   ucode_cmd_phy_ina_det_cfg   [интерполяция]
+
+== rate_search.c  (11 блоков)
+   get_g_80051c   [интерполяция]
+   rate_search__apply_mcs   [интерполяция]
+   rate_search__build_mcs_mask
+   rate_search__current_mcs   [интерполяция]
+   rate_search__current_mcs_b   [интерполяция]
+   rate_search__reset_stats   [интерполяция]
+   rate_search__start_for_sta
+   rate_search__step
+   tbl_801754__byte_by_index   [интерполяция]
+   tbl_8018b5__byte_by_index   [интерполяция]
+   ucode_cmd_0x30_handler   [интерполяция]
+
+== rfc_ctrl.c  (1 блоков)
+   rfc_ctrl__switch
+
+== rx_flow.c  (14 блоков)
+   rx_flow__check_status
+   rx_flow__decide_imm_ack
+   rx_flow__grant_detected   [интерполяция]
+   rx_flow__handle_frame
+   rx_flow__lookup_mcs_ctx   [интерполяция]
+   rx_flow__post_rx_act1   [интерполяция]
+   rx_flow__post_rx_act2   [интерполяция]
+   rx_flow__post_rx_act3   [интерполяция]
+   rx_flow__post_rx_act7   [интерполяция]
+   rx_flow__post_rx_act8   [интерполяция]
+   rx_flow__post_rx_act9   [интерполяция]
+   rx_flow__post_rx_tail   [интерполяция]
+   rx_flow__post_rx_unsupported
+   rx_flow__run
+
+== rx_funcs.c  (3 блоков)
+   rx_funcs__on_rx_type_0x14
+   rx_funcs__rx_flow
+   rx_funcs__set_rx_off
+
+== rx_funcs_optimized_size.c  (2 блоков)
+   rx_funcs__handle_ppdu_report
+   rx_funcs__identify_peer
+
+== sxd_hal.c  (5 блоков)
+   sxd_hal__mac_write_indexed
+   sxd_hal__select_qset_group
+   sxd_hal__wait_slot2_busy
+   sxd_hal__wait_slot2_busy2
+   sxd_hal__write_qset_field
+
+== sxd_hal_optimized_size.c  (1 блоков)
+   sxd_hal__read_backoff_status
+
+== tx_flows_optimized_size.c  (8 блоков)
+   bi_rx__send_response   [интерполяция]
+   internal_tx__clear_pending   [интерполяция]
+   internal_tx_step   [интерполяция]
+   keep_alive__arm_slot   [интерполяция]
+   tx__read_tx_result   [интерполяция]
+   tx_flows__program_mac_tx
+   tx_initiator__build_tx_vector
+   tx_initiator_flow   [интерполяция]
+
+== tx_slot_flows.c  (1 блоков)
+   txop_initiator_open_txop_flow
+
+== txrx_api_cmd_handler.c  (14 блоков)
+   get_selected_rf_sector_index_cmd_handler
+   set_selected_rf_sector_index_cmd_handler
+   txrx_umac_if_long_range_cmd_handler   [интерполяция]
+   ucode_cmd_0x00_handler   [интерполяция]
+   ucode_cmd_0x04_handler   [интерполяция]
+   ucode_cmd_0x05_handler   [интерполяция]
+   ucode_cmd_0x07_handler
+   ucode_cmd_0x21_handler   [интерполяция]
+   ucode_cmd__discovery_mode_cfg
+   ucode_cmd__queue_delete
+   ucode_cmd__rx_off   [интерполяция]
+   ucode_cmd__rx_on
+   ucode_cmd_install_key
+   ucode_cmd_update_aw_ie
+
+== txss.c  (2 блоков)
+   txss__prepare_frames
+   txss__tx_sector_frame
+
+== txss_func.c  (1 блоков)
+   txss_func__reorder_sectors
+
+== ucode_pm.c  (1 блоков)
+   ucode_pm__rx_off_step
+
+== umac_if_cmd_handler.cpp  (1 блоков)
+   umac_if_cmd_handler

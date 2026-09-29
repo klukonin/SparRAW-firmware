@@ -1,0 +1,1441 @@
+# MSXD_LR_RGF — регистровый файл локального чтения MAC (пак 11ad 7.5).
+# Группа = ARC-регистр результата, порядок внутри группы = индекс селектора
+# (биты 12..15 низкого полуслова запроса 0x1d0x_xxxx).  Сверено с Sparrow
+# по группе R40 в docs/MAC-REGISTERS.md.
+
+== R36_SINGLE_MAPPED
+[0] PPDU_REPORT_1_R36
+        ack_detected                       бит 0
+        qos_data_detected                  бит 1
+        mgmt_detected                      бит 2
+        reservation_detected               бит 3
+        dynamic_detected                   бит 4
+        cfg_detected                       бит 5
+        ss_detected                        бит 6
+        beacon_detected                    бит 7
+        imm_ack                            бит 8
+        back                               бит 9
+        reserved0                          бит 10
+        ack_qid                            биты 11..15
+        qos_data_frame_detected            бит 16
+        qos_null_frame_detected            бит 17
+        back_request_frame_detected        бит 18
+        data_frame_qid                     биты 19..23
+        mgmt_frame_detected                бит 24
+        no_action_mgmt_detected            бит 25
+        reserved1                          бит 26
+        mgmt_frame_qid                     биты 27..31
+
+== R37_SINGLE_MAPPED
+[0] PPDU_REPORT_2_R37
+        rts                                бит 0
+        mmWaveCTS                          бит 1
+        mmWaveDTS                          бит 2
+        reservation_qid                    биты 3..7
+        poll                               бит 8
+        spr                                бит 9
+        grant                              бит 10
+        dynamic_qid                        биты 11..15
+        mmWaveCF_END                       бит 16
+        cfg1                               бит 17
+        cfg2                               бит 18
+        cfg_qid                            биты 19..23
+        ss_bitmap                          биты 24..26
+        SS_qid                             биты 27..31
+
+== R38_SINGLE_MAPPED
+[0] PPDU_REPORT_3_R38
+        my_bssid_beacon_detected           бит 0
+        other_beacon_detected              бит 1
+        reserved0                          бит 2
+        beacon_qid                         биты 3..7
+        addr2_match_index                  биты 8..10
+        addr2_match_valid                  бит 11
+        bap_enable                         бит 12
+        mcast_indication                   бит 13
+        bcast_indication                   бит 14
+        reverse_direction_detected         бит 15
+        requested_ack_policy               биты 16..17
+        announce_detected                  бит 18
+        probe_detected                     бит 19
+        received_mcs                       биты 20..24
+        mpdu_aggregation                   бит 25
+        pwr_mgmt_set                       бит 26
+        sniffer_indication                 бит 27
+        neighbour_indication               бит 28
+        fcs_ok_partial                     бит 29
+        fcs_ok_full                        бит 30
+        ppdu_report_valid                  бит 31
+
+== R39_SINGLE_MAPPED
+[0] PPDU_REPORT_MISC_R39
+        fc_retry                           бит 0
+        fc_more_data                       бит 1
+        fc_protected                       бит 2
+        qos_ac_contraint                   бит 3
+        addr3_my_bssid                     бит 4
+        addr3_wild_bssid                   бит 5
+        my_frame                           бит 6
+        neighbour_indication               бит 7
+        type_index                         биты 8..13
+        network_id_valid                   бит 14
+        zero_cdown                         бит 15
+        ds_type                            биты 16..17
+        network_id                         биты 18..19
+        tid                                биты 20..23
+        addr_1_match_index                 биты 24..26
+        addr_1_match_valid                 бит 27
+        bssid_match_index                  биты 28..29
+        reserved0                          бит 30
+        bssid_match_valid                  бит 31
+
+== R40
+[0] BACKOFF_IFS_STATUS
+        idle_detect                        биты 0..2
+        nav_active                         бит 3
+        pending_ac                         биты 4..7
+        nav_active_bus                     биты 8..15
+        remaining_slot_ac1                 биты 16..19
+        remaining_slot_ac2                 биты 20..23
+        remaining_slot_ac3                 биты 24..27
+        remaining_slot_ac4                 биты 28..31
+[1] AC_PENDING_SLOT_1_2
+        ac1_pending_slots                  биты 0..9
+        reserved0                          биты 10..15
+        ac2_pending_slots                  биты 16..25
+        reserved1                          биты 26..31
+[2] AC_PENDING_SLOT_3_4
+        ac3_pending_slots                  биты 0..9
+        reserved0                          биты 10..15
+        ac4_pending_slots                  биты 16..25
+        reserved1                          биты 26..31
+[3] REMAINING_TIME_RD
+  [0] dump___remaining_time
+        less_than_min_session_0            бит 16
+        less_than_min_session_1            бит 17
+        less_than_min_session_2            бит 18
+        less_than_min_session_3            бит 19
+        remaining_time_sm                  биты 20..21
+        reserved0                          биты 22..23
+        less_than_min_session_4            бит 24
+        less_than_min_session_5            бит 25
+        less_than_min_session_6            бит 26
+        less_than_min_session_7            бит 27
+        reserved1                          биты 28..31
+[4] BI_COUNTER
+        bi_counter                         биты 0..25
+        reserved0                          биты 26..30
+        bi_sync                            бит 31
+[5] TSF_LOW_R40
+  [0] dump___tsf_low
+[6] TSF_HIGH_R40
+  [0] dump___tsf_high
+[7] REMAINING_BI
+        remaining_bi                       биты 0..25
+        reserved0                          биты 26..31
+[8] GP_TIMERS_0_1
+  [0] dump___reserved0
+        reserved1                          биты 16..31
+[9] GP_TIMERS_2_3
+  [0] dump___reserved0
+        reserved1                          биты 16..31
+[10] PHY_SIGNALS
+        cca                                биты 0..2
+        phy_rx_frame                       бит 3
+        rx_on_air                          бит 4
+        tx_on_air                          бит 5
+        mac_rx_en                          бит 6
+        reserved0                          бит 7
+        ppdu_event_counter                 биты 8..13
+        reserved1                          биты 14..15
+        cca_event_counter                  биты 16..21
+        reserved2                          биты 22..23
+        cca_ppdu_comp                      бит 24
+        reserved3                          биты 25..31
+[11] PHY_PLCP_RX_SIGNALS_R40
+        mcs                                биты 0..4
+        add_ppdu                           бит 5
+        packet_type                        бит 6
+        beam_tracking_reg                  бит 7
+        trn_length                         биты 8..12
+        aggregation                        бит 13
+        edmg_sc_ofdm                       бит 14
+        sifs_resp                          бит 15
+        reserved                           биты 16..19
+        rssi_fdbk                          биты 20..23
+        secondary_cca_sm_state             биты 24..26
+        secondary_cca_sampled_state        биты 27..29
+        edmg                               бит 30
+        valid                              бит 31
+[12] PHY_PLCP_RX_LEN_R40
+        length                             биты 0..17
+        reserved0                          биты 18..23
+        descrambler_seed                   биты 24..30
+        reserved1                          бит 31
+[13] BF_METRIC_R40
+        bf_metric_snr_ratio_out_db_sc_comp биты 0..8
+        phy_rx_signal_gain_adc_db_ce_locked биты 9..14
+        phy_rx_signal_gain_phasor_db_ce_locked биты 15..20
+        ce_snr                             биты 21..25
+        phy_ina_rssi_adc_db_ce_locked      биты 26..30
+        phy_rx_bf_metric_saturated         бит 31
+[14] REMAINING_SLOT
+        remaining_slot_ac1                 биты 0..3
+        remaining_slot_ac2                 биты 4..7
+        remaining_slot_ac3                 биты 8..11
+        remaining_slot_ac4                 биты 12..15
+        remaining_slot_ac5                 биты 16..19
+        remaining_slot_ac6                 биты 20..23
+        remaining_slot_ac7                 биты 24..27
+        remaining_slot_ac8                 биты 28..31
+[15] AC_PENDING_EXTENSION
+  [0] dump___reserved0
+
+== R41
+[0] QUEUE_SEL_STATUS_R41
+  [0] dump___requested_queue_set_bitmap
+        lowest_queue_set_found             биты 8..11
+        reserved0                          биты 12..15
+        qid_for_found_queue_set            биты 16..21
+        reserved1                          биты 22..31
+[1] QUEUE_SEL_FOUND_SET1_4_R41
+        qid_selected_qset1                 биты 0..5
+        reserved0                          бит 6
+        qset1_valid                        бит 7
+        qid_selected_qset2                 биты 8..13
+        reserved1                          бит 14
+        qset2_valid                        бит 15
+        qid_selected_qset3                 биты 16..21
+        reserved2                          бит 22
+        qset3_valid                        бит 23
+        qid_selected_qset4                 биты 24..29
+        reserved3                          бит 30
+        qset4_valid                        бит 31
+[2] QUEUE_SEL_FOUND_SET5_8
+        qid_selected_qset5                 биты 0..5
+        reserved0                          бит 6
+        qset5_valid                        бит 7
+        qid_selected_qset6                 биты 8..13
+        reserved1                          бит 14
+        qset6_valid                        бит 15
+        qid_selected_qset7                 биты 16..21
+        reserved2                          бит 22
+        qset7_valid                        бит 23
+        qid_selected_qset8                 биты 24..29
+        reserved3                          бит 30
+        qset8_valid                        бит 31
+[3] QSET_1_MASK_VECTOR
+  [0] dump___qset1_mask_vector
+[4] QSET_2_MASK_VECTOR
+  [0] dump___qset2_mask_vector
+[5] QSET_3_MASK_VECTOR
+  [0] dump___qset3_mask_vector
+[6] QSET_4_MASK_VECTOR
+  [0] dump___qset4_mask_vector
+[7] QSET_5_MASK_VECTOR
+  [0] dump___qset5_mask_vector
+[8] QSET_6_MASK_VECTOR
+  [0] dump___qset6_mask_vector
+[9] QSET_7_MASK_VECTOR
+  [0] dump___qset7_mask_vector
+[10] QSET_8_MASK_VECTOR
+  [0] dump___qset8_mask_vector
+[11] MTP_Q_AVAIL
+  [0] dump___mtp_q_avail_vec
+[12] BAP_Q_AVAIL
+  [0] dump___bap_q_avail_vec
+
+== R42
+[0] EVENT1_STATUS_R42
+        sifs_event                         бит 0
+        slot_event                         бит 1
+        start_sifs_rifs_bifs_event         бит 2
+        cfg_event                          бит 3
+        bi1_event                          бит 4
+        bi2_event                          бит 5
+        tsf_event                          бит 6
+        txop_event                         бит 7
+        slot2_event                        бит 8
+        gp_timers_event                    бит 9
+        plcp_valid_event                   бит 10
+        sfd_sync_event                     бит 11
+        rx_frame_event                     бит 12
+        cca_event                          бит 13
+        busy2_event                        бит 14
+        tx_end_event                       бит 15
+        ppdu_report_event                  бит 16
+        queue_set_event                    бит 17
+        backoff_event                      бит 18
+        busy_event                         бит 19
+        comb_event1                        бит 20
+        comb_event2                        бит 21
+        comb_event3                        бит 22
+        comb_event4                        бит 23
+        reserved0                          биты 24..31
+[1] EVENT2_STATUS_R42
+        sifs_event                         бит 0
+        slot_event                         бит 1
+        start_sifs_rifs_bifs_event         бит 2
+        cfg_event                          бит 3
+        bi1_event                          бит 4
+        bi2_event                          бит 5
+        tsf_event                          бит 6
+        txop_event                         бит 7
+        slot2_event                        бит 8
+        gp_timers_event                    бит 9
+        plcp_valid_event                   бит 10
+        sfd_sync_event                     бит 11
+        rx_frame_event                     бит 12
+        cca_event                          бит 13
+        busy2_event                        бит 14
+        tx_end_event                       бит 15
+        ppdu_report_event                  бит 16
+        queue_set_event                    бит 17
+        backoff_event                      бит 18
+        busy_event                         бит 19
+        comb_event1                        бит 20
+        comb_event2                        бит 21
+        comb_event3                        бит 22
+        comb_event4                        бит 23
+        reserved0                          биты 24..31
+[2] EVENT3_STATUS_R42
+        sifs_event                         бит 0
+        slot_event                         бит 1
+        start_sifs_rifs_bifs_event         бит 2
+        cfg_event                          бит 3
+        bi1_event                          бит 4
+        bi2_event                          бит 5
+        tsf_event                          бит 6
+        txop_event                         бит 7
+        slot2_event                        бит 8
+        gp_timers_event                    бит 9
+        plcp_valid_event                   бит 10
+        sfd_sync_event                     бит 11
+        rx_frame_event                     бит 12
+        cca_event                          бит 13
+        busy2_event                        бит 14
+        tx_end_event                       бит 15
+        ppdu_report_event                  бит 16
+        queue_set_event                    бит 17
+        backoff_event                      бит 18
+        busy_event                         бит 19
+        comb_event1                        бит 20
+        comb_event2                        бит 21
+        comb_event3                        бит 22
+        comb_event4                        бит 23
+        reserved0                          биты 24..31
+[3] EVENT_ENGINE_4_STATUS_7
+        gp0_expired_event                  бит 0
+        gp1_expired_event                  бит 1
+        gp2_expired_event                  бит 2
+        gp3_expired_event                  бит 3
+        gp4_expired_event                  бит 4
+        gp5_expired_event                  бит 5
+        gp6_expired_event                  бит 6
+        gp7_expired_event                  бит 7
+        gp8_expired_event                  бит 8
+        gp9_expired_event                  бит 9
+        rx_ppdu_timeout                    бит 10
+        early_ppdu_report_indication       бит 11
+        early_mpdu_rep_indication          бит 12
+        abort_flush_indication             бит 13
+        rx_frame_edmg                      бит 14
+        tsf_nid_event                      бит 15
+        bi1_nid_event                      бит 16
+        bi2_nid_event                      бит 17
+        reserved0                          биты 18..23
+        cmd                                биты 24..31
+[4] NOP_VALUE
+  [0] dump___reserved0
+[5] SP_TSF_IN_PROCESS
+  [0] dump___start_tsf_value
+[6] PHY_REMAINING_PPDU_R42
+        phy_remaining_ppdu                 биты 0..23
+        reserved0                          биты 24..31
+[7] PHY_RX_PLCP_EDMG
+  [0] dump___bw_code
+        primary_channel_num                биты 8..10
+        su_mu_format                       бит 11
+        mcs                                биты 12..16
+        reserved0                          бит 17
+        beamforming_per_carrier            бит 18
+        ldpc_long                          бит 19
+        num_of_ss                          биты 20..22
+        phy_rx_diff_enc_init               бит 23
+        gi_cp_length                       биты 24..25
+        channel_aggregation                бит 26
+        stbc                               бит 27
+        reserved1                          биты 28..30
+        edmg_valid                         бит 31
+
+== R43
+[0] MTP_QUERY_RESPONSE_1
+        query_type                         биты 0..3
+        packet_mode                        биты 4..7
+        dest_id                            биты 8..11
+        nid                                биты 12..13
+        ack_policy                         биты 14..15
+        mcs                                биты 16..20
+        source_index                       биты 21..24
+        dest_id_ext                        бит 25
+        reverse_direction_supported        бит 26
+        aggregation_enabled                бит 27
+        timestamp_overwrite                бит 28
+        txss_override                      биты 29..30
+        valid                              бит 31
+[1] BO_IFS_STATUS_R43
+        idle_detect                        биты 0..2
+        nav_active                         бит 3
+        pending_ac_for_transmission        биты 4..7
+        nav_active_bus                     биты 8..15
+        remaining_slot_ac1                 биты 16..19
+        remaining_slot_ac2                 биты 20..23
+        remaining_slot_ac3                 биты 24..27
+        remaining_slot_ac4                 биты 28..31
+[2] TSF_LOW_R43
+  [0] dump___tsf_low
+[3] EVENT2_STATUS_R43
+        sifs_event                         бит 0
+        slot_event                         бит 1
+        start_sifs_rifs_bifs_event         бит 2
+        cfg_event                          бит 3
+        bi1_event                          бит 4
+        bi2_event                          бит 5
+        tsf_event                          бит 6
+        txop_event                         бит 7
+        slot2_event                        бит 8
+        gp_timers_event                    бит 9
+        plcp_valid_event                   бит 10
+        sfd_sync_event                     бит 11
+        rx_frame_event                     бит 12
+        cca_event                          бит 13
+        busy2_event                        бит 14
+        tx_end_event                       бит 15
+        ppdu_report_event                  бит 16
+        queue_set_event                    бит 17
+        backoff_event                      бит 18
+        busy_event                         бит 19
+        comb_event1                        бит 20
+        comb_event2                        бит 21
+        comb_event3                        бит 22
+        comb_event4                        бит 23
+        reserved0                          биты 24..31
+[4] QUEUE_SEL_STATUS_R43
+  [0] dump___req_queue_set_butmap
+        lowest_queue_set_num_found         биты 8..11
+        reserved0                          биты 12..15
+        qid_for_queue_set_found            биты 16..21
+        reserved1                          биты 22..31
+[5] SP_STATUS_R43
+        sp_arr_write_ptr                   биты 0..4
+        reserved0                          биты 5..7
+        sp_arr_read_ptr                    биты 8..12
+        reserved1                          биты 13..14
+        cmd_valid                          бит 15
+        reserved2                          биты 16..30
+        sp_array_full                      бит 31
+[6] PHY_REMAINING_PPDU_R43
+        phy_remaining_ppdu                 биты 0..23
+        reserved0                          биты 24..31
+[7] SP_START_TSF_R43
+  [0] dump___start_tsf_value
+[8] PHY_RX_PLCP_EDMG_HDR
+  [0] dump___bw_code
+        primary_channel_num                биты 8..10
+        su_mu_format                       бит 11
+        mcs                                биты 12..16
+        reserved0                          бит 17
+        beamforming_per_carrier            бит 18
+        ldpc_long                          бит 19
+        num_of_ss                          биты 20..22
+        diff_enc_init                      бит 23
+        gi_cp_length                       биты 24..25
+        channel_aggregation                бит 26
+        stbc                               бит 27
+        reserved1                          биты 28..30
+        edmg_valid                         бит 31
+[9] PHY_RX_PLCP_EDMG_LENGTH_R43
+        length                             биты 0..21
+        reserved0                          биты 22..31
+
+== R44
+[0] MTP_QUERY_RESPONSE_2
+  [0] dump___duration
+        actual_cycles                      биты 16..23
+        remaining_cycles                   биты 24..31
+[1] PHY_SIGNALS_AND_CCA_MONITOR
+        cca                                биты 0..2
+        phy_rx_frame                       бит 3
+        rx_on_air                          бит 4
+        tx_on_air                          бит 5
+        mac_rx_en                          бит 6
+        reserved0                          бит 7
+        ppdu_event_counter                 биты 8..13
+        reserved1                          биты 14..15
+        cca_event_counter                  биты 16..21
+        reserved2                          биты 22..23
+        cca_ppdu_comp                      бит 24
+        reserved3                          биты 25..31
+[2] TSF_HIGH_R44
+  [0] dump___tsf_high
+[3] PPDU_MISC_2_R44
+  [0] dump___management_category_field
+        management_action_field            биты 8..15
+        network_table_index                биты 16..20
+        reserved0                          бит 21
+        addr_1_match_index_ext             бит 22
+        addr_2_match_index_ext             бит 23
+        pwr_mng                            бит 24
+        eosp                               бит 25
+        ra_in_addr2_lu_match               бит 26
+        ta_in_addr1_lu_match               бит 27
+        multicast_match_index              биты 28..30
+        multicast_match_valid              бит 31
+[4] EVENT3_STATUS_R44
+  [0] dump___event_status_reg
+[5] QUEUE_SET_1_4_STATUS
+        qid_selected_queue_set1            биты 0..5
+        reserved0                          бит 6
+        qset1_valid                        бит 7
+        qid_selected_queue_set2            биты 8..13
+        reserved1                          бит 14
+        qset2_valid                        бит 15
+        qid_selected_queue_set3            биты 16..21
+        reserved2                          бит 22
+        qset3_valid                        бит 23
+        qid_selected_queue_set4            биты 24..29
+        reserved3                          бит 30
+        qset4_valid                        бит 31
+[6] SP_STATUS_R44
+        sp_arr_write_ptr                   биты 0..4
+        reserved0                          биты 5..7
+        sp_arr_read_ptr                    биты 8..12
+        reserved1                          биты 13..14
+        cmd_valid                          бит 15
+        reserved2                          биты 16..30
+        sp_array_full                      бит 31
+[7] SP_START_TSF_R44
+  [0] dump___start_tsf_val
+[8] PHY_RX_PLCP_EDMG_LENGTH_R44
+        length                             биты 0..10
+        reserved0                          биты 11..31
+[9] PHY_RX_PLCP_EDMG_HDR1
+  [0] dump___mcs_msb
+        trn_length                         биты 16..23
+        rx_trn_up_tx_trn                   биты 24..31
+[10] PHY_RX_PLCP_EDMG_HDR2_R44
+        dcm_sqpsk                          бит 0
+        nuc                                бит 1
+        trn_unit_p                         биты 2..3
+        trn_unit_m                         биты 4..7
+        trn_unit_n                         биты 8..9
+        trn_subfield_seq_len               биты 10..11
+        trn_unit_rx_pattern                бит 12
+        beam_track_req                     бит 13
+        phase_hop                          бит 14
+        open_loop_precoding                бит 15
+        appdu                              бит 16
+        reserved0                          биты 17..31
+[11] PHY_RX_PLCP_EDMG_RESERVED_R44
+        phy_rx_plcp_edmg_header_reserved   биты 0..16
+        reserved0                          биты 17..31
+[12] PPDU_MISC_3_R44
+        qos_buffered_ac_field              биты 0..3
+        reserved0                          биты 4..31
+
+== R45
+[0] MTP_TX_PERMISSION_RESP
+  [0] dump___null_status
+        max_retry                          биты 8..15
+        retry_val                          биты 16..23
+        mng_data                           бит 24
+        bcq_ucq                            бит 25
+        reserved                           биты 26..30
+        valid                              бит 31
+[1] REMAINING_TIME_R45
+  [0] dump___remaining_time
+        less_than_min_session0             бит 16
+        less_than_min_session1             бит 17
+        less_than_min_session2             бит 18
+        less_than_min_session3             бит 19
+        remaining_time_sm_state            биты 20..21
+        reserved0                          биты 22..23
+        less_than_min_session4             бит 24
+        less_than_min_session5             бит 25
+        less_than_min_session6             бит 26
+        less_than_min_session7             бит 27
+        reserved1                          биты 28..31
+[2] REMAINING_BI_TIME
+        remaining_bi_usec                  биты 0..25
+        reserved0                          биты 26..31
+[3] PHY_SIGNALS_CCA_MONITOR
+        cca                                биты 0..2
+        phy_rx_frame                       бит 3
+        rx_on_air                          бит 4
+        tx_on_air                          бит 5
+        mac_rx_en                          бит 6
+        reserved0                          бит 7
+        ppdu_event_counter                 биты 8..13
+        reserved1                          биты 14..15
+        cca_event_counter                  биты 16..21
+        reserved2                          биты 22..23
+        cca_ppdu_comp                      бит 24
+        reserved3                          биты 25..31
+[4] PPDU_REPORT_MISC_R45
+        fc_retry                           бит 0
+        fc_more_data                       бит 1
+        fc_protected                       бит 2
+        qos_ac_constraint                  бит 3
+        addr3_my_bssid_match               бит 4
+        addr3_wild_bssid_match             бит 5
+        my_frame_match_indication          бит 6
+        my_neighbor_indication             бит 7
+        type_index                         биты 8..13
+        network_id_valid                   бит 14
+        zero_cdown                         бит 15
+        ds_type                            биты 16..17
+        network_id                         биты 18..19
+        tid                                биты 20..23
+        addr_1_match_ind                   биты 24..26
+        addr_1_match_valid                 бит 27
+        bssid_match_ind                    биты 28..29
+        reserved                           бит 30
+        bssid_match_valid                  бит 31
+[5] EVENT1_STATUS_R45
+        event_status_reg                   биты 0..23
+        reserved0                          биты 24..31
+[6] QUEUE_SET_5_8_STATUS_R45
+        qid_selected_queue_set5            биты 0..5
+        reserved0                          бит 6
+        qset5_valid                        бит 7
+        qid_selected_queue_set6            биты 8..13
+        reserved1                          бит 14
+        qset6_valid                        бит 15
+        qid_selected_queue_set7            биты 16..21
+        reserved2                          бит 22
+        qset7_valid                        бит 23
+        qid_selected_queue_set8            биты 24..29
+        reserved3                          бит 30
+        qset8_valid                        бит 31
+[7] EVENT5_STATUS_R45
+        event_status_reg                   биты 0..23
+        reserved0                          биты 24..31
+[8] SP_START_TSF_R45
+  [0] dump___start_tsf_val
+[9] SP_ORIGINAL_TSF_IN_PROCESS
+  [0] dump___SP_START_TSF_REGISTER
+[10] BEACON_INTERVAL_CONTROL1
+  [0] dump___value
+[11] BEACON_TIMESTAMP_FIELD_R45
+  [0] dump___value
+[12] MTP_DUR_RESULT_R45
+        mtp_result                         биты 0..30
+        result_valid                       бит 31
+[13] PHY_RX_PLCP_EDMG_HDR2_R45
+        dcm_sqpsk                          бит 0
+        nuc                                бит 1
+        trn_unit_p                         биты 2..3
+        trn_unit_m                         биты 4..7
+        trn_unit_n                         биты 8..9
+        trn_subfield_seq_len               биты 10..11
+        trn_unit_rx_pattern                бит 12
+        beam_track_req                     бит 13
+        phase_hop                          бит 14
+        open_loop_precoding                бит 15
+        appdu                              бит 16
+        reserved0                          биты 17..31
+[14] PPDU_MISC3_R45
+        qos_buffered_ac_field              биты 0..3
+        reserved                           биты 4..31
+
+== R46
+[0] MTP_TX_END_RESPONSE
+  [0] dump___duration
+        tx_queue                           бит 16
+        internal_tx                        бит 17
+        bar_tx                             бит 18
+        null_tx                            бит 19
+        internal_tx_type                   биты 20..25
+        reserved0                          биты 26..30
+        valid                              бит 31
+[1] PHY_PLCP_RX_SIGNALS_R46
+        mcs                                биты 0..4
+        add_ppdu                           бит 5
+        packet_type                        бит 6
+        beam_tracking_reg                  бит 7
+        trn_length                         биты 8..12
+        aggregation                        бит 13
+        reserved0                          бит 14
+        sifs_resp                          бит 15
+        reserved                           биты 16..19
+        rssi_fdbk                          биты 20..23
+        secondary_cca_sm_state             биты 24..26
+        secondary_cca_sampled_state        биты 27..29
+        edmg                               бит 30
+        valid                              бит 31
+[2] PPDU_REPORT_REGISTER_3
+        beacon_bitmap                      биты 0..2
+        beacon_qid                         биты 3..7
+        addr2_match_ind                    биты 8..10
+        addr2_match_valid                  бит 11
+        bap_en                             бит 12
+        mc_indication                      бит 13
+        bc_indication                      бит 14
+        rd                                 бит 15
+        requested_ack_policy               биты 16..17
+        announce_frame                     бит 18
+        probe_response                     бит 19
+        received_mcs                       биты 20..24
+        mpdu_agg                           бит 25
+        pwr_mng                            бит 26
+        sniffer_ind                        бит 27
+        neighbor_ind                       бит 28
+        fcs_field                          биты 29..30
+        ppdu_report_valid                  бит 31
+[3] TX_QUEUE_AVAILABILITY_VEC
+  [0] dump___value
+[4] EVENT_6_STATUS_REG
+  [0] dump___event_data_register
+[5] EVENT_ENGINE_4_STATUS_7_REG
+        event7_en_reg                      биты 0..23
+        command_code                       биты 24..31
+[6] SP_START_TSF_IN_PROCESS_REG
+  [0] dump___sp_start_tsf
+[7] BCON_INTERVAL_CTRL_2
+  [0] dump___value
+[8] BCON_TIMESTAMP_FIELD_R46
+  [0] dump___value
+[9] RX_SRC_ADDRESS_LOW
+  [0] dump___value
+[10] MTP_DUR_RESULT_REG_R46
+        mtp_result                         биты 0..30
+        result_valid                       бит 31
+[11] PHY_RX_PLCP_EDMG_RESERVED_R46
+        header_reserved                    биты 0..16
+        reserved                           биты 17..31
+[12] RBUFCAP_CALC_RESULT_REG_R46
+        flow_ctrl_byte_limit               биты 0..17
+        reserved0                          биты 18..19
+        rx_calc_done                       бит 20
+        tx_calc_done                       бит 21
+        reserved1                          биты 22..23
+        rx_rbufcap                         биты 24..31
+[13] NID_EVT_STATUS_REG_R46
+        tsf_nid_evt_status                 биты 0..3
+        bi1_nid_evt_status                 биты 4..7
+        bi2_nid_evt_status                 биты 8..11
+        tsf_fw_evt_status                  биты 12..15
+        reserved0                          биты 16..31
+
+== R47
+[0] DIRECT_TX_CMD_STATUS
+        cmd_ready                          бит 0
+        reserved0                          биты 1..7
+        available_space                    биты 8..15
+        reserved1                          биты 16..31
+[1] COUNTER_EVENT_STATUS
+        counter_interface_busy             бит 0
+        reserved0                          биты 1..31
+[2] LFSR_VAL
+  [0] dump___value
+[3] RFC_SWITCH_ERROR_STATUS
+        tx_analog_tx_on_error              бит 0
+        tx_analog_rx_off_error             бит 1
+        tx_phy_rx_enable_deassert_error    бит 2
+        tx_rf_awv_error                    бит 3
+        tx_tpc_mcs_cfg_err                 бит 4
+        tx_start_preamble_error            бит 5
+        reserved0                          биты 6..7
+        rx_analog_tx_off_error             бит 8
+        rx_analog_rx_on_error              бит 9
+        rx_phy_rx_enable_assert_error      бит 10
+        rx_rf_awv_error                    бит 11
+        reserved1                          биты 12..15
+        tx_plcp_late_error                 бит 16
+        rfc_access_busy                    бит 17
+        rfc_rd_response_valid              бит 18
+        rf_busy_error                      бит 19
+        reserved2                          биты 20..31
+[4] RFC_SWITCH2TX_STATUS
+        analog_tx_on_status                биты 0..3
+        analog_rx_off_status               биты 4..7
+        phy_rx_en_deassertion_status       биты 8..11
+        rf_awv_cfg_status                  биты 12..15
+        tpc_mcs_cfg_status                 биты 16..19
+        start_preamble_Status              биты 20..23
+        reserved0                          биты 24..31
+[5] RFC_SWITCH2RX_STATUS
+        analog_tx_off_status               биты 0..3
+        analog_rx_on_status                биты 4..7
+        phy_rx_en_assertion_status         биты 8..11
+        rx_awv_cfg_status                  биты 12..15
+        reserved0                          биты 16..31
+[6] RFC_READ_RESPONSE_DATA
+  [0] dump___value
+[7] MTP_PERMISSION_RESPONSE_2
+  [0] dump___first_mpdu_duration
+        responder_duration                 биты 16..31
+[8] MTP_AGGREGATION
+  [0] dump___aggregation_duration
+        reserved0                          биты 16..30
+        valid                              бит 31
+[9] PMC_STATUS
+        pmc_ready                          бит 0
+        reserved0                          биты 1..31
+[10] SP_CURR_CMD
+  [0] dump___cmd_scratch_pad
+        num_of_cycles                      биты 16..20
+        go_to                              биты 21..25
+        end_mask_ind                       биты 26..27
+        start_mask_ind                     биты 28..29
+        sp_cmd_type                        биты 30..31
+[11] SP_CURR_TSF
+  [0] dump___tsf_value
+[12] SP_EXTENSION_REGISTERS
+  [0] dump___reserved0
+[13] TRXSS_STATUS
+        txss_cdown                         биты 0..8
+        reserved0                          биты 9..11
+        txss_sm                            биты 12..14
+        reserved1                          бит 15
+        txss_lock_val                      биты 16..31
+[14] BACKDOOR_STATUS
+  [0] dump___backdoor_cnt
+        backdoor_sm_state                  биты 16..19
+        bf_op_valid                        бит 20
+        locked                             бит 21
+        reserved0                          биты 22..30
+        buff_select                        бит 31
+[15] SECTOR_CFG_STATUS
+        sector_cfg_state                   биты 0..2
+        reserved0                          биты 3..7
+        address                            биты 8..15
+        cnt_value                          биты 16..23
+        reserved1                          биты 24..30
+        operation_valid                    бит 31
+
+== R48
+[0] BEACON_INTERVAL_CTRL_LO32
+  [0] dump___beacon_interval_ctrl_lo32
+[1] BEACON_INTERVAL_CTRL_HI16
+  [0] dump___beacon_interval_ctr_hi16
+        reserved0                          биты 16..31
+[2] BEACON_TXSS_FIELD
+        beacon_txss_field                  биты 0..23
+        reserved0                          биты 24..31
+[3] BEACON_CAPABILITY_FIELD
+  [0] dump___capability
+        reserved0                          биты 8..31
+[4] BEACON_TIMESTAMP_FIELD_1
+  [0] dump___beacon_timestapm_field1
+[5] BEACON_TIMESTAMP_FIELD_2
+  [0] dump___beacon_timestamp_field2
+[6] BEACON_INTERVAL_RD
+  [0] dump___beacon_interval
+        reserved0                          биты 16..31
+[7] RECEIVED_DURATION
+  [0] dump___received_duration
+        reserved0                          биты 16..31
+[8] RX_SRC_ADDR_LOW
+  [0] dump___rx_src_addr_low
+[9] RX_SRC_ADDR_HIGH_R48
+  [0] dump___rx_src_addr_high
+        reserved0                          биты 16..31
+[10] RX_DEST_ADDR_LOW
+  [0] dump___rx_dest_addr_low
+[11] RX_DEST_ADDR_HIGH
+  [0] dump___rx_dest_addr_high
+        reserved0                          биты 16..31
+[12] MTP_BI_CTRL_OVERIDE_LO24
+        mtp_bi_ctrl_lo24                   биты 0..23
+        reserved0                          биты 24..31
+[13] MTP_BI_CTRL_OVERIDE_HI24
+        mtp_bi_ctrl_hi24                   биты 0..23
+        reserved0                          биты 24..31
+[14] MTP_SS_FIELD_OVERIDE
+        mtp_ss_field_overide               биты 0..23
+        reserved0                          биты 24..31
+[15] PPDU_MISC_2_R48
+        management_category_field          бит 0
+        management_action_field            бит 1
+        network_table_index                бит 2
+        reserved0                          бит 3
+        addr_1_match_index_ext             бит 4
+        addr_2_match_index_ext             бит 5
+        pwr_mng                            бит 6
+        eosp                               бит 7
+        ra_in_addr2_lu_match               бит 8
+        ta_in_addr1_lu_match               бит 9
+        multicast_match_index              бит 10
+        multicast_match_valid              биты 11..31
+
+== R49
+[0] EVENT_ENGINE2_STATUS
+        phy_rx_brp_frame_indicator_rx      бит 0
+        phy_rx_brp_stage_on_air_start      бит 1
+        phy_rx_rf_awv_toggle_go            бит 2
+        phy_tx_brp_stage_on_air_start      бит 3
+        phy_rx_brp_frame_indicator_tx      бит 4
+        phy_rx_brp_done                    бит 5
+        phy_mac_status_pulse_6_11          биты 6..11
+        phy_rx_pre_frame                   бит 12
+        phy_rx_brp_stage_on_air            бит 13
+        phy_mac_status_2_11                биты 14..23
+        reserved0                          биты 24..31
+[1] QUEUE_SEL_STATUS_R49
+  [0] dump___requested_queue_set_bitmap
+        lowest_queue_set_found             биты 8..11
+        reserved0                          биты 12..15
+        qid_for_found_queue_set            биты 16..21
+        reserved1                          биты 22..31
+[2] EVENT_ENGINE_4_STATUS_8_R49
+        event7_en_reg                      биты 0..23
+        command_code                       биты 24..31
+[3] NAV_MAX
+  [0] dump___nav_max_clk
+        nav_max_usec                       биты 8..15
+        reserved0                          биты 16..31
+[4] PHY_PLCP_RX_LEN_R49
+        phy_rx_plcp_length                 биты 0..17
+        reserved0                          биты 18..23
+        phy_rx_plcp_descrambler_seed       биты 24..30
+        reserved1                          бит 31
+[5] NAV_COUNTER_VAL_ENTRY0
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[6] NAV_COUNTER_VAL_ENTRY1
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[7] NAV_COUNTER_VAL_ENTRY2
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[8] NAV_COUNTER_VAL_ENTRY3
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[9] NAV_COUNTER_VAL_ENTRY4
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[10] NAV_COUNTER_VAL_ENTRY5
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[11] NAV_COUNTER_VAL_ENTRY6
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[12] NAV_COUNTER_VAL_ENTRY7
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[13] RX_SRC_ADDR_HIGH_R49
+  [0] dump___value
+
+== R50
+[0] MTP_QH_SCRATCHPAD
+  [0] dump___qh_scratchpad
+[1] BF_METRIC_R50
+  [0] dump___bf_metric
+[2] PPDU_REPORT_1_R50
+        ack_detected                       бит 0
+        qos_data_detected                  бит 1
+        mgmt_detected                      бит 2
+        reservation_detected               бит 3
+        dynamic_detected                   бит 4
+        cfg_detected                       бит 5
+        ss_detected                        бит 6
+        beacon_detected                    бит 7
+        imm_ack                            бит 8
+        back                               бит 9
+        reserved0                          бит 10
+        ack_qid                            биты 11..15
+        qos_data_frame_detected            бит 16
+        qos_null_frame_detected            бит 17
+        back_request_frame_detected        бит 18
+        data_frame_qid                     биты 19..23
+        mgmt_frame_detected                бит 24
+        no_action_mgmt_detected            бит 25
+        reserved1                          бит 26
+        mgmt_frame_qid                     биты 27..31
+[3] QUEUE_SEL_FOUND_SET1_4_R50
+        qid_selected_queue_set1            биты 0..5
+        reserved0                          бит 6
+        qset1_valid                        бит 7
+        qid_selected_queue_set2            биты 8..13
+        reserved1                          бит 14
+        qset2_valid                        бит 15
+        qid_selected_queue_set3            биты 16..21
+        reserved2                          бит 22
+        qset3_valid                        бит 23
+        qid_selected_queue_set4            биты 24..29
+        reserved3                          бит 30
+        qset4_valid                        бит 31
+[4] SP_DIRECT_CMD_R50
+  [0] dump___tsf_val
+[5] EARLY_MPDU_REPORT_1
+        addr1_match                        бит 0
+        addr2_match                        бит 1
+        bssid_match                        бит 2
+        nid_match                          бит 3
+        type_index                         биты 4..9
+        forward_drop                       бит 10
+        multicast                          бит 11
+        addr1_index                        биты 12..14
+        broadcast                          бит 15
+        addr2_index                        биты 16..19
+        bssid_index                        биты 20..22
+        reserved0                          бит 23
+        nid                                биты 24..25
+        reserved1                          биты 26..30
+        early_mpdu_report_valid            бит 31
+[6] NAV_CAPTURED_REPORT
+  [0] dump___nav_capture_clk
+        nav_counter_usec                   биты 8..23
+        reserved0                          биты 24..31
+[7] NAV_DA_LOW_ENTRY0
+  [0] dump___da_low
+[8] NAV_DA_LOW_ENTRY1
+  [0] dump___da_low
+[9] NAV_DA_LOW_ENTRY2
+  [0] dump___da_low
+[10] NAV_DA_LOW_ENTRY3
+  [0] dump___da_low
+[11] NAV_DA_LOW_ENTRY4
+  [0] dump___da_low
+[12] NAV_DA_LOW_ENTRY5
+  [0] dump___da_low
+[13] NAV_DA_LOW_ENTRY6
+  [0] dump___da_low
+[14] NAV_DA_LOW_ENTRY7
+  [0] dump___da_low
+[15] DEST_ADDR_LOW
+  [0] dump___val
+
+== R51
+[0] MTP_DESCRIPTOR_SCRATCHPAD
+  [0] dump___desc_sceatchpad
+[1] BO_IFS_STATUS_R51
+        idle_detect                        биты 0..2
+        nav_active                         бит 3
+        pending_ac_for_transmission        биты 4..7
+        nav_active_bus                     биты 8..15
+        remaining_slot_ac1                 биты 16..19
+        remaining_slot_ac2                 биты 20..23
+        remaining_slot_ac3                 биты 24..27
+        remaining_slot_ac4                 биты 28..31
+[2] PPDU_REPORT_2_R51
+        reservation_bitmap                 биты 0..2
+        reservation_qid                    биты 3..7
+        dynamic_bitmap                     биты 8..10
+        dynamic_qid                        биты 11..15
+        cfg_cfend_bitmap                   биты 16..18
+        cfg_qid                            биты 19..23
+        sector_sweep_bitmap                биты 24..26
+        sector_sweep_qid                   биты 27..31
+[3] QUEUE_SET_5_8_STATUS_R51
+        qid_selected_qset5                 биты 0..5
+        reserved0                          бит 6
+        qset5_valid                        бит 7
+        qid_selected_qset6                 биты 8..13
+        reserved1                          бит 14
+        qset6_valid                        бит 15
+        qid_selected_qset7                 биты 16..21
+        reserved2                          бит 22
+        qset7_valid                        бит 23
+        qid_selected_qset8                 биты 24..29
+        reserved3                          бит 30
+        qset8_valid                        бит 31
+[4] SP_DIRECT_CMD_R51
+  [0] dump___start_tsf_val
+[5] EARLY_MPDU_REPORT
+  [0] dump___mpdu_duration
+        reserved                           биты 16..31
+[6] NAV_TEMP_COUNTER
+  [0] dump___nav_temp_clk_value
+        nav_temp_counter_usec              биты 8..17
+        reserved0                          биты 18..31
+[7] NAV_SA_LOW_ENTRY0
+  [0] dump___sa_low
+[8] NAV_SA_LOW_ENTRY1
+  [0] dump___sa_low
+[9] NAV_SA_LOW_ENTRY2
+  [0] dump___sa_low
+[10] NAV_SA_LOW_ENTRY3
+  [0] dump___sa_low
+[11] NAV_SA_LOW_ENTRY4
+  [0] dump___sa_low
+[12] NAV_SA_LOW_ENTRY5
+  [0] dump___sa_low
+[13] NAV_SA_LOW_ENTRY6
+  [0] dump___sa_low
+[14] NAV_SA_LOW_ENTRY7
+  [0] dump___sa_low
+[15] DEST_ADDR_HIGH
+  [0] dump___addr
+
+== R53
+[0] BAP_IF_0
+        bap_tx_update_ind                  бит 0
+        bap_sxd_db_update_ind              бит 1
+        bap_rel_done_ind                   бит 2
+        bap_rx_update_ind                  бит 3
+        bap_tx_up_status                   бит 4
+        bap_rx_up_status                   бит 5
+        reserved0                          биты 6..7
+        num_of_tx_pkts                     биты 8..14
+        reserved1                          бит 15
+        num_of_non_acked_pkts              биты 16..22
+        reserved2                          биты 23..31
+[1] RE_TX_QUEUE_AVAIL_VEC
+  [0] dump___value
+[2] NAV_REPORT_R53
+        max_nav_entry                      биты 0..2
+        max_entry_valid                    бит 3
+        max_captured_entry                 биты 4..6
+        max_captured_entry_valid           бит 7
+        last_nav_update_bitmap             биты 8..15
+        unmask_nav_active                  биты 16..23
+        nav_active                         биты 24..31
+[3] BCON_INTERVAL
+  [0] dump___value
+[4] DURATION
+  [0] dump___value
+[5] BCON_TXSS_FIELD
+  [0] dump___value
+[6] RFC_CAFE_DUAL_CHIP_STATUS_R53
+  [0] dump___dual_chip_status
+        rfc_mac_rd_radio_status            биты 16..23
+        reserved0                          биты 24..31
+[7] RBUFCAP_CALC_RESULT_R53
+        flow_ctrl_byte_limit               биты 0..17
+        reserved0                          биты 18..19
+        rx_calc_done                       бит 20
+        tx_calc_done                       бит 21
+        reserved1                          биты 22..23
+        rx_rbufcap                         биты 24..31
+[8] NID_EVT_STATUS_R53
+        tsf_nid_evt_status                 биты 0..3
+        bi1_nid_evt_status                 биты 4..7
+        bi2_nid_evt_status                 биты 8..11
+        tsf_fw_evt_status                  биты 12..15
+        reserved0                          биты 16..31
+
+== R54
+[0] EVENT4_STATUS
+        txss_end_ind                       бит 0
+        rxss_bf_metric_ind                 бит 1
+        rxss_measurement_ind               бит 2
+        rxss_timeout_ind                   бит 3
+        service_period_0_ind               бит 4
+        rxss_last_cycle_ind                бит 5
+        gp0_end_ind                        бит 6
+        gp1_end_ind                        бит 7
+        gp2_end_ind                        бит 8
+        nav_ind                            бит 9
+        backdoor_toggle_ind                бит 10
+        backdoor_lock_ind                  бит 11
+        service_period_1_ind               бит 12
+        service_period_2_ind               бит 13
+        service_period_3_ind               бит 14
+        ext_gp_0_1_2_end_ind               бит 15
+        ext_gp_3_4_5_end_ind               бит 16
+        ext_gp_6_7_8_9_end_ind             бит 17
+        brp_tx_ind                         бит 18
+        reserved0                          биты 19..31
+[1] EVENT5_STATUS_R54
+        txss_end_ind                       бит 0
+        rxss_bf_metric_ind                 бит 1
+        rxss_measurement_ind               бит 2
+        rxss_timeout_ind                   бит 3
+        service_period_ind                 бит 4
+        rxss_last_cycle_ind                бит 5
+        gp0_end_ind                        бит 6
+        gp1_end_ind                        бит 7
+        gp2_end_ind                        бит 8
+        nav_ind                            бит 9
+        backdoor_toggle_ind                бит 10
+        backdoor_lock_ind                  бит 11
+        service_period_1_ind               бит 12
+        service_period_2_ind               бит 13
+        service_period_3_ind               бит 14
+        ext_gp_0_1_2_end_ind               бит 15
+        ext_gp_3_4_5_end_ind               бит 16
+        ext_gp_6_7_8_9_end_ind             бит 17
+        brp_tx_ind                         бит 18
+        reserved0                          биты 19..31
+[2] EVENT6_STATUS
+        txss_end_ind                       бит 0
+        rxss_bf_metric_ind                 бит 1
+        rxss_measurement_ind               бит 2
+        rxss_timeout_ind                   бит 3
+        service_period_ind                 бит 4
+        rxss_last_cycle_ind                бит 5
+        gp0_end_ind                        бит 6
+        gp1_end_ind                        бит 7
+        gp2_end_ind                        бит 8
+        nav_ind                            бит 9
+        backdoor_toggle_ind                бит 10
+        backdoor_lock_ind                  бит 11
+        service_period_1_ind               бит 12
+        service_period_2_ind               бит 13
+        service_period_3_ind               бит 14
+        ext_gp_0_1_2_end_ind               бит 15
+        ext_gp_3_4_5_end_ind               бит 16
+        ext_gp_6_7_8_9_end_ind             бит 17
+        brp_tx_ind                         бит 18
+        reserved0                          биты 19..31
+[3] EVENT_ENGINE_4_STATUS_8_R54
+        gp0_expired_event                  бит 0
+        gp1_expired_event                  бит 1
+        gp2_expired_event                  бит 2
+        gp3_expired_event                  бит 3
+        gp4_expired_event                  бит 4
+        gp5_expired_event                  бит 5
+        gp6_expired_event                  бит 6
+        gp7_expired_event                  бит 7
+        gp8_expired_event                  бит 8
+        gp9_expired_event                  бит 9
+        rx_ppdu_timeout                    бит 10
+        early_ppdu_report_indication       бит 11
+        early_mpdu_rep_indication          бит 12
+        abort_flush_indication             бит 13
+        rx_frame_edmg                      бит 14
+        tsf_nid_event                      бит 15
+        bi1_nid_event                      бит 16
+        bi2_nid_event                      бит 17
+        reserved0                          биты 18..23
+        cmd                                биты 24..31
+[4] SP_DIRECT_CMD_R54
+  [0] dump___cmd_scratchpad
+        num_of_cycles                      биты 16..20
+        go_to                              биты 21..25
+        end_mask_ind                       биты 26..27
+        start_mask_ind                     биты 28..29
+        sp_cmd_type                        биты 30..31
+[5] PM_ABORTS_STATUS
+        mac_abort_done                     бит 0
+        phy_abort_done                     бит 1
+        reserved                           биты 2..15
+        abort_byte_flush_counter           биты 16..31
+[6] NAV_QUERY_REPORT
+  [0] dump___sa_src_vec
+        sa_dst_vec                         биты 8..15
+        da_src_vec                         биты 16..23
+        da_dst_vec                         биты 24..31
+[7] NAV_REPORT_R54
+        max_nav_entry                      биты 0..2
+        max_entry_valid                    бит 3
+        max_captured_entry                 биты 4..6
+        max_captured_entry_valid           бит 7
+        last_nav_update_bitmap             биты 8..15
+        unmask_nav_active                  биты 16..23
+        nav_active                         биты 24..31
+[8] BCON_CAPABILITY_FIELD
+  [0] dump___value
+[9] RFC_CAFE_DUAL_CHIP_STATUS_R54
+  [0] dump___dual_chip_status
+        rfc_mac_rd_radio_status            биты 16..23
+        reserved0                          биты 24..31
+[10] BAR_PARAMETER_R54
+  [0] dump___ba_control
+        reserved0                          биты 16..30
+        bar_valid                          бит 31
+[11] BACK_PARAMETER_R54
+  [0] dump___ba_control
+        rx_rbufcap                         биты 16..23
+        reserved0                          биты 24..29
+        rcap_valid                         бит 30
+        bar_valid                          бит 31
+
+== R55
+[0] SIFS_CNT
+  [0] dump___clks
+        usec                               биты 8..15
+        reserved0                          биты 16..31
+[1] AC_5_6_PENDING_SLOTS
+        ac_5_pending_slots                 биты 0..9
+        reserved0                          биты 10..15
+        ac_6_pending_slots                 биты 16..25
+        reserved1                          биты 26..31
+[2] AC_7_8_PENDING_SLOTS
+        ac_7_pending_slots                 биты 0..9
+        reserved0                          биты 10..15
+        ac_8_pending_slots                 биты 16..25
+        reserved1                          биты 26..31
+[3] G2_REMAINING_TIME
+  [0] dump___remaining_time
+        less_than_min_session_0            бит 16
+        less_than_min_session_1            бит 17
+        less_than_min_session_2            бит 18
+        less_than_min_session_3            бит 19
+        remaining_time_sm_state            биты 20..21
+        reserved0                          биты 22..23
+        less_than_min_session_4            бит 24
+        less_than_min_session_5            бит 25
+        less_than_min_session_6            бит 26
+        less_than_min_session_7            бит 27
+        reserved1                          биты 28..31
+[4] G2_BI_COUNT
+        bi_counter_usec                    биты 0..25
+        reserved0                          биты 26..30
+        bi_sync                            бит 31
+[5] G2_TSF_LOW
+  [0] dump___val
+[6] G2_TSF_HIGH
+  [0] dump___val
+[7] G2_REMAINING_BI
+        remaining_bi_usec                  биты 0..25
+        reserved0                          биты 26..31
+[8] GP_CLK0_TIMER
+        val                                биты 0..23
+        reserved0                          биты 24..31
+[9] GP_CLK1_TIMER
+        val                                биты 0..23
+        reserved0                          биты 24..31
+[10] GP_CLK2_TIMER
+        val                                биты 0..23
+        reserved0                          биты 24..31
+[11] BAR_PARAMETER_R55
+  [0] dump___ba_control
+        reserved0                          биты 16..30
+        bar_valid                          бит 31
+[12] BACK_PARAMETER_R55
+  [0] dump___ba_control
+        rx_rbufcap                         биты 16..23
+        reserved0                          биты 24..29
+        rcap_valid                         бит 30
+        bar_valid                          бит 31
+
+== R56
+[0] NAV_COUNTER_VALUE_ENTRY_0
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[1] NAV_DA_LOW_ENTRY_0
+  [0] dump___da_low
+[2] NAV_SA_LOW_ENTRY_0
+  [0] dump___sa_low
+[3] NAV_DA_SA_HIGH_ENTRY_0
+  [0] dump___da_high
+        sa_high                            биты 16..31
+[4] NAV_COUNTER_VALUE_ENTRY_1
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[5] NAV_DA_LOW_ENTRY_1
+  [0] dump___da_low
+[6] NAV_SA_LOW_ENTRY_1
+  [0] dump___sa_low
+[7] NAV_DA_SA_HIGH_ENTRY_1
+  [0] dump___da_high
+        sa_high                            биты 16..31
+[8] NAV_COUNTER_VALUE_ENTRY_2
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[9] NAV_DA_LOW_ENTRY_2
+  [0] dump___da_low
+[10] NAV_SA_LOW_ENTRY_2
+  [0] dump___sa_low
+[11] NAV_DA_SA_HIGH_ENTRY_2
+  [0] dump___da_high
+        sa_high                            биты 16..31
+[12] NAV_COUNTER_VALUE_ENTRY_3
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[13] NAV_DA_LOW_ENTRY_3
+  [0] dump___da_low
+[14] NAV_SA_LOW_ENTRY_3
+  [0] dump___sa_low
+[15] NAV_DA_SA_HIGH_ENTRY_3
+  [0] dump___da_high
+        sa_high                            биты 16..31
+[16] NAV_COUNTER_VALUE_ENTRY_4
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[17] NAV_DA_LOW_ENTRY_4
+  [0] dump___da_low
+[18] NAV_SA_LOW_ENTRY_4
+  [0] dump___sa_low
+[19] NAV_DA_SA_HIGH_ENTRY_4
+  [0] dump___da_high
+        sa_high                            биты 16..31
+[20] NAV_COUNTER_VALUE_ENTRY_5
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[21] NAV_DA_LOW_ENTRY_5
+  [0] dump___da_low
+[22] NAV_SA_LOW_ENTRY_5
+  [0] dump___sa_low
+[23] NAV_DA_SA_HIGH_ENTRY_5
+  [0] dump___da_high
+        sa_high                            биты 16..31
+[24] NAV_COUNTER_VALUE_ENTRY_6
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[25] NAV_DA_LOW_ENTRY_6
+  [0] dump___da_low
+[26] NAV_SA_LOW_ENTRY_6
+  [0] dump___sa_low
+[27] NAV_DA_SA_HIGH_ENTRY_6
+  [0] dump___da_high
+        sa_high                            биты 16..31
+[28] NAV_COUNTER_VALUE_ENTRY_7
+  [0] dump___nav_counter_clk
+        nav_counter_usec                   биты 16..23
+        reserved0                          биты 24..30
+        nav_valid                          бит 31
+[29] NAV_DA_LOW_ENTRY_7
+  [0] dump___da_low
+[30] NAV_SA_LOW_ENTRY_7
+  [0] dump___sa_low
+[31] NAV_DA_SA_HIGH_ENTRY_7
+  [0] dump___da_high
+        sa_high                            биты 16..31
+
+== AC_PENDING_EXTENSION_R40
+[0] AC56_PENDING
+        ac_5_pending_slots                 биты 0..9
+        reserved0                          биты 10..15
+        ac_6_pending_slots                 биты 16..25
+        reserved1                          биты 26..31
+[1] AC78_PENDING
+        ac_7_pending_slots                 биты 0..9
+        reserved0                          биты 10..15
+        ac_8_pending_slots                 биты 16..25
+        reserved1                          биты 26..31
+
+== SP_EXTENSION_R47
+[0] SP_STATUS
+        sp_array_write_pointer             биты 0..4
+        reserved0                          биты 5..7
+        sp_array_read_pointer              биты 8..12
+        reserved1                          биты 13..14
+        cmd_valid                          бит 15
+        reserved2                          биты 16..30
+        sp_array_full                      бит 31
+[1] SP_START_TSF
+  [0] dump___start_tsf_value

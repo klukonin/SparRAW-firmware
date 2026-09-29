@@ -1,0 +1,21 @@
+fw: Reassociation Request/Response от соседа не роняет прошивку
+
+rx_mgmt_srvs__distribute шлёт подтипы 0..3 и 10 в rx_pkt_handler; тот
+знает Assoc Req/Resp и Disassoc, а на Reassoc Req/Resp (2, 3) печатал
+«Unknown stype» и звал fw_sysassert_fatal.  Теперь кадр отбрасывается
+штатной веткой освобождения (0x8e3e20), запись в журнале остаётся.
+Обработка переассоциации по стандарту — отдельно.
+--- a/src/asm/fw/_unknown/rx_pkt_handler.S
++++ b/src/asm/fw/_unknown/rx_pkt_handler.S
+@@ -366,7 +366,10 @@ L_8e3efe:
+ L_8e3f00:
+ 	mov_s r1,0x9
+ L_8e3f02:
+-	bl.d L_8c9b28
++	/* 6.4: вместо fw_sysassert_fatal — отбросить кадр (ветка 0x8e3e20).
++	 * Сюда распределитель шлёт только Reassociation Request/Response:
++	 * в 6.2 такой кадр от подключённого соседа ронял прошивку. */
++	b L_8e3e20
+ L_8e3f06:
+ 	asl_s r1,r1,0x9
+ 	.global L_8e3f08

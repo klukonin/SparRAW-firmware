@@ -1,0 +1,101 @@
+# Кандидаты в перемещения uc (tools/reloc_audit.py).
+# источник  место  значение  цель  уверенность  почему
+code 0x920a28 0x003e8 uc_divmod_signed                                   low  малое значение
+code 0x924df6 0x04e9c bf_req__claim_and_report_2b                        high цель без прямых вызовов
+code 0x926ae2 0x02514 brp_initiator_brp_transaction_flow                 mid  иммедиат
+code 0x926aea 0x02716 brp_initiator_brp_transaction_flow+0x202           mid  внутрь блока
+code 0x928146 0x081f8 bf_req__claim_and_report_23                        high цель без прямых вызовов
+code 0x92979e 0x012da bi_rx__start_rx_window+0x22a                       mid  внутрь блока
+code 0x929de6 0x10100 rs_start+0x14                                      mid  внутрь блока
+code 0x92cdfc 0x06002 vring__disconnect_flush+0x376                      mid  внутрь блока
+code 0x92e6d0 0x003e8 uc_divmod_signed                                   low  малое значение
+code 0x92f5e0 0x012f0 bi_rx__start_rx_window+0x240                       mid  внутрь блока
+code 0x92f6bc 0x012f0 bi_rx__start_rx_window+0x240                       mid  внутрь блока
+code 0x936218 0x00664 uc_isr_l1_task2                                    high цель без прямых вызовов
+code 0x93b920 0x002ac __ld_r13_to_r13_ret                                low  малое значение
+code 0x93c530 0x1b39c abft__send_ssw_feedback                            mid  иммедиат
+data 0x800618 0x003e8 uc_divmod_signed                                   low  малое значение
+data 0x800647 0x02200 bi_manager_step_a+0x74                             low  невыровнено, внутрь блока
+data 0x800699 0x00244 __ld_gp_to_r13_ret                                 low  невыровнено, малое значение
+data 0x8006b5 0x10100 rs_start+0x14                                      low  невыровнено, внутрь блока
+data 0x80073b 0x02200 bi_manager_step_a+0x74                             low  невыровнено, внутрь блока
+data 0x80074b 0x10100 rs_start+0x14                                      low  невыровнено, внутрь блока
+data 0x8008b0 0x00114 boot_uc__init_structs                              high цель без прямых вызовов
+data 0x8015dc 0x15b4c bi_sm__action_935b4c                               high таблица автомата
+data 0x8015e1 0x0646c bi_sm__action_92646c                               high таблица автомата
+data 0x8015e6 0x15b4c bi_sm__action_935b4c                               high таблица автомата
+data 0x8015eb 0x0156c bi_sm__action_92156c                               high таблица автомата
+data 0x8015f0 0x15a08 bi_sm__action_935a08                               high таблица автомата
+data 0x8015f5 0x0646c bi_sm__action_92646c                               high таблица автомата
+data 0x8015fa 0x062e8 bi_sm__action_9262e8                               high таблица автомата
+data 0x8015ff 0x0646c bi_sm__action_92646c                               high таблица автомата
+data 0x801604 0x15d0c bi_sm__action_935d0c                               high таблица автомата
+data 0x801609 0x15d0c bi_sm__action_935d0c                               high таблица автомата
+data 0x80160e 0x062e8 bi_sm__action_9262e8                               high таблица автомата
+data 0x801613 0x0153c bi_sm__action_92153c                               high таблица автомата
+data 0x801618 0x15a94 bi_sm__action_935a94                               high таблица автомата
+data 0x80161d 0x15a94 bi_sm__action_935a94                               high таблица автомата
+data 0x801622 0x062e8 bi_sm__action_9262e8                               high таблица автомата
+data 0x801627 0x0150c bi_sm__action_92150c                               high таблица автомата
+data 0x80162c 0x03a5c bi_sm__action_923a5c                               high таблица автомата
+data 0x801631 0x0646c bi_sm__action_92646c                               high таблица автомата
+data 0x801636 0x062e8 bi_sm__action_9262e8                               high таблица автомата
+data 0x80163b 0x15d0c bi_sm__action_935d0c                               high таблица автомата
+data 0x80170c 0x00228 __st_r17_to_r13                                    low  малое значение
+data 0x8017a4 0x003e8 uc_divmod_signed                                   low  малое значение
+data 0x8017b3 0x05050 config_brp_rf                                      low  невыровнено
+data 0x8017f4 0x04298 qh__pack_descriptor+0x8c                           mid  внутрь блока
+data 0x801863 0x00a00 uc_list__insert_by_prio                            low  невыровнено
+data 0x801873 0x01900 sta__reset_link_state                              low  невыровнено
+data 0x8018b4 0x003e8 uc_divmod_signed                                   low  малое значение
+data 0x80194c 0x11108 rx_flow__run+0x334                                 high серия указателей, внутрь блока
+data 0x801950 0x11108 rx_flow__run+0x334                                 high серия указателей, внутрь блока
+data 0x801954 0x11218 rx_flow__run+0x444                                 high серия указателей, внутрь блока
+data 0x801958 0x11108 rx_flow__run+0x334                                 high серия указателей, внутрь блока
+data 0x80195c 0x12d98 rx_flow__handle_frame+0xe94                        high серия указателей, внутрь блока
+data 0x80196c 0x12d8c rx_flow__handle_frame+0xe88                        high серия указателей, внутрь блока
+data 0x801970 0x12d8c rx_flow__handle_frame+0xe88                        high серия указателей, внутрь блока
+data 0x801974 0x12d8c rx_flow__handle_frame+0xe88                        high серия указателей, внутрь блока
+data 0x80198c 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     mid  внутрь блока
+data 0x801994 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x801998 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x80199c 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x8019a4 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x8019a8 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x8019ac 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x8019b0 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x8019b4 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x8019b8 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x8019bc 0x136c8 rx__dispatch_by_g_8005f8+0x2cc                     high серия указателей, внутрь блока
+data 0x801ab0 0x0da60 mtp_service__dispatch+0x8c                         mid  внутрь блока
+data 0x801ab8 0x0da60 mtp_service__dispatch+0x8c                         mid  внутрь блока
+data 0x801afa 0x04954 bf__reset_sta_slot+0x108                           low  невыровнено, внутрь блока
+data 0x801b1a 0x04954 bf__reset_sta_slot+0x108                           low  невыровнено, внутрь блока
+data 0x801b90 0x04954 bf__reset_sta_slot+0x108                           mid  внутрь блока
+data 0x801bb4 0x0e81c bi__bti_timer_step+0x54                            mid  внутрь блока
+data 0x801bd0 0x0b838 bti__dispatch_sweep_step+0x5c                      mid  внутрь блока
+vec  0x920000 0x00160 uc_vector_00                                       high таблица векторов
+vec  0x920008 0x008f8 uc_vector_01                                       high таблица векторов
+vec  0x920010 0x004bc uc_vector_02                                       high таблица векторов
+vec  0x920018 0x0b89c uc_vector_03                                       high таблица векторов
+vec  0x920020 0x007b0 uc_vector_04                                       high таблица векторов
+vec  0x920028 0x007b4 uc_vector_05                                       high таблица векторов
+vec  0x920030 0x007b8 uc_vector_06                                       high таблица векторов
+vec  0x920038 0x0b938 uc_isr_l2_task3                                    high таблица векторов
+vec  0x920040 0x007c0 uc_isr_l1_task0                                    high таблица векторов
+vec  0x920048 0x0085c uc_vector_09                                       high таблица векторов
+vec  0x920050 0x005c4 uc_vector_10                                       high таблица векторов
+vec  0x920058 0x00660 uc_vector_11                                       high таблица векторов
+vec  0x920060 0x00664 uc_isr_l1_task2                                    high таблица векторов
+vec  0x920068 0x00700 uc_vector_13                                       high таблица векторов
+vec  0x920070 0x00704 uc_isr_l2_task2                                    high таблица векторов
+vec  0x920078 0x007a0 uc_vector_15                                       high таблица векторов
+vec  0x920080 0x007a4 uc_vector_16                                       high таблица векторов
+vec  0x920088 0x007a8 uc_vector_17                                       high таблица векторов
+vec  0x920090 0x007ac uc_vector_18                                       high таблица векторов
+vec  0x920098 0x1eca4 uc_vector_19                                       high таблица векторов
+
+# блоки без прямых вызовов, без проваливания и без указателя (3):
+#   0x920204 __st_gp_to_r13
+#   0x9209e0 timer_list__init
+#   0x92e7c8 bi__bti_timer_step

@@ -1,0 +1,33 @@
+uc: приём ATIM отмечается для выхода станции из UPM-doze
+
+Оба места, где ucode учитывает принятый ATIM (юникаст в
+rx_get_required_response, широковещательный в rx_flow__handle_frame),
+зовут peer_masks__apply_op(ctx, 3, маска) через обёртку upm__on_atim_rx:
+она ставит флаг, по которому станция в начале DTI выходит из doze
+(802.11-2020 11.2.7.4).  Длина команды та же, код не сдвигается.
+--- a/src/asm/uc/_unknown/rx_get_required_response.S
++++ b/src/asm/uc/_unknown/rx_get_required_response.S
+@@ -365,7 +365,9 @@ L_93310c:
+ L_933114:
+ 	asl r2,0x1,r5
+ L_93311c:
+-	bl.d L_934bb0
++	/* 6.4: приём ATIM — через upm__on_atim_rx (флаг для выхода из UPM-doze,
++	 * src/c/uc/new/upm_wake.cpp), дальше тот же peer_masks__apply_op */
++	bl.d upm__on_atim_rx
+ L_933120:
+ 	mov r1,0x3
+ L_933124:
+--- a/src/asm/uc/rx_flow/rx_flow__handle_frame.S
++++ b/src/asm/uc/rx_flow/rx_flow__handle_frame.S
+@@ -1513,7 +1513,9 @@ L_932a48:
+ L_932a4c:
+ 	mov r1,0x3
+ L_932a50:
+-	bl.d L_934bb0
++	/* 6.4: приём ATIM — через upm__on_atim_rx (флаг для выхода из UPM-doze,
++	 * src/c/uc/new/upm_wake.cpp), дальше тот же peer_masks__apply_op */
++	bl.d upm__on_atim_rx
+ L_932a54:
+ 	asl r2,r2,0x8
+ L_932a58:

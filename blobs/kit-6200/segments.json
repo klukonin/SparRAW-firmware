@@ -1,0 +1,51 @@
+[
+ {
+  "addr": 9175040,
+  "file": "seg_008c0000.bin",
+  "size": 247140,
+  "region": "fw_code",
+  "exec": true
+ },
+ {
+  "addr": 9437184,
+  "file": "seg_00900000.bin",
+  "size": 26908,
+  "region": "fw_data",
+  "exec": false
+ },
+ {
+  "addr": 9568256,
+  "file": "seg_00920000.bin",
+  "size": 126148,
+  "region": "uc_code",
+  "exec": true
+ },
+ {
+  "addr": 9699328,
+  "file": "seg_00940000.bin",
+  "size": 7144,
+  "region": "uc_data",
+  "exec": false
+ },
+ {
+  "addr": 8954376,
+  "file": "seg_0088a208.bin",
+  "size": 1024,
+  "region": "AGC_tbl",
+  "exec": false
+ },
+ {
+  "addr": 8955400,
+  "file": "seg_0088a608.bin",
+  "size": 2048,
+  "region": "AGC_tbl",
+  "exec": false
+ },
+ {
+  "addr": 8953860,
+  "file": "seg_0088a004.bin",
+  "size": 512,
+  "region": "AGC_tbl",
+  "exec": false
+ }
+]

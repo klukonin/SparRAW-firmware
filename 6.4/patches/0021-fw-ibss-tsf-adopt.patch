@@ -1,0 +1,20 @@
+fw: DMG IBSS — принять более поздний TSF соседа (11.1.5)
+
+В ветке «свой BSS» dmg_bcon__rx_handler вызов mid_list__find_by
+переведён на ibss_tsf__on_own_beacon (src/c/fw/new/ibss_tsf.cpp): у члена
+IBSS Timestamp маяка ячейки (BSS Type 1, без Discovery Mode) сравнивается
+со своим TSF и при «позже» загружается mac__reload_tsf64; затем штатный
+поиск.  Только прошивка mesh.
+--- a/src/asm/fw/_unknown/dmg_bcon__rx_handler.S
++++ b/src/asm/fw/_unknown/dmg_bcon__rx_handler.S
+@@ -331,7 +331,9 @@ L_8c95b0:
+ 	/* add_s r1,0x4 */
+ 	.byte 0x04,0xe1
+ L_8c95b2:
+-	bl.d L_8cc024
++	/* 6.4 mesh: маяк своей ячейки — принять более поздний TSF (11.1.5),
++	 * затем штатный mid_list__find_by (src/c/fw/new/ibss_tsf.cpp) */
++	bl.d ibss_tsf__on_own_beacon_entry
+ L_8c95b6:
+ 	ld_s r0,[r13,0x4]
+ L_8c95b8:

@@ -1,0 +1,165 @@
+/* fw_vector_table @ 0x8c0000, 288 байт.  Сгенерировано gen_asm_tree.py
+ * из дизассемблированной прошивки fw_code.  Заменяется на C/C++
+ * по мере декомпиляции; сборка сверяется с оригиналом
+ * побайтово, поэтому адрес и размер менять нельзя.
+ */
+	.section .text.fw_code,"ax",@progbits
+	.p2align 2
+	.global fw_vector_table
+fw_vector_table:
+L_8c0000:
+	j L_8c0120-0x8c0000
+L_8c0008:
+	j L_8c13ec-0x8c0000
+L_8c0010:
+	j L_8c0774-0x8c0000
+L_8c0018:
+	j L_8da014-0x8c0000
+L_8c0020:
+	j L_8c1064-0x8c0000
+L_8c0028:
+	j L_8c10fc-0x8c0000
+L_8c0030:
+	j L_8c1194-0x8c0000
+L_8c0038:
+	j L_8da03c-0x8c0000
+L_8c0040:
+	j L_8c12b8-0x8c0000
+L_8c0048:
+	j L_8c1350-0x8c0000
+L_8c0050:
+	j L_8c08f0-0x8c0000
+L_8c0058:
+	j L_8c0990-0x8c0000
+L_8c0060:
+	j L_8c0a30-0x8c0000
+L_8c0068:
+	j L_8c0aec-0x8c0000
+L_8c0070:
+	j L_8c0be0-0x8c0000
+L_8c0078:
+	j L_8c0be4-0x8c0000
+L_8c0080:
+	j L_8c0cf4-0x8c0000
+L_8c0088:
+	j L_8c0f60-0x8c0000
+L_8c0090:
+	j L_8c0f64-0x8c0000
+L_8c0098:
+	j L_8edcf4-0x8c0000
+	.global L_8c00a0
+L_8c00a0:
+	/* b 0x008c00a0 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00a4
+L_8c00a4:
+	/* b 0x008c00a4 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00a8
+L_8c00a8:
+	/* b 0x008c00a8 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00ac
+L_8c00ac:
+	/* b 0x008c00ac */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00b0
+L_8c00b0:
+	/* b 0x008c00b0 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00b4
+L_8c00b4:
+	/* b 0x008c00b4 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00b8
+L_8c00b8:
+	/* b 0x008c00b8 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00bc
+L_8c00bc:
+	/* b 0x008c00bc */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00c0
+L_8c00c0:
+	/* b 0x008c00c0 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00c4
+L_8c00c4:
+	/* b 0x008c00c4 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00c8
+L_8c00c8:
+	/* b 0x008c00c8 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00cc
+L_8c00cc:
+	/* b 0x008c00cc */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00d0
+L_8c00d0:
+	/* b 0x008c00d0 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00d4
+L_8c00d4:
+	/* b 0x008c00d4 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00d8
+L_8c00d8:
+	/* b 0x008c00d8 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00dc
+L_8c00dc:
+	/* b 0x008c00dc */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00e0
+L_8c00e0:
+	/* b 0x008c00e0 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00e4
+L_8c00e4:
+	/* b 0x008c00e4 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00e8
+L_8c00e8:
+	/* b 0x008c00e8 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00ec
+L_8c00ec:
+	/* b 0x008c00ec */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00f0
+L_8c00f0:
+	/* b 0x008c00f0 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00f4
+L_8c00f4:
+	/* b 0x008c00f4 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00f8
+L_8c00f8:
+	/* b 0x008c00f8 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c00fc
+L_8c00fc:
+	/* b 0x008c00fc */
+	.byte 0x00,0x00,0x00,0x00
+L_8c0100:
+	st.a blink,[sp,-0x4]
+L_8c0104:
+	jl 0x1c74
+L_8c010c:
+	ld.ab blink,[sp,0x4]
+L_8c0110:
+	j [blink]
+	.global L_8c0114
+L_8c0114:
+	/* b 0x008c0114 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c0118
+L_8c0118:
+	/* b 0x008c0118 */
+	.byte 0x00,0x00,0x00,0x00
+	.global L_8c011c
+L_8c011c:
+	/* b 0x008c011c */
+	.byte 0x00,0x00,0x00,0x00

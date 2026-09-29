@@ -1,0 +1,5227 @@
+{
+ "region": "uc_code",
+ "base": 9568256,
+ "end": 9694404,
+ "blocks": [
+  {
+   "name": "uc_vector_table",
+   "addr": 9568256,
+   "size": 276,
+   "dir": "_unknown"
+  },
+  {
+   "name": "boot_uc__init_structs",
+   "addr": 9568532,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_00",
+   "addr": 9568608,
+   "size": 164,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_gp_to_r13",
+   "addr": 9568772,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r25_to_r13",
+   "addr": 9568776,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r24_to_r13",
+   "addr": 9568780,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r23_to_r13",
+   "addr": 9568784,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r22_to_r13",
+   "addr": 9568788,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r21_to_r13",
+   "addr": 9568792,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r20_to_r13",
+   "addr": 9568796,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r19_to_r13",
+   "addr": 9568800,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r18_to_r13",
+   "addr": 9568804,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r17_to_r13",
+   "addr": 9568808,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r16_to_r13",
+   "addr": 9568812,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r15_to_r13",
+   "addr": 9568816,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r14_to_r13",
+   "addr": 9568820,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__st_r13_to_r13",
+   "addr": 9568824,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_gp_to_r13_ret",
+   "addr": 9568836,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r25_to_r13_ret",
+   "addr": 9568844,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r24_to_r13_ret",
+   "addr": 9568852,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r23_to_r13_ret",
+   "addr": 9568860,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r22_to_r13_ret",
+   "addr": 9568868,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r21_to_r13_ret",
+   "addr": 9568876,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r20_to_r13_ret",
+   "addr": 9568884,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r19_to_r13_ret",
+   "addr": 9568892,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r18_to_r13_ret",
+   "addr": 9568900,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r17_to_r13_ret",
+   "addr": 9568908,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r16_to_r13_ret",
+   "addr": 9568916,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r15_to_r13_ret",
+   "addr": 9568924,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r14_to_r13_ret",
+   "addr": 9568932,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "__ld_r13_to_r13_ret",
+   "addr": 9568940,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "cpu__aux28_set_bits12",
+   "addr": 9569012,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "memcpy_uc",
+   "addr": 9569072,
+   "size": 176,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_divmod_unsigned",
+   "addr": 9569248,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_divmod_signed",
+   "addr": 9569256,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_shl64",
+   "addr": 9569368,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_exception__bad_instruction",
+   "addr": 9569412,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_02",
+   "addr": 9569468,
+   "size": 264,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_10",
+   "addr": 9569732,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_11",
+   "addr": 9569888,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_isr_l1_task2",
+   "addr": 9569892,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_13",
+   "addr": 9570048,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_isr_l2_task2",
+   "addr": 9570052,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_15",
+   "addr": 9570208,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_16",
+   "addr": 9570212,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_17",
+   "addr": 9570216,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_18",
+   "addr": 9570220,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_04",
+   "addr": 9570224,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_05",
+   "addr": 9570228,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_06",
+   "addr": 9570232,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_isr_l1_task0",
+   "addr": 9570240,
+   "size": 156,
+   "dir": "ucode_interrupt_handlers"
+  },
+  {
+   "name": "uc_vector_09",
+   "addr": 9570396,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_01",
+   "addr": 9570552,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc__init_globals",
+   "addr": 9570636,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "timer_list__init",
+   "addr": 9570784,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_list__insert_by_prio",
+   "addr": 9570816,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "boot_uc__init_g800610",
+   "addr": 9570832,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "memset0_words_uc",
+   "addr": 9570948,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_spin_until_event4__r0_100",
+   "addr": 9571092,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd__load_table_803124_803128__920b1c",
+   "addr": 9571100,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x23_handler",
+   "addr": 9571148,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__prepare_txrx_window",
+   "addr": 9571160,
+   "size": 352,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__enter_mode3",
+   "addr": 9571512,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_set_0x00__920cd4",
+   "addr": 9571540,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_05__index",
+   "addr": 9571548,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_ap__next_station",
+   "addr": 9571588,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "irq_safe__deref_field_04",
+   "addr": 9571660,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_list__head_field4",
+   "addr": 9571748,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_field_0x24_is_zero",
+   "addr": 9571756,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x31_handler",
+   "addr": 9571784,
+   "size": 300,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_rw_0x178__920ef4",
+   "addr": 9572084,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "arc__program_action_point",
+   "addr": 9572112,
+   "size": 140,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_ap__read_triggered_mask",
+   "addr": 9572252,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_ap__read_match_value",
+   "addr": 9572264,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "arc_protect_addr_uc",
+   "addr": 9572276,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_irq_set_level",
+   "addr": 9572376,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf__compute_tx_rx_sets",
+   "addr": 9572396,
+   "size": 132,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_rx__start_rx_window",
+   "addr": 9572528,
+   "size": 784,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_rf__store_module_byte",
+   "addr": 9573312,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_rf__store_cfg",
+   "addr": 9573328,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw__open_event_mask",
+   "addr": 9573456,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_prog__cmd02_body",
+   "addr": 9573472,
+   "size": 172,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_92150c",
+   "addr": 9573644,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_92153c",
+   "addr": 9573692,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_92156c",
+   "addr": 9573740,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "boot_uc__init_tail",
+   "addr": 9573816,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_restore_status32",
+   "addr": 9573828,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "background_task__dispatch",
+   "addr": 9573840,
+   "size": 296,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_pending__set_bit",
+   "addr": 9574136,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc__set_evt_id_5c",
+   "addr": 9574180,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_pending__clear_bit",
+   "addr": 9574224,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_q__tx_ppdu_3009",
+   "addr": 9574240,
+   "size": 196,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__abort_step",
+   "addr": 9574436,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__select_by_mode",
+   "addr": 9574464,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_clear_all_sta",
+   "addr": 9574580,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__clear_slot_diag",
+   "addr": 9574644,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__reset_link_state",
+   "addr": 9574656,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__run_sta",
+   "addr": 9574720,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_trigger_bf",
+   "addr": 9574800,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__init_globals",
+   "addr": 9574856,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_init_sm",
+   "addr": 9574900,
+   "size": 324,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_req__dequeue_head",
+   "addr": 9575224,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_req__enqueue",
+   "addr": 9575380,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "peer_masks__or_sta_bit_into_8571c4",
+   "addr": 9575476,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__flow_exit",
+   "addr": 9575504,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__apply_bf_result",
+   "addr": 9575592,
+   "size": 168,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__process_request_fifo",
+   "addr": 9575760,
+   "size": 600,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__dispatch_by_state",
+   "addr": 9576360,
+   "size": 300,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x10_handler",
+   "addr": 9576660,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__reset_sta",
+   "addr": 9576716,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_funcs__record_level_8020f8_8020fc__922168",
+   "addr": 9576808,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_manager_step_a",
+   "addr": 9576844,
+   "size": 204,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_manager_step_b",
+   "addr": 9577048,
+   "size": 136,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__count_sweep_round",
+   "addr": 9577184,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_timing_snapshot_b",
+   "addr": 9577300,
+   "size": 260,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__check_slot_flag",
+   "addr": 9577560,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__brp_init_result",
+   "addr": 9577620,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__on_brp_init",
+   "addr": 9577692,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_initiator_brp_transaction_flow",
+   "addr": 9577748,
+   "size": 532,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_init__flow",
+   "addr": 9578280,
+   "size": 252,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_initiator_flow_successful_receive_training",
+   "addr": 9578532,
+   "size": 176,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__arm_window",
+   "addr": 9578708,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_init__exchange_request",
+   "addr": 9578792,
+   "size": 152,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_init__tx_request",
+   "addr": 9578944,
+   "size": 876,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__select_cfg_by_snr",
+   "addr": 9579820,
+   "size": 232,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sector_mem__addr_of",
+   "addr": 9580052,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__brp_resp_result",
+   "addr": 9580148,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__on_brp_resp",
+   "addr": 9580188,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_responder_flow_enter",
+   "addr": 9580268,
+   "size": 796,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__rf_module_done",
+   "addr": 9581064,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__arm_window_b",
+   "addr": 9581184,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__is_peer_ctrl_frame",
+   "addr": 9581268,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_responder_transmission_flow",
+   "addr": 9581332,
+   "size": 608,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_restore_sectors",
+   "addr": 9581940,
+   "size": 260,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__program_and_measure",
+   "addr": 9582200,
+   "size": 596,
+   "dir": "beamforming_flows_brp"
+  },
+  {
+   "name": "rf__update_active_antenna",
+   "addr": 9582796,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x32_handler",
+   "addr": 9582912,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_update_omni_sector_idx",
+   "addr": 9582960,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1__snapshot_bi_counter",
+   "addr": 9583068,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_923a5c",
+   "addr": 9583196,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti_worker_bi2_step",
+   "addr": 9583236,
+   "size": 204,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti_transmitter_bi2_flow",
+   "addr": 9583440,
+   "size": 316,
+   "dir": "bf_gpc_service"
+  },
+  {
+   "name": "bti__request_bf_metric",
+   "addr": 9583756,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti_bi2__gp2_end_flag",
+   "addr": 9583784,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti_worker__bti_transmitter_beacon_sweep_flow",
+   "addr": 9583796,
+   "size": 1368,
+   "dir": "bti_worker"
+  },
+  {
+   "name": "qh__pack_descriptor",
+   "addr": 9585164,
+   "size": 316,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh__write_desc_window",
+   "addr": 9585480,
+   "size": 312,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh__wait_desc_window_ready",
+   "addr": 9585792,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh__read_desc_window",
+   "addr": 9585820,
+   "size": 276,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_desc__read_uc",
+   "addr": 9586096,
+   "size": 124,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_desc__write_uc",
+   "addr": 9586220,
+   "size": 132,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh__reset_desc_window",
+   "addr": 9586352,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__init_rx_desc",
+   "addr": 9586372,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "frame_hdr__init",
+   "addr": 9586428,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sched__calc_next_start_tsf",
+   "addr": 9586536,
+   "size": 176,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__tsf_delta64",
+   "addr": 9586712,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_tsf_elapsed",
+   "addr": 9586748,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__reset_sta_slot",
+   "addr": 9586764,
+   "size": 276,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow__accumulate_busy_time",
+   "addr": 9587040,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__send_and_await_rx_frame",
+   "addr": 9587124,
+   "size": 708,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__await_rx_or_timeout",
+   "addr": 9587832,
+   "size": 136,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__cca_check_and_send",
+   "addr": 9587968,
+   "size": 140,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_4f_52",
+   "addr": 9588108,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x3c_handler",
+   "addr": 9588172,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x3d_handler",
+   "addr": 9588236,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_req__claim_and_report_2b",
+   "addr": 9588380,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw__fold_peer_masks",
+   "addr": 9588416,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "phy__signal_gain_adc_in_range",
+   "addr": 9588520,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__time_left_class",
+   "addr": 9588552,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_slot__clear_f3",
+   "addr": 9588628,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_slot__clear_f4",
+   "addr": 9588644,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_rw_0x2c__924fb4",
+   "addr": 9588660,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__switch_to_rx_mode",
+   "addr": 9588676,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__arm_slot_timer",
+   "addr": 9588756,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bg_task__call_cb20",
+   "addr": 9588800,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "config_brp_rf",
+   "addr": 9588816,
+   "size": 1608,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__pick_slot_for_peer",
+   "addr": 9590424,
+   "size": 180,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched_manager__decrement_curr_sta_rd_counter",
+   "addr": 9590604,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__issue_cmd_33",
+   "addr": 9590644,
+   "size": 52,
+   "dir": "direct_tx"
+  },
+  {
+   "name": "direct_tx__program_cmd34",
+   "addr": 9590696,
+   "size": 76,
+   "dir": "direct_tx"
+  },
+  {
+   "name": "tx_fifo__write_bytes",
+   "addr": 9590772,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_wait_direct_tx_ready",
+   "addr": 9590900,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__clear_pending_and_notify",
+   "addr": 9590960,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__abort_to_state11",
+   "addr": 9590984,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_evt__select_timer_group",
+   "addr": 9591008,
+   "size": 184,
+   "dir": "_unknown"
+  },
+  {
+   "name": "gp_timer__stop",
+   "addr": 9591192,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__program_mac_sequence_uc",
+   "addr": 9591248,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "disable_tsf_event",
+   "addr": 9591312,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq__kick_queue_tx",
+   "addr": 9591368,
+   "size": 264,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__slot_prepare",
+   "addr": 9591632,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq__flush_queue",
+   "addr": 9591676,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dump_mac_buffer_bases",
+   "addr": 9591820,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "vring__disconnect_flush",
+   "addr": 9591948,
+   "size": 1040,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq__is_idle",
+   "addr": 9592988,
+   "size": 232,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dma_is_tx_pipe_idle",
+   "addr": 9593220,
+   "size": 276,
+   "dir": "_unknown"
+  },
+  {
+   "name": "vring__is_empty_uc_quiet",
+   "addr": 9593496,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mask__bit_from_index_plus8",
+   "addr": 9593504,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "pm__wake_sequence",
+   "addr": 9593536,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_9262e8",
+   "addr": 9593576,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow__run_and_check_bf_abort",
+   "addr": 9593616,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sysassert__scan_stack",
+   "addr": 9593692,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw__walk_peer_bits_noop",
+   "addr": 9593784,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__clear_msb_loop_tail",
+   "addr": 9593800,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "peer_masks__or_into_8571c4",
+   "addr": 9593808,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_92646c",
+   "addr": 9593964,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sysassert__idle_hist",
+   "addr": 9593976,
+   "size": 416,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sysassert",
+   "addr": 9594392,
+   "size": 348,
+   "dir": "interrupt_handlers"
+  },
+  {
+   "name": "tx_ctx__clear_flag_179",
+   "addr": 9594740,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__find_by_byte",
+   "addr": 9594796,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_slot_mask_924000",
+   "addr": 9594836,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_chain_mask_924f00",
+   "addr": 9594888,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh_write_while_dma_open_check",
+   "addr": 9594944,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "peer__lookup_if_fixed_sched",
+   "addr": 9595024,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sched_cfg__merge_update",
+   "addr": 9595072,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x3b_handler",
+   "addr": 9595220,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__apply_rx_sector_and_mcs",
+   "addr": 9595232,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "list__push_locked",
+   "addr": 9595268,
+   "size": 180,
+   "dir": "_unknown"
+  },
+  {
+   "name": "evt_queue__noop_lock_hook",
+   "addr": 9595448,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "evt_queue__take_locked",
+   "addr": 9595452,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__abort_noop_hook",
+   "addr": 9595568,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x2d_handler",
+   "addr": 9595572,
+   "size": 384,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__report_status_evt",
+   "addr": 9595956,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__flow_sm4",
+   "addr": 9596100,
+   "size": 1532,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_2d__set_bit",
+   "addr": 9597632,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__update_state_locked",
+   "addr": 9597664,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt_queue__peek_field04",
+   "addr": 9597728,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__ddc_mask_all_on",
+   "addr": 9597740,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd__echo",
+   "addr": 9597752,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__ddc_mask_bit3",
+   "addr": 9597788,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x47_handler",
+   "addr": 9597800,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__kick_and_dispatch_uc",
+   "addr": 9597816,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mode__switch_sequence",
+   "addr": 9597888,
+   "size": 288,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__mask_halt_req_and_defer",
+   "addr": 9598176,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__mask_wake_req_and_defer",
+   "addr": 9598196,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__ucode_ready",
+   "addr": 9598216,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__mac_monitor",
+   "addr": 9598256,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_24",
+   "addr": 9598288,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__ps_awake_peer",
+   "addr": 9598332,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__bf_done",
+   "addr": 9598376,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_22",
+   "addr": 9598444,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x48_handler",
+   "addr": 9598488,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__get_rf_sector_done",
+   "addr": 9598564,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__link_lost",
+   "addr": 9598608,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__new_link",
+   "addr": 9598652,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_2c_tsf",
+   "addr": 9598720,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__rs_done",
+   "addr": 9598776,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__rs_started",
+   "addr": 9598820,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_30",
+   "addr": 9598852,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_29_sync",
+   "addr": 9598892,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__set_rf_sector_done",
+   "addr": 9598948,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt__sta_update_field_rsp",
+   "addr": 9598992,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_2b",
+   "addr": 9599036,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_20",
+   "addr": 9599068,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_23",
+   "addr": 9599100,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_26",
+   "addr": 9599144,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_21",
+   "addr": 9599176,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_2e",
+   "addr": 9599228,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_send_evt_typed",
+   "addr": 9599272,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__enqueue",
+   "addr": 9599320,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__send_25",
+   "addr": 9599392,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fwif_write_qh",
+   "addr": 9599432,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__queue_class",
+   "addr": 9599488,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "get_mem_857744_x2",
+   "addr": 9599540,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw_worker__collect_awake_peers",
+   "addr": 9599556,
+   "size": 704,
+   "dir": "aw_worker"
+  },
+  {
+   "name": "bi_cfg__get_half10",
+   "addr": 9600260,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__parse_ssw_field",
+   "addr": 9600268,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__get_cur_idx",
+   "addr": 9600340,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__slot_half4",
+   "addr": 9600348,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__slot_word8",
+   "addr": 9600376,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__slot_cfg_u16_2",
+   "addr": 9600404,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__cur_entry_byte1",
+   "addr": 9600432,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__cur_entry_byte0",
+   "addr": 9600444,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__slot_byte0",
+   "addr": 9600456,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_manager__eval_bcon_slot",
+   "addr": 9600480,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__set_result_code",
+   "addr": 9600596,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__rr_pick_pending_a",
+   "addr": 9600704,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__rr_pick_pending_b",
+   "addr": 9600768,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__slot_ready",
+   "addr": 9600832,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_queue__peek_head_word1",
+   "addr": 9600868,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_meas__capture_frame",
+   "addr": 9600876,
+   "size": 432,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x2e_handler",
+   "addr": 9601308,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x2f_handler",
+   "addr": 9601384,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_req__claim_and_report_23",
+   "addr": 9601528,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "get_selected_rf_sector_index_cmd_handler",
+   "addr": 9601572,
+   "size": 104,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "popcount8",
+   "addr": 9601676,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rss_wait__get",
+   "addr": 9601704,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__state_from_g800600",
+   "addr": 9601716,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "get_mem_857744_x2_928308",
+   "addr": 9601800,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "gp0__arm_usec",
+   "addr": 9601816,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "gp0__arm_usec_b",
+   "addr": 9601924,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "gp0__arm_usec_c",
+   "addr": 9602016,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__rx_slot",
+   "addr": 9602108,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_ctx__post_status",
+   "addr": 9602140,
+   "size": 196,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sls__rx_ssw_frame",
+   "addr": 9602336,
+   "size": 560,
+   "dir": "_unknown"
+  },
+  {
+   "name": "handle_bf_triggers",
+   "addr": 9602896,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__run_bti_cycle",
+   "addr": 9602964,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__read_slot_id",
+   "addr": 9603108,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_meas__append_sample",
+   "addr": 9603156,
+   "size": 232,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_meas__finish_with_8830ec",
+   "addr": 9603388,
+   "size": 132,
+   "dir": "_unknown"
+  },
+  {
+   "name": "handle_pmc_triggers",
+   "addr": 9603520,
+   "size": 136,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__check_ready",
+   "addr": 9603656,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bit_iter__has_more_uc",
+   "addr": 9603756,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__report_link_lost",
+   "addr": 9603768,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abif__set_enable_bit",
+   "addr": 9603916,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfca__select_rf_uc",
+   "addr": 9603980,
+   "size": 220,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfca__get_rf_mask_uc",
+   "addr": 9604200,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_abif__rfc_divider_restart_uc",
+   "addr": 9604216,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abif__set_88a204_field",
+   "addr": 9604312,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "clk__gate_880b00",
+   "addr": 9604416,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_880bf0_mode",
+   "addr": 9604472,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_880afc_bits",
+   "addr": 9604556,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dma__write_881c28",
+   "addr": 9604604,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__set_ctrl_bit",
+   "addr": 9604664,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mem__addr_of_slot",
+   "addr": 9604712,
+   "size": 272,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__clear_2d8",
+   "addr": 9604984,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw_worker__read_dma_881c84",
+   "addr": 9605020,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dma__read_881c28",
+   "addr": 9605032,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__trigger_read_state",
+   "addr": 9605068,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__read_state0",
+   "addr": 9605152,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__read_state1",
+   "addr": 9605188,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__read_wptr",
+   "addr": 9605224,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__read_rptr",
+   "addr": 9605256,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dmaq_hw__read_ptr",
+   "addr": 9605288,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq__read_hw_queue_word",
+   "addr": 9605308,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "nav__read_hw_duration_flag",
+   "addr": 9605328,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dma_is_idle_uc",
+   "addr": 9605364,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_dma__set_mode_map",
+   "addr": 9605456,
+   "size": 136,
+   "dir": "hw_drivers_dma"
+  },
+  {
+   "name": "dump_pring_hw",
+   "addr": 9605592,
+   "size": 208,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__disable_queue",
+   "addr": 9605800,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txop__clear_dma_ctl_bit1",
+   "addr": 9605900,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dump_vring_pring_info",
+   "addr": 9605920,
+   "size": 260,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dma_mac__cfg_880c14",
+   "addr": 9606180,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__read_time_88c120",
+   "addr": 9606284,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_flow__arm_88606c_0x102",
+   "addr": 9606300,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__load_tx_key",
+   "addr": 9606316,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__fill_mode_nibbles",
+   "addr": 9606360,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_cid_mcs_uc",
+   "addr": 9606504,
+   "size": 140,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__core_write_3e_then_3d_0007",
+   "addr": 9606644,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__core_write_3d_0200",
+   "addr": 9606668,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dma_mac__cfg_880c28",
+   "addr": 9606684,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_phy_init__2",
+   "addr": 9606788,
+   "size": 92,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy__uses_rgf_881000_9296e0",
+   "addr": 9606880,
+   "size": 80,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy__uses_rgf_881000_929730",
+   "addr": 9606960,
+   "size": 124,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "ppdu__unpack_desc_word",
+   "addr": 9607084,
+   "size": 68,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy_pwr",
+   "addr": 9607152,
+   "size": 264,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "dma_mac__cfg_880c2c",
+   "addr": 9607416,
+   "size": 104,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy__uses_rgf_883000",
+   "addr": 9607520,
+   "size": 60,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy__uses_rgf_884000",
+   "addr": 9607580,
+   "size": 60,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy__set_mode_uc",
+   "addr": 9607640,
+   "size": 268,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "uc_sysassert__read_hw_state3",
+   "addr": 9607908,
+   "size": 16,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy__uses_rgf_883800_929af4",
+   "addr": 9607924,
+   "size": 128,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "phy__read_signal_gain_adc_db",
+   "addr": 9608052,
+   "size": 16,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "phy__read_signal_gain_adc_db_sfd_locked",
+   "addr": 9608068,
+   "size": 16,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy__uses_rgf_883800_929b94",
+   "addr": 9608084,
+   "size": 112,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "phy_rx__set_ina_det_mode_uc",
+   "addr": 9608196,
+   "size": 12,
+   "dir": "hw_drivers_phy"
+  },
+  {
+   "name": "hwd_phy_rx_set_agc_start_val_and_gain_array_uc",
+   "addr": 9608208,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "phy__set_88306c_field",
+   "addr": 9608364,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "phy_stats__clear_counters_883960",
+   "addr": 9608428,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "phy_stats__clear_counters_88395c",
+   "addr": 9608440,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sysassert__write_code",
+   "addr": 9608452,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tof__set_tx_rx_offset_regs",
+   "addr": 9608464,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abif__save_override_restore",
+   "addr": 9608480,
+   "size": 392,
+   "dir": "_unknown"
+  },
+  {
+   "name": "phy__read_regs_883844",
+   "addr": 9608872,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__read_result_889570",
+   "addr": 9608904,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__read_result_889568",
+   "addr": 9608916,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__set_phy_884060",
+   "addr": 9608928,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hw__power_step",
+   "addr": 9608940,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf_utils__fill_step",
+   "addr": 9609012,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfc__clear_core_reg1",
+   "addr": 9609108,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_rfc_powerdown_deep_all_rfs",
+   "addr": 9609120,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfc__restore_txrx_sets",
+   "addr": 9609236,
+   "size": 140,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_rfc_powerup_deep_all_rfs",
+   "addr": 9609376,
+   "size": 300,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_rfc_read_rgf_uc",
+   "addr": 9609676,
+   "size": 216,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfc__read_core_result",
+   "addr": 9609892,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf__set_txrx_sets_save",
+   "addr": 9610004,
+   "size": 196,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_rfc_write_core",
+   "addr": 9610200,
+   "size": 544,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfc__write_core_checked",
+   "addr": 9610744,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__commit_rptr",
+   "addr": 9610816,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq_hw__sync_dma_wptr",
+   "addr": 9610908,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_mailbox__ring_reg_addr",
+   "addr": 9610972,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "boot_uc__set_88000c",
+   "addr": 9610980,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "vring_is_empty_uc",
+   "addr": 9610992,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_mode_a000",
+   "addr": 9611092,
+   "size": 556,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hw__bring_up_phy_dma",
+   "addr": 9611648,
+   "size": 448,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hw__power_sequence_rf",
+   "addr": 9612096,
+   "size": 164,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf__set_normal_mode",
+   "addr": 9612260,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "buf__check_bounds",
+   "addr": 9612416,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_slot__inc_f2",
+   "addr": 9612492,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_slot__inc_f4_reached_7",
+   "addr": 9612508,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__init",
+   "addr": 9612536,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_ctx__set_active",
+   "addr": 9612544,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__reset_sweep_state",
+   "addr": 9612604,
+   "size": 176,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_ctx__clear_word0",
+   "addr": 9612780,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_ring__init_desc",
+   "addr": 9612784,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_ctx__clear_state_words",
+   "addr": 9612812,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_ctx__clear_counters",
+   "addr": 9612828,
+   "size": 152,
+   "dir": "_unknown"
+  },
+  {
+   "name": "obj_vt801adc__ctor",
+   "addr": 9612980,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "boot_uc__init_more",
+   "addr": 9613020,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "basic_sm__bind_descriptor_uc",
+   "addr": 9613068,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_mode__set_1000_units165",
+   "addr": 9613088,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__set_state",
+   "addr": 9613100,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_cfg__fill_slot_desc",
+   "addr": 9613208,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp_init__reset_ctx",
+   "addr": 9613240,
+   "size": 176,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__init_ctx",
+   "addr": 9613416,
+   "size": 168,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_qset_slots",
+   "addr": 9613584,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf__store_last_module_index",
+   "addr": 9613684,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__clear_cid_sweep_counters",
+   "addr": 9613700,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0b__apply",
+   "addr": 9613720,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "g_80212c__reset",
+   "addr": 9613784,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd__reset_queue_state",
+   "addr": 9613840,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__set_sta_state",
+   "addr": 9613856,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__abort_unexpected",
+   "addr": 9613908,
+   "size": 324,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__log_phase",
+   "addr": 9614232,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_ap__start_slot",
+   "addr": 9614268,
+   "size": 140,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__dispatch_by_role",
+   "addr": 9614408,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_manager__start_tx_or_initiator",
+   "addr": 9614476,
+   "size": 76,
+   "dir": "bi_manager"
+  },
+  {
+   "name": "bi_rx__slot_handler",
+   "addr": 9614552,
+   "size": 368,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__phase_of",
+   "addr": 9614920,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__rx_flow_thunk",
+   "addr": 9615016,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1__rx_then_check_bf_abort",
+   "addr": 9615020,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__rx_flow_thunk_b",
+   "addr": 9615096,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sm__handle_event",
+   "addr": 9615100,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dti_alloc__dispatch",
+   "addr": 9615196,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dti_alloc__scheduled_event_thunk",
+   "addr": 9615252,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__after_enter_aw",
+   "addr": 9615256,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__dispatch_sweep_step",
+   "addr": 9615324,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__after_enter_dti",
+   "addr": 9615452,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_03",
+   "addr": 9615516,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_isr_l2_task3",
+   "addr": 9615672,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__latch_tsf_and_reset",
+   "addr": 9615828,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__clear_exclude_mask",
+   "addr": 9615944,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__pause_sta_tx",
+   "addr": 9615956,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_res_vote__acquire",
+   "addr": 9616072,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__drop_event_mask_and_publish",
+   "addr": 9616152,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__resume_sta_tx",
+   "addr": 9616180,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_res_vote__release",
+   "addr": 9616276,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__set_pending_flag",
+   "addr": 9616344,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx_isr",
+   "addr": 9616380,
+   "size": 308,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__check_idle",
+   "addr": 9616688,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__clear_pending_bit",
+   "addr": 9616752,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__is_engaged",
+   "addr": 9616804,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__is_brp_frame",
+   "addr": 9616828,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_ap__station_done",
+   "addr": 9616860,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_slot__f3_positive",
+   "addr": 9616908,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_indirect_is_zero",
+   "addr": 9616928,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mailbox__free_space",
+   "addr": 9616944,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__test_mask2c_bit",
+   "addr": 9616972,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "peer__lookup_or_ff",
+   "addr": 9616996,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__pick_ready_queue",
+   "addr": 9617040,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__r54_event_bit6",
+   "addr": 9617196,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__build_desc",
+   "addr": 9617208,
+   "size": 136,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_ifs__restore_sifs",
+   "addr": 9617344,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mode_kick",
+   "addr": 9617432,
+   "size": 132,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mode_program_c",
+   "addr": 9617564,
+   "size": 776,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx_step",
+   "addr": 9618340,
+   "size": 452,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__arm_window_c",
+   "addr": 9618792,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x26_handler",
+   "addr": 9618908,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__rf_switch_cmd1f",
+   "addr": 9618916,
+   "size": 136,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_fixed_sched_ap_sm",
+   "addr": 9619052,
+   "size": 384,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1__enter_fixed_sched",
+   "addr": 9619436,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_fixed_sched_sta_sm",
+   "addr": 9619520,
+   "size": 308,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__entry",
+   "addr": 9619828,
+   "size": 364,
+   "dir": "l1_task"
+  },
+  {
+   "name": "l1_task__entry_uc",
+   "addr": 9620192,
+   "size": 20,
+   "dir": "l1_task"
+  },
+  {
+   "name": "l1_task__main_step",
+   "addr": 9620212,
+   "size": 536,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc__check_g8004f4_0_1_2",
+   "addr": 9620748,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1__on_event4",
+   "addr": 9620768,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_fixed_sched__event_entry",
+   "addr": 9620884,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l2_task__report_error_bits",
+   "addr": 9620952,
+   "size": 392,
+   "dir": "l2_task"
+  },
+  {
+   "name": "l2_task__kick_mac_events",
+   "addr": 9621344,
+   "size": 48,
+   "dir": "l2_task"
+  },
+  {
+   "name": "l2_handle_watchdog",
+   "addr": 9621392,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l2_task__entry",
+   "addr": 9621520,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bit_scan_msb",
+   "addr": 9621556,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_log__init_ring",
+   "addr": 9621664,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_log__emit_snapshot",
+   "addr": 9621820,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_log__emit1",
+   "addr": 9621968,
+   "size": 172,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_log__emit2",
+   "addr": 9622140,
+   "size": 188,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_log__emit3",
+   "addr": 9622328,
+   "size": 200,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh__build_descriptor_b",
+   "addr": 9622528,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh__build_descriptor",
+   "addr": 9622568,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qh__write_by_flags",
+   "addr": 9622664,
+   "size": 384,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mailbox_debug_dump_uc",
+   "addr": 9623048,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow__measure_snr_select_best",
+   "addr": 9623176,
+   "size": 428,
+   "dir": "_unknown"
+  },
+  {
+   "name": "memset_uc",
+   "addr": 9623604,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_tx_beacon",
+   "addr": 9623716,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_tx_with_rate",
+   "addr": 9623784,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_tx_with_qid",
+   "addr": 9623868,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_tx_common",
+   "addr": 9623952,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mtp_service__dispatch",
+   "addr": 9624020,
+   "size": 228,
+   "dir": "_unknown"
+  },
+  {
+   "name": "macq__probe_empty",
+   "addr": 9624248,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_tx_result_ctx_uc",
+   "addr": 9624352,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "grant_detect_step",
+   "addr": 9624456,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_nav__clear_flags",
+   "addr": 9624604,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_nav__arm_flag_if_enabled",
+   "addr": 9624616,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__remaining_time_us",
+   "addr": 9624644,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "pm__event_mask_save_all_on",
+   "addr": 9624684,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_nav__set_flag_b1_if_enabled",
+   "addr": 9624764,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "pm__event_mask_restore",
+   "addr": 9624792,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_nav__set_from_duration",
+   "addr": 9624880,
+   "size": 348,
+   "dir": "_unknown"
+  },
+  {
+   "name": "notify_aoa",
+   "addr": 9625228,
+   "size": 540,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfca__access_sector_other_rf",
+   "addr": 9625768,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mode__switch_core_and_rf",
+   "addr": 9625828,
+   "size": 136,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__handle_brp_frame",
+   "addr": 9625964,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__parse_request_fields",
+   "addr": 9626084,
+   "size": 124,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__ppdu_is_ack",
+   "addr": 9626208,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__ppdu_is_ack_b",
+   "addr": 9626300,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__ppdu_is_cts",
+   "addr": 9626392,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__ppdu_is_cts_b",
+   "addr": 9626504,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__ppdu_is_cts_c",
+   "addr": 9626592,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__cmd_0f_step",
+   "addr": 9626680,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x20_handler",
+   "addr": 9626712,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x37_handler",
+   "addr": 9626748,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x38_handler",
+   "addr": 9626804,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "phy_stats__accumulate_to_shared",
+   "addr": 9626948,
+   "size": 380,
+   "dir": "_unknown"
+  },
+  {
+   "name": "power_manager__scale_counters_ms",
+   "addr": 9627328,
+   "size": 40,
+   "dir": "power_manager"
+  },
+  {
+   "name": "power_mngr__stats_calc_delta",
+   "addr": 9627368,
+   "size": 28,
+   "dir": "power_manager"
+  },
+  {
+   "name": "power_mngr__stats_mark_base",
+   "addr": 9627396,
+   "size": 20,
+   "dir": "power_manager"
+  },
+  {
+   "name": "power_manager__tick_if_elapsed",
+   "addr": 9627416,
+   "size": 48,
+   "dir": "power_manager"
+  },
+  {
+   "name": "ucode_cmd_0x1b_handler",
+   "addr": 9627464,
+   "size": 64,
+   "dir": "power_manager"
+  },
+  {
+   "name": "timer_list__insert_sorted",
+   "addr": 9627528,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__bti_timer_step",
+   "addr": 9627592,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x22_handler",
+   "addr": 9627712,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txq__fifo_ptp_idle_snapshot",
+   "addr": 9627816,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__rank_insert",
+   "addr": 9627908,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mode__send_direct_frame",
+   "addr": 9628024,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "queue_sel__get_qset4",
+   "addr": 9628136,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_qset__reset_masks",
+   "addr": 9628232,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_gpc__program_mac_by_mode_b",
+   "addr": 9628352,
+   "size": 168,
+   "dir": "bf_gpc_service"
+  },
+  {
+   "name": "bf__trigger_for_mid",
+   "addr": 9628520,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sends_pmc_mark_aaab20",
+   "addr": 9628564,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_set_0x00__92ebe0",
+   "addr": 9628640,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_rw_0x29__92ebec",
+   "addr": 9628652,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_txss__reset_report_ctx",
+   "addr": 9628668,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_slot__clear_f2",
+   "addr": 9628696,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_ap__copy_slot_byte1",
+   "addr": 9628712,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__reset_units",
+   "addr": 9628752,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "buf__fill_ff",
+   "addr": 9628872,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__drop_station",
+   "addr": 9628928,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__clear_sta_bit_state34",
+   "addr": 9628972,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sls__clear_rx_state",
+   "addr": 9629008,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__read_rf_id",
+   "addr": 9629020,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf_utils_auto_fill_uc",
+   "addr": 9629060,
+   "size": 580,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__iterate_rf_mask",
+   "addr": 9629640,
+   "size": 408,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf_utils__auto_fill_with_byte",
+   "addr": 9630048,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_886e0c_20b",
+   "addr": 9630112,
+   "size": 284,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__mac_prepare",
+   "addr": 9630396,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sysassert__emit_mac_trace",
+   "addr": 9630448,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd__apply_mac_cfg",
+   "addr": 9630496,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mode__switch_after_ppdu",
+   "addr": 9630528,
+   "size": 192,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__replicate_bit_mask",
+   "addr": 9630720,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_rf_chain_state",
+   "addr": 9630764,
+   "size": 132,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_cfg__set_gp20_default_15748",
+   "addr": 9630896,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_mode__configure",
+   "addr": 9630908,
+   "size": 636,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__build_qset_mask",
+   "addr": 9631544,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_rx_window",
+   "addr": 9631640,
+   "size": 208,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfc__issue_cmd_10",
+   "addr": 9631848,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rfc__issue_cmd_20_uc",
+   "addr": 9631944,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf__select_sector_cmd41",
+   "addr": 9632052,
+   "size": 164,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__write_reg_pair",
+   "addr": 9632216,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf__write_sector_awv",
+   "addr": 9632364,
+   "size": 212,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_queue__dispatch_and_commit",
+   "addr": 9632576,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rs_abort",
+   "addr": 9632640,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_flow_substep",
+   "addr": 9632704,
+   "size": 260,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x13_handler",
+   "addr": 9632964,
+   "size": 176,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_initiator__reset_slot_counters",
+   "addr": 9633140,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rate_search__commit_mcs",
+   "addr": 9633164,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rs_end",
+   "addr": 9633204,
+   "size": 336,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x30_handler_uc",
+   "addr": 9633540,
+   "size": 64,
+   "dir": "rate_search"
+  },
+  {
+   "name": "rate_search__current_mcs_b",
+   "addr": 9633604,
+   "size": 36,
+   "dir": "rate_search"
+  },
+  {
+   "name": "mtp_queue__byte_by_index",
+   "addr": 9633640,
+   "size": 16,
+   "dir": "rate_search"
+  },
+  {
+   "name": "sched_bitmap__next_set_bit",
+   "addr": 9633656,
+   "size": 116,
+   "dir": "rate_search"
+  },
+  {
+   "name": "sched_bitmap__prev_set_bit",
+   "addr": 9633772,
+   "size": 44,
+   "dir": "rate_search"
+  },
+  {
+   "name": "rate_search__current_mcs",
+   "addr": 9633816,
+   "size": 36,
+   "dir": "rate_search"
+  },
+  {
+   "name": "rate_search__reset_stats",
+   "addr": 9633852,
+   "size": 112,
+   "dir": "rate_search"
+  },
+  {
+   "name": "rs__is_sta_enabled",
+   "addr": 9633964,
+   "size": 20,
+   "dir": "rate_search"
+  },
+  {
+   "name": "sta_link__byte_by_index",
+   "addr": 9633984,
+   "size": 16,
+   "dir": "rate_search"
+  },
+  {
+   "name": "rate_search__apply_mcs",
+   "addr": 9634000,
+   "size": 28,
+   "dir": "rate_search"
+  },
+  {
+   "name": "rs_start",
+   "addr": 9634028,
+   "size": 248,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x12_handler_uc",
+   "addr": 9634276,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rate_search__pick_tx_params",
+   "addr": 9634300,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bap_q_avail__check",
+   "addr": 9634408,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__program_vector_rf",
+   "addr": 9634520,
+   "size": 152,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abft_responder__respond_flow",
+   "addr": 9634672,
+   "size": 632,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abft__arm_response_window",
+   "addr": 9635304,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abft_resp__parse_fdbk",
+   "addr": 9635356,
+   "size": 344,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti_tx__program_bi2_regs",
+   "addr": 9635700,
+   "size": 72,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__arm_period_gp0",
+   "addr": 9635772,
+   "size": 332,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abft_responder__tx_ssw",
+   "addr": 9636104,
+   "size": 1084,
+   "dir": "abft_worker_responder_funcs"
+  },
+  {
+   "name": "l1_task__check_pending",
+   "addr": 9637188,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow__latch_phy_8014e8__930da4",
+   "addr": 9637284,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__clear_sweep_counters",
+   "addr": 9637320,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow__run",
+   "addr": 9637332,
+   "size": 2296,
+   "dir": "rx_flow"
+  },
+  {
+   "name": "rx_funcs__handle_ppdu_report",
+   "addr": 9639628,
+   "size": 1024,
+   "dir": "rx_funcs_optimized_size"
+  },
+  {
+   "name": "rx_flow_step",
+   "addr": 9640652,
+   "size": 1080,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow__handle_frame",
+   "addr": 9641732,
+   "size": 3812,
+   "dir": "rx_flow"
+  },
+  {
+   "name": "rx__check_g8005f8_bit24",
+   "addr": 9645544,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_get_required_response",
+   "addr": 9645632,
+   "size": 1468,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__dispatch_by_g_8005f8",
+   "addr": 9647100,
+   "size": 732,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_resp__finish_restore_rx",
+   "addr": 9647832,
+   "size": 592,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_funcs__rx_flow",
+   "addr": 9648424,
+   "size": 2688,
+   "dir": "rx_funcs"
+  },
+  {
+   "name": "rx__update_nav_from_frame",
+   "addr": 9651112,
+   "size": 124,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sls__send_ssw_ack",
+   "addr": 9651236,
+   "size": 364,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_nav_update",
+   "addr": 9651600,
+   "size": 492,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x0f_handler",
+   "addr": 9652092,
+   "size": 216,
+   "dir": "_unknown"
+  },
+  {
+   "name": "dti_worker__scheduled_dti_allocation_event",
+   "addr": 9652308,
+   "size": 324,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_set_0x00__934998",
+   "addr": 9652632,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta_tbl__find_by_mac",
+   "addr": 9652640,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__queue_put",
+   "addr": 9652700,
+   "size": 312,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__tx_ctrl_frame",
+   "addr": 9653012,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_set_0x00__934b8c",
+   "addr": 9653132,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x11_handler",
+   "addr": 9653140,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x4a_handler",
+   "addr": 9653156,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "peer_masks__apply_op",
+   "addr": 9653168,
+   "size": 420,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw_ie__copy_to_bcon",
+   "addr": 9653588,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw__set_tbtt_offset",
+   "addr": 9653692,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__split_id",
+   "addr": 9653704,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_deadline_slack",
+   "addr": 9653732,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_init__set_mac_arg_pair",
+   "addr": 9653772,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_cfg__select_sta",
+   "addr": 9653784,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_task__dispatch",
+   "addr": 9653808,
+   "size": 292,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sxd_hal__write_qset_field",
+   "addr": 9654100,
+   "size": 156,
+   "dir": "sxd_hal"
+  },
+  {
+   "name": "bcon_txss__program_sector",
+   "addr": 9654256,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "gp_timer__set_value",
+   "addr": 9654400,
+   "size": 172,
+   "dir": "_unknown"
+  },
+  {
+   "name": "gp_timer__arm",
+   "addr": 9654572,
+   "size": 184,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x49_handler",
+   "addr": 9654756,
+   "size": 8,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_sector_arg_and_select_all",
+   "addr": 9654764,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "field_rw_0x2c__9351f8",
+   "addr": 9654776,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__brp_noop_hook_a",
+   "addr": 9654792,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw__set_new_tbtt",
+   "addr": 9654796,
+   "size": 416,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw_tbtt__count_intervals",
+   "addr": 9655212,
+   "size": 276,
+   "dir": "_unknown"
+  },
+  {
+   "name": "set_selected_rf_sector_index_cmd_handler",
+   "addr": 9655488,
+   "size": 160,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "aw_tbtt_set_step",
+   "addr": 9655648,
+   "size": 228,
+   "dir": "_unknown"
+  },
+  {
+   "name": "traffic_deferral__clear_node",
+   "addr": 9655876,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "traffic_deferral__is_enabled",
+   "addr": 9655892,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "set_tsf_event",
+   "addr": 9655936,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__read_tsf64_uc",
+   "addr": 9656012,
+   "size": 256,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__store_flow_status",
+   "addr": 9656268,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x16_handler",
+   "addr": 9656284,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__set_sweep_param",
+   "addr": 9656300,
+   "size": 140,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ss_plan__next_sector",
+   "addr": 9656440,
+   "size": 176,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_rf_chain_state__with_sta_sector",
+   "addr": 9656616,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__rank_best_sector",
+   "addr": 9656632,
+   "size": 128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_mailbox__init_rings",
+   "addr": 9656760,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_935a08",
+   "addr": 9656840,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_ctx__dispatch_by_role",
+   "addr": 9656900,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__arm_slot_from_cfg",
+   "addr": 9656940,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_935a94",
+   "addr": 9656980,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw__start_window",
+   "addr": 9657060,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_935b4c",
+   "addr": 9657164,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__prepare_sweep_set",
+   "addr": 9657244,
+   "size": 368,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_sm__action_935d0c",
+   "addr": 9657612,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi__dti_step",
+   "addr": 9657692,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x28_handler",
+   "addr": 9657744,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x2a_handler",
+   "addr": 9657828,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_28__apply",
+   "addr": 9657904,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_fixed_sched_ap__ev4_state2",
+   "addr": 9657972,
+   "size": 416,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x29_handler",
+   "addr": 9658388,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x2b_handler",
+   "addr": 9658532,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "pmc__stop_recording",
+   "addr": 9658676,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_req__try_claim",
+   "addr": 9658756,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_evt__enable_bit_sync",
+   "addr": 9658812,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__send_response_frame",
+   "addr": 9658880,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow__send_imm_response",
+   "addr": 9658988,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__send_ctrl_frame",
+   "addr": 9659064,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__send_dmg_cts",
+   "addr": 9659168,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_mode_init_substep",
+   "addr": 9659288,
+   "size": 264,
+   "dir": "_unknown"
+  },
+  {
+   "name": "irq__init_event_masks",
+   "addr": 9659552,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_read_tsf_lo",
+   "addr": 9659592,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_mode__load_cmd1e_operand",
+   "addr": 9659628,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__cmd_29000001",
+   "addr": 9659680,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_evt__enable_bit_sync_b",
+   "addr": 9659716,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_wait_one_event",
+   "addr": 9659784,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_wait_two_events",
+   "addr": 9659796,
+   "size": 104,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_mode_init_sequence",
+   "addr": 9659900,
+   "size": 212,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_spin_until_event4",
+   "addr": 9660112,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_spin_until_event",
+   "addr": 9660124,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_wait_event_busy",
+   "addr": 9660136,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__wait_event_r42_or_r40",
+   "addr": 9660252,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sleep_until_event",
+   "addr": 9660268,
+   "size": 120,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_wait_event1_or_event4",
+   "addr": 9660388,
+   "size": 140,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__select_all_sectors_and_wait",
+   "addr": 9660528,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__cmd_56_57",
+   "addr": 9660588,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txrx_api_step_c",
+   "addr": 9660632,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_tx__check_idle_and_start_uc",
+   "addr": 9660780,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_chain_modes",
+   "addr": 9660896,
+   "size": 180,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_mode__program_mac_timing",
+   "addr": 9661076,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txrx_api_step_b_uc",
+   "addr": 9661132,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_read_bi_sync",
+   "addr": 9661280,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_clk__div165",
+   "addr": 9661332,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txop__apply_limits_regs",
+   "addr": 9661352,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txrx_api_cmd_step",
+   "addr": 9661412,
+   "size": 228,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sxd_hal__wait_slot2_busy2",
+   "addr": 9661640,
+   "size": 156,
+   "dir": "sxd_hal"
+  },
+  {
+   "name": "sxd_hal__wait_slot2_busy",
+   "addr": 9661796,
+   "size": 124,
+   "dir": "sxd_hal"
+  },
+  {
+   "name": "rng__rand_below",
+   "addr": 9661920,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__check_mode_2",
+   "addr": 9661956,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__bi2_event_step",
+   "addr": 9662016,
+   "size": 1300,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_timer__start",
+   "addr": 9663316,
+   "size": 168,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x2c_handler",
+   "addr": 9663484,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tof__store_tx_rx_offset",
+   "addr": 9663520,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "traffic_deferral_cfg_cmd_handler",
+   "addr": 9663536,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_bi_counter_in_window",
+   "addr": 9663604,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__get_beacon_interval_tu_uc",
+   "addr": 9663704,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__read_bi_start_tsf64_uc",
+   "addr": 9663720,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "aw__compute_tbtt_from_hw",
+   "addr": 9663768,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__read_usec_to_tbtt_uc",
+   "addr": 9663824,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_sysassert__snapshot_mac",
+   "addr": 9663852,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__rx_off_seq",
+   "addr": 9663900,
+   "size": 48,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_mode__enter_idle_seq",
+   "addr": 9663948,
+   "size": 192,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__run_tx_slot",
+   "addr": 9664140,
+   "size": 432,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__noop_isr_hook",
+   "addr": 9664572,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd08__noop_hook",
+   "addr": 9664576,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_bcast_flow",
+   "addr": 9664580,
+   "size": 1128,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_cfg__tick_counters",
+   "addr": 9665708,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti__measure_frame_duration",
+   "addr": 9665776,
+   "size": 180,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x0b_handler",
+   "addr": 9665956,
+   "size": 604,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_cfg__pack_words_thunk",
+   "addr": 9666560,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_cfg__pack_words_78_7c",
+   "addr": 9666564,
+   "size": 132,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__order_known_sectors_first",
+   "addr": 9666696,
+   "size": 316,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_ctrl__program_mac_bcon",
+   "addr": 9667012,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__send_after_delay",
+   "addr": 9667096,
+   "size": 152,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__send_with_seq",
+   "addr": 9667248,
+   "size": 168,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_fifo__push_frame_3ies",
+   "addr": 9667416,
+   "size": 380,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_ctx__alloc_next",
+   "addr": 9667796,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "cf_end__send_frame",
+   "addr": 9667944,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__send_imm_response",
+   "addr": 9668056,
+   "size": 196,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__send_from_desc",
+   "addr": 9668252,
+   "size": 484,
+   "dir": "_unknown"
+  },
+  {
+   "name": "l1_fixed_sched_ap__ev4_state4",
+   "addr": 9668736,
+   "size": 408,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__run_tx_slot_twice",
+   "addr": 9669144,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "delay_800_iters",
+   "addr": 9669220,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__tx_frame_3ies",
+   "addr": 9669256,
+   "size": 264,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__program_mac_and_wait",
+   "addr": 9669520,
+   "size": 676,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_slot__dispatch",
+   "addr": 9670196,
+   "size": 220,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_initiator_flow_fixed_scheduling",
+   "addr": 9670416,
+   "size": 496,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__flow_sm2",
+   "addr": 9670912,
+   "size": 900,
+   "dir": "_unknown"
+  },
+  {
+   "name": "keep_alive__arm_slot",
+   "addr": 9671812,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__clear_pending",
+   "addr": 9671888,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_rx__send_response",
+   "addr": 9671984,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_non_data_flow_fixed_scheduling",
+   "addr": 9672084,
+   "size": 268,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__submit_frame",
+   "addr": 9672352,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_slot__pick_queue",
+   "addr": 9672436,
+   "size": 252,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched__pick_queue_r41",
+   "addr": 9672688,
+   "size": 152,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_q__tx_ppdu",
+   "addr": 9672840,
+   "size": 284,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txop__await_cts_ppdu",
+   "addr": 9673124,
+   "size": 192,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx__write_header_16",
+   "addr": 9673316,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_mtp_queue_gate",
+   "addr": 9673380,
+   "size": 544,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__sweep_timing",
+   "addr": 9673924,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__sweep_duration_for_sta",
+   "addr": 9673980,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__handle_status_flags",
+   "addr": 9674044,
+   "size": 332,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_sta__flow_loop",
+   "addr": 9674376,
+   "size": 512,
+   "dir": "_unknown"
+  },
+  {
+   "name": "tx_sta__run_txop",
+   "addr": 9674888,
+   "size": 456,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txop_initiator_open_txop_flow",
+   "addr": 9675344,
+   "size": 940,
+   "dir": "tx_slot_flows"
+  },
+  {
+   "name": "tx_sta__wait_slot_and_tx",
+   "addr": 9676284,
+   "size": 220,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac_q__tx_ppdu_cmd08",
+   "addr": 9676504,
+   "size": 200,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x19_handler",
+   "addr": 9676704,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txrx_umac_if_config_pmc_triggers_handler",
+   "addr": 9676756,
+   "size": 92,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x24_handler",
+   "addr": 9676848,
+   "size": 160,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x00_handler",
+   "addr": 9677008,
+   "size": 160,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x41_handler",
+   "addr": 9677168,
+   "size": 64,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x21_set_txop_limits",
+   "addr": 9677232,
+   "size": 32,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x03_handler",
+   "addr": 9677264,
+   "size": 28,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x01_handler",
+   "addr": 9677292,
+   "size": 520,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x05_handler",
+   "addr": 9677812,
+   "size": 352,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x18_handler",
+   "addr": 9678164,
+   "size": 156,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x04_handler_uc",
+   "addr": 9678320,
+   "size": 40,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x07_handler",
+   "addr": 9678360,
+   "size": 144,
+   "dir": "txrx_api_cmd_handler"
+  },
+  {
+   "name": "ucode_cmd_0x08_handler",
+   "addr": 9678504,
+   "size": 848,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x25_handler",
+   "addr": 9679352,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sls__build_ssw_ack",
+   "addr": 9679392,
+   "size": 152,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_funcs__send_direct_frame",
+   "addr": 9679544,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "direct_tx__send_short_frame",
+   "addr": 9679660,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "abft__send_ssw_feedback",
+   "addr": 9679772,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_slot_timing_886f60",
+   "addr": 9679884,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bcon_txss_sweep_step",
+   "addr": 9679920,
+   "size": 1040,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__txss_init_result",
+   "addr": 9680960,
+   "size": 144,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__on_txss_init",
+   "addr": 9681104,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bi_mode__init_sta_table",
+   "addr": 9681160,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x0c_handler",
+   "addr": 9681188,
+   "size": 156,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss_init__send_fdbk_wait_ack",
+   "addr": 9681344,
+   "size": 344,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss_init__wait_rss",
+   "addr": 9681688,
+   "size": 376,
+   "dir": "txss"
+  },
+  {
+   "name": "txss_init__flow",
+   "addr": 9682064,
+   "size": 352,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__txss_resp_result",
+   "addr": 9682416,
+   "size": 56,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__on_txss_resp",
+   "addr": 9682472,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss_resp__wait_fdbk",
+   "addr": 9682536,
+   "size": 180,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss_resp__wait_iss_end",
+   "addr": 9682716,
+   "size": 212,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss_resp__flow",
+   "addr": 9682928,
+   "size": 228,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss_init__send_ssw_fdbk",
+   "addr": 9683156,
+   "size": 548,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__program_tx_frame",
+   "addr": 9683704,
+   "size": 864,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_tx__is_idle",
+   "addr": 9684568,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "qset1_mask__any_pending_uc",
+   "addr": 9684600,
+   "size": 96,
+   "dir": "_unknown"
+  },
+  {
+   "name": "background_bi_step",
+   "addr": 9684696,
+   "size": 208,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_pm__stamp_tsf_slots",
+   "addr": 9684904,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_pm__enter_idle",
+   "addr": 9684948,
+   "size": 68,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__enter_listen_mode",
+   "addr": 9685016,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_listen__set_flag_and_stamp_tsf",
+   "addr": 9685092,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_pm__set_busy_flag",
+   "addr": 9685108,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rf__power_seq_and_save",
+   "addr": 9685128,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_13ab6680",
+   "addr": 9685216,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__program_13ab6680_b",
+   "addr": 9685252,
+   "size": 36,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_dispatch",
+   "addr": 9685288,
+   "size": 712,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_selective_neighbor_cfg",
+   "addr": 9686000,
+   "size": 52,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fixed_sched__slot_setup",
+   "addr": 9686052,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sends_pmc_mark_aaab02",
+   "addr": 9686080,
+   "size": 76,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_sm__brp_noop_hook_b",
+   "addr": 9686156,
+   "size": 4,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__pick_sector_cfg",
+   "addr": 9686160,
+   "size": 112,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bitstream__push",
+   "addr": 9686272,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "peer_slots__scan_by_masks",
+   "addr": 9686316,
+   "size": 432,
+   "dir": "_unknown"
+  },
+  {
+   "name": "phy_params__snapshot",
+   "addr": 9686748,
+   "size": 256,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__select_rf_module_cmd31",
+   "addr": 9687004,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta_ctx__reset_counters",
+   "addr": 9687044,
+   "size": 168,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__publish_masks",
+   "addr": 9687212,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "update_sector_sweep_frames_number",
+   "addr": 9687296,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__set_rx_sector",
+   "addr": 9687360,
+   "size": 64,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__set_tx_sector",
+   "addr": 9687424,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "fsched_ap__poll_station",
+   "addr": 9687532,
+   "size": 160,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_metrics__reset_and_stamp",
+   "addr": 9687692,
+   "size": 28,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x33_handler",
+   "addr": 9687720,
+   "size": 116,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_24__check",
+   "addr": 9687836,
+   "size": 44,
+   "dir": "_unknown"
+  },
+  {
+   "name": "internal_tx__flow_sm6",
+   "addr": 9687880,
+   "size": 1484,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ps__hold_awake_for_sta",
+   "addr": 9689364,
+   "size": 108,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ps__release_awake_for_sta",
+   "addr": 9689472,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x34_handler",
+   "addr": 9689552,
+   "size": 200,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ps__hold_awake_if_active",
+   "addr": 9689752,
+   "size": 40,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ucode_cmd_0x24__copy_byte_164",
+   "addr": 9689792,
+   "size": 16,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sta__get_sweep_byte",
+   "addr": 9689808,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_flow_substep_uc",
+   "addr": 9689840,
+   "size": 168,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txop__pick_ctrl_code_by_peer",
+   "addr": 9690008,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__wait_ack",
+   "addr": 9690032,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__wait_ack_rf",
+   "addr": 9690092,
+   "size": 148,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bti_bi2__track_best_metric",
+   "addr": 9690240,
+   "size": 716,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__wait_cts",
+   "addr": 9690956,
+   "size": 100,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__wait_cts_b",
+   "addr": 9691056,
+   "size": 60,
+   "dir": "_unknown"
+  },
+  {
+   "name": "itx__wait_cts_rf",
+   "addr": 9691116,
+   "size": 152,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__arm_events_0xc00",
+   "addr": 9691268,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mac__set_mode_0000",
+   "addr": 9691356,
+   "size": 84,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ss__update_frames_number",
+   "addr": 9691440,
+   "size": 32,
+   "dir": "_unknown"
+  },
+  {
+   "name": "ss__copy_cfg_from_cmd",
+   "addr": 9691472,
+   "size": 24,
+   "dir": "_unknown"
+  },
+  {
+   "name": "wmi_cmd_txss_set_sectors_number",
+   "addr": 9691496,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "wmi_cmd_txss_set_sectors_order",
+   "addr": 9691584,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__store_sector_ranking",
+   "addr": 9691664,
+   "size": 300,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__set_tx_sector_id",
+   "addr": 9691964,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__set_u8_s0_w5_uc",
+   "addr": 9691976,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__set_u8_s0_w6_uc",
+   "addr": 9691988,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__set_u8_s0_w7_uc",
+   "addr": 9692000,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__set_u8_s3_w5_uc",
+   "addr": 9692012,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__set_u8_s6_w2_uc",
+   "addr": 9692024,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss__set_frame_half_s1_w2",
+   "addr": 9692036,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "txss_init__bits_uc_set32_s0_w2",
+   "addr": 9692048,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_mode__bits_uc_set32_s0_w4",
+   "addr": 9692060,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "frame_hdr__bits_uc_set32_s0_w7",
+   "addr": 9692072,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "frame_hdr__bits_uc_set32_s15_w8",
+   "addr": 9692084,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__bits_uc_set32_s1_w8",
+   "addr": 9692096,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "frame_hdr__bits_uc_set32_s23_w9",
+   "addr": 9692108,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sls__bits_uc_set32_s2_w2",
+   "addr": 9692120,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__uc_set32_s4_w3",
+   "addr": 9692132,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__uc_set32_s4_w4",
+   "addr": 9692144,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "brp__bits_uc_set32_s4_w5",
+   "addr": 9692156,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "frame_hdr__bits_uc_set32_s7_w8",
+   "addr": 9692168,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bits__uc_set32_s8_w15",
+   "addr": 9692180,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "sls__bits_uc_set32_s8_w4",
+   "addr": 9692192,
+   "size": 12,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx__detect_field_1b_change",
+   "addr": 9692204,
+   "size": 320,
+   "dir": "_unknown"
+  },
+  {
+   "name": "rx_capture__match_filter",
+   "addr": 9692524,
+   "size": 184,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_evt__build_and_post_report",
+   "addr": 9692708,
+   "size": 416,
+   "dir": "_unknown"
+  },
+  {
+   "name": "hwd_rfc_auto_fill_verify",
+   "addr": 9693124,
+   "size": 256,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mtp__get_tx_permission",
+   "addr": 9693380,
+   "size": 380,
+   "dir": "_unknown"
+  },
+  {
+   "name": "mtp_queue__release_mgmt",
+   "addr": 9693760,
+   "size": 384,
+   "dir": "sxd_utils"
+  },
+  {
+   "name": "bf__insert_field",
+   "addr": 9694144,
+   "size": 80,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_rmw_word_unaligned_uc",
+   "addr": 9694224,
+   "size": 88,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf__set_field_word",
+   "addr": 9694312,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_b_core_uc",
+   "addr": 9694332,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "bf_rmw_half_uc",
+   "addr": 9694352,
+   "size": 20,
+   "dir": "_unknown"
+  },
+  {
+   "name": "uc_vector_19",
+   "addr": 9694372,
+   "size": 32,
+   "dir": "_unknown"
+  }
+ ]
+}

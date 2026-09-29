@@ -1,0 +1,43 @@
+# Прошивка 6.4 mesh: только DMG IBSS (802.11-2020 11.1.3.5, 11.1.5; распределённые
+# маяки по патенту US8520648).  Режимы AP, STA и PBSS недоступны (код под
+# FW64_MESH: WMI_PCP_START принимается только с типом ADHOC/ADHOC_CREATOR,
+# WMI_CONNECT отвергается).  Здесь перечислено, чего в mesh НЕТ.  Сейчас —
+# ничего: код, нужный только AP/STA, пока остаётся; убирать его будем, когда
+# функциям IBSS понадобится место.
+
+# Энергосбережение AP/STA без графика (11.2.7.2.2): UPSIM и обязательное Awake
+# Window в маяке точки — в IBSS PS идёт через ATIM (11.2.4), не нужно.
+fw/conn_mgr__start_all_detector_services
+fw/new/ps_upsim
+uc/ps__hold_awake_if_active
+uc/ucode_cmd_0x33_handler
+uc/tx_ctx__post_status
+fw/new/upm
+fw/m_connect_devid
+fw/POWER_MNGR__wmi_ps_dev_profile_cfg_cmd
+uc/ps__release_awake_for_sta
+patch 0007-uc-upm-atim-rx-flag.patch
+uc/bi__dti_step
+uc/new/upm_wake
+patch 0012-uc-upm-atim-to-sleeping-sta.patch
+fw/new/reassoc
+patch 0013-fw-reassoc-req-as-assoc.patch
+patch 0014-fw-sta-sends-reassoc-req.patch
+fw/new/reassoc_inplace
+patch 0015-fw-reassoc-inplace.patch
+fw/new/gap_slot01_reserved
+fw/new/splitmac
+fw/new/splitmac_orphan
+patch 0016-fw-splitmac-reassoc-resp.patch
+patch 0017-fw-splitmac-no-conn-complete.patch
+# Доступ станции по расписанию ESE точки (10.39.4/5/6.2) — в IBSS расписания нет.
+fw/new/ese_rx
+fw/new/ese_walk
+uc/new/ese_dti
+patch 0018-fw-ese-dti-scheduled-access.patch
+patch 0019-uc-ese-dti-closed-outside-windows.patch
+patch 0020-fw-ese-no-sp-from-empty-table.patch
+
+# интервал маяка станции из маяка точки — пока только в 6.2-fix
+fw/new/sta_bi
+patch 0022-fw-sta-bi-from-beacon.patch
