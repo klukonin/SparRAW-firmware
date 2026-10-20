@@ -1,0 +1,23 @@
+fw: интервал маяка станции — из маяка точки (6.2-fix)
+
+802.11-2020 11.1.3.3.1.  6.2 берёт период BI станции из глобала 0x8002d4,
+который задаёт только команда хоста 0x803; мейнлайн-драйвер шлёт в ней
+WMI_ECHO 0x12345678, и станция получает BI 0x5678 TU — разрыв каждые
+2–4 с.  Вызов dmg_bcon__rx_handler в discovery__rx_pkt_handler переведён на
+sta_bi__bcon_rx (src/c/fw/new/sta_bi.cpp): маяк запоминается (BSSID →
+Beacon Interval), затем штатная обработка; wmi_connect перед подключением
+ставит интервал выбранной точки.  Длина команды та же.  Только в 6.2-fix
+(в 6.4 интервал присылает драйвер, патч 914).
+--- a/src/asm/fw/_unknown/discovery__rx_pkt_handler.S
++++ b/src/asm/fw/_unknown/discovery__rx_pkt_handler.S
+@@ -54,7 +54,9 @@ L_8e3f3c:
+ L_8e3f3e:
+ 	mov_s r0,r16
+ L_8e3f40:
+-	bl.d L_8c9404
++	/* 6.2-fix: маяк сначала запоминается (BSSID -> Beacon Interval), затем
++	 * штатный dmg_bcon__rx_handler (src/c/fw/new/sta_bi.cpp) */
++	bl.d sta_bi__bcon_rx
+ L_8e3f44:
+ 	mov_s r1,r14
+ L_8e3f46:

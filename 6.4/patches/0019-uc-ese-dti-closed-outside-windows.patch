@@ -1,0 +1,33 @@
+uc: станция молчит в DTI вне разрешённых окон ESE
+
+802.11-2020 10.39.4, 10.39.5, 10.39.6.2.  При расписании точки
+(CBAP Only = 0, флаг от прошивки) передача станции закрывается в начале
+DTI и открывается только на окна с битом «инициировать можно»; в конце
+окна снова закрывается.  Рычаг — пауза передачи пира со своей причиной 8
+(bf__pause_sta_tx/bf__resume_sta_tx), независимо от паузы BF (причина 3).
+Вызовы строк «starting slot»/«closing slot» в dti_worker переведены на
+вставки src/c/uc/new/ese_dti.cpp.
+--- a/src/asm/uc/_unknown/dti_worker__scheduled_dti_allocation_event.S
++++ b/src/asm/uc/_unknown/dti_worker__scheduled_dti_allocation_event.S
+@@ -73,7 +73,9 @@ L_9348ba:
+ L_9348bc:
+ 	bmsk r2,r14,0x3
+ L_9348c0:
+-	bl.d L_92d27c
++	/* 6.4: «starting slot», затем открыть передачу на разрешённое окно
++	 * (src/c/uc/new/ese_dti.cpp) */
++	bl.d ese_dti__slot_start_log
+ L_9348c4:
+ 	mov r3,r17
+ L_9348c8:
+@@ -131,7 +133,9 @@ L_93491e:
+ L_934924:
+ 	mov r0,0x21
+ L_934928:
+-	bl.d L_92d1d0
++	/* 6.4: «closing slot», затем закрыть передачу при расписании
++	 * (src/c/uc/new/ese_dti.cpp) */
++	bl.d ese_dti__slot_end_log
+ L_93492c:
+ 	mov r2,r17
+ L_934930:

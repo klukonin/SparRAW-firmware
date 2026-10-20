@@ -1,0 +1,24 @@
+fw: станция принимает Reassociation Response
+
+Таблица ветвей rx_pkt_handler (0x802540) вела подтип 3 в «Unknown stype»
+(после 0009 — отбросить).  Разбор тела у Reassoc Resp уже тот же, что у
+Assoc Resp (rx_mgmt_prs__parse), формат совпадает (802.11-2020 9.3.3.8);
+теперь и ветка та же.  Непрошеный ответ отбрасывается проверкой
+m_assoc_sent.
+--- a/src/data/fw_data.S
++++ b/src/data/fw_data.S
+@@ -908,7 +908,13 @@ fw_data:
+ 	.4byte mlme_sm_802458__action_8c7de0 - 0x008c0000 /* 902534 */
+ 	.byte 0x01                                                            /* 902538 . */
+ 	.4byte mlme_sm_802458__action_8c7de0 - 0x008c0000 /* 902539 */
+-	.byte 0x02,0x00,0x00,0x00,0x67,0xc6,0xc6,0xc6,0xc6,0xc6,0xc6,0xc6,0xc6,0x79,0x00,0x25 /* 90253d ....g........y.% */
++	.byte 0x02,0x00,0x00 /* 90253d */
++/* 902540: таблица ветвей rx_pkt_handler по подтипу (база 0x8e3d60, шаг 2):
++ * 0 Assoc Req, 1 Assoc Resp, 2..9 «Unknown stype», 10 Disassoc.
++ * 6.4: подтип 3 (Reassociation Response) — ветка Assoc Resp (0x67), формат
++ * тела тот же (802.11-2020 9.3.3.8); в 6.2 было 0xc6 — «Unknown stype». */
++	.byte 0x00,0x67,0xc6,0x67,0xc6,0xc6,0xc6,0xc6,0xc6,0xc6,0x79 /* 902540 */
++	.byte 0x00,0x25 /* 90254b */
+ 	.byte 0x0e,0x1d,0x21,0x17,0x00,0x00,0x00                              /* 90254d ..!.... */
+ 	.4byte conn_main_sm__action_8e7a3c - 0x008c0000 /* 902554 */
+ 	.byte 0x01                                                            /* 902558 . */

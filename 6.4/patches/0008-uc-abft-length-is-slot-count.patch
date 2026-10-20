@@ -1,0 +1,29 @@
+uc: число слотов A-BFT у ответчика = поле A-BFT Length + 1
+
+Поле A-BFT Length — число слотов минус 1 (802.11-2020 9.3.4.2); 6.2
+брала случайный слот из [0, поле), и при двух слотах станция всегда
+отвечала в первом, при одном диапазон был пуст.  Как в 4.1: [0, поле + 1).
+Обе команды bmsk r14,rX,2 в abft_responder__respond_flow заменены
+вызовом вставки (bmsk + add 1); длина та же, код не сдвигается.
+--- a/src/asm/uc/_unknown/abft_responder__respond_flow.S
++++ b/src/asm/uc/_unknown/abft_responder__respond_flow.S
+@@ -54,7 +54,8 @@ L_9303bc:
+ L_9303c0:
+ 	ld.as r4,[gp,-0x11]
+ L_9303c4:
+-	bmsk r14,r3,0x2
++	/* 6.4: число слотов A-BFT = поле + 1 (src/c/uc/new/abft_slots.cpp) */
++	bl abft__slot_count_r3
+ L_9303c8:
+ 	and r4,r4,0xfff0ffff
+ L_9303d0:
+@@ -303,7 +304,8 @@ L_930590:
+ L_930594:
+ 	ld_s r0,[gp,-0x44]
+ L_930596:
+-	bmsk r14,r11,0x2
++	/* 6.4: число слотов A-BFT = поле + 1 (src/c/uc/new/abft_slots.cpp) */
++	bl abft__slot_count_r11
+ L_93059a:
+ 	and r0,r0,0xfff0ffff
+ L_9305a2:

@@ -1,0 +1,13 @@
+# Прошивка 6.4 apsta: режимы AP, STA и PBSS, приоритет — надёжность, включая
+# возвращённую печать 4.1.  Здесь перечислено, чего в apsta НЕТ: «fw/<блок>»,
+# «uc/<блок>» — блок на C из src/c (с каталогом new/), «patch <файл>» — патч
+# quilt.
+#
+# Режимы apsta: AP, STA и PBSS (PCP и станция PBSS, тип сети P2P).  Прочие
+# типы сети отвергаются (код под FW64_APSTA): WMI_PCP_START — отказом
+# (l2_mgr__pcp_start_flow), WMI_CONNECT — WMI_DISCONNECT (wmi_connect).
+
+# интервал маяка станции из маяка точки — пока только в 6.2-fix (в 6.4 его
+# присылает драйвер, патч 914)
+fw/new/sta_bi
+patch 0022-fw-sta-bi-from-beacon.patch

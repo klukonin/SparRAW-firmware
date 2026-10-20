@@ -1,0 +1,131 @@
+== uc: встроенных самоциклов ожидания: 127
+   sub_9210b0                                   0x921196  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   uses_rgf_886500_921760                       0x9217b4  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   uses_rgf_886500_921760                       0x9217e4  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   mac_cmd_0x49__922928                         0x9229a4  r54 EVENT4_STATUS          бит 6  gp0_end                  ждёт 1
+   macreg_r45__9229c0                           0x922c8e  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   brp_responder_transmission_flow              0x923504  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   brp__program_and_measure                     0x92373e  r49 EVENT_ENGINE2_STATUS   бит 5  phy_rx_brp_done          ждёт 1
+   brp__program_and_measure                     0x9238a8  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   bti_worker__bti_transmitter_beacon_sweep_flow 0x923fd6  r42 EVENT1_STATUS          бит 7  txop                     ждёт 1
+   bti_worker__bti_transmitter_beacon_sweep_flow 0x9241a4  r42 EVENT1_STATUS          бит 7  txop                     ждёт 1
+   config_brp_rf                                0x92557e  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   config_brp_rf                                0x925686  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   uses_g_8004e4_925874                         0x9258a2  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 1
+   sub_925a48                                   0x925ae2  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_925a48                                   0x925af8  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_925a48                                   0x925b30  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_925a48                                   0x925b46  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   vring__disconnect_flush                      0x925eb0  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   vring__disconnect_flush                      0x925ee0  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   vring__disconnect_flush                      0x925f28  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   vring__disconnect_flush                      0x925f3e  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_926cc4                                   0x926e90  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   macreg_r47__928b8c                           0x928bd4  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   sub_92a754                                   0x92a7b2  r40 BACKOFF_IFS_STATUS     бит 24                          ждёт 1
+   sub_92a754                                   0x92a7cc  r40 BACKOFF_IFS_STATUS     бит 3  nav_active               ждёт 0
+   sub_92a754                                   0x92a8b2  r40 BACKOFF_IFS_STATUS     бит 24                          ждёт 1
+   sub_92a754                                   0x92a8c8  r40 BACKOFF_IFS_STATUS     бит 3  nav_active               ждёт 0
+   macreg_r45__92c3a4                           0x92c484  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   mac_cmd_0x1b__92dab8                         0x92db06  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   rfc__issue_cmd_10                            0x92f8a6  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   macreg_r47__92f8c8                           0x92f90a  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   macreg_r47__92f934                           0x92f978  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   macreg_r47__92f934                           0x92f9c8  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   macreg_r47__92f9d8                           0x92fa42  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   macreg_r47__92fa6c                           0x92fadc  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   macreg_r47__92fa6c                           0x92fb30  r47 DIRECT_TX_CMD_STATUS   бит 17 счётчик занят            ждёт 0
+   abft_responder__tx_ssw                       0x930bbe  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   abft_responder__tx_ssw                       0x930cac  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   rx_flow__run                                 0x9315b6  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   rx_flow__handle_frame                        0x93272c  r53 BAP_IF_0               бит 0  bap_tx_update_ind        ждёт 1
+   rx_flow__handle_frame                        0x932a94  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   rx_flow__handle_frame                        0x932b30  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   rx_flow__handle_frame                        0x932b92  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   rx_flow__handle_frame                        0x932c34  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   rx_flow__handle_frame                        0x932c7e  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   rx_flow__handle_frame                        0x932d26  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   rx_get_required_response                     0x933006  r53 BAP_IF_0               бит 3                           ждёт 1
+   sub_9333fc                                   0x933560  r53 BAP_IF_0               бит 0  bap_tx_update_ind        ждёт 1
+   rx_funcs__rx_flow                            0x933d98  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   macreg_r45__934424                           0x934524  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x9378b0  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x9378c6  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x937906  r47 DIRECT_TX_CMD_STATUS   бит 31                          ждёт 1
+   tx_bcast_flow                                0x93794a  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x9379c4  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x9379da  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x937a9c  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x937af8  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x937bd8  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   tx_bcast_flow                                0x937c08  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   tx_bcast_flow                                0x937c48  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   tx_bcast_flow                                0x937c5e  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   uses_rgf_886d00_937cf0                       0x937d1e  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   uses_rgf_886d00_937cf0                       0x937d3e  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   uses_rgf_886d00_937cf0                       0x937d6e  r47 DIRECT_TX_CMD_STATUS   бит 31                          ждёт 1
+   ucode_cmd_0x0b_handler                       0x937e38  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   ucode_cmd_0x0b_handler                       0x937e68  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   ucode_cmd_0x0b_handler                       0x937ea6  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   ucode_cmd_0x0b_handler                       0x937ebc  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   ucode_cmd_0x0b_handler                       0x937f2c  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   ucode_cmd_0x0b_handler                       0x937f5c  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   ucode_cmd_0x0b_handler                       0x937f9a  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   ucode_cmd_0x0b_handler                       0x937fb0  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_938568                                   0x93858e  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_938568                                   0x9385a4  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   uses_rgf_889480_9385d8                       0x938682  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93869c                                   0x938750  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93869c                                   0x93879e  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_938a88                                   0x938aba  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_938a88                                   0x938af0  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_938b90                                   0x938c56  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_939100                                   0x9391b8  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_939100                                   0x9391ce  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_939100                                   0x939218  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_939100                                   0x939322  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   bi_rx__send_response                         0x93954e  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   bi_rx__send_response                         0x939564  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_9396a0                                   0x9396b4  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_9396a0                                   0x9396ca  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_939888                                   0x9398fe  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   sub_939888                                   0x93992e  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   sub_939888                                   0x939972  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_939888                                   0x939988  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_939a64                                   0x939a7a  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_939a64                                   0x939a90  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   txop_initiator_open_txop_flow                0x93a2f8  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   txop_initiator_open_txop_flow                0x93a30e  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   txop_initiator_open_txop_flow                0x93a35a  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   txop_initiator_open_txop_flow                0x93a372  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   uses_rgf_886500_93a6d8                       0x93a732  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   uses_rgf_886500_93a6d8                       0x93a762  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   ucode_cmd_0x08_handler                       0x93af1e  r53 BAP_IF_0               бит 2  bap_rel_done_ind         ждёт 1
+   ucode_cmd_0x08_handler                       0x93af4e  r47 DIRECT_TX_CMD_STATUS   бит 0  cmd_ready                ждёт 0
+   ucode_cmd_0x08_handler                       0x93af92  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   ucode_cmd_0x08_handler                       0x93afa8  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   ucode_cmd_0x08_handler                       0x93afde  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   ucode_cmd_0x08_handler                       0x93aff4  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   ucode_cmd_0x08_handler                       0x93b042  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   ucode_cmd_0x08_handler                       0x93b058  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   bcon_txss_sweep_step                         0x93b500  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   bcon_txss_sweep_step                         0x93b59c  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   bcon_txss_sweep_step                         0x93b5c6  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   bcon_txss_sweep_step                         0x93b760  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   bcon_txss_sweep_step                         0x93b7c8  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   macreg_r45__93c0d4                           0x93c248  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93c2f8                                   0x93c470  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93c2f8                                   0x93c5e0  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   mac_cmd_0x1b__93d1ec                         0x93d260  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_93d348                                   0x93d3fc  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_93d348                                   0x93d416  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93d348                                   0x93d470  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93d348                                   0x93d5d2  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93e8c4                                   0x93e8f6  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   sub_93e8c4                                   0x93e98e  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   sub_93e8c4                                   0x93e9a4  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+   mtp_queue__release_mgmt                      0x93eac2  r43 MTP_QUERY_RESPONSE_1   бит 31 valid                    ждёт 1
+   mtp_queue__release_mgmt                      0x93eaf4  r45 MTP_TX_PERMISSION_RESP бит 31 valid                    ждёт 1
+
+всего встроенных ожиданий: 127
+из них по r42 бит 6 (tsf_event): 0

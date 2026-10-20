@@ -1,0 +1,47 @@
+fw: точка/PCP отвечает на Reassociation Request
+
+802.11-2020 11.3.5.5, PICS PC14.5/FR3/FT4.  Три правки одной длины:
+* rx_mgmt_prs__alloc_ei зовёт разбор через rx_mgmt_prs__parse_reassoc_entry
+  (src/c/fw/new/reassoc.cpp): Current AP Address сохраняется, элементы
+  встают на его место, кадр укорачивается на 6 байт — дальше это
+  Association Request и для прошивки, и для хоста;
+* таблица ветвей rx_pkt_handler: подтип 2 → ветка Assoc Req (в 0009 —
+  отбросить);
+* mgmt_tx__build_assoc_resp_8f9e88 строит заголовок через
+  assoc_resp__build_mac_header: на Reassociation Request — подтип 3.
+--- a/src/asm/fw/_unknown/mgmt_tx__build_assoc_resp_8f9e88.S
++++ b/src/asm/fw/_unknown/mgmt_tx__build_assoc_resp_8f9e88.S
+@@ -41,7 +41,8 @@ L_8f9e9e:
+ L_8f9ea0:
+ 	mov_s r1,r16
+ L_8f9ea2:
+-	bl.d L_8d7db8
++	/* 6.4: подтип ответа 3 на Reassociation Request (assoc_resp__build_mac_header) */
++	bl.d assoc_resp__build_mac_header
+ L_8f9ea6:
+ 	mov_s r2,0x1
+ L_8f9ea8:
+--- a/src/asm/fw/_unknown/rx_mgmt_prs__alloc_ei.S
++++ b/src/asm/fw/_unknown/rx_mgmt_prs__alloc_ei.S
+@@ -145,7 +145,9 @@ L_8e0b0e:
+ L_8e0b10:
+ 	bmsk r4,r15,0x3
+ L_8e0b14:
+-	bl.d L_8de190
++	/* 6.4: разбор через rx_mgmt_prs__parse_reassoc_entry (src/c/fw/new/reassoc.cpp):
++	 * Reassociation Request приводится к телу Association Request */
++	bl.d rx_mgmt_prs__parse_reassoc_entry
+ L_8e0b18:
+ 	bmsk r5,r13,0x1
+ L_8e0b1c:
+--- a/src/data/fw_data.S
++++ b/src/data/fw_data.S
+@@ -909,7 +909,7 @@ fw_data:
+  * 0 Assoc Req, 1 Assoc Resp, 2..9 «Unknown stype», 10 Disassoc.
+  * 6.4: подтип 3 (Reassociation Response) — ветка Assoc Resp (0x67), формат
+  * тела тот же (802.11-2020 9.3.3.8); в 6.2 было 0xc6 — «Unknown stype». */
+-	.byte 0x00,0x67,0xc6,0x67,0xc6,0xc6,0xc6,0xc6,0xc6,0xc6,0x79 /* 902540 */
++	.byte 0x00,0x67,0x00,0x67,0xc6,0xc6,0xc6,0xc6,0xc6,0xc6,0x79 /* 902540: 6.4 — подтип 2 (Reassociation Request) → ветка Assoc Req (0x00) */
+ 	.byte 0x00,0x25 /* 90254b */
+ 	.byte 0x0e,0x1d,0x21,0x17,0x00,0x00,0x00                              /* 90254d ..!.... */
+ 	.4byte conn_main_sm__action_8e7a3c - 0x008c0000 /* 902554 */

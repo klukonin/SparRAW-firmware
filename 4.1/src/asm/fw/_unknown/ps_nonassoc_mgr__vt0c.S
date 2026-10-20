@@ -1,0 +1,16 @@
+/* ps_nonassoc_mgr__vt0c @ 0x8dd224, 8 байт.  Сгенерировано gen_asm_tree.py
+ * из дизассемблированной прошивки fw_code.  Заменяется на C/C++
+ * по мере декомпиляции; сборка сверяется с оригиналом
+ * побайтово, поэтому адрес и размер менять нельзя.
+ */
+	.section .text.ps_nonassoc_mgr__vt0c,"ax",@progbits
+	.global ps_nonassoc_mgr__vt0c
+ps_nonassoc_mgr__vt0c:
+L_8dd224:
+	add_s r0,r0,0xc
+L_8dd226:
+	ld_s r1,[r0,0x2c]
+L_8dd228:
+	ld_s r1,[r1,0x4]
+L_8dd22a:
+	j_s [r1]

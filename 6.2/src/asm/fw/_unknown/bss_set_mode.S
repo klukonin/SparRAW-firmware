@@ -1,0 +1,49 @@
+/* bss_set_mode @ 0x8c4eec, 48 байт.  Сгенерировано gen_asm_tree.py
+ * из дизассемблированной прошивки fw_code.  Заменяется на C/C++
+ * по мере декомпиляции; сборка сверяется с оригиналом
+ * побайтово, поэтому адрес и размер менять нельзя.
+ *
+ * Печатает:
+ *   bss_set_mode() m_bss_mode = %x, [[[ is_secured = %d ]]]
+ * Зовут его: l2_mgr__pcp_start_flow, mid__reset_bss_defaults, pcp_stop__flow
+ * Зовёт сам: __ld_r14_to_r13_ret, __st_r14_to_r13, bss_set_mode__capinfo, fw_log_emit2
+ */
+	.section .text.fw_code,"ax",@progbits
+	.p2align 2
+	.global bss_set_mode
+bss_set_mode:
+	.global L_8c4eec
+L_8c4eec:
+	push_s blink
+L_8c4eee:
+	bl L_8c01e4
+L_8c4ef2:
+	mov_s r13,r0
+L_8c4ef4:
+	st_s r1,[r0,0x8]
+L_8c4ef6:
+	ld_s r0,[r0]
+L_8c4ef8:
+	ld_s r14,[r0,0x3c]
+L_8c4efa:
+	mov_s r0,r13
+L_8c4efc:
+	bl.d L_8c4cd8
+L_8c4f00:
+	mov_s r2,r14
+L_8c4f02:
+	mov_s r0,0x0
+L_8c4f04:
+	st.as r0,[r13,0x6b]
+L_8c4f08:
+	ld_s r2,[r13,0x8]
+L_8c4f0a:
+	mov_s r1,0x100c3a4
+L_8c4f10:
+	mov_s r0,0x2b
+L_8c4f12:
+	bl.d L_8dcc80
+L_8c4f16:
+	mov_s r3,r14
+L_8c4f18:
+	b L_8c0254

@@ -1,0 +1,7697 @@
+{
+"uc_boot__init_list_80095c": {
+"calls": [
+"uc_list__insert_by_prio"
+]
+},
+"__st_r24_to_r13_uc": {
+"callers": [
+"brp__flow_main"
+]
+},
+"__st_r20_to_r13_uc": {
+"callers": [
+"tx_initiator_step"
+]
+},
+"__st_r19_to_r13_uc": {
+"callers": [
+"txrx_api_cmd_step",
+"txss__tx_sector_frame",
+"ucode_cmd_0x05_handler"
+]
+},
+"__st_r18_to_r13_uc": {
+"callers": [
+"bcon_sweep_step_b",
+"beacon_tx__build_slot_bitmap",
+"mac_mode_program_a",
+"txss_func__reorder_sectors"
+]
+},
+"__st_r17_to_r13_uc": {
+"callers": [
+"bcon_txss_sweep_step",
+"bf_sm__background_step",
+"cf_end__tx_flow",
+"mtp_queue__release_mgmt",
+"rate_search__step"
+]
+},
+"__st_r16_to_r13_uc": {
+"callers": [
+"bi_cfg__apply",
+"brp__program_and_measure",
+"brp_copy_step",
+"brp_flow_step",
+"cf_end__send_frame",
+"get_selected_rf_sector_index_cmd_handler",
+"grant_detect_step",
+"mac_counter__program_0008",
+"nav_db__update",
+"rate_search__pick_tx_params",
+"tx_initiator__build_tx_vector",
+"txss_copy_step",
+"uc_buffers__init",
+"ucode_cmd__discovery_mode_cfg",
+"ucode_cmd__queue_delete",
+"umac_if_cmd_handler"
+]
+},
+"__st_r15_to_r13_uc": {
+"callers": [
+"bap_q_avail__check",
+"bcon_sweep__next_sector",
+"bf__abort_unexpected",
+"bf_clear_all_sta",
+"bf_sm__clear_sta",
+"bf_sm__pop_request_fifo",
+"bf_sm__step_by_state",
+"bf_sm__trigger",
+"bf_sm_step",
+"bf_substate__dispatch_by_state",
+"bf_substate_sm__step",
+"bi_manager__rx_flow_body",
+"bi_manager_rx_step",
+"bi_rx__send_response",
+"brp__build_tx_params",
+"brp__count_active_sectors",
+"brp__mode_step",
+"brp__sum_sector_counts",
+"brp_step_b",
+"cf_end_mtp_step",
+"direct_tx_rx__program",
+"ifs_cfg__program_from_hw_cfg",
+"internal_tx__pending_sm",
+"internal_tx_step",
+"list_800b90__insert_sorted",
+"mac__build_tx_common_params",
+"mac__program_886e0c_20b",
+"rate_search__build_mcs_mask",
+"rate_search__reset_stats",
+"rate_search__start_for_sta",
+"rf_sector__program_selected",
+"rfc_ctrl__switch",
+"rx_funcs__handle_ppdu_report",
+"set_selected_rf_sector_index_cmd_handler",
+"traffic_deferral_cfg_cmd_handler",
+"tx__pick_slot_for_peer",
+"tx_flow_substep",
+"tx_flows__program_mac_tx",
+"tx_initiator_flow",
+"tx_initiator_rx_step",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow",
+"txss__flow_body",
+"txss__prepare_frames",
+"uc_send_event",
+"uc_send_evt_typed",
+"uc_sta_trace__push_record",
+"ucode_cmd_0x0c_handler",
+"ucode_cmd__rs_enable",
+"ucode_cmd__rx_on",
+"ucode_pm__stamp_tsf_slots"
+]
+},
+"__st_r14_to_r13_uc": {
+"callers": [
+"background_bi_step",
+"bcon_sweep_step_a",
+"bf_sm__check_request_timeout",
+"bf_sm__mark_sta_active",
+"bf_sm__reset_slot_table",
+"bf_sm__reset_sta_rate",
+"bf_sm__start_request",
+"bf_substate__txss_by_slot",
+"bi__tsf_delta64",
+"bi_tx__check_idle_and_start",
+"bi_tx__program_initiator",
+"brp__reset_db",
+"brp__reset_db_b",
+"brp__write_pair_0x504",
+"bti_worker_bi2_step",
+"internal_tx__clear_pending",
+"keep_alive__arm_slot",
+"mac__set_rf_chain_state",
+"mac_counter__program_3009",
+"mac_counter__program_400b",
+"mac_mode_brp_step",
+"mac_mode_program_b",
+"mac_mode_step_b",
+"rx_funcs__identify_peer",
+"rx_funcs_copy_step",
+"rx_funcs_step",
+"rx_funcs_substep",
+"tx__read_tx_result",
+"tx_flow_size_step",
+"tx_initiator_substep",
+"tx_mtp__open_window",
+"txop_tx_step",
+"txrx_api_step_c",
+"txss__init_sweep",
+"txss__init_sweep_b",
+"txss_flow_step",
+"txss_flow_step_b",
+"txss_rx_step",
+"uc_mailbox__init_rings",
+"uc_res_886f00__acquire",
+"uc_send_evt__get_rf_sector_done",
+"uc_send_evt__link_lost",
+"uc_send_evt__ps_awake_peer",
+"uc_send_evt__ps_shallow_sleep_ntf",
+"uc_send_evt__rs_done",
+"uc_send_evt__set_rf_sector_done",
+"ucode_cmd_0x00_handler",
+"ucode_cmd_0x04_handler",
+"ucode_cmd__bi_config",
+"ucode_cmd_install_key"
+]
+},
+"__ld_r24_to_r13_ret_uc": {
+"callers": [
+"brp__flow_main"
+]
+},
+"__ld_r20_to_r13_ret_uc": {
+"callers": [
+"tx_initiator_step"
+]
+},
+"__ld_r19_to_r13_ret_uc": {
+"callers": [
+"txrx_api_cmd_step",
+"txss__tx_sector_frame",
+"ucode_cmd_0x05_handler"
+]
+},
+"__ld_r18_to_r13_ret_uc": {
+"callers": [
+"bcon_sweep_step_b",
+"beacon_tx__build_slot_bitmap",
+"mac_mode_program_a",
+"txss_func__reorder_sectors"
+]
+},
+"__ld_r17_to_r13_ret_uc": {
+"callers": [
+"bcon_txss_sweep_step",
+"bf_sm__process_request_fifo",
+"cf_end__tx_flow",
+"mtp_queue__release_mgmt",
+"rate_search__step"
+]
+},
+"__ld_r16_to_r13_ret_uc": {
+"callers": [
+"bi_cfg__apply",
+"brp__program_and_measure",
+"brp_copy_step",
+"brp_flow_step",
+"cf_end__send_frame",
+"get_selected_rf_sector_index_cmd_handler",
+"grant_detect_step",
+"mac_counter__program_0008",
+"nav_db__update",
+"rate_search__pick_tx_params",
+"tx_initiator__build_tx_vector",
+"txss_copy_step",
+"uc_buffers__init",
+"ucode_cmd__discovery_mode_cfg",
+"ucode_cmd__queue_delete",
+"umac_if_cmd_handler"
+]
+},
+"__ld_r15_to_r13_ret_uc": {
+"callers": [
+"bap_q_avail__check",
+"bcon_sweep__next_sector",
+"bf__abort_unexpected",
+"bf_clear_all_sta",
+"bf_sm__clear_sta",
+"bf_sm__pop_request_fifo",
+"bf_sm__step_by_state",
+"bf_sm__trigger",
+"bf_sm_step",
+"bf_substate__dispatch_by_state",
+"bf_substate_sm__step",
+"bi_manager__rx_flow_body",
+"bi_manager_rx_step",
+"bi_rx__send_response",
+"brp__build_tx_params",
+"brp__count_active_sectors",
+"brp__mode_step",
+"brp__sum_sector_counts",
+"brp_step_b",
+"cf_end_mtp_step",
+"direct_tx_rx__program",
+"ifs_cfg__program_from_hw_cfg",
+"internal_tx__pending_sm",
+"internal_tx_step",
+"list_800b90__insert_sorted",
+"mac__build_tx_common_params",
+"mac__program_886e0c_20b",
+"rate_search__build_mcs_mask",
+"rate_search__reset_stats",
+"rate_search__start_for_sta",
+"rf_sector__program_selected",
+"rfc_ctrl__switch",
+"rx_funcs__handle_ppdu_report",
+"set_selected_rf_sector_index_cmd_handler",
+"traffic_deferral_cfg_cmd_handler",
+"tx__pick_slot_for_peer",
+"tx_flow_substep",
+"tx_flows__program_mac_tx",
+"tx_initiator_flow",
+"tx_initiator_rx_step",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow",
+"txss__flow_body",
+"txss__prepare_frames",
+"uc_send_event",
+"uc_send_evt_typed",
+"uc_sta_trace__push_record",
+"ucode_cmd_0x0c_handler",
+"ucode_cmd__rs_enable",
+"ucode_cmd__rx_on",
+"ucode_pm__stamp_tsf_slots"
+]
+},
+"__ld_r14_to_r13_ret_uc": {
+"callers": [
+"background_bi_step",
+"bcon_sweep_step_a",
+"bf_sm__check_request_timeout",
+"bf_sm__mark_sta_active",
+"bf_sm__reset_slot_table",
+"bf_sm__reset_sta_rate",
+"bf_sm__start_request",
+"bf_substate__txss_by_slot",
+"bi__tsf_delta64",
+"bi_tx__check_idle_and_start",
+"bi_tx__program_initiator",
+"brp__reset_db",
+"brp__reset_db_b",
+"brp__write_pair_0x504",
+"bti_worker_bi2_step",
+"internal_tx__clear_pending",
+"keep_alive__arm_slot",
+"mac__set_rf_chain_state",
+"mac_counter__program_3009",
+"mac_counter__program_400b",
+"mac_mode_brp_step",
+"mac_mode_program_b",
+"mac_mode_step_b",
+"rx_funcs__identify_peer",
+"rx_funcs_copy_step",
+"rx_funcs_step",
+"rx_funcs_substep",
+"tx__read_tx_result",
+"tx_flow_size_step",
+"tx_initiator_substep",
+"tx_mtp__open_window",
+"txop_tx_step",
+"txrx_api_step_c",
+"txss__init_sweep",
+"txss__init_sweep_b",
+"txss_flow_step",
+"txss_flow_step_b",
+"txss_rx_step",
+"uc_mailbox__init_rings",
+"uc_res_886f00__acquire",
+"uc_send_evt__get_rf_sector_done",
+"uc_send_evt__link_lost",
+"uc_send_evt__ps_awake_peer",
+"uc_send_evt__ps_shallow_sleep_ntf",
+"uc_send_evt__rs_done",
+"uc_send_evt__set_rf_sector_done",
+"ucode_cmd_0x00_handler",
+"ucode_cmd_0x04_handler",
+"ucode_cmd__bi_config",
+"ucode_cmd_install_key"
+]
+},
+"__ld_r13_ret_uc": {
+"callers": [
+"bf__abort_to_state11",
+"bf__clear_pending_and_notify",
+"bf__enter_mode3",
+"bf__trigger_for_mid",
+"bf_metrics__reset_and_stamp",
+"bf_sm__advance_if_slot33",
+"bf_sm__check_sta_timeout",
+"bf_sm__clear_pending",
+"bf_sm__post_slot_result",
+"bf_sm__release_sta",
+"bf_sm__state_action",
+"bf_sm__substate_result_by_slot",
+"bf_substate__brp_mode_by_slot",
+"bf_substate__txss_step_by_slot",
+"bf_substate_sm__is_state_9_11",
+"bi__remaining_time_us",
+"bi_ctrl__program_mac_bcon",
+"bi_mode_init_substep",
+"bi_tx_initiator_wrap",
+"brp__write_pair_b",
+"direct_tx__init_rx_desc",
+"direct_tx__send_short_frame",
+"l1_task__entry",
+"l1_task__kick_and_dispatch",
+"l2_task__run",
+"mac__program_qset_slots",
+"mac__set_duration_us",
+"mac__switch_core_and_setup_dma",
+"mac_mode__enter_idle_seq",
+"mac_mode__switch_after_ppdu",
+"mac_mode__switch_core_and_rf",
+"mac_mode__switch_sequence",
+"memset0_words_uc__body",
+"mid_vring_mask_update",
+"pm__event_mask_restore",
+"pm__event_mask_save_all_on",
+"power_manager__scale_counters_ms",
+"power_manager__tick_if_elapsed",
+"qset1_mask__any_pending",
+"rate_search__commit_mcs",
+"rate_search__reset_sta",
+"rf_sector__clear_sta_bit",
+"rx_funcs__send_direct_frame",
+"tx_mtp_queue_gate",
+"txop__open_window",
+"uc_deferred__run_all",
+"uc_list_800b90__run_head_cb",
+"uc_mailbox__dispatch_one",
+"uc_pm__enter_idle",
+"uc_res_vote__acquire",
+"uc_res_vote__release",
+"uc_send_evt__bf_done",
+"uc_send_evt__mac_monitor",
+"uc_send_evt__new_link",
+"uc_send_evt__ps_wake_pcie",
+"uc_send_evt__rs_started",
+"uc_send_evt__ucode_ready",
+"uc_sta_ctx__reset",
+"uc_tsf_elapsed",
+"uc_tx__is_idle",
+"ucode_cmd_0x07_handler",
+"ucode_cmd_0x12_handler",
+"ucode_cmd_0x30_handler",
+"ucode_cmd__apply_mac_cfg",
+"ucode_cmd__echo",
+"ucode_cmd_trigger_bf"
+]
+},
+"uc_irq_enable": {
+"callers": [
+"uc_main_init"
+]
+},
+"memcpy_uc": {
+"callers": [
+"bcon_sweep_step_b",
+"bi_mode__load_qset_table",
+"bi_window_transition_prep",
+"brp_copy_step",
+"get_selected_rf_sector_index_cmd_handler",
+"rx_funcs_copy_step",
+"txss_copy_step",
+"txss_func__reorder_sectors",
+"uc_send_evt__bf_done",
+"uc_send_evt__get_rf_sector_done",
+"uc_send_evt__link_lost",
+"uc_send_evt__new_link",
+"uc_send_evt__ps_awake_peer",
+"uc_send_evt__ps_shallow_sleep_ntf",
+"uc_send_evt__rs_done",
+"uc_send_evt__set_rf_sector_done",
+"ucode_cmd_0x00_handler",
+"ucode_cmd_0x0c_handler",
+"ucode_cmd_0x11_handler",
+"ucode_cmd_0x16_handler",
+"ucode_cmd__apply_mac_cfg",
+"ucode_cmd__bi_config",
+"ucode_cmd__rs_enable",
+"ucode_cmd_install_key",
+"ucode_cmd_phy_ina_det_cfg"
+]
+},
+"uc_divmod_signed": {
+"callers": [
+"aw__compute_next_tbtt",
+"power_manager__scale_counters_ms",
+"tx_initiator__build_tx_vector"
+]
+},
+"shl64": {
+"callers": [
+"brp__program_and_measure",
+"bti_worker__bti_transmitter_beacon_sweep_flow"
+]
+},
+"softfloat_int_to_double": {
+"calls": [
+"softfloat_u32_to_double"
+],
+"callers": [
+"bi_build_schedule_tables"
+]
+},
+"softfloat_u32_to_double": {
+"callers": [
+"abft_responder__tx_ssw",
+"softfloat_int_to_double"
+]
+},
+"softfloat_df_mul": {
+"callers": [
+"bi_build_schedule_tables"
+]
+},
+"softfloat_df_sub": {
+"calls": [
+"softfloat_df_add"
+]
+},
+"softfloat_negate_r3": {
+"callers": [
+"abft_responder__tx_ssw"
+]
+},
+"softfloat_df_add": {
+"callers": [
+"bi_build_schedule_tables",
+"softfloat_df_sub"
+]
+},
+"softfloat_double_to_short_b": {
+"calls": [
+"softfloat_double_to_short"
+],
+"callers": [
+"abft_responder__tx_ssw"
+]
+},
+"softfloat_double_to_short": {
+"callers": [
+"bi_build_schedule_tables",
+"softfloat_double_to_short_b"
+]
+},
+"uc_isr_instruction_error": {
+"calls": [
+"uc_sysassert"
+],
+"strings": [
+"ucode_interrupt_handlers.c"
+]
+},
+"uc_isr_l2_task1__body": {
+"calls": [
+"l2_task__entry"
+]
+},
+"uc_isr_l1_task2": {
+"calls": [
+"l1_task__entry"
+]
+},
+"uc_isr_l2_task2": {
+"calls": [
+"l2_task__entry"
+]
+},
+"uc_isr_l2_task0": {
+"calls": [
+"l2_task__entry"
+]
+},
+"uc_isr_l1_task0": {
+"calls": [
+"l1_task__entry"
+]
+},
+"uc_isr_l1_task1": {
+"calls": [
+"l1_task__entry"
+]
+},
+"uc_isr_memory_error": {
+"calls": [
+"uc_sysassert"
+],
+"strings": [
+"ucode_interrupt_handlers.c"
+]
+},
+"uc_isr_memory_error__body": {
+"calls": [
+"memset0_words_uc",
+"uc_main_init"
+]
+},
+"uc_deferred__run_all": {
+"calls": [
+"__ld_r13_ret_uc"
+]
+},
+"uc_list_800b90__run_head_cb": {
+"calls": [
+"__ld_r13_ret_uc"
+]
+},
+"uc_list__insert_by_prio": {
+"calls": [
+"list_800b90__insert_sorted"
+],
+"callers": [
+"uc_boot__init_list_80095c"
+]
+},
+"uc_main_init": {
+"calls": [
+"background_task__step",
+"bi_mode_init_sequence",
+"set_reg_88000c",
+"set_reg_880010",
+"uc_buffers__init",
+"uc_irq_enable",
+"uc_log__init",
+"uc_send_evt__ucode_ready",
+"uc_timers__start_defaults"
+],
+"callers": [
+"uc_isr_memory_error__body"
+]
+},
+"memset0_words_uc": {
+"calls": [
+"memset0_words_uc__body",
+"memset_uc"
+],
+"callers": [
+"aw_tbtt_set_step",
+"aw_worker__collect_awake_peers",
+"bf_metrics__reset_and_stamp",
+"bf_sm__clear_sta",
+"bf_sm__reset_slot_table",
+"bf_sm__reset_sta_rate",
+"bf_sm__trigger",
+"bi_build_schedule_tables",
+"bi_ctx__reset",
+"bi_manager_step_a",
+"bi_manager_step_b",
+"bi_mode__reset_bf_state",
+"bi_window_transition_prep",
+"brp__program_and_measure",
+"brp__reset_db",
+"brp__reset_db_b",
+"brp_copy_step",
+"ps_awake_peer__build_evt",
+"rate_search__commit_mcs",
+"rate_search__reset_stats",
+"rate_search__start_for_sta",
+"rw_g_801038",
+"rw_g_801b08",
+"rw_g_801e82",
+"shallow_sleep_step",
+"tx_flow_size_step",
+"tx_initiator_substep",
+"uc_buffers__init",
+"uc_isr_memory_error__body",
+"uc_log__init",
+"uc_sta_ctx__reset",
+"ucode_cmd_0x05_handler"
+]
+},
+"memset0_words_uc__body": {
+"calls": [
+"__ld_r13_ret_uc"
+],
+"callers": [
+"memset0_words_uc"
+]
+},
+"bi_dti__sleep_and_resume": {
+"calls": [
+"perform_shallow_sleep",
+"uc_spin_until_event4"
+],
+"callers": [
+"bi_dti__kick_worker"
+]
+},
+"ucode_cmd__load_table_80208c": {
+"callers": [
+"ucode_cmd_0x23_handler"
+]
+},
+"ucode_cmd_0x23_handler": {
+"calls": [
+"ucode_cmd__load_table_80208c"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"mac__prepare_txrx_window": {
+"calls": [
+"mac_counter__program_0008",
+"rx__mac_prepare",
+"uc_wait_event_busy"
+],
+"callers": [
+"rx_nav_update",
+"tx_flow_size_step",
+"tx_initiator_substep"
+],
+"globals": [
+"0x800604",
+"0x800608"
+]
+},
+"bf__enter_mode3": {
+"calls": [
+"__ld_r13_ret_uc",
+"mid_vring_mask_update",
+"uc_res_886f00__acquire"
+],
+"callers": [
+"bf_sm__substate_result_by_slot",
+"bf_substate_sm__step"
+]
+},
+"bf_substate__next_step": {
+"callers": [
+"bf_substate_sm__step"
+]
+},
+"basic_if__alloc_evt_slot": {
+"calls": [
+"uc_deref_field4_921990",
+"uc_sysassert"
+],
+"callers": [
+"tail_basic_if__alloc_evt_slot",
+"uc_send_evt__bf_done",
+"uc_send_evt__get_rf_sector_done",
+"uc_send_evt__link_lost",
+"uc_send_evt__mac_monitor",
+"uc_send_evt__new_link",
+"uc_send_evt__ps_awake_peer",
+"uc_send_evt__ps_shallow_sleep_ntf",
+"uc_send_evt__ps_wake_pcie",
+"uc_send_evt__rs_done",
+"uc_send_evt__rs_started",
+"uc_send_evt__set_rf_sector_done",
+"uc_send_evt__sta_update_field_rsp",
+"uc_send_evt__ucode_ready",
+"uc_send_evt_typed",
+"ucode_cmd__echo"
+],
+"strings": [
+"basic_if.cpp"
+]
+},
+"uc_deref_field4_921990": {
+"callers": [
+"basic_if__alloc_evt_slot"
+]
+},
+"uc_field_0x24_is_zero": {
+"calls": [
+"uc_indirect_is_zero"
+],
+"callers": [
+"l1_task__kick_and_dispatch"
+]
+},
+"uc_irq_set_level": {
+"callers": [
+"bi_mode__unmask_all_events",
+"bi_mode_init_substep",
+"uc_timer__start"
+]
+},
+"shallow_sleep_rfc_step": {
+"calls": [
+"mac__program_deadline_slack",
+"mac__program_rf_mode",
+"mac__set_rf_chain_state",
+"mac__switch_core_and_setup_dma",
+"rfc_ctrl__switch",
+"sxd_hal__read_backoff_status"
+],
+"callers": [
+"perform_shallow_sleep"
+]
+},
+"bi_manager_rx_step": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bi_manager__rx_flow_body",
+"get_reg_88c120",
+"rx_flow__run",
+"sxd_hal__read_backoff_status",
+"sxd_hal__wait_slot2_busy2",
+"tx__pick_slot_for_peer"
+],
+"callers": [
+"bi_manager__rx_bi_flow"
+],
+"globals": [
+"0x800604",
+"0x800608"
+]
+},
+"brp__find_phase_index": {
+"callers": [
+"brp__flow_main"
+]
+},
+"brp__sum_sector_counts": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc"
+],
+"callers": [
+"brp__flow_main"
+]
+},
+"aw__open_event_mask": {
+"calls": [
+"pm__event_mask_save_all_on",
+"set_reg_886ddc"
+],
+"callers": [
+"aw_worker__begin_window"
+]
+},
+"bi_window_timing_update": {
+"calls": [
+"bi__tsf_delta64",
+"uc_get_half_0x10",
+"uc_read_tsf64"
+],
+"callers": [
+"bi_ap_mon_if__trigger_aw_to_dti",
+"bi_ap_mon_if__trigger_bhi"
+]
+},
+"background_task__step": {
+"calls": [
+"bf_sm__background_step",
+"rw_g_800630_921fb0"
+],
+"callers": [
+"uc_main_init"
+]
+},
+"background_task__dispatch": {
+"calls": [
+"background_bi_step",
+"l1_task__kick_and_dispatch",
+"mac_mode__switch_sequence",
+"rate_search__step",
+"rw_g_800630_921fb0",
+"uc_sysassert"
+],
+"strings": [
+"background_task.c"
+],
+"globals": [
+"0x800588",
+"0x800590"
+]
+},
+"bf_pending__set_bit": {
+"callers": [
+"bf_sm__clear_pending",
+"bf_sm__release_sta",
+"bf_sm__substate_advance",
+"internal_tx__pending_sm",
+"set_reg_886d80_925b34",
+"set_reg_886d80_925b48",
+"tx_initiator_step",
+"umac_if_cmd_handler"
+]
+},
+"rx__set_enable_mask": {
+"callers": [
+"l1_bi_trigger_step",
+"rx_funcs__set_rx_off",
+"ucode_cmd__rx_on"
+],
+"globals": [
+"0x800588"
+]
+},
+"rw_g_800630_921fb0": {
+"callers": [
+"background_task__dispatch",
+"background_task__step"
+]
+},
+"mac_counter__program_3009": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"uc_sysassert"
+],
+"callers": [
+"txop_initiator_open_txop_flow"
+],
+"strings": [
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/sxd_utils.h"
+]
+},
+"bf_sm__clear_pending": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_pending__set_bit",
+"mem_8571dc__or_bit"
+],
+"callers": [
+"bf__abort_unexpected",
+"bf_sm__assert_and_clear",
+"bf_sm__check_request_timeout",
+"bf_sm__check_sta_timeout",
+"bf_sm__pop_request_fifo",
+"bf_sm__trigger"
+]
+},
+"bf_sm__check_request_timeout": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_sm__clear_pending",
+"bf_state__set",
+"uc_read_tsf_lo"
+],
+"callers": [
+"l1_task__entry"
+],
+"globals": [
+"0x8005ec",
+"0x8005f0"
+]
+},
+"bf_clear_all_sta": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_sm__clear_sta"
+],
+"callers": [
+"ucode_cmd__discovery_mode_cfg"
+],
+"strings": [
+"bf_clear_all_sta() tail: %d, head: %d, non_idle_mask: 0x%x"
+]
+},
+"bf__reset_rx_counters": {
+"calls": [
+"uc_sta_trace__push_record"
+],
+"callers": [
+"bf_sm__step_by_state"
+],
+"globals": [
+"0x800604",
+"0x800608"
+]
+},
+"bf_sm__reset_sta_rate": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"memset0_words_uc",
+"rate_search__reset_sta",
+"tbl_8018b5__byte_by_index"
+],
+"callers": [
+"bf_sm__start_request",
+"bf_sm__substate_advance"
+]
+},
+"bf_sm__step_by_state": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf__reset_rx_counters",
+"bf_substate__dispatch_by_state"
+],
+"callers": [
+"bi_manager__rx_flow_kind1",
+"internal_tx__pending_sm",
+"rx_funcs__rx_flow"
+],
+"globals": [
+"0x8005b0"
+]
+},
+"ucode_cmd_trigger_bf": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__trigger",
+"uc_tx__is_idle",
+"ucode_pm__set_busy_flag"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"globals": [
+"0x8005ec"
+]
+},
+"bi_mode__reset_bf_state": {
+"calls": [
+"bf_sm__reset_slot_table",
+"memset0_words_uc"
+],
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"bf_sm__trigger": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_sm__clear_pending",
+"bf_sm__mark_sta_active",
+"bf_state__set",
+"memset0_words_uc",
+"uc_sysassert"
+],
+"callers": [
+"bf__trigger_for_mid",
+"ucode_cmd_trigger_bf"
+],
+"strings": [
+"beamforming_sm.c"
+]
+},
+"bf_sm__pop_request_fifo": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_sm__clear_pending",
+"bf_sm__start_request"
+],
+"callers": [
+"bf_sm__clear_sta",
+"bf_sm__process_request_fifo"
+]
+},
+"bf_sm__mark_sta_active": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"uc_sysassert"
+],
+"callers": [
+"bf__abort_unexpected",
+"bf_sm__trigger"
+],
+"strings": [
+"beamforming_sm.c"
+]
+},
+"mem_8571dc__or_bit": {
+"callers": [
+"bf_sm__clear_pending"
+],
+"globals": [
+"0x800574"
+]
+},
+"bf_sm__release_sta": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_pending__set_bit",
+"bi_tx__check_idle_and_start",
+"mid_vring_mask_update",
+"rate_search__reset_sta",
+"tbl_8018b5__byte_by_index",
+"uc_pending__clear_bit"
+],
+"callers": [
+"brp_flow_step",
+"txss_flow_step_b"
+],
+"globals": [
+"0x800604",
+"0x800608"
+]
+},
+"bf_sm__check_sta_timeout": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__clear_pending",
+"bf_sm_step",
+"bf_state__set",
+"uc_read_tsf_lo"
+],
+"callers": [
+"bf_sm__state_failure_path"
+],
+"globals": [
+"0x8005ec",
+"0x8005f0"
+]
+},
+"bf_sm__start_request": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_sm__reset_sta_rate",
+"get_g_80051c",
+"rate_search__start_for_sta",
+"rf_sector__clear_sta_bit",
+"tbl_8018b5__byte_by_index",
+"ucode_pm__set_busy_flag"
+],
+"callers": [
+"bf_sm__pop_request_fifo"
+]
+},
+"bf_sm__background_step": {
+"calls": [
+"__st_r17_to_r13_uc",
+"bf_sm__process_request_fifo",
+"uc_tx__is_idle",
+"ucode_pm__set_busy_flag"
+],
+"callers": [
+"background_task__step"
+]
+},
+"bf_sm__substate_advance": {
+"calls": [
+"bf_pending__set_bit",
+"bf_sm__advance_if_slot33",
+"bf_sm__assert_and_clear",
+"bf_sm__reset_sta_rate",
+"bf_sm__substate_result_by_slot",
+"bf_state__set",
+"bf_substate_sm__is_state_9_11",
+"bf_substate_sm__step",
+"mid_vring_mask_update"
+]
+},
+"bf_sm__assert_and_clear": {
+"calls": [
+"bf_sm__clear_pending",
+"uc_sysassert"
+],
+"callers": [
+"bf_sm__substate_advance"
+],
+"strings": [
+"beamforming_sm.c"
+]
+},
+"bf_sm__state_failure_path": {
+"calls": [
+"bf_sm__check_sta_timeout",
+"bf_sm__process_request_fifo",
+"mid_vring_mask_update"
+],
+"globals": [
+"0x8005d0",
+"0x8005ec"
+]
+},
+"bf_sm__process_request_fifo": {
+"calls": [
+"__ld_r17_to_r13_ret_uc",
+"bf__clear_pending_and_notify",
+"bf_sm__pop_request_fifo",
+"bf_sm_step",
+"bf_state__set",
+"rate_search__apply_mcs",
+"uc_sysassert"
+],
+"callers": [
+"bf_sm__background_step",
+"bf_sm__state_failure_path"
+],
+"strings": [
+"BF state failure, but the BRP mode was already set; cid: %d",
+"BF state failure; move to non-deferred BRP; cid: %d",
+"beamforming_sm.c"
+],
+"globals": [
+"0x8005b0",
+"0x8005d2"
+]
+},
+"bf_substate__dispatch_by_state": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_state__set",
+"bf_substate__brp_mode_by_slot",
+"bf_substate__txss_by_slot",
+"bf_substate__txss_step_by_slot",
+"brp__apply_slot_mcs"
+],
+"callers": [
+"bf_sm__step_by_state"
+],
+"globals": [
+"0x8005d2"
+]
+},
+"bf_sm__post_and_dispatch": {
+"calls": [
+"bf_sm__post_slot_result"
+]
+},
+"ucode_cmd_config_lmac_bf_sm": {
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"bf_sm__clear_sta": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf__clear_pending_and_notify",
+"bf_sm__pop_request_fifo",
+"bf_state__set",
+"memset0_words_uc"
+],
+"callers": [
+"bf_clear_all_sta",
+"ucode_cmd_0x05_handler"
+]
+},
+"rx_funcs__record_level_800fa0": {
+"callers": [
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__identify_peer"
+]
+},
+"bi_manager_step_a": {
+"calls": [
+"memset0_words_uc",
+"rw_g_800994",
+"sxd_hal__mac_select_indexed",
+"uc_read_bi_sync"
+],
+"callers": [
+"bi_manager__enter_dti"
+]
+},
+"bi_manager_step_b": {
+"calls": [
+"memset0_words_uc",
+"sxd_hal__mac_select_indexed"
+],
+"callers": [
+"bi_manager__enter_dti"
+]
+},
+"bi_timing_snapshot_b": {
+"calls": [
+"bi__tsf_delta64",
+"uc_read_tsf64"
+],
+"callers": [
+"bi_ap_mon_if__trigger"
+]
+},
+"bf_sm__substate_result_by_slot": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf__enter_mode3"
+],
+"callers": [
+"bf_sm__substate_advance"
+]
+},
+"bf_substate__brp_mode_by_slot": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__reset_slot_table",
+"brp__mode_step",
+"stub_ret_93076c",
+"stub_ret_937088"
+],
+"callers": [
+"bf_substate__dispatch_by_state"
+]
+},
+"mac_mode_brp_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"brp__build_tx_params",
+"brp__program_and_measure",
+"get_g_804010",
+"mac__program_4f_52",
+"mac_mode__wait_ppdu_and_kick",
+"mac_mode_program_a",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"brp__mode_step"
+]
+},
+"brp__mode_step": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_substate__set",
+"brp__count_active_sectors",
+"brp__flow_main",
+"brp__reset_db",
+"mac_mode_brp_step",
+"mac_mode_step_b",
+"sxd_hal__mac_select_indexed"
+],
+"callers": [
+"bf_substate__brp_mode_by_slot"
+]
+},
+"mac_mode__wait_ppdu_and_kick": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"mac_mode_brp_step",
+"mac_mode_step_b"
+],
+"globals": [
+"0x80057c"
+]
+},
+"mac_mode_step_b": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"brp__build_tx_params",
+"get_g_804010",
+"mac__program_4f_52",
+"mac_mode__wait_ppdu_and_kick",
+"mac_mode_program_a",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"brp__mode_step"
+]
+},
+"mac_mode_program_a": {
+"calls": [
+"__ld_r18_to_r13_ret_uc",
+"__st_r18_to_r13_uc",
+"bf_b_s0_w5_uc",
+"bf_s11_w5_uc",
+"direct_tx__program_cmd34",
+"hw_modes_mac__switch_core",
+"mac__program_rf_mode",
+"mac__program_tx_common",
+"mac__select_sector_and_wait_b",
+"mac__set_rf_chain_state",
+"mac_mode__send_direct_frame",
+"set_reg_884060",
+"tail_uc_wait_two_events",
+"uc_spin_until_event"
+],
+"callers": [
+"mac_mode_brp_step",
+"mac_mode_step_b"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"brp_copy_step": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"memcpy_uc",
+"memset0_words_uc"
+],
+"callers": [
+"brp__flow_main"
+]
+},
+"bf_sm__advance_if_slot33": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__reset_slot_table"
+],
+"callers": [
+"bf_sm__substate_advance"
+]
+},
+"bf_sm__post_slot_result": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__reset_slot_table",
+"bf_sm__state_action",
+"brp_flow_step",
+"stub_ret_93076c",
+"stub_ret_937088"
+],
+"callers": [
+"bf_sm__post_and_dispatch"
+]
+},
+"brp_flow_step": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"bf_sm__release_sta",
+"bf_substate__set",
+"brp__build_tx_params",
+"brp__count_active_sectors",
+"brp__flow_main",
+"brp__program_and_measure",
+"brp__reset_db_b",
+"brp__rx_chain_from_r38",
+"get_g_804010",
+"mac_mode__wait_ppdu_and_kick_c",
+"mac_mode_program_b",
+"sxd_hal__mac_select_indexed",
+"sxd_hal__mac_write_indexed",
+"uc_spin_until_event",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"bf_sm__post_slot_result"
+],
+"globals": [
+"0x8005d2",
+"0x800604",
+"0x800608"
+]
+},
+"mac_mode__wait_ppdu_and_kick_c": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"brp_flow_step"
+],
+"globals": [
+"0x80057c"
+]
+},
+"brp__rx_chain_from_r38": {
+"callers": [
+"brp_flow_step"
+]
+},
+"mac_mode_program_b": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_b_s0_w5_uc",
+"bf_s11_w5_uc",
+"direct_tx__program_cmd34",
+"hw_modes_mac__switch_core",
+"mac__program_rf_mode",
+"mac__program_tx_common",
+"mac__select_sector_and_wait_b",
+"mac__set_rf_chain_state",
+"mac_mode__send_direct_frame",
+"set_reg_884060",
+"tail_uc_wait_two_events",
+"uc_spin_until_event"
+],
+"callers": [
+"brp_flow_step"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"brp_step_b": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"brp__write_reg_pair"
+],
+"callers": [
+"mac_mode__switch_sequence"
+]
+},
+"brp__program_and_measure": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"brp__program_mac_sequence",
+"brp__write_slot_txcfg",
+"memset0_words_uc",
+"rfc__issue_cmd_20",
+"shl64",
+"uc_sysassert"
+],
+"callers": [
+"brp_flow_step",
+"mac_mode_brp_step"
+],
+"strings": [
+"beamforming_flows_brp.c"
+]
+},
+"bti_worker_bi2_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"uc_wait_event_busy"
+],
+"callers": [
+"bti__bi2_event_step",
+"bti_worker__collect_bf_metric"
+],
+"globals": [
+"0x80057c"
+]
+},
+"bti_transmitter_bi2_flow": {
+"calls": [
+"bf_gpc__program_mac_by_mode_b",
+"bti__bi2_event_step",
+"bti_bi2__gp0_end_flag",
+"bti_bi2__gp2_end_flag",
+"bti_tx__program_bi2_regs",
+"bti_worker__collect_bf_metric",
+"uc_sysassert"
+],
+"callers": [
+"bi__decide_beacon_kind"
+],
+"strings": [
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/bf_gpc_service.h"
+]
+},
+"bti__request_bf_metric": {
+"callers": [
+"bti_worker__collect_bf_metric"
+]
+},
+"bti_bi2__gp2_end_flag": {
+"callers": [
+"bti_transmitter_bi2_flow"
+]
+},
+"bti_worker__bti_transmitter_beacon_sweep_flow": {
+"calls": [
+"bcon_sweep_step_a",
+"bcon_sweep_step_b",
+"bcon_txss_sweep_step",
+"beacon_tx__build_slot_bitmap",
+"bi__remaining_time_us",
+"bi_cfg__tick_counters",
+"bi_ctrl__program_mac_bcon",
+"rw_g_800994",
+"set_tsf_event",
+"shl64",
+"tx_ctx__next_slot",
+"uc_read_tsf_lo",
+"uc_sysassert",
+"uc_wait_event_busy",
+"uc_wait_two_events"
+],
+"callers": [
+"bi__decide_beacon_kind"
+],
+"strings": [
+"bti_worker::bti_transmitter_beacon_sweep_flow() randomize beacon",
+"bti_worker::bti_transmitter_beacon_sweep_flow() current_tsf: 0x%08x, Next tsf: 0x%08x, uniform_random: %d ",
+"Beacons delay due to NAV started at 0x%08x",
+"bti_worker.cpp"
+],
+"globals": [
+"0x800604",
+"0x800608"
+]
+},
+"direct_tx__init_rx_desc": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_w_s4_w3_uc"
+],
+"callers": [
+"direct_tx_rx_step"
+]
+},
+"calc_awake_tsf": {
+"calls": [
+"get_reg_886d64_93256c"
+],
+"callers": [
+"aw__set_new_tbtt"
+],
+"strings": [
+"calc_awake_tsf: %x"
+]
+},
+"bi__tsf_delta64": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"uc_read_tsf64"
+],
+"callers": [
+"bi_timing_snapshot_b",
+"bi_window_timing_update"
+]
+},
+"uc_tsf_elapsed": {
+"calls": [
+"__ld_r13_ret_uc",
+"uc_read_tsf_lo"
+],
+"callers": [
+"background_bi_step",
+"perform_shallow_sleep"
+]
+},
+"cf_end__tx_flow": {
+"calls": [
+"__ld_r17_to_r13_ret_uc",
+"__st_r17_to_r13_uc",
+"cf_end__pulse_883150",
+"cf_end__send_frame",
+"mac__build_tx_common_params",
+"mac__set_duration_us",
+"mac__set_rf_chain_state",
+"rfc_ctrl__switch",
+"tail_uc_wait_two_events",
+"tx__read_tx_result",
+"uc_sleep_until_event",
+"uc_spin_until_event",
+"uc_sysassert"
+],
+"callers": [
+"cf_end_mtp_step",
+"tx_mtp__open_window"
+],
+"strings": [
+"cf_end_flow.c"
+]
+},
+"tx_mtp__open_window": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"cf_end__tx_flow",
+"mac__build_tx_common_params",
+"mac__cmd_29000001",
+"mac__select_all_sectors_and_wait"
+],
+"callers": [
+"tx_flow_size_step",
+"tx_initiator_substep",
+"tx_mtp_queue_gate"
+],
+"globals": [
+"0x800608"
+]
+},
+"mac__program_4f_52": {
+"callers": [
+"mac_mode_brp_step",
+"mac_mode_step_b",
+"txss_rx_step"
+]
+},
+"aw__fold_peer_masks": {
+"callers": [
+"aw_worker__collect_awake_peers"
+]
+},
+"rx__switch_to_rx_mode": {
+"calls": [
+"hw_modes_mac__switch_core"
+],
+"callers": [
+"rx_flow__handle_frame",
+"rx_flow_step",
+"rx_funcs__handle_ppdu_report"
+],
+"globals": [
+"0x800528"
+]
+},
+"brp__flow_main": {
+"calls": [
+"__ld_r24_to_r13_ret_uc",
+"__st_r24_to_r13_uc",
+"brp__find_phase_index",
+"brp__sum_sector_counts",
+"brp__write_reg_pair",
+"brp_copy_step",
+"uc_sysassert"
+],
+"callers": [
+"brp__mode_step",
+"brp_flow_step"
+],
+"strings": [
+"beamforming_flows_brp.c"
+]
+},
+"tx__pick_slot_for_peer": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"brp__slot_has_peer_bit"
+],
+"callers": [
+"bi_manager_rx_step",
+"internal_tx_step",
+"tx_initiator_rx_step",
+"tx_initiator_step"
+]
+},
+"direct_tx__issue_cmd_33": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"abft__send_ssw_feedback",
+"direct_tx__send_short_frame",
+"direct_tx_rx_step",
+"direct_tx_step",
+"direct_tx_substep",
+"mac_mode__send_direct_frame",
+"rx__send_response_frame",
+"rx_flow__send_imm_response",
+"rx_funcs__send_direct_frame",
+"txop_tx_step",
+"txss_flow_step"
+],
+"strings": [
+"direct_tx.c"
+]
+},
+"direct_tx__program_cmd34": {
+"callers": [
+"abft__send_ssw_feedback",
+"bi_rx__send_response",
+"cf_end__send_frame",
+"direct_tx__send_short_frame",
+"direct_tx_rx__program",
+"direct_tx_step",
+"internal_tx_step",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"rx_funcs_step",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow",
+"txss__tx_sector_frame",
+"txss_flow_step"
+],
+"globals": [
+"0x8005d4"
+]
+},
+"direct_tx__push_payload": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"abft__send_ssw_feedback",
+"direct_tx__send_short_frame",
+"direct_tx_rx_step",
+"direct_tx_step",
+"mac_mode__send_direct_frame",
+"rx__send_response_frame",
+"rx_funcs__send_direct_frame",
+"txss_flow_step"
+],
+"strings": [
+"direct_tx.c"
+]
+},
+"uc_wait_direct_tx_ready": {
+"callers": [
+"abft__send_ssw_feedback",
+"direct_tx__send_short_frame",
+"direct_tx_rx_step",
+"direct_tx_step",
+"direct_tx_substep",
+"mac_mode__send_direct_frame",
+"rx__send_response_frame",
+"rx_flow__send_imm_response",
+"rx_funcs__send_direct_frame",
+"txop_tx_step",
+"txss_flow_step"
+]
+},
+"bf__clear_pending_and_notify": {
+"calls": [
+"__ld_r13_ret_uc",
+"rf_sector__clear_sta_bit",
+"uc_pending__clear_bit"
+],
+"callers": [
+"bf__abort_to_state11",
+"bf_sm__clear_sta",
+"bf_sm__process_request_fifo"
+]
+},
+"bf__abort_to_state11": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf__clear_pending_and_notify",
+"bf_state__set"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"sxd_hal__select_qset_group": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"sxd_hal__write_qset_field"
+],
+"strings": [
+"sxd_hal.c"
+]
+},
+"sxd_hal__mac_select_indexed": {
+"callers": [
+"bi_manager_step_a",
+"bi_manager_step_b",
+"brp__mode_step",
+"brp_flow_step",
+"txss__prepare_frames"
+]
+},
+"brp__program_mac_sequence": {
+"callers": [
+"brp__program_and_measure"
+]
+},
+"disable_tsf_event": {
+"callers": [
+"ucode_cmd__bi_config"
+],
+"strings": [
+"disable_tsf_event()"
+]
+},
+"pm__wake_sequence": {
+"calls": [
+"pm__event_mask_restore",
+"set_reg_886ddc_9259fc",
+"uc_pending__clear_bit"
+],
+"callers": [
+"bi_dti__wake_and_evaluate_sleep"
+]
+},
+"aw__foreach_awake_peer": {
+"callers": [
+"aw_worker__collect_awake_peers"
+],
+"globals": [
+"0x800574"
+]
+},
+"tail_perform_shallow_sleep": {
+"calls": [
+"perform_shallow_sleep"
+],
+"callers": [
+"internal_tx_step"
+]
+},
+"basic_sm__assert_bad_event_uc": {
+"calls": [
+"uc_sysassert"
+],
+"strings": [
+"basic_sm.cpp"
+]
+},
+"uc_sysassert__idle_hist": {
+"callers": [
+"uc_sysassert"
+],
+"strings": [
+"IDLE SM histogram on SYSASSERT (%d iterations with 16 CLK delay):",
+"g_sysassert_idle_sm_hist[SXD_IDLE_DETECT_IDLE_STATE]   = %d",
+"g_sysassert_idle_sm_hist[SXD_IDLE_DETECT_CCA1_STATE]   = %d",
+"g_sysassert_idle_sm_hist[SXD_IDLE_DETECT_CCA2_STATE]   = %d",
+"g_sysassert_idle_sm_hist[SXD_IDLE_DETECT_CCA_RX_STATE] = %d",
+"g_sysassert_idle_sm_hist[SXD_IDLE_DETECT_CCA_NAV_STATE]= %d",
+"g_sysassert_idle_sm_hist[SXD_IDLE_DETECT_SIFS_STATE]   = %d",
+"g_sysassert_idle_sm_hist[SXD_IDLE_DETECT_TX_STATE]     = %d",
+"g_sysassert_idle_sm_hist[undefined(7)]                 = %d"
+]
+},
+"uc_sysassert": {
+"calls": [
+"set_reg_883150",
+"set_reg_884804",
+"uc_sysassert__emit_mac_trace",
+"uc_sysassert__idle_hist",
+"uc_sysassert__snapshot_mac"
+],
+"callers": [
+"abft_responder__tx_ssw",
+"aw_worker__collect_awake_peers",
+"background_task__dispatch",
+"basic_if__alloc_evt_slot",
+"basic_if__post_to_fw_mailbox",
+"basic_sm__assert_bad_event_uc",
+"basic_sm__dispatch_loop",
+"beacon_tx__build_slot_bitmap",
+"bf_gpc__program_mac_by_mode",
+"bf_gpc__program_mac_by_mode_b",
+"bf_sm__assert_and_clear",
+"bf_sm__mark_sta_active",
+"bf_sm__process_request_fifo",
+"bf_sm__trigger",
+"bf_substate_sm__is_state_9_11",
+"bf_substate_sm__step",
+"bi_ap_mon__window_code",
+"bi_ap_mon_if__trigger_dti_to_bti",
+"bi_manager__assert_line42",
+"bi_manager__enter_dti",
+"bi_manager__kind_switch",
+"bi_manager__l1_entry_b",
+"bi_manager__l1_rx_entry",
+"bi_manager__on_aw",
+"bi_manager__on_dti",
+"bi_manager__run_rx_flow_by_kind",
+"brp__flow_main",
+"brp__program_and_measure",
+"bti_transmitter_bi2_flow",
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"bti_worker__collect_bf_metric",
+"cf_end__tx_flow",
+"direct_tx__issue_cmd_33",
+"direct_tx__push_payload",
+"get_selected_rf_sector_index_cmd_handler",
+"hw_modes_mac__switch_core",
+"hwd_abif__rgf_880800_926b00",
+"hwd_abif__rgf_88a000",
+"hwd_abif__rgf_88b000",
+"hwd_dma__set_mode_map",
+"hwd_mac__apply_timing_entry",
+"hwd_mac__set_mode_map",
+"hwd_phy__rgf_883000_9272b8",
+"hwd_phy__rgf_883000_92749c",
+"hwd_phy__rgf_884000",
+"hwd_phy__set_881000",
+"hwd_phy__set_mode_uc",
+"hwd_phy_init__2",
+"internal_tx__pending_sm",
+"l1_task__entry",
+"l2_task__report_error_bits",
+"l2_task__run",
+"mac_counter__program_0008",
+"mac_counter__program_3009",
+"mac_counter__program_400b",
+"mtp_queue__release_mgmt",
+"mtp_service__dispatch",
+"nav_db__update",
+"perform_shallow_sleep",
+"power_manager__decide_shallow_sleep",
+"psc_pending_agreement_cmd",
+"rate_search__build_mcs_mask",
+"rate_search__start_for_sta",
+"rate_search__step",
+"rfc_ctrl__switch",
+"rx_flow__check_status",
+"rx_flow__decide_imm_ack",
+"rx_flow__handle_frame",
+"rx_flow__post_rx_unsupported",
+"rx_flow__run",
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__identify_peer",
+"rx_funcs__on_rx_type_0x14",
+"rx_funcs__rx_flow",
+"rx_funcs__set_rx_off",
+"set_selected_rf_sector_index_cmd_handler",
+"sxd_hal__mac_write_indexed",
+"sxd_hal__read_backoff_status",
+"sxd_hal__select_qset_group",
+"sxd_hal__wait_slot2_busy",
+"sxd_hal__wait_slot2_busy2",
+"sxd_hal__write_qset_field",
+"tx_flows__program_mac_tx",
+"tx_initiator__build_tx_vector",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow",
+"txss__init_sweep",
+"txss__init_sweep_b",
+"txss__prepare_frames",
+"txss__tx_sector_frame",
+"txss_func__reorder_sectors",
+"uc_hwd_phy_pwr",
+"uc_hwd_rfc_write_core",
+"uc_isr_instruction_error",
+"uc_isr_memory_error",
+"uc_log__init",
+"uc_mailbox__advance",
+"uc_mailbox__next_slot",
+"ucode_cmd_0x07_handler",
+"ucode_cmd__bi_config",
+"ucode_cmd__discovery_mode_cfg",
+"ucode_cmd__queue_delete",
+"ucode_cmd__rx_on",
+"ucode_cmd_install_key",
+"ucode_cmd_update_aw_ie",
+"ucode_pm__rx_off_step",
+"umac_if_cmd_handler"
+],
+"strings": [
+"Crash TSF: curr tsf 0x%08x %08x",
+"SYSTEM FATAL CRASH0: curr_blink=0x%X, prev_blink =0x%X, SYSASSERT_CODE_0x%x",
+"SYSTEM FATAL CRASH1: sp=%d, ilink1=0x%X, ilink2=0x%X",
+"PRS_ICR=0x%08X",
+"mrfc_switch2tx_status_bus=0x%08X",
+"mrfc_switch2rx_status_bus=0x%08X",
+"Assert in file: %s ,",
+"[NNL]  line: %d"
+],
+"globals": [
+"0x80055c",
+"0x800564"
+]
+},
+"brp__apply_slot_mcs": {
+"calls": [
+"rate_search__apply_mcs"
+],
+"callers": [
+"bf_substate__dispatch_by_state"
+]
+},
+"uc_mailbox__advance": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"basic_if__post_to_fw_mailbox"
+],
+"strings": [
+"fw_mailbox.cpp"
+]
+},
+"tail_basic_if__alloc_evt_slot": {
+"calls": [
+"basic_if__alloc_evt_slot"
+],
+"callers": [
+"ucode_cmd__queue_delete"
+]
+},
+"set_reg_886ddc": {
+"callers": [
+"aw__open_event_mask"
+]
+},
+"ucode_cmd__echo": {
+"calls": [
+"__ld_r13_ret_uc",
+"basic_if__alloc_evt_slot",
+"uc_send_event"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"set_reg_886ddc_9259fc": {
+"callers": [
+"pm__wake_sequence",
+"uc_send_evt__ucode_ready"
+]
+},
+"l1_task__kick_and_dispatch": {
+"calls": [
+"__ld_r13_ret_uc",
+"uc_field_0x24_is_zero",
+"uc_queue__dispatch_and_commit"
+],
+"callers": [
+"background_task__dispatch",
+"l1_task__entry"
+]
+},
+"mac_mode__switch_sequence": {
+"calls": [
+"__ld_r13_ret_uc",
+"brp_step_b",
+"mac__switch_core_and_setup_dma",
+"uc_timers__start_defaults",
+"uc_timers__start_defaults_b"
+],
+"callers": [
+"background_task__dispatch"
+],
+"globals": [
+"0x8005d6"
+]
+},
+"set_reg_886d80_925b34": {
+"calls": [
+"bf_pending__set_bit"
+],
+"callers": [
+"l1_task__entry"
+]
+},
+"set_reg_886d80_925b48": {
+"calls": [
+"bf_pending__set_bit"
+],
+"callers": [
+"l1_task__entry"
+]
+},
+"uc_send_evt__ucode_ready": {
+"calls": [
+"__ld_r13_ret_uc",
+"basic_if__alloc_evt_slot",
+"set_reg_886ddc_9259fc",
+"uc_mailbox__init_rings",
+"uc_send_event"
+],
+"callers": [
+"uc_main_init"
+]
+},
+"uc_send_evt__mac_monitor": {
+"calls": [
+"__ld_r13_ret_uc",
+"basic_if__alloc_evt_slot",
+"uc_send_event"
+],
+"callers": [
+"bi_window_transition_prep"
+]
+},
+"uc_send_evt__ps_awake_peer": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"ps__notify_awake_peers",
+"ps_awake_peer__build_evt",
+"ps_awake_peer__send_clear_peer",
+"ps_awake_peer__send_full"
+]
+},
+"uc_send_evt__bf_done": {
+"calls": [
+"__ld_r13_ret_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"abft_responder_worker",
+"bf_sm_step",
+"mac_mode_program_c"
+]
+},
+"uc_send_evt__get_rf_sector_done": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"get_selected_rf_sector_index_cmd_handler"
+]
+},
+"uc_send_evt__link_lost": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"l1_bi_trigger_step"
+]
+},
+"uc_send_evt__new_link": {
+"calls": [
+"__ld_r13_ret_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"abft_responder_worker",
+"bf_sm_step",
+"mac_mode_program_c"
+]
+},
+"uc_send_evt__rs_done": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"rate_search__step"
+]
+},
+"uc_send_evt__rs_started": {
+"calls": [
+"__ld_r13_ret_uc",
+"basic_if__alloc_evt_slot",
+"uc_send_event"
+],
+"callers": [
+"rx_funcs__rx_flow"
+]
+},
+"uc_send_evt__set_rf_sector_done": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"set_selected_rf_sector_index_cmd_handler"
+]
+},
+"uc_send_evt__ps_shallow_sleep_ntf": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"basic_if__alloc_evt_slot",
+"memcpy_uc",
+"uc_send_event"
+],
+"callers": [
+"perform_shallow_sleep"
+]
+},
+"uc_send_evt__sta_update_field_rsp": {
+"calls": [
+"basic_if__alloc_evt_slot",
+"uc_send_event"
+],
+"callers": [
+"ucode_cmd_install_key"
+]
+},
+"uc_send_evt__ps_wake_pcie": {
+"calls": [
+"__ld_r13_ret_uc",
+"basic_if__alloc_evt_slot",
+"uc_send_event"
+],
+"callers": [
+"power_manager__maybe_wake_pcie"
+]
+},
+"uc_send_evt_typed": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"basic_if__alloc_evt_slot",
+"uc_read_tsf_lo",
+"uc_send_event"
+],
+"callers": [
+"traffic_deferral_cfg_cmd_handler",
+"ucode_cmd__rx_off",
+"ucode_cmd__rx_on"
+]
+},
+"uc_send_event": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"basic_if__post_to_fw_mailbox",
+"uc_read_tsf64"
+],
+"callers": [
+"uc_send_evt__bf_done",
+"uc_send_evt__get_rf_sector_done",
+"uc_send_evt__link_lost",
+"uc_send_evt__mac_monitor",
+"uc_send_evt__new_link",
+"uc_send_evt__ps_awake_peer",
+"uc_send_evt__ps_shallow_sleep_ntf",
+"uc_send_evt__ps_wake_pcie",
+"uc_send_evt__rs_done",
+"uc_send_evt__rs_started",
+"uc_send_evt__set_rf_sector_done",
+"uc_send_evt__sta_update_field_rsp",
+"uc_send_evt__ucode_ready",
+"uc_send_evt_typed",
+"ucode_cmd__echo",
+"ucode_cmd__queue_delete"
+],
+"strings": [
+"sending event=0x%x ,curr tsf 0x%08x %08x"
+]
+},
+"brp__slot_has_peer_bit": {
+"callers": [
+"tx__pick_slot_for_peer"
+]
+},
+"aw_worker__collect_awake_peers": {
+"calls": [
+"aw__fold_peer_masks",
+"aw__foreach_awake_peer",
+"get_reg_881c84",
+"memset0_words_uc",
+"peer__aid_mismatch_flag",
+"power_mngr_peer_update",
+"uc_sysassert"
+],
+"callers": [
+"aw_worker__begin_window"
+],
+"strings": [
+"aw_worker.cpp"
+],
+"globals": [
+"0x800574"
+]
+},
+"uc_get_half_0x10": {
+"callers": [
+"bi_window_timing_update"
+]
+},
+"get_tx_eligibility": {
+"calls": [
+"get_g_800674",
+"set_bit_80067c",
+"set_g_80067c",
+"tx__take_eligibility_slot"
+],
+"callers": [
+"get_tx_eligibility__precheck",
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__identify_peer"
+],
+"strings": [
+"get_tx_eligibility(), Denide BF go to next internal",
+"get_tx_eligibility(), There is no eligibility in Internal Queue"
+]
+},
+"bi_manager__eval_bcon_slot": {
+"callers": [
+"bi_manager__rx_bi_flow"
+]
+},
+"tx__take_eligibility_slot": {
+"callers": [
+"get_tx_eligibility",
+"internal_tx_step"
+],
+"globals": [
+"0x800574"
+]
+},
+"uc_deref_field4_926394": {
+"callers": [
+"uc_queue__dispatch_and_commit"
+]
+},
+"get_selected_rf_sector_index_cmd_handler": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"memcpy_uc",
+"uc_read_tsf64",
+"uc_send_evt__get_rf_sector_done",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"get_selected_rf_sector_index_cmd_handler(): Invalid sector type specified %d, cid=%d",
+"txrx_api_cmd_handler.c"
+]
+},
+"txss__duration_by_index": {
+"callers": [
+"txss__flow_body"
+]
+},
+"bi_ap_mon__window_code": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"background_bi_step",
+"bi_manager__on_aw",
+"bi_manager__on_dti",
+"nav_db__update",
+"rx_nav_bi_step",
+"umac_if_cmd_handler"
+],
+"strings": [
+"bi_ap_mon_if.cpp"
+]
+},
+"get_tx_eligibility__precheck": {
+"calls": [
+"get_tx_eligibility"
+],
+"callers": [
+"mtp_queue__release_mgmt",
+"tx_initiator_flow"
+]
+},
+"mac__set_duration_us": {
+"calls": [
+"__ld_r13_ret_uc"
+],
+"callers": [
+"cf_end__tx_flow",
+"internal_tx_step"
+]
+},
+"ps_awake_peer__send_full": {
+"calls": [
+"uc_send_evt__ps_awake_peer"
+],
+"callers": [
+"power_manager__decide_shallow_sleep"
+]
+},
+"rx_funcs__identify_peer": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"get_tx_eligibility",
+"mac_mode__switch_core_and_rf",
+"rf_sector__program_selected",
+"rx__mac_prepare",
+"rx_funcs__on_rx_type_0x14",
+"rx_funcs__record_level_800fa0",
+"rx_funcs_copy_step",
+"rx_funcs_step",
+"uc_sysassert"
+],
+"callers": [
+"rx_flow__handle_frame"
+],
+"strings": [
+"rx_funcs_optimized_size.c"
+],
+"globals": [
+"0x8005d8",
+"0x800604",
+"0x800608"
+]
+},
+"bf__trigger_if_pending": {
+"calls": [
+"bf__trigger_for_mid"
+],
+"callers": [
+"internal_tx_step",
+"tx_initiator_step"
+]
+},
+"bi_manager__enter_dti": {
+"calls": [
+"bi_ap_mon_if__trigger",
+"bi_dti__kick_worker",
+"bi_manager_step_a",
+"bi_manager_step_b",
+"uc_sysassert"
+],
+"callers": [
+"bi_manager__kind_switch",
+"tail_bi_manager__enter_dti"
+],
+"strings": [
+"bi_manager.cpp"
+],
+"globals": [
+"0x8005d8"
+]
+},
+"ps_awake_peer__send_clear_peer": {
+"calls": [
+"uc_send_evt__ps_awake_peer"
+],
+"callers": [
+"rx_funcs__rx_flow"
+]
+},
+"power_manager__maybe_wake_pcie": {
+"calls": [
+"uc_send_evt__ps_wake_pcie"
+],
+"callers": [
+"power_manager__decide_shallow_sleep"
+]
+},
+"l1_bi_trigger_step": {
+"calls": [
+"bi_ap_mon_if__trigger",
+"perform_shallow_sleep",
+"rx__set_enable_mask",
+"uc_pm__enter_idle",
+"uc_read_tsf_lo",
+"uc_send_evt__link_lost"
+],
+"callers": [
+"l1_task__entry"
+],
+"globals": [
+"0x80053c",
+"0x8005d6"
+]
+},
+"hwd_abif__rgf_88b000": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_substep"
+],
+"strings": [
+"hw_drivers_abif.c"
+]
+},
+"hwd_abif__rgf_88a000": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_substep"
+],
+"strings": [
+"hw_drivers_abif.c"
+]
+},
+"hwd_abif__rgf_880800_926ad0": {
+"callers": [
+"dma_mac_setup_step"
+]
+},
+"hwd_abif__rgf_880800_926b00": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_setup_step"
+],
+"strings": [
+"hw_drivers_abif.c"
+]
+},
+"rgf_reg_880800": {
+"callers": [
+"dma_mac_setup_step"
+]
+},
+"get_reg_881c84": {
+"callers": [
+"aw_worker__collect_awake_peers"
+]
+},
+"nav__read_hw_duration_flag": {
+"callers": [
+"nav_db__update"
+]
+},
+"hwd_dma__set_mode_map": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_setup_step"
+],
+"strings": [
+"hw_drivers_dma.c"
+]
+},
+"rgf_reg_881800": {
+"callers": [
+"tx_initiator_step"
+]
+},
+"dma_mac__cfg_880c14": {
+"callers": [
+"dma_mac_setup_step"
+]
+},
+"set_reg_886f84_x3": {
+"callers": [
+"ps__program_awake_peers_mask"
+]
+},
+"get_reg_88c120": {
+"callers": [
+"bi_manager_rx_step"
+]
+},
+"set_reg_88606c": {
+"callers": [
+"cf_end_mtp_step",
+"tx_rate_select_and_program"
+]
+},
+"mac__load_tx_vector": {
+"callers": [
+"rx_flow__run",
+"rx_funcs__rx_flow",
+"tx_rate_select_and_program"
+]
+},
+"hwd_mac__set_mode_map": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_setup_step"
+],
+"strings": [
+"hw_drivers_mac.c"
+]
+},
+"hwd_mac__apply_timing_entry": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"rate_search__apply_mcs"
+],
+"strings": [
+"hw_drivers_mac.c"
+]
+},
+"set_reg_886dc8": {
+"callers": [
+"dma_mac_substep"
+]
+},
+"set_reg_886dc8_926e7c": {
+"callers": [
+"dma_mac_substep"
+]
+},
+"dma_mac__cfg_880c28": {
+"callers": [
+"dma_mac_setup_step"
+]
+},
+"hwd_phy_init__2": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_setup_step"
+],
+"strings": [
+"hwd_phy_init() The Same as RESET Value: Address = 0x%08X, Data 0x%08X",
+"hw_drivers_phy.c"
+]
+},
+"hwd_phy__rgf_881000": {
+"callers": [
+"dma_mac_setup_step"
+]
+},
+"hwd_phy__set_881000": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_setup_step"
+],
+"strings": [
+"hw_drivers_phy.c"
+]
+},
+"uc_hwd_phy_pwr": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_setup_step"
+],
+"strings": [
+"DO_WHILE_WITH_MAX_ITER OCCUR",
+"hw_drivers_phy.c",
+"hwd_phy_pwr ON: phy_tx_power_ack =%d,phy_rx_power_ack = %d,phy_ldpc_power_ack=%d"
+]
+},
+"dma_mac__cfg_880c2c": {
+"callers": [
+"dma_mac_setup_step"
+]
+},
+"hwd_phy__rgf_883000_9272b8": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_substep"
+],
+"strings": [
+"hw_drivers_phy.c"
+]
+},
+"hwd_phy__rgf_884000": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_substep"
+],
+"strings": [
+"hw_drivers_phy.c"
+]
+},
+"hwd_phy__set_mode_uc": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"dma_mac_substep"
+],
+"strings": [
+"hw_drivers_phy.c"
+]
+},
+"hwd_phy__get_883830": {
+"callers": [
+"rx_flow__latch_phy_883830"
+]
+},
+"set_reg_883150": {
+"callers": [
+"cf_end__pulse_883150",
+"uc_sysassert"
+]
+},
+"hwd_phy__set_883000_92748c": {
+"callers": [
+"rfc_ctrl__switch"
+]
+},
+"hwd_phy__rgf_883000_92749c": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"rfc_ctrl__switch"
+],
+"strings": [
+"hw_drivers_phy.c"
+]
+},
+"set_reg_884804": {
+"callers": [
+"uc_sysassert"
+]
+},
+"set_reg_884060": {
+"callers": [
+"mac_mode_program_a",
+"mac_mode_program_b"
+]
+},
+"tail_uc_hwd_rfc_write_core": {
+"calls": [
+"uc_hwd_rfc_write_core"
+],
+"callers": [
+"dma_mac_setup_wrap"
+]
+},
+"rgf_reg_889000": {
+"calls": [
+"uc_hwd_rfc_write_core"
+],
+"callers": [
+"dma_mac_setup_wrap"
+]
+},
+"uc_hwd_rfc_write_core": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"rgf_reg_889000",
+"tail_uc_hwd_rfc_write_core"
+],
+"strings": [
+"DO_WHILE_WITH_MAX_ITER OCCUR curr_blink=0x%x",
+"hw_drivers_rfc.c",
+"hwd_rfc_write_core busy set before write! (rfc_opcode=%d, rfc_addr=0x%x, rfc_data=0x%x)",
+"DO_WHILE_WITH_MAX_ITER OCCUR",
+"hwd_rfc_write_core busy set - go again!! (rfc_opcode=%d, rfc_addr=0x%x, rfc_data=0x%x)",
+"[NNL] mac_go_when_busy_err_cnt=%d"
+]
+},
+"stub_ret_927924": {
+"callers": [
+"uc_mailbox__init_rings"
+]
+},
+"set_reg_88000c": {
+"callers": [
+"uc_main_init"
+]
+},
+"set_reg_880010": {
+"callers": [
+"uc_main_init"
+]
+},
+"hw_modes_mac__switch_core": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"abft_responder_worker",
+"mac__switch_core_and_setup_dma",
+"mac_mode__enter_idle_seq",
+"mac_mode__switch_after_ppdu",
+"mac_mode__switch_core_and_rf",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"mac_mode_program_c",
+"rx__switch_to_rx_mode",
+"rx_funcs__handle_ppdu_report"
+],
+"strings": [
+"hw_modes_mac.c"
+],
+"globals": [
+"0x80057c",
+"0x800594",
+"0x800598"
+]
+},
+"dma_mac_setup_step": {
+"calls": [
+"dma_mac__cfg_880c14",
+"dma_mac__cfg_880c28",
+"dma_mac__cfg_880c2c",
+"hwd_abif__rgf_880800_926ad0",
+"hwd_abif__rgf_880800_926b00",
+"hwd_dma__set_mode_map",
+"hwd_mac__set_mode_map",
+"hwd_phy__rgf_881000",
+"hwd_phy__set_881000",
+"hwd_phy_init__2",
+"rgf_reg_880800",
+"uc_hwd_phy_pwr"
+],
+"callers": [
+"dma_mac_setup_wrap"
+]
+},
+"dma_mac_setup_wrap": {
+"calls": [
+"dma_mac_setup_step",
+"dma_mac_substep",
+"rgf_reg_889000",
+"tail_uc_hwd_rfc_write_core"
+],
+"callers": [
+"mac__switch_core_and_setup_dma"
+]
+},
+"dma_mac_substep": {
+"calls": [
+"hwd_abif__rgf_88a000",
+"hwd_abif__rgf_88b000",
+"hwd_phy__rgf_883000_9272b8",
+"hwd_phy__rgf_884000",
+"hwd_phy__set_mode_uc",
+"set_reg_886dc8",
+"set_reg_886dc8_926e7c"
+],
+"callers": [
+"dma_mac_setup_wrap"
+]
+},
+"uc_mailbox__next_slot": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"uc_mailbox__dispatch_one"
+],
+"strings": [
+"fw_mailbox.cpp"
+]
+},
+"tail_bi_ap_mon__init": {
+"calls": [
+"bi_ap_mon__init"
+],
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"bi_mode__build_schedule": {
+"calls": [
+"bi_build_schedule_tables",
+"bi_mode__set_1000_units165",
+"rw_g_801e82"
+],
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"bi_build_schedule_tables": {
+"calls": [
+"memset0_words_uc",
+"softfloat_df_add",
+"softfloat_df_mul",
+"softfloat_double_to_short",
+"softfloat_int_to_double"
+],
+"callers": [
+"bi_mode__build_schedule"
+]
+},
+"uc_ring__init_desc": {
+"callers": [
+"uc_mailbox__init_rings"
+]
+},
+"rw_g_801e82": {
+"calls": [
+"memset0_words_uc"
+],
+"callers": [
+"bi_mode__build_schedule"
+]
+},
+"bi_ctx__reset": {
+"calls": [
+"memset0_words_uc"
+],
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"bi_ap_mon__init": {
+"calls": [
+"uc_basic_sm__setup"
+],
+"callers": [
+"tail_bi_ap_mon__init"
+],
+"globals": [
+"0x8005c4"
+]
+},
+"uc_basic_sm__setup": {
+"callers": [
+"bi_ap_mon__init"
+]
+},
+"bi_mode__set_1000_units165": {
+"callers": [
+"bi_mode__build_schedule"
+]
+},
+"bf_sm__state_action": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf__clear_sta_bit_state34"
+],
+"callers": [
+"bf_sm__post_slot_result",
+"bf_substate__txss_step_by_slot",
+"bf_substate_sm__step"
+]
+},
+"bi_cfg__fill_slot_desc": {
+"callers": [
+"bi_cfg__apply"
+]
+},
+"brp__reset_db": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_w_s15_w6_uc",
+"bf_w_s4_w5_uc",
+"memset0_words_uc"
+],
+"callers": [
+"brp__mode_step"
+]
+},
+"brp__reset_db_b": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_w_s15_w6_uc",
+"memset0_words_uc"
+],
+"callers": [
+"brp_flow_step"
+]
+},
+"mac__program_qset_slots": {
+"calls": [
+"__ld_r13_ret_uc"
+],
+"callers": [
+"rate_search__start_for_sta"
+]
+},
+"set_g_801b18_x4": {
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"bf_sm__reset_slot_table": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"memset0_words_uc"
+],
+"callers": [
+"bf_sm__advance_if_slot33",
+"bf_sm__post_slot_result",
+"bf_substate__brp_mode_by_slot",
+"bf_substate__txss_by_slot",
+"bf_substate__txss_step_by_slot",
+"bi_mode__reset_bf_state"
+]
+},
+"ucode_cmd__reset_queue_state": {
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"bf_state__set": {
+"callers": [
+"bf__abort_to_state11",
+"bf_sm__check_request_timeout",
+"bf_sm__check_sta_timeout",
+"bf_sm__clear_sta",
+"bf_sm__process_request_fifo",
+"bf_sm__substate_advance",
+"bf_sm__trigger",
+"bf_substate__dispatch_by_state"
+]
+},
+"bf__abort_unexpected": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_sm__clear_pending",
+"bf_sm__mark_sta_active"
+],
+"callers": [
+"bi_manager__rx_flow_kind1",
+"rx_funcs__rx_flow"
+],
+"strings": [
+"ABORT unexpected BF of new sta  sta_id=%d request_fifo_head=%d",
+"ABORT unexpected BF of defualt sta  sta_id=%d request_fifo_head=%d"
+]
+},
+"bi_manager__l1_rx_entry": {
+"calls": [
+"bi_manager__rx_bi_flow",
+"bi_manager__start_tx_or_initiator",
+"uc_sysassert"
+],
+"callers": [
+"l1_task__entry"
+],
+"strings": [
+"bi_manager.cpp"
+]
+},
+"bi_manager__start_tx_or_initiator": {
+"calls": [
+"bi_tx__check_idle_and_start",
+"bi_tx_initiator_wrap"
+],
+"callers": [
+"bi_manager__l1_rx_entry"
+]
+},
+"bi_manager__rx_bi_flow": {
+"calls": [
+"bi_manager__eval_bcon_slot",
+"bi_manager_rx_step",
+"bi_tx__check_idle_and_start",
+"power_mngr_peer_update",
+"uc_pending__clear_bit"
+],
+"callers": [
+"bi_manager__l1_rx_entry"
+]
+},
+"bi_manager__run_rx_flow_by_kind": {
+"calls": [
+"bi_ap_mon_if__trigger",
+"bi_manager__rx_flow_kind0",
+"bi_manager__rx_flow_kind1",
+"bi_manager__rx_flow_kind2",
+"uc_sysassert"
+],
+"callers": [
+"l1_task__entry"
+],
+"strings": [
+"bi_manager.cpp"
+]
+},
+"bi_manager__rx_flow_kind0": {
+"calls": [
+"rx_funcs__rx_flow"
+],
+"callers": [
+"bi_manager__run_rx_flow_by_kind"
+]
+},
+"bi_manager__rx_flow_kind1": {
+"calls": [
+"bf__abort_unexpected",
+"bf_sm__step_by_state",
+"bf_substate__set",
+"rx_funcs__rx_flow"
+],
+"callers": [
+"bi_manager__run_rx_flow_by_kind"
+]
+},
+"bi_manager__rx_flow_kind2": {
+"calls": [
+"rx_funcs__rx_flow"
+],
+"callers": [
+"bi_manager__run_rx_flow_by_kind"
+]
+},
+"basic_sm__dispatch_loop": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"bi_ap_mon_if__trigger",
+"bi_ap_mon_if__trigger_bhi_to_dti"
+],
+"strings": [
+"basic_sm.cpp"
+]
+},
+"basic_sm__step_once": {
+"callers": [
+"bi_ap_mon_if__trigger_bti_to_abft",
+"bi_ap_mon_if__trigger_dti_to_bti"
+]
+},
+"bi_manager__l1_entry_b": {
+"calls": [
+"tail_ps_awake_peer__build_evt",
+"uc_sysassert"
+],
+"callers": [
+"l1_task__entry"
+],
+"strings": [
+"bi_manager.cpp"
+]
+},
+"tail_ps_awake_peer__build_evt": {
+"calls": [
+"ps_awake_peer__build_evt"
+],
+"callers": [
+"bi_manager__l1_entry_b"
+]
+},
+"bi_manager__on_aw": {
+"calls": [
+"aw_worker__begin_window",
+"bi_ap_mon__window_code",
+"uc_sysassert"
+],
+"callers": [
+"bi_ap_mon__aw_event"
+],
+"strings": [
+"bi_manager.cpp"
+]
+},
+"bi_manager__kind_switch": {
+"calls": [
+"bi__decide_beacon_kind",
+"bi_ap_mon_if__trigger",
+"bi_manager__enter_dti",
+"uc_sysassert"
+],
+"callers": [
+"bi_ap_mon__bti_event"
+],
+"strings": [
+"bi_manager.cpp"
+]
+},
+"bi_manager__on_dti": {
+"calls": [
+"bi_ap_mon__window_code",
+"bi_dti__wake_and_evaluate_sleep",
+"uc_sysassert"
+],
+"callers": [
+"bi_ap_mon__dti_event"
+],
+"strings": [
+"bi_manager.cpp"
+]
+},
+"uc_isr_l1_task3": {
+"calls": [
+"l1_task__entry"
+]
+},
+"uc_isr_l2_task3": {
+"calls": [
+"l2_task__entry"
+]
+},
+"rx_funcs__set_rx_off": {
+"calls": [
+"mac__rx_off_seq",
+"perform_shallow_sleep",
+"rx__set_enable_mask",
+"uc_pm__enter_idle",
+"uc_read_tsf_lo",
+"uc_sysassert"
+],
+"callers": [
+"ucode_cmd__rx_off"
+],
+"strings": [
+"rx_funcs.c"
+],
+"globals": [
+"0x80053c",
+"0x8005d6"
+]
+},
+"set_bit_80067c": {
+"callers": [
+"get_tx_eligibility"
+]
+},
+"set_g_80067c": {
+"callers": [
+"get_tx_eligibility",
+"internal_tx__pending_sm"
+]
+},
+"mid_vring_mask_update": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__publish_masks"
+],
+"callers": [
+"bf__enter_mode3",
+"bf__trigger_for_mid",
+"bf_sm__release_sta",
+"bf_sm__state_failure_path",
+"bf_sm__substate_advance"
+]
+},
+"uc_res_vote__acquire": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__publish_masks"
+],
+"callers": [
+"keep_alive__arm_slot"
+],
+"globals": [
+"0x800554"
+]
+},
+"set_reg_886f00_928d78": {
+"calls": [
+"mac__publish_masks"
+],
+"callers": [
+"uc_pending__clear_bit"
+]
+},
+"rf_sector__clear_sta_bit": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__publish_masks"
+],
+"callers": [
+"bf__clear_pending_and_notify",
+"bf_sm__start_request"
+]
+},
+"uc_res_vote__release": {
+"calls": [
+"__ld_r13_ret_uc",
+"bi_tx__check_idle_and_start",
+"mac__publish_masks"
+],
+"callers": [
+"internal_tx__clear_pending"
+],
+"globals": [
+"0x800554"
+]
+},
+"mac__enable_qset_bit7": {
+"calls": [
+"mac__publish_masks"
+],
+"callers": [
+"uc_res_886f00__acquire"
+]
+},
+"get_g_800674": {
+"callers": [
+"get_tx_eligibility"
+]
+},
+"internal_tx__pending_sm": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_pending__set_bit",
+"bf_sm__step_by_state",
+"bi_tx__check_idle_and_start",
+"internal_tx_step",
+"set_g_80067c",
+"stub_ret_9329f4",
+"uc_pending__clear_bit",
+"uc_sta_ctx__reset",
+"uc_sysassert"
+],
+"callers": [
+"tx_initiator_flow"
+],
+"strings": [
+"internal_tx.c",
+"internal TX pending sm = %d"
+],
+"globals": [
+"0x8005b0"
+]
+},
+"uc_res_886f00__acquire": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"mac__enable_qset_bit7"
+],
+"callers": [
+"aw_worker__begin_window",
+"bf__enter_mode3",
+"bf_substate_sm__step",
+"keep_alive__arm_slot"
+]
+},
+"uc_pending__clear_bit": {
+"calls": [
+"set_reg_886f00_928d78"
+],
+"callers": [
+"bf__clear_pending_and_notify",
+"bf_sm__release_sta",
+"bi_manager__rx_bi_flow",
+"internal_tx__clear_pending",
+"internal_tx__pending_sm",
+"pm__wake_sequence"
+]
+},
+"get_g_804010": {
+"callers": [
+"brp_flow_step",
+"mac_mode_brp_step",
+"mac_mode_step_b",
+"rx_flow__handle_frame"
+]
+},
+"uc_indirect_is_zero": {
+"callers": [
+"uc_field_0x24_is_zero"
+]
+},
+"internal_tx__peer_pending": {
+"callers": [
+"internal_tx_step"
+]
+},
+"mailbox__free_space": {
+"callers": [
+"basic_if__post_to_fw_mailbox"
+]
+},
+"bti_bi2__gp0_end_flag": {
+"callers": [
+"bti_transmitter_bi2_flow"
+]
+},
+"direct_tx__build_desc": {
+"callers": [
+"direct_tx_step"
+]
+},
+"mac__set_channel_word": {
+"callers": [
+"mac_mode_kick"
+],
+"globals": [
+"0x8005d8"
+]
+},
+"mac_mode_kick": {
+"calls": [
+"mac__set_channel_word",
+"mac_mode_program_c",
+"uc_spin_until_event4"
+],
+"callers": [
+"bi_dti__kick_worker"
+],
+"globals": [
+"0x8005d8"
+]
+},
+"mac_mode_program_c": {
+"calls": [
+"direct_tx_step",
+"hw_modes_mac__switch_core",
+"mac_mode__wait_ppdu_and_kick_e",
+"uc_send_evt__bf_done",
+"uc_send_evt__new_link",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"mac_mode_kick"
+]
+},
+"direct_tx_step": {
+"calls": [
+"direct_tx__build_desc",
+"direct_tx__issue_cmd_33",
+"direct_tx__program_cmd34",
+"direct_tx__push_payload",
+"get_g_80087c",
+"mac__build_tx_common_params",
+"mac__program_tx_common",
+"mac__select_sector_and_wait_b",
+"uc_spin_until_event",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"mac_mode_program_c"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"mac_mode__wait_ppdu_and_kick_e": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"mac_mode_program_c"
+],
+"strings": [
+"SYSTEM   "
+],
+"globals": [
+"0x80057c"
+]
+},
+"ucode_cmd_keep_alive_trigger": {
+"calls": [
+"keep_alive__arm_slot"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"mac__program_rf_mode": {
+"callers": [
+"grant_detect_step",
+"mac_mode__switch_core_and_rf",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"pm__event_mask_restore",
+"pm__event_mask_save_all_on",
+"shallow_sleep_rfc_step",
+"ucode_cmd__rx_on"
+]
+},
+"l1_task__entry": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__check_request_timeout",
+"bi_ap_mon_if__trigger",
+"bi_manager__l1_entry_b",
+"bi_manager__l1_rx_entry",
+"bi_manager__run_rx_flow_by_kind",
+"grant_detect_step",
+"l1_bi_trigger_step",
+"l1_task__check_pending",
+"l1_task__kick_and_dispatch",
+"power_manager__tick_if_elapsed",
+"set_reg_886d80_925b34",
+"set_reg_886d80_925b48",
+"uc_sysassert"
+],
+"callers": [
+"uc_isr_l1_task0",
+"uc_isr_l1_task1",
+"uc_isr_l1_task2",
+"uc_isr_l1_task3"
+],
+"strings": [
+"l1_task.c",
+"L1_TASK PRE TBTT"
+],
+"globals": [
+"0x80055c",
+"0x80058c",
+"0x8005d6"
+]
+},
+"l2_task__report_error_bits": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"l2_task__entry"
+],
+"strings": [
+"l2_task.c"
+],
+"globals": [
+"0x800608"
+]
+},
+"l2_task__kick_mac_events": {
+"callers": [
+"l2_task__run"
+]
+},
+"l2_task__run": {
+"calls": [
+"__ld_r13_ret_uc",
+"get_g_800724",
+"l2_task__kick_mac_events",
+"power_manager__scale_counters_ms",
+"power_manager__snapshot_marks",
+"power_manager__update_deltas",
+"uc_read_tsf_lo",
+"uc_sysassert"
+],
+"callers": [
+"l2_task__entry"
+],
+"strings": [
+"l2_task.c"
+],
+"globals": [
+"0x800608"
+]
+},
+"l2_task__entry": {
+"calls": [
+"l2_task__report_error_bits",
+"l2_task__run"
+],
+"callers": [
+"uc_isr_l2_task0",
+"uc_isr_l2_task1__body",
+"uc_isr_l2_task2",
+"uc_isr_l2_task3"
+]
+},
+"bit_scan_msb": {
+"callers": [
+"ucode_cmd__queue_delete"
+]
+},
+"mailbox_debug_dump__2": {
+"callers": [
+"basic_if__post_to_fw_mailbox"
+],
+"strings": [
+"mailbox_debug_dump: m_ctrl->ring_tail_ptr - 0x%x, m_ctrl->ring_head_ptr - 0x%x",
+"mailbox_debug_dump: m_work_ptr - 0x%x, m_ring_base - 0x%x",
+"mailbox_debug_dump: sync entry",
+"                   [0x%x]       [0x%x] "
+]
+},
+"rx_flow__phy_override": {
+"callers": [
+"rx_flow__run"
+],
+"globals": [
+"0x800568",
+"0x8005c8"
+]
+},
+"memset_uc": {
+"callers": [
+"memset0_words_uc"
+]
+},
+"uc_mailbox__dispatch_one": {
+"calls": [
+"__ld_r13_ret_uc",
+"uc_mailbox__next_slot",
+"umac_if_cmd_handler"
+]
+},
+"mac__program_tx_beacon": {
+"callers": [
+"bcon_sweep_step_a",
+"bcon_txss_sweep_step"
+]
+},
+"mac__program_tx_with_rate": {
+"callers": [
+"bi_rx__send_response",
+"cf_end__send_frame",
+"direct_tx_rx__program",
+"internal_tx_step",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow"
+]
+},
+"mac__program_tx_with_qid": {
+"callers": [
+"mac_counter__program_0008",
+"mtp_queue__release_mgmt",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow",
+"ucode_cmd__bi_config",
+"ucode_cmd__queue_delete"
+]
+},
+"mac__program_tx_common": {
+"callers": [
+"abft_responder__tx_ssw",
+"bcon_txss_sweep_step",
+"direct_tx_step",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"rx_funcs_step",
+"txss__tx_sector_frame",
+"txss_flow_step"
+]
+},
+"mtp_service__dispatch": {
+"calls": [
+"tbl_801754__byte_by_index",
+"uc_sysassert"
+],
+"callers": [
+"cf_end_mtp_step",
+"rx_flow__post_rx_act1",
+"rx_flow__post_rx_act2",
+"rx_flow__post_rx_act3"
+],
+"strings": [
+"mtp_service.cpp"
+],
+"globals": [
+"0x800604"
+]
+},
+"mac__program_tx_result_ctx": {
+"callers": [
+"tx__read_tx_result"
+]
+},
+"grant_detect_step": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"mac__program_rf_mode",
+"uc_read_tsf_lo"
+],
+"callers": [
+"l1_task__entry",
+"rx_flow__grant_detected",
+"ucode_cmd__rx_on",
+"ucode_pm__rx_off_step"
+]
+},
+"rw_g_800994": {
+"callers": [
+"bi_manager_step_a",
+"bti_worker__bti_transmitter_beacon_sweep_flow"
+]
+},
+"bi__remaining_time_us": {
+"calls": [
+"__ld_r13_ret_uc",
+"uc_read_tsf_lo"
+],
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"rx__send_response_frame"
+]
+},
+"pm__event_mask_save_all_on": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__program_rf_mode"
+],
+"callers": [
+"aw__open_event_mask"
+]
+},
+"set_g_800994": {
+"callers": [
+"bi_mode_init_sequence",
+"txrx_api_cmd_step"
+]
+},
+"pm__event_mask_restore": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__program_rf_mode"
+],
+"callers": [
+"pm__wake_sequence"
+]
+},
+"nav_db__update": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"bi_ap_mon__window_code",
+"nav__read_hw_duration_flag",
+"peer__aid_mismatch_flag",
+"uc_read_tsf_lo",
+"uc_sysassert"
+],
+"callers": [
+"rx_nav_bi_step",
+"rx_nav_update"
+],
+"strings": [
+"Received bigger NAV than Current. Frame type: %d, Frame subtype: %d, Extention: %d",
+"MAC Address ADD0: %x, ADD1: %x, ADD2: %x",
+"nav_db.c"
+]
+},
+"bf_sm_step": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"uc_send_evt__bf_done",
+"uc_send_evt__new_link"
+],
+"callers": [
+"bf_sm__check_sta_timeout",
+"bf_sm__process_request_fifo"
+]
+},
+"mac_mode__switch_core_and_rf": {
+"calls": [
+"__ld_r13_ret_uc",
+"hw_modes_mac__switch_core",
+"mac__program_rf_mode"
+],
+"callers": [
+"rx_funcs__identify_peer",
+"txss__init_sweep",
+"txss__prepare_frames",
+"txss_rx_step"
+]
+},
+"rx_funcs__on_rx_type_0x14": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__identify_peer"
+],
+"strings": [
+"rx_funcs.c"
+],
+"globals": [
+"0x8005ca"
+]
+},
+"brp__build_tx_params": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_w_s4_w5_uc"
+],
+"callers": [
+"brp_flow_step",
+"mac_mode_brp_step",
+"mac_mode_step_b"
+],
+"globals": [
+"0x8005d0",
+"0x8005d2"
+]
+},
+"mac_mode__wait_ppdu_and_kick_b": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"internal_tx__await_rx_frame_a"
+],
+"globals": [
+"0x80057c"
+]
+},
+"mac_mode__wait_ppdu_and_kick_d": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"internal_tx__await_rx_frame_b"
+],
+"globals": [
+"0x80057c"
+]
+},
+"perform_bti_pm_cfg": {
+"calls": [
+"aw__set_new_tbtt",
+"perform_shallow_sleep"
+],
+"callers": [
+"bi__decide_beacon_kind"
+],
+"strings": [
+"perform_bti_pm_cfg() - force wakeup"
+]
+},
+"power_manager__decide_shallow_sleep": {
+"calls": [
+"mac__program_deadline_slack",
+"perform_shallow_sleep",
+"power_manager__maybe_wake_pcie",
+"ps_awake_peer__send_full",
+"uc_sysassert"
+],
+"callers": [
+"bi_dti__wake_and_evaluate_sleep"
+],
+"strings": [
+"power_manager.cpp"
+],
+"globals": [
+"0x800544",
+"0x800574",
+"0x8005cc",
+"0x8005ce"
+]
+},
+"perform_shallow_sleep": {
+"calls": [
+"shallow_sleep_rfc_step",
+"uc_read_tsf64",
+"uc_read_tsf_lo",
+"uc_send_evt__ps_shallow_sleep_ntf",
+"uc_sysassert",
+"uc_tsf_elapsed"
+],
+"callers": [
+"bi_dti__sleep_and_resume",
+"l1_bi_trigger_step",
+"perform_bti_pm_cfg",
+"power_manager__decide_shallow_sleep",
+"rx_funcs__set_rx_off",
+"shallow_sleep_step",
+"tail_perform_shallow_sleep",
+"ucode_cmd__discovery_mode_cfg",
+"ucode_cmd__rx_on"
+],
+"strings": [
+"perform_shallow_sleep(ENTER) m_last_shallow_sleep_sob: %x, sleep_cycle: %x, tsf:0x%x",
+"perform_shallow_sleep(EXIT) m_last_shallow_sleep_sob: %x, tsf: %x",
+"power_manager.cpp"
+],
+"globals": [
+"0x800544"
+]
+},
+"ucode_cmd_phy_ina_det_cfg": {
+"calls": [
+"memcpy_uc"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"get_g_800724": {
+"callers": [
+"l2_task__run"
+]
+},
+"power_manager__scale_counters_ms": {
+"calls": [
+"__ld_r13_ret_uc",
+"uc_divmod_signed"
+],
+"callers": [
+"l2_task__run"
+]
+},
+"power_manager__update_deltas": {
+"callers": [
+"l2_task__run",
+"power_manager__tick_if_elapsed"
+]
+},
+"power_manager__snapshot_marks": {
+"callers": [
+"l2_task__run",
+"power_manager__tick_if_elapsed"
+]
+},
+"power_manager__tick_if_elapsed": {
+"calls": [
+"__ld_r13_ret_uc",
+"power_manager__snapshot_marks",
+"power_manager__update_deltas",
+"uc_read_tsf_lo"
+],
+"callers": [
+"l1_task__entry"
+]
+},
+"ucode_cmd_0x1b_handler": {
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"cf_end__pulse_883150": {
+"calls": [
+"set_reg_883150",
+"uc_spin_until_event4"
+],
+"callers": [
+"cf_end__tx_flow"
+]
+},
+"list_800b90__insert_sorted": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc"
+],
+"callers": [
+"uc_list__insert_by_prio"
+]
+},
+"get_g_800ebc": {
+"calls": [
+"bi_manager__assert_line42"
+]
+},
+"bi_ap_mon__trigger_tail": {
+"calls": [
+"bi_ap_mon_if__trigger"
+]
+},
+"tail_bi_manager__enter_dti": {
+"calls": [
+"bi_manager__enter_dti"
+]
+},
+"bi_manager__assert_line42": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"get_g_800ebc"
+],
+"strings": [
+"bi_manager.cpp"
+]
+},
+"psc_pending_agreement_cmd": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"psc_pending_agreement_cmd() sleep_cycle: %x, bi_start_time: %x",
+"power_manager.cpp"
+]
+},
+"brp__count_active_sectors": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc"
+],
+"callers": [
+"brp__mode_step",
+"brp_flow_step"
+]
+},
+"mac_mode__send_direct_frame": {
+"calls": [
+"direct_tx__issue_cmd_33",
+"direct_tx__push_payload",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"mac_mode_program_a",
+"mac_mode_program_b"
+]
+},
+"queue_sel__get_qset4": {
+"callers": [
+"rx_funcs__rx_flow"
+]
+},
+"mac__reset_event_engines": {
+"callers": [
+"ucode_cmd_0x07_handler"
+]
+},
+"bf_gpc__program_mac_by_mode_b": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"bti_transmitter_bi2_flow"
+],
+"strings": [
+"bf_gpc_service.cpp"
+]
+},
+"bf__trigger_for_mid": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__trigger",
+"mid_vring_mask_update"
+],
+"callers": [
+"bf__trigger_if_pending"
+],
+"globals": [
+"0x8005ec"
+]
+},
+"set_g_800fa8_minus20": {
+"callers": [
+"bf_substate__txss_by_slot",
+"bf_substate__txss_step_by_slot"
+]
+},
+"bf__clear_sta_bit_state34": {
+"callers": [
+"bf_sm__state_action"
+]
+},
+"rw_g_801038": {
+"calls": [
+"memset0_words_uc"
+],
+"callers": [
+"rx_flow__run"
+]
+},
+"mac__program_886e0c_20b": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"mac__build_qset_mask",
+"mac__replicate_bit_mask"
+],
+"callers": [
+"ucode_cmd__apply_mac_cfg"
+]
+},
+"rx__mac_prepare": {
+"callers": [
+"mac__prepare_txrx_window",
+"rx_flow__handle_frame",
+"rx_flow__run",
+"rx_flow_step",
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__identify_peer"
+]
+},
+"uc_sysassert__emit_mac_trace": {
+"callers": [
+"uc_sysassert"
+]
+},
+"ucode_cmd__apply_mac_cfg": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__program_886e0c_20b",
+"memcpy_uc"
+],
+"callers": [
+"ucode_cmd_0x00_handler"
+]
+},
+"mac_mode__switch_after_ppdu": {
+"calls": [
+"__ld_r13_ret_uc",
+"hw_modes_mac__switch_core"
+],
+"callers": [
+"rx_funcs__handle_ppdu_report"
+]
+},
+"mac__replicate_bit_mask": {
+"callers": [
+"mac__program_886e0c_20b"
+]
+},
+"mac__set_rf_chain_state": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc"
+],
+"callers": [
+"bi_manager__rx_flow_body",
+"cf_end__tx_flow",
+"get_g_80087c",
+"internal_tx_step",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"rx_rfc_step",
+"shallow_sleep_rfc_step",
+"tx_flows__program_mac_tx",
+"tx_mtp_queue_gate",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow",
+"ucode_cmd__rx_on"
+]
+},
+"set_g_8005bc_x2": {
+"callers": [
+"ucode_cmd_0x00_handler"
+],
+"globals": [
+"0x8005bc",
+"0x8005c0"
+]
+},
+"rfc_ctrl__switch": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"hwd_phy__rgf_883000_92749c",
+"hwd_phy__set_883000_92748c",
+"rate_search__current_mcs_b",
+"rfc__issue_cmd_20",
+"uc_sysassert"
+],
+"callers": [
+"bi_tx_initiator_wrap",
+"cf_end__tx_flow",
+"rx_flow__handle_frame",
+"rx_flow__run",
+"rx_funcs__rx_flow",
+"rx_rfc_step",
+"shallow_sleep_rfc_step",
+"ucode_cmd__rx_on",
+"ucode_pm__rx_off_step"
+],
+"strings": [
+"rfc_ctrl.c"
+],
+"globals": [
+"0x800540",
+"0x800550",
+"0x8005c0"
+]
+},
+"mac__build_qset_mask": {
+"callers": [
+"mac__program_886e0c_20b"
+],
+"globals": [
+"0x800558"
+]
+},
+"mac__build_tx_common_params": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc"
+],
+"callers": [
+"bcon_txss_sweep_step",
+"bi_manager__rx_flow_body",
+"cf_end__tx_flow",
+"direct_tx_step",
+"internal_tx_step",
+"tx_mtp__open_window",
+"tx_rate_select_and_program",
+"txop__open_window"
+]
+},
+"rfc__issue_cmd_10": {
+"callers": [
+"mac_mode__enter_idle_seq"
+]
+},
+"rfc__issue_cmd_20": {
+"callers": [
+"brp__program_and_measure",
+"rfc_ctrl__switch"
+]
+},
+"brp__write_reg_pair": {
+"callers": [
+"brp__flow_main",
+"brp__write_pair_0x504",
+"brp__write_pair_b",
+"brp_step_b"
+]
+},
+"uc_queue__dispatch_and_commit": {
+"calls": [
+"uc_deref_field4_926394"
+],
+"callers": [
+"l1_task__kick_and_dispatch"
+]
+},
+"rate_search__reset_sta": {
+"calls": [
+"__ld_r13_ret_uc",
+"rate_search__current_mcs",
+"uc_sta_ctx__reset",
+"uc_sta_trace__push_record"
+],
+"callers": [
+"bf_sm__release_sta",
+"bf_sm__reset_sta_rate",
+"ucode_cmd_0x12_handler",
+"ucode_cmd_0x30_handler",
+"ucode_cmd__rs_enable"
+],
+"globals": [
+"0x8005a4"
+]
+},
+"tx_flow_substep": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"rate_search__commit_mcs",
+"rate_search__reset_stats"
+],
+"callers": [
+"tx_flow_size_step"
+]
+},
+"ucode_cmd__rs_enable": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"memcpy_uc",
+"rate_search__reset_sta",
+"rate_search__start_for_sta",
+"ucode_pm__set_busy_flag"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"enable RS = %d",
+"RS is active, aborting cid =%d",
+"restarting RS=%d",
+"disable RS cid= %d"
+]
+},
+"tx_initiator__reset_slot_counters": {
+"callers": [
+"tx_initiator_step"
+]
+},
+"rate_search__commit_mcs": {
+"calls": [
+"__ld_r13_ret_uc",
+"memset0_words_uc"
+],
+"callers": [
+"rate_search__pick_tx_params",
+"tx_flow_substep"
+]
+},
+"rate_search__step": {
+"calls": [
+"__ld_r17_to_r13_ret_uc",
+"__st_r17_to_r13_uc",
+"rate_search__apply_mcs",
+"uc_send_evt__rs_done",
+"uc_sta_ctx__reset",
+"uc_sta_trace__push_record",
+"uc_sysassert"
+],
+"callers": [
+"background_task__dispatch",
+"rate_search__start_for_sta"
+],
+"strings": [
+"rate_search.c"
+],
+"globals": [
+"0x8005a4"
+]
+},
+"ucode_cmd_0x30_handler": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_b_s0_w7_uc",
+"rate_search__reset_sta",
+"rate_search__start_for_sta"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"rate_search__current_mcs_b": {
+"callers": [
+"rfc_ctrl__switch"
+]
+},
+"tbl_801754__byte_by_index": {
+"callers": [
+"mtp_queue__release_mgmt",
+"mtp_service__dispatch",
+"rx_flow__run",
+"tx_flows__program_mac_tx"
+]
+},
+"rate_search__build_mcs_mask": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"uc_sysassert"
+],
+"callers": [
+"rate_search__reset_stats",
+"rate_search__start_for_sta"
+],
+"strings": [
+"rate_search.c"
+]
+},
+"rate_search__current_mcs": {
+"callers": [
+"rate_search__reset_sta",
+"rx_funcs__rx_flow",
+"tx_initiator_step"
+]
+},
+"rate_search__reset_stats": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"memset0_words_uc",
+"rate_search__build_mcs_mask"
+],
+"callers": [
+"tx_flow_substep"
+]
+},
+"get_g_80051c": {
+"callers": [
+"bf_sm__start_request",
+"rate_search__start_for_sta",
+"rx_funcs__rx_flow"
+]
+},
+"tbl_8018b5__byte_by_index": {
+"callers": [
+"bf_sm__release_sta",
+"bf_sm__reset_sta_rate",
+"bf_sm__start_request"
+]
+},
+"rate_search__apply_mcs": {
+"calls": [
+"hwd_mac__apply_timing_entry"
+],
+"callers": [
+"bf_sm__process_request_fifo",
+"brp__apply_slot_mcs",
+"rate_search__step",
+"txss__flow_body",
+"txss_flow_step_b"
+]
+},
+"rate_search__start_for_sta": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"get_g_80051c",
+"mac__program_qset_slots",
+"memset0_words_uc",
+"rate_search__build_mcs_mask",
+"rate_search__step",
+"uc_sysassert"
+],
+"callers": [
+"bf_sm__start_request",
+"ucode_cmd_0x12_handler",
+"ucode_cmd_0x30_handler",
+"ucode_cmd__rs_enable"
+],
+"strings": [
+"rate_search.c"
+]
+},
+"ucode_cmd_0x12_handler": {
+"calls": [
+"__ld_r13_ret_uc",
+"rate_search__reset_sta",
+"rate_search__start_for_sta"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"rate_search__pick_tx_params": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"bitstream__push",
+"rate_search__commit_mcs"
+],
+"callers": [
+"tx_flow_size_step"
+]
+},
+"bap_q_avail__check": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc"
+],
+"callers": [
+"rx_flow__check_status"
+]
+},
+"abft__program_ssw_tx": {
+"callers": [
+"abft_responder__tx_ssw"
+]
+},
+"abft_responder_worker": {
+"calls": [
+"abft__arm_response_window",
+"abft_responder__tx_ssw",
+"abft_responder_substep",
+"hw_modes_mac__switch_core",
+"tx_ctx__next_slot",
+"uc_send_evt__bf_done",
+"uc_send_evt__new_link",
+"uc_spin_until_event4",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"bi_dti__kick_worker"
+]
+},
+"abft__arm_response_window": {
+"callers": [
+"abft_responder_worker"
+]
+},
+"abft_responder_substep": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"abft_responder_worker"
+],
+"globals": [
+"0x80057c"
+]
+},
+"bti_tx__program_bi2_regs": {
+"callers": [
+"bti_transmitter_bi2_flow"
+]
+},
+"bf_gpc__program_mac_by_mode": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"bti_worker__collect_bf_metric"
+],
+"strings": [
+"bf_gpc_service.cpp"
+]
+},
+"abft_responder__tx_ssw": {
+"calls": [
+"abft__program_ssw_tx",
+"abft__send_ssw_feedback",
+"get_g_80087c",
+"mac__program_tx_common",
+"mac__select_sector_and_wait_a",
+"mac__select_sector_and_wait_b",
+"softfloat_double_to_short_b",
+"softfloat_negate_r3",
+"softfloat_u32_to_double",
+"uc_spin_until_event",
+"uc_sysassert"
+],
+"callers": [
+"abft_responder_worker"
+],
+"strings": [
+"abft_worker_responder_funcs.cpp"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"l1_task__check_pending": {
+"callers": [
+"l1_task__entry"
+],
+"globals": [
+"0x800550"
+]
+},
+"rx_flow__latch_phy_883830": {
+"calls": [
+"hwd_phy__get_883830"
+],
+"callers": [
+"rx_flow__run"
+]
+},
+"rw_g_801b08": {
+"calls": [
+"memset0_words_uc"
+],
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"rx_flow__run": {
+"calls": [
+"cf_end_mtp_step",
+"mac__load_tx_vector",
+"rfc_ctrl__switch",
+"rw_g_801038",
+"rx__mac_prepare",
+"rx_flow__handle_frame",
+"rx_flow__latch_phy_883830",
+"rx_flow__phy_override",
+"rx_flow_step",
+"rx_funcs__handle_ppdu_report",
+"rx_nav_update",
+"tbl_801754__byte_by_index",
+"uc_sleep_until_event",
+"uc_spin_until_event",
+"uc_sysassert",
+"uc_wait_event_busy",
+"uc_wait_two_events"
+],
+"callers": [
+"bi_manager_rx_step",
+"rx_funcs__rx_flow",
+"tx_flow_size_step",
+"tx_initiator_rx_step",
+"tx_initiator_substep",
+"txss__init_sweep",
+"txss__init_sweep_b",
+"txss__prepare_frames",
+"txss_rx_step"
+],
+"strings": [
+"rx_flow.c",
+"SYSTEM   "
+],
+"globals": [
+"0x80052c",
+"0x800530",
+"0x800540",
+"0x800570",
+"0x800578",
+"0x80057c",
+"0x800604",
+"0x800608",
+"0x800610",
+"0x800614"
+]
+},
+"rx_funcs__handle_ppdu_report": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"get_tx_eligibility",
+"hw_modes_mac__switch_core",
+"mac_mode__switch_after_ppdu",
+"rf_sector__find_by_id",
+"rf_sector__program_selected",
+"rx__mac_prepare",
+"rx__send_response_frame",
+"rx__switch_to_rx_mode",
+"rx_funcs__on_rx_type_0x14",
+"rx_funcs__record_level_800fa0",
+"rx_funcs_copy_step",
+"rx_rfc_step",
+"sxd_hal__read_backoff_status",
+"uc_sysassert",
+"uc_wait_event_busy",
+"ucode_pm__set_busy_flag"
+],
+"callers": [
+"rx_flow__run"
+],
+"strings": [
+"rx_funcs_optimized_size.c"
+],
+"globals": [
+"0x8005d8",
+"0x800604",
+"0x800608"
+]
+},
+"rx_flow_step": {
+"calls": [
+"rx__mac_prepare",
+"rx__switch_to_rx_mode",
+"rx_flow__lookup_mcs_ctx",
+"rx_flow_substep",
+"rx_nav_bi_step",
+"uc_wait_event_busy",
+"us_from_ticks165"
+],
+"callers": [
+"rx_flow__run"
+],
+"globals": [
+"0x800534",
+"0x800540",
+"0x80056c",
+"0x800608"
+]
+},
+"rx_flow__handle_frame": {
+"calls": [
+"get_g_804010",
+"power_mngr_peer_update",
+"rf_sector__find_by_id",
+"rfc_ctrl__switch",
+"rx__mac_prepare",
+"rx__switch_to_rx_mode",
+"rx_flow__grant_detected",
+"rx_flow__post_rx_tail",
+"rx_flow__post_rx_unsupported",
+"rx_flow_substep",
+"rx_funcs__identify_peer",
+"rx_nav_bi_step",
+"uc_read_tsf_lo",
+"uc_sysassert",
+"uc_wait_event_busy"
+],
+"callers": [
+"rx_flow__run"
+],
+"strings": [
+"rx_flow.c"
+],
+"globals": [
+"0x800538",
+"0x800540",
+"0x80056c",
+"0x8005d8",
+"0x8005f9",
+"0x800604",
+"0x800608"
+]
+},
+"rx_flow__post_rx_act1": {
+"calls": [
+"mtp_service__dispatch",
+"rx_flow__post_rx_tail",
+"rx_rfc_step"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"rx_flow__post_rx_act2": {
+"calls": [
+"mtp_service__dispatch",
+"rx_flow__post_rx_tail",
+"rx_rfc_step"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"rx_flow__post_rx_act3": {
+"calls": [
+"mtp_service__dispatch",
+"rx_flow__post_rx_tail",
+"rx_rfc_step"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"rx_flow__post_rx_act7": {
+"calls": [
+"rx__send_response_frame",
+"rx_flow__post_rx_tail",
+"rx_rfc_step"
+]
+},
+"rx_flow__post_rx_act9": {
+"calls": [
+"direct_tx_rx_step",
+"rx_flow__post_rx_tail",
+"rx_rfc_step"
+]
+},
+"rx_flow__post_rx_act8": {
+"calls": [
+"rx_flow__post_rx_tail",
+"rx_flow__send_imm_response",
+"rx_rfc_step"
+]
+},
+"rx_flow__post_rx_unsupported": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"rx_flow__handle_frame"
+],
+"strings": [
+"rx_flow.c"
+]
+},
+"rx_flow__post_rx_tail": {
+"callers": [
+"rx_flow__handle_frame",
+"rx_flow__post_rx_act1",
+"rx_flow__post_rx_act2",
+"rx_flow__post_rx_act3",
+"rx_flow__post_rx_act7",
+"rx_flow__post_rx_act8",
+"rx_flow__post_rx_act9"
+]
+},
+"rx_flow__grant_detected": {
+"calls": [
+"grant_detect_step",
+"power_mngr_peer_update"
+],
+"callers": [
+"rx_flow__handle_frame"
+],
+"strings": [
+"SYSTEM   ",
+"GRANT DETECTED!!"
+],
+"globals": [
+"0x800534",
+"0x800548",
+"0x800604"
+]
+},
+"rx_flow__lookup_mcs_ctx": {
+"calls": [
+"rx_flow__check_ppdu_and_ctx"
+],
+"callers": [
+"rx_flow_step"
+],
+"globals": [
+"0x800608"
+]
+},
+"rx_flow__decide_imm_ack": {
+"calls": [
+"rx_flow__check_ppdu_and_ctx",
+"uc_sysassert"
+],
+"strings": [
+"rx_flow.c"
+]
+},
+"rx_flow__check_status": {
+"calls": [
+"bap_q_avail__check",
+"rx_flow__check_ppdu_and_ctx",
+"uc_sysassert"
+],
+"strings": [
+"rx_flow.c"
+],
+"globals": [
+"0x800608"
+]
+},
+"rx_flow__bump_stat_and_kick": {
+"calls": [
+"rx_flow__check_ppdu_and_ctx"
+]
+},
+"rx_flow__check_ppdu_and_ctx": {
+"callers": [
+"rx_flow__bump_stat_and_kick",
+"rx_flow__check_status",
+"rx_flow__decide_imm_ack",
+"rx_flow__lookup_mcs_ctx"
+]
+},
+"rx_rfc_step": {
+"calls": [
+"mac__select_sector_and_wait_b",
+"mac__set_rf_chain_state",
+"rfc_ctrl__switch",
+"uc_read_tsf_lo",
+"uc_spin_until_event"
+],
+"callers": [
+"rx_flow__post_rx_act1",
+"rx_flow__post_rx_act2",
+"rx_flow__post_rx_act3",
+"rx_flow__post_rx_act7",
+"rx_flow__post_rx_act8",
+"rx_flow__post_rx_act9",
+"rx_funcs__handle_ppdu_report"
+],
+"globals": [
+"0x800538",
+"0x800570",
+"0x800604",
+"0x800608"
+]
+},
+"rx_funcs__rx_flow": {
+"calls": [
+"bf__abort_unexpected",
+"bf_metrics__reset_and_stamp",
+"bf_sm__step_by_state",
+"bf_substate__set",
+"get_g_80051c",
+"mac__load_tx_vector",
+"mac_counter__program_0008",
+"obj__set_field18_from_tbl_801130",
+"ps_awake_peer__send_clear_peer",
+"queue_sel__get_qset4",
+"rate_search__current_mcs",
+"rfc_ctrl__switch",
+"rx_flow__run",
+"sxd_hal__read_backoff_status",
+"sxd_hal__wait_slot2_busy",
+"tx_ctx__next_slot",
+"tx_flows__program_mac_tx",
+"uc_read_tsf_lo",
+"uc_send_evt__rs_started",
+"uc_sta_ctx__reset",
+"uc_sta_trace__push_record",
+"uc_sysassert"
+],
+"callers": [
+"bi_manager__rx_flow_kind0",
+"bi_manager__rx_flow_kind1",
+"bi_manager__rx_flow_kind2"
+],
+"strings": [
+"rx_funcs.c",
+"SYSTEM   "
+],
+"globals": [
+"0x800538",
+"0x800540",
+"0x8005b0",
+"0x8005b8",
+"0x8005d8",
+"0x800604",
+"0x800608",
+"0x800610",
+"0x800614"
+]
+},
+"rx_nav_bi_step": {
+"calls": [
+"bi_ap_mon__window_code",
+"nav_db__update",
+"uc_sta_ctx__reset",
+"uc_sta_trace__push_record"
+],
+"callers": [
+"rx_flow__handle_frame",
+"rx_flow_step"
+],
+"globals": [
+"0x800540",
+"0x8005b4"
+]
+},
+"rx_funcs_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"direct_tx__program_cmd34",
+"get_g_80087c",
+"mac__program_tx_common",
+"mac__select_sector_and_wait_b",
+"rx_funcs__send_direct_frame",
+"rx_funcs_substep",
+"uc_spin_until_event"
+],
+"callers": [
+"rx_funcs__identify_peer",
+"txss_flow_step_b"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"rx_nav_update": {
+"calls": [
+"mac__prepare_txrx_window",
+"nav_db__update"
+],
+"callers": [
+"rx_flow__run"
+],
+"globals": [
+"0x800570",
+"0x800604",
+"0x800608"
+]
+},
+"ps_awake_peer__build_evt": {
+"calls": [
+"memset0_words_uc",
+"uc_send_evt__ps_awake_peer"
+],
+"callers": [
+"tail_ps_awake_peer__build_evt"
+]
+},
+"ps__program_awake_peers_mask": {
+"calls": [
+"set_reg_886f84_x3"
+],
+"callers": [
+"ps__notify_awake_peers"
+]
+},
+"ps__notify_awake_peers": {
+"calls": [
+"ps__program_awake_peers_mask",
+"uc_send_evt__ps_awake_peer"
+],
+"callers": [
+"bi_dti__wake_and_evaluate_sleep"
+]
+},
+"rf_sector__find_by_id": {
+"callers": [
+"rx_flow__handle_frame",
+"rx_funcs__handle_ppdu_report"
+]
+},
+"basic_if__post_to_fw_mailbox": {
+"calls": [
+"mailbox__free_space",
+"mailbox_debug_dump__2",
+"uc_mailbox__advance",
+"uc_sysassert"
+],
+"callers": [
+"uc_send_event"
+],
+"strings": [
+"basic_if.cpp"
+]
+},
+"ucode_cmd_0x11_handler": {
+"calls": [
+"memcpy_uc"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"power_mngr_peer_update": {
+"calls": [
+"mac__read_pair64_consistent"
+],
+"callers": [
+"aw_worker__collect_awake_peers",
+"bi_manager__rx_bi_flow",
+"rx_flow__grant_detected",
+"rx_flow__handle_frame"
+]
+},
+"aw_ie__copy_to_bcon": {
+"callers": [
+"ucode_cmd_update_aw_ie"
+]
+},
+"aw__set_tbtt_offset": {
+"callers": [
+"aw__set_new_tbtt"
+]
+},
+"mac__program_deadline_slack": {
+"callers": [
+"power_manager__decide_shallow_sleep",
+"shallow_sleep_rfc_step",
+"txrx_api_cmd_step"
+]
+},
+"set_reg_886d20_x2": {
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"bi_ap_mon_if__trigger": {
+"calls": [
+"basic_sm__dispatch_loop",
+"bi_ap_mon_if__trigger_dti_to_bti",
+"bi_timing_snapshot_b"
+],
+"callers": [
+"bi_ap_mon__trigger_tail",
+"bi_ap_mon_if__trigger_aw_to_dti",
+"bi_ap_mon_if__trigger_bhi",
+"bi_manager__enter_dti",
+"bi_manager__kind_switch",
+"bi_manager__run_rx_flow_by_kind",
+"l1_bi_trigger_step",
+"l1_task__entry"
+]
+},
+"bi_ap_mon_if__trigger_bhi_to_dti": {
+"calls": [
+"basic_sm__dispatch_loop",
+"bi_window_transition_prep"
+]
+},
+"bi_ap_mon_if__trigger_bti_to_abft": {
+"calls": [
+"basic_sm__step_once"
+]
+},
+"bi_ap_mon_if__trigger_bhi": {
+"calls": [
+"bi_ap_mon_if__trigger",
+"bi_window_timing_update",
+"bi_window_transition_prep"
+]
+},
+"bi_ap_mon_if__trigger_aw_to_dti": {
+"calls": [
+"bi_ap_mon_if__trigger",
+"bi_window_timing_update"
+]
+},
+"bi_ap_mon_if__trigger_dti_to_bti": {
+"calls": [
+"basic_sm__step_once",
+"uc_sysassert"
+],
+"callers": [
+"bi_ap_mon_if__trigger"
+],
+"strings": [
+"bi_ap_mon_if.cpp"
+]
+},
+"sxd_hal__write_qset_field": {
+"calls": [
+"sxd_hal__select_qset_group",
+"uc_sysassert"
+],
+"callers": [
+"aw_worker__begin_window"
+],
+"strings": [
+"sxd_hal.c"
+]
+},
+"sxd_hal__mac_write_indexed": {
+"calls": [
+"uc_sysassert"
+],
+"callers": [
+"brp_flow_step",
+"txss__init_sweep",
+"txss__prepare_frames",
+"txss_rx_step"
+],
+"strings": [
+"sxd_hal.c"
+]
+},
+"stub_ret_93076c": {
+"callers": [
+"bf_sm__post_slot_result",
+"bf_substate__brp_mode_by_slot"
+]
+},
+"aw__set_new_tbtt": {
+"calls": [
+"aw__compute_tbtt_from_hw",
+"aw__set_tbtt_offset",
+"aw_tbtt_set_step",
+"calc_awake_tsf",
+"get_reg_886d64_93256c",
+"uc_read_tsf_lo"
+],
+"callers": [
+"perform_bti_pm_cfg"
+],
+"strings": [
+"Set new AW. TBTT TSF: %x, tbtt_start_time: %x"
+]
+},
+"aw__compute_next_tbtt": {
+"calls": [
+"get_reg_886d64_93256c",
+"uc_divmod_signed"
+],
+"callers": [
+"aw_tbtt_set_step"
+]
+},
+"set_selected_rf_sector_index_cmd_handler": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"rf_sector__program_selected",
+"uc_send_evt__set_rf_sector_done",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"set_selected_rf_sector_index_cmd_handler(): Invalid sector type specified %d, cid=%d",
+"txrx_api_cmd_handler.c"
+]
+},
+"aw_tbtt_set_step": {
+"calls": [
+"aw__compute_next_tbtt",
+"memset0_words_uc"
+],
+"callers": [
+"aw__set_new_tbtt"
+]
+},
+"traffic_deferral__clear_node": {
+"callers": [
+"traffic_deferral_cfg_cmd_handler"
+]
+},
+"traffic_deferral__is_enabled": {
+"callers": [
+"traffic_deferral_cfg_cmd_handler"
+]
+},
+"set_tsf_event": {
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow"
+],
+"strings": [
+"set_tsf_event()"
+]
+},
+"uc_read_tsf64": {
+"callers": [
+"bi__tsf_delta64",
+"bi_timing_snapshot_b",
+"bi_window_timing_update",
+"get_selected_rf_sector_index_cmd_handler",
+"perform_shallow_sleep",
+"set_g_80058c",
+"uc_pm__enter_idle",
+"uc_send_event"
+]
+},
+"brp__write_pair_b": {
+"calls": [
+"__ld_r13_ret_uc",
+"brp__write_reg_pair"
+],
+"globals": [
+"0x800540"
+]
+},
+"brp__write_pair_0x504": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_w_s2_w4_uc",
+"brp__write_reg_pair"
+]
+},
+"bf_substate__set": {
+"callers": [
+"bf_substate_sm__step",
+"bi_manager__rx_flow_kind1",
+"brp__mode_step",
+"brp_flow_step",
+"rx_funcs__rx_flow",
+"txss__flow_body",
+"txss__init_sweep",
+"txss__init_sweep_b",
+"txss__prepare_frames",
+"txss_flow_step_b"
+]
+},
+"ucode_cmd_0x16_handler": {
+"calls": [
+"memcpy_uc"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"tail_bcon_sweep_step_b": {
+"calls": [
+"bcon_sweep_step_b"
+],
+"callers": [
+"txss__tx_sector_frame",
+"ucode_cmd_0x0c_handler"
+]
+},
+"bcon_sweep_step_b": {
+"calls": [
+"__ld_r18_to_r13_ret_uc",
+"__st_r18_to_r13_uc",
+"bcon_sweep__next_sector",
+"memcpy_uc"
+],
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"tail_bcon_sweep_step_b"
+]
+},
+"bcon_sweep__next_sector": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc"
+],
+"callers": [
+"bcon_sweep_step_b",
+"bcon_txss_sweep_step"
+]
+},
+"get_g_80087c": {
+"calls": [
+"mac__set_rf_chain_state"
+],
+"callers": [
+"abft_responder__tx_ssw",
+"bcon_txss_sweep_step",
+"direct_tx_step",
+"rx_funcs_step",
+"txss_flow_step"
+]
+},
+"txss_copy_step": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"memcpy_uc"
+],
+"callers": [
+"txss__flow_body",
+"txss__prepare_frames",
+"txss_flow_step_b",
+"txss_rx_step"
+]
+},
+"uc_mailbox__init_rings": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"stub_ret_927924",
+"uc_ring__init_desc"
+],
+"callers": [
+"uc_send_evt__ucode_ready"
+]
+},
+"bi_dti__kick_worker": {
+"calls": [
+"abft_responder_worker",
+"bi_dti__sleep_and_resume",
+"mac_mode_kick"
+],
+"callers": [
+"bi_manager__enter_dti"
+]
+},
+"bi_ap_mon__aw_event": {
+"calls": [
+"bi_manager__on_aw"
+],
+"strings": [
+"BI_AP_MONITOR_SM: AW EVENT"
+]
+},
+"aw_worker__begin_window": {
+"calls": [
+"aw__open_event_mask",
+"aw_worker__collect_awake_peers",
+"sxd_hal__write_qset_field",
+"uc_res_886f00__acquire"
+],
+"callers": [
+"bi_manager__on_aw"
+]
+},
+"bi_ap_mon__bti_event": {
+"calls": [
+"bi_manager__kind_switch"
+]
+},
+"bi__decide_beacon_kind": {
+"calls": [
+"bti_transmitter_bi2_flow",
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"perform_bti_pm_cfg",
+"uc_tx__is_idle"
+],
+"callers": [
+"bi_manager__kind_switch"
+],
+"globals": [
+"0x8005a0"
+]
+},
+"bi_ap_mon__dti_event": {
+"calls": [
+"bi_manager__on_dti"
+],
+"strings": [
+"BI_AP_MONITOR_SM: DTI EVENT"
+]
+},
+"bi_dti__wake_and_evaluate_sleep": {
+"calls": [
+"pm__wake_sequence",
+"power_manager__decide_shallow_sleep",
+"ps__notify_awake_peers"
+],
+"callers": [
+"bi_manager__on_dti"
+]
+},
+"mac__select_sector_and_wait_a": {
+"calls": [
+"uc_spin_until_event"
+],
+"callers": [
+"abft_responder__tx_ssw",
+"bcon_txss_sweep_step",
+"internal_tx_step",
+"txss__init_sweep"
+]
+},
+"rx__send_response_frame": {
+"calls": [
+"bi__remaining_time_us",
+"direct_tx__issue_cmd_33",
+"direct_tx__push_payload",
+"direct_tx_rx__program",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"rx_flow__post_rx_act7",
+"rx_funcs__handle_ppdu_report"
+]
+},
+"rx_flow__send_imm_response": {
+"calls": [
+"direct_tx__issue_cmd_33",
+"direct_tx_rx__program",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"rx_flow__post_rx_act8"
+]
+},
+"direct_tx_rx_step": {
+"calls": [
+"direct_tx__init_rx_desc",
+"direct_tx__issue_cmd_33",
+"direct_tx__push_payload",
+"direct_tx_rx__program",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"rx_flow__post_rx_act9"
+]
+},
+"bi_mode_init_substep": {
+"calls": [
+"__ld_r13_ret_uc",
+"bi_mode__unmask_all_events",
+"uc_irq_set_level"
+],
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"bi_mode__unmask_all_events": {
+"calls": [
+"uc_irq_set_level"
+],
+"callers": [
+"bi_mode_init_substep"
+]
+},
+"uc_read_tsf_lo": {
+"callers": [
+"aw__set_new_tbtt",
+"bf_metrics__reset_and_stamp",
+"bf_sm__check_request_timeout",
+"bf_sm__check_sta_timeout",
+"bi__remaining_time_us",
+"bi_window_transition_prep",
+"bti__bi2_event_step",
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"grant_detect_step",
+"l1_bi_trigger_step",
+"l2_task__run",
+"nav_db__update",
+"perform_shallow_sleep",
+"power_manager__tick_if_elapsed",
+"rx_flow__handle_frame",
+"rx_funcs__rx_flow",
+"rx_funcs__set_rx_off",
+"rx_rfc_step",
+"tx_flows__program_mac_tx",
+"uc_send_evt_typed",
+"uc_tsf_elapsed",
+"ucode_cmd__queue_delete",
+"ucode_cmd__rx_on",
+"ucode_pm__stamp_tsf_slots"
+]
+},
+"mac_sxd__program_886d88_and_cmd_1e": {
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"mac__cmd_29000001": {
+"callers": [
+"bcon_txss_sweep_step",
+"bi_manager__rx_flow_body",
+"internal_tx_step",
+"mac__rx_off_seq",
+"tx_mtp__open_window",
+"tx_rate_select_and_program",
+"txop__open_window",
+"txss__tx_sector_frame"
+]
+},
+"mac__select_sector_and_wait_b": {
+"calls": [
+"uc_spin_until_event"
+],
+"callers": [
+"abft_responder__tx_ssw",
+"bcon_txss_sweep_step",
+"bi_manager__rx_flow_body",
+"direct_tx_step",
+"internal_tx_step",
+"mac__rx_off_seq",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"rx_funcs_step",
+"rx_rfc_step",
+"tx_rate_select_and_program",
+"txss__init_sweep",
+"txss__init_sweep_b",
+"txss__prepare_frames",
+"txss__tx_sector_frame",
+"txss_flow_step"
+]
+},
+"tail_uc_wait_two_events": {
+"calls": [
+"uc_wait_two_events"
+],
+"callers": [
+"bi_manager__rx_flow_body",
+"cf_end__tx_flow",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"tx_flows__program_mac_tx",
+"tx_mtp_queue_gate",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow"
+]
+},
+"uc_wait_two_events": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"rx_flow__run",
+"sxd_hal__read_backoff_status",
+"tail_uc_wait_two_events",
+"ucode_pm__rx_off_step"
+]
+},
+"bi_mode_init_sequence": {
+"calls": [
+"bi_ctx__reset",
+"bi_mode__build_schedule",
+"bi_mode__load_qset_table",
+"bi_mode__program_mac_timing",
+"bi_mode__reset_bf_state",
+"bi_mode_init_substep",
+"mac_sxd__program_886d88_and_cmd_1e",
+"rw_g_801b08",
+"set_g_800994",
+"set_g_801b64_x2",
+"set_reg_886d20_x2",
+"tail_bi_ap_mon__init",
+"tx_ctx__next_slot"
+],
+"callers": [
+"uc_main_init"
+],
+"strings": [
+"BCON     "
+]
+},
+"uc_spin_until_event4": {
+"callers": [
+"abft_responder_worker",
+"bi_dti__sleep_and_resume",
+"cf_end__pulse_883150",
+"mac_mode_kick"
+]
+},
+"uc_spin_until_event": {
+"callers": [
+"abft_responder__tx_ssw",
+"bcon_txss_sweep_step",
+"bi_manager__rx_flow_body",
+"bi_tx_initiator_wrap",
+"brp_flow_step",
+"cf_end__tx_flow",
+"direct_tx_step",
+"mac__select_sector_and_wait_a",
+"mac__select_sector_and_wait_b",
+"mac_mode_program_a",
+"mac_mode_program_b",
+"rx_flow__run",
+"rx_funcs_step",
+"rx_rfc_step",
+"tx_flows__program_mac_tx",
+"tx_mtp_queue_gate",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow",
+"txss_flow_step"
+]
+},
+"uc_wait_event_busy": {
+"callers": [
+"abft_responder_substep",
+"bti__bi2_event_step",
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"bti_worker_bi2_step",
+"mac__prepare_txrx_window",
+"mac__select_all_sectors_and_wait",
+"mac_mode__wait_ppdu_and_kick",
+"mac_mode__wait_ppdu_and_kick_b",
+"mac_mode__wait_ppdu_and_kick_c",
+"mac_mode__wait_ppdu_and_kick_d",
+"mac_mode__wait_ppdu_and_kick_e",
+"rx_flow__handle_frame",
+"rx_flow__run",
+"rx_flow_step",
+"rx_funcs__handle_ppdu_report",
+"sxd_hal__wait_slot2_busy",
+"sxd_hal__wait_slot2_busy2",
+"tx_flows__program_mac_tx",
+"txss__tx_sector_frame",
+"uc_wait_two_events"
+]
+},
+"uc_sleep_until_event": {
+"callers": [
+"cf_end__tx_flow",
+"rx_flow__run"
+]
+},
+"uc_wait_event1_or_event4": {
+"callers": [
+"abft_responder_worker",
+"brp_flow_step",
+"bti_worker__collect_bf_metric",
+"internal_tx__await_rx_frame_a",
+"internal_tx__await_rx_frame_b",
+"mac_mode_brp_step",
+"mac_mode_program_c",
+"mac_mode_step_b",
+"txss__init_sweep",
+"txss__prepare_frames",
+"txss_rx_step"
+]
+},
+"mac__select_all_sectors_and_wait": {
+"calls": [
+"uc_wait_event_busy"
+],
+"callers": [
+"bcon_txss_sweep_step",
+"bi_manager__rx_flow_body",
+"internal_tx_step",
+"tx_initiator_flow",
+"tx_mtp__open_window",
+"tx_rate_select_and_program",
+"txop__open_window"
+]
+},
+"mac__set_phy_mode": {
+"callers": [
+"ucode_cmd_0x00_handler"
+]
+},
+"txrx_api_step_c": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc"
+],
+"callers": [
+"ucode_cmd_0x04_handler"
+]
+},
+"bi_tx__check_idle_and_start": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bi_tx__program_initiator"
+],
+"callers": [
+"bf_sm__release_sta",
+"bi_manager__rx_bi_flow",
+"bi_manager__start_tx_or_initiator",
+"internal_tx__pending_sm",
+"tx_initiator_flow",
+"txop_initiator_open_txop_flow",
+"uc_res_vote__release"
+]
+},
+"bi_tx__program_initiator": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc"
+],
+"callers": [
+"bi_tx__check_idle_and_start",
+"bi_tx_initiator_wrap"
+]
+},
+"bi_mode__program_mac_timing": {
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"ifs_cfg__program_from_hw_cfg": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"us_from_ticks165"
+],
+"callers": [
+"ucode_cmd_0x00_handler"
+]
+},
+"uc_read_bi_sync": {
+"callers": [
+"bi_manager_step_a",
+"bti__bi2_event_step"
+]
+},
+"us_from_ticks165": {
+"callers": [
+"ifs_cfg__program_from_hw_cfg",
+"rx_flow_step"
+]
+},
+"mac__program_886f70_from_tbl": {
+"callers": [
+"ucode_cmd_0x21_handler"
+],
+"globals": [
+"0x80054c"
+]
+},
+"txrx_api_cmd_step": {
+"calls": [
+"__ld_r19_to_r13_ret_uc",
+"__st_r19_to_r13_uc",
+"mac__program_deadline_slack",
+"set_g_800994"
+],
+"callers": [
+"bi_cfg__apply",
+"ucode_cmd__rx_on"
+]
+},
+"sxd_hal__wait_slot2_busy2": {
+"calls": [
+"uc_sysassert",
+"uc_wait_event_busy"
+],
+"callers": [
+"bi_manager_rx_step",
+"tx_flow_size_step",
+"tx_initiator_rx_step",
+"tx_initiator_substep",
+"txss__init_sweep_b"
+],
+"strings": [
+"sxd_hal.c"
+]
+},
+"sxd_hal__wait_slot2_busy": {
+"calls": [
+"uc_sysassert",
+"uc_wait_event_busy"
+],
+"callers": [
+"rx_funcs__rx_flow"
+],
+"strings": [
+"sxd_hal.c"
+]
+},
+"uc_sta_trace__push_record": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc"
+],
+"callers": [
+"bf__reset_rx_counters",
+"internal_tx_step",
+"rate_search__reset_sta",
+"rate_search__step",
+"rx_funcs__rx_flow",
+"rx_nav_bi_step",
+"tx_initiator_step"
+],
+"globals": [
+"0x800560"
+]
+},
+"uc_sta_ctx__reset": {
+"calls": [
+"__ld_r13_ret_uc",
+"memset0_words_uc"
+],
+"callers": [
+"internal_tx__pending_sm",
+"rate_search__reset_sta",
+"rate_search__step",
+"rx_funcs__rx_flow",
+"rx_nav_bi_step",
+"txop_initiator_open_txop_flow"
+]
+},
+"bti__bi2_event_step": {
+"calls": [
+"bti_worker_bi2_step",
+"uc_bi_counter_in_window",
+"uc_read_bi_sync",
+"uc_read_tsf_lo",
+"uc_wait_event_busy"
+],
+"callers": [
+"bti_transmitter_bi2_flow"
+],
+"strings": [
+"BI2 event",
+"BI1 interrupt Out Of BTI period"
+],
+"globals": [
+"0x800540",
+"0x80059c"
+]
+},
+"uc_timer__start": {
+"calls": [
+"uc_irq_set_level"
+],
+"callers": [
+"uc_timers__start_defaults",
+"uc_timers__start_defaults_b"
+]
+},
+"traffic_deferral_cfg_cmd_handler": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"traffic_deferral__clear_node",
+"traffic_deferral__is_enabled",
+"uc_send_evt_typed"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"traffic_deferral_cfg_cmd_handler (deferred = %d) (wakeup_trigger=%d)"
+]
+},
+"uc_bi_counter_in_window": {
+"callers": [
+"bti__bi2_event_step"
+]
+},
+"get_reg_886d64_93256c": {
+"callers": [
+"aw__compute_next_tbtt",
+"aw__set_new_tbtt",
+"calc_awake_tsf"
+]
+},
+"mac__read_pair64_consistent": {
+"callers": [
+"aw__compute_tbtt_from_hw",
+"power_mngr_peer_update"
+]
+},
+"aw__compute_tbtt_from_hw": {
+"calls": [
+"mac__read_pair64_consistent"
+],
+"callers": [
+"aw__set_new_tbtt"
+]
+},
+"uc_sysassert__snapshot_mac": {
+"callers": [
+"uc_sysassert"
+]
+},
+"mac__rx_off_seq": {
+"calls": [
+"mac__cmd_29000001",
+"mac__select_sector_and_wait_b"
+],
+"callers": [
+"rx_funcs__set_rx_off"
+]
+},
+"mac_mode__enter_idle_seq": {
+"calls": [
+"__ld_r13_ret_uc",
+"hw_modes_mac__switch_core",
+"rfc__issue_cmd_10"
+],
+"callers": [
+"uc_pm__enter_idle"
+]
+},
+"bi_manager__rx_flow_body": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bi_rx__send_response",
+"mac__build_tx_common_params",
+"mac__cmd_29000001",
+"mac__select_all_sectors_and_wait",
+"mac__select_sector_and_wait_b",
+"mac__set_rf_chain_state",
+"tail_uc_wait_two_events",
+"uc_spin_until_event"
+],
+"callers": [
+"bi_manager_rx_step"
+],
+"globals": [
+"0x800604",
+"0x800608"
+]
+},
+"bi_tx_initiator_wrap": {
+"calls": [
+"__ld_r13_ret_uc",
+"bi_tx__program_initiator",
+"rfc_ctrl__switch",
+"sxd_hal__read_backoff_status",
+"tx_initiator_flow",
+"uc_spin_until_event",
+"uc_tx__is_idle"
+],
+"callers": [
+"bi_manager__start_tx_or_initiator"
+],
+"globals": [
+"0x800570",
+"0x80058c",
+"0x800604",
+"0x800608"
+]
+},
+"stub_ret_9329f4": {
+"callers": [
+"internal_tx__pending_sm"
+]
+},
+"stub_ret_9329f8": {
+"callers": [
+"ucode_cmd__queue_delete"
+]
+},
+"tx_rate_select_and_program": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"direct_tx__program_cmd34",
+"mac__build_tx_common_params",
+"mac__cmd_29000001",
+"mac__load_tx_vector",
+"mac__program_tx_with_qid",
+"mac__program_tx_with_rate",
+"mac__select_all_sectors_and_wait",
+"mac__select_sector_and_wait_b",
+"mac__set_rf_chain_state",
+"set_reg_88606c",
+"tail_uc_wait_two_events",
+"tx_ctx__next_slot",
+"txop_tx_step",
+"uc_spin_until_event",
+"uc_sysassert"
+],
+"callers": [
+"tx_initiator_flow"
+],
+"strings": [
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/sxd_utils.h"
+],
+"globals": [
+"0x800604",
+"0x800608",
+"0x800610",
+"0x800614"
+]
+},
+"beacon_tx__build_slot_bitmap": {
+"calls": [
+"__ld_r18_to_r13_ret_uc",
+"__st_r18_to_r13_uc",
+"uc_sysassert"
+],
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow"
+],
+"strings": [
+"beacon_tx.c"
+]
+},
+"bi_cfg__tick_counters": {
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow"
+]
+},
+"bcon_sweep_step_a": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"mac__program_tx_beacon"
+],
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"ucode_cmd__bi_config": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"disable_tsf_event",
+"mac__program_tx_with_qid",
+"memcpy_uc",
+"tail_bi_cfg__apply",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/sxd_utils.h"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"tail_bi_cfg__apply": {
+"calls": [
+"bi_cfg__apply"
+],
+"callers": [
+"ucode_cmd__bi_config"
+]
+},
+"bi_cfg__apply": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"bi_cfg__fill_slot_desc",
+"txrx_api_cmd_step"
+],
+"callers": [
+"tail_bi_cfg__apply"
+],
+"globals": [
+"0x8005a8",
+"0x8005ac"
+]
+},
+"bi_ctrl__program_mac_bcon": {
+"calls": [
+"__ld_r13_ret_uc"
+],
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow"
+],
+"globals": [
+"0x8005a8",
+"0x8005ac"
+]
+},
+"txop_tx_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"direct_tx__issue_cmd_33",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"cf_end__send_frame",
+"internal_tx_step",
+"tx_rate_select_and_program",
+"txop_initiator_open_txop_flow"
+]
+},
+"direct_tx_substep": {
+"calls": [
+"direct_tx__issue_cmd_33",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"bi_rx__send_response"
+]
+},
+"tx_ctx__next_slot": {
+"callers": [
+"abft_responder_worker",
+"bi_mode_init_sequence",
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"internal_tx_step",
+"rx_funcs__rx_flow",
+"tx_initiator_flow",
+"tx_rate_select_and_program",
+"ucode_cmd__queue_delete"
+]
+},
+"cf_end__send_frame": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"direct_tx__program_cmd34",
+"mac__program_tx_with_rate",
+"txop_tx_step"
+],
+"callers": [
+"cf_end__tx_flow"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"direct_tx_rx__program": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"direct_tx__program_cmd34",
+"mac__program_tx_with_rate"
+],
+"callers": [
+"direct_tx_rx_step",
+"rx__send_response_frame",
+"rx_flow__send_imm_response"
+]
+},
+"tx_flows__program_mac_tx": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"cf_end_mtp_step",
+"mac__program_tx_rate",
+"mac__set_rf_chain_state",
+"mac_counter__program_0008",
+"tail_uc_wait_two_events",
+"tbl_801754__byte_by_index",
+"uc_read_tsf_lo",
+"uc_spin_until_event",
+"uc_sysassert",
+"uc_wait_event_busy"
+],
+"callers": [
+"rx_funcs__rx_flow",
+"tx_flow_size_step",
+"tx_initiator_substep"
+],
+"strings": [
+"tx_flows_optimized_size.c"
+],
+"globals": [
+"0x800538",
+"0x800570",
+"0x800604",
+"0x800608",
+"0x800610",
+"0x800614"
+]
+},
+"tx_initiator_flow": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bi_tx__check_idle_and_start",
+"get_tx_eligibility__precheck",
+"internal_tx__pending_sm",
+"mac__select_all_sectors_and_wait",
+"tx_ctx__next_slot",
+"tx_initiator__build_tx_vector",
+"tx_initiator_step",
+"tx_rate_select_and_program"
+],
+"callers": [
+"bi_tx_initiator_wrap"
+],
+"strings": [
+"tx_initiator_flow() Check for busy2 (CCA) or energy (RSSI) and abort if found",
+"tx_initiator_flow() Backoff expired without Q availability",
+"tx_initiator_flow() Abort Tx to shallow sleep STA , sta_id= %d, qid= %d",
+"tx_initiator_flow() Abort Tx to shallow sleep STA , assoc_sta_vec= %x",
+"tx_initiator_flow() tx_bcast_flow",
+"tx_initiator_flow() Starting internal TX"
+],
+"globals": [
+"0x800608"
+]
+},
+"internal_tx_step": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf__trigger_if_pending",
+"direct_tx__program_cmd34",
+"internal_tx__await_rx_frame_a",
+"internal_tx__await_rx_frame_b",
+"internal_tx__clear_pending",
+"internal_tx__peer_pending",
+"mac__build_tx_common_params",
+"mac__cmd_29000001",
+"mac__program_tx_with_rate",
+"mac__select_all_sectors_and_wait",
+"mac__select_sector_and_wait_a",
+"mac__select_sector_and_wait_b",
+"mac__set_duration_us",
+"mac__set_rf_chain_state",
+"tail_perform_shallow_sleep",
+"tx__pick_slot_for_peer",
+"tx__read_tx_result",
+"tx__take_eligibility_slot",
+"tx_ctx__next_slot",
+"txop_tx_step",
+"uc_sta_trace__push_record"
+],
+"callers": [
+"internal_tx__pending_sm"
+],
+"globals": [
+"0x800574",
+"0x8005e0",
+"0x800610",
+"0x800614"
+]
+},
+"keep_alive__arm_slot": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"uc_res_886f00__acquire",
+"uc_res_vote__acquire"
+],
+"callers": [
+"ucode_cmd_keep_alive_trigger"
+],
+"globals": [
+"0x800574"
+]
+},
+"internal_tx__clear_pending": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"uc_pending__clear_bit",
+"uc_res_vote__release"
+],
+"callers": [
+"internal_tx_step",
+"umac_if_cmd_handler"
+],
+"globals": [
+"0x800574"
+]
+},
+"bi_rx__send_response": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"direct_tx__program_cmd34",
+"direct_tx_substep",
+"mac__program_tx_with_rate"
+],
+"callers": [
+"bi_manager__rx_flow_body"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"tx__read_tx_result": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"mac__program_tx_result_ctx"
+],
+"callers": [
+"cf_end__tx_flow",
+"internal_tx_step"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"tx_initiator__build_tx_vector": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"uc_divmod_signed",
+"uc_sysassert"
+],
+"callers": [
+"tx_initiator_flow"
+],
+"strings": [
+"tx_flows_optimized_size.c"
+],
+"globals": [
+"0x8005fc",
+"0x800600"
+]
+},
+"mac_counter__program_0008": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"mac__program_tx_with_qid",
+"uc_sysassert"
+],
+"callers": [
+"mac__prepare_txrx_window",
+"rx_funcs__rx_flow",
+"tx_flows__program_mac_tx",
+"tx_initiator_rx_step",
+"tx_mtp_queue_gate",
+"txop_initiator_open_txop_flow"
+],
+"strings": [
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/sxd_utils.h"
+],
+"globals": [
+"0x800610",
+"0x800614"
+]
+},
+"txop__open_window": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__build_tx_common_params",
+"mac__cmd_29000001",
+"mac__select_all_sectors_and_wait"
+],
+"callers": [
+"tx_mtp_queue_gate",
+"txop_initiator_open_txop_flow"
+]
+},
+"tx_mtp_queue_gate": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__program_tx_rate",
+"mac__set_rf_chain_state",
+"mac_counter__program_0008",
+"mtp_queue__release_mgmt",
+"tail_uc_wait_two_events",
+"tx_mtp__open_window",
+"txop__open_window",
+"uc_spin_until_event"
+],
+"callers": [
+"tx_flow_size_step",
+"tx_initiator_substep"
+],
+"globals": [
+"0x800534",
+"0x80056c",
+"0x800570",
+"0x800604",
+"0x800608",
+"0x800610",
+"0x800614"
+]
+},
+"mac__current_sector_index": {
+"callers": [
+"txss__tx_sector_frame",
+"ucode_cmd_0x0c_handler"
+]
+},
+"tx_initiator_substep": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bitstream__push",
+"mac__prepare_txrx_window",
+"memset0_words_uc",
+"rx_flow__run",
+"sxd_hal__wait_slot2_busy2",
+"tx_flows__program_mac_tx",
+"tx_mtp__open_window",
+"tx_mtp_queue_gate"
+],
+"callers": [
+"tx_initiator_step"
+],
+"globals": [
+"0x800540",
+"0x8005e0",
+"0x800608"
+]
+},
+"tx_flow_size_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bitstream__push",
+"mac__prepare_txrx_window",
+"memset0_words_uc",
+"rate_search__pick_tx_params",
+"rx_flow__run",
+"sxd_hal__wait_slot2_busy2",
+"tx_flow_substep",
+"tx_flows__program_mac_tx",
+"tx_mtp__open_window",
+"tx_mtp_queue_gate"
+],
+"callers": [
+"tx_initiator_step"
+],
+"globals": [
+"0x800540",
+"0x8005e0",
+"0x800608"
+]
+},
+"tx_initiator_step": {
+"calls": [
+"__ld_r20_to_r13_ret_uc",
+"__st_r20_to_r13_uc",
+"bf__trigger_if_pending",
+"bf_metrics__reset_and_stamp",
+"bf_pending__set_bit",
+"mac__program_tx_rate",
+"obj__set_field18_from_tbl_801130",
+"rate_search__current_mcs",
+"rgf_reg_881800",
+"tx__pick_slot_for_peer",
+"tx_flow_size_step",
+"tx_initiator__reset_slot_counters",
+"tx_initiator_rx_step",
+"tx_initiator_substep",
+"txop_initiator_open_txop_flow",
+"uc_sta_trace__push_record"
+],
+"callers": [
+"tx_initiator_flow"
+],
+"globals": [
+"0x80056c",
+"0x8005b8",
+"0x8005e0",
+"0x800608"
+]
+},
+"txop_initiator_open_txop_flow": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bi_tx__check_idle_and_start",
+"direct_tx__program_cmd34",
+"mac__program_tx_rate",
+"mac__program_tx_with_qid",
+"mac__program_tx_with_rate",
+"mac__set_rf_chain_state",
+"mac_counter__program_0008",
+"mac_counter__program_3009",
+"mtp_queue__release_mgmt",
+"tail_uc_wait_two_events",
+"txop__open_window",
+"txop_tx_step",
+"uc_spin_until_event",
+"uc_sta_ctx__reset",
+"uc_sysassert"
+],
+"callers": [
+"tx_initiator_step"
+],
+"strings": [
+"tx_slot_flows.c",
+"txop_initiator_open_txop_flow():TRUE TxOP opened (sent RTS/Self-CTS)"
+],
+"globals": [
+"0x800570",
+"0x8005b8",
+"0x800604",
+"0x800608",
+"0x800610",
+"0x800614"
+]
+},
+"tx_initiator_rx_step": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"mac_counter__program_0008",
+"rx_flow__run",
+"sxd_hal__wait_slot2_busy2",
+"tx__pick_slot_for_peer"
+],
+"callers": [
+"tx_initiator_step"
+],
+"globals": [
+"0x800608"
+]
+},
+"mac_counter__program_400b": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"uc_sysassert"
+],
+"callers": [
+"ucode_cmd__queue_delete"
+],
+"strings": [
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/sxd_utils.h"
+]
+},
+"ucode_cmd_0x19_handler": {
+"calls": [
+"bf_w_s0_w4_uc",
+"bf_w_s4_w4_uc",
+"bf_w_s8_w15_uc"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"ucode_cmd__discovery_mode_cfg": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"bf_clear_all_sta",
+"perform_shallow_sleep",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"txrx_api_cmd_handler.c",
+"**********    DISCOVERY ON  (Type: %d) (tail: %d, head: %d)********",
+"[NNL] non_idle_mask: 0x%x",
+"**********    DISCOVERY OFF (Type: %d) (tail: %d, head: %d)********"
+],
+"globals": [
+"0x800544"
+]
+},
+"ucode_cmd_0x00_handler": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"ifs_cfg__program_from_hw_cfg",
+"mac__set_phy_mode",
+"memcpy_uc",
+"set_g_8005bc_x2",
+"ucode_cmd__apply_mac_cfg"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"globals": [
+"0x8005f4",
+"0x8005f6",
+"0x8005f8"
+]
+},
+"txrx_umac_if_long_range_cmd_handler": {
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"txrx_umac_if_long_range_cmd_handler Long Range is now enabled"
+]
+},
+"ucode_cmd_0x21_handler": {
+"calls": [
+"mac__program_886f70_from_tbl"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"ucode_cmd__rx_off": {
+"calls": [
+"rx_funcs__set_rx_off",
+"uc_send_evt_typed"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"globals": [
+"0x8005d6"
+]
+},
+"ucode_cmd__rx_on": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"grant_detect_step",
+"mac__program_rf_mode",
+"mac__set_rf_chain_state",
+"perform_shallow_sleep",
+"rfc_ctrl__switch",
+"rx__set_enable_mask",
+"set_g_80058c",
+"sxd_hal__read_backoff_status",
+"txrx_api_cmd_step",
+"uc_read_tsf_lo",
+"uc_send_evt_typed",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"txrx_api_cmd_handler.c"
+],
+"globals": [
+"0x80053c",
+"0x8005d6"
+]
+},
+"ucode_cmd_0x05_handler": {
+"calls": [
+"__ld_r19_to_r13_ret_uc",
+"__st_r19_to_r13_uc",
+"bf_sm__clear_sta",
+"bf_w_s0_w4_uc",
+"bf_w_s4_w4_uc",
+"bf_w_s8_w15_uc",
+"memset0_words_uc",
+"shallow_sleep_step"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"ucode_cmd_install_key": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"memcpy_uc",
+"uc_send_evt__sta_update_field_rsp",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"txrx_api_cmd_handler.c"
+]
+},
+"ucode_cmd_0x04_handler": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"txrx_api_step_c"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"ucode_cmd_0x07_handler": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac__reset_event_engines",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"txrx_api_cmd_handler.c"
+]
+},
+"ucode_cmd__queue_delete": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"bit_scan_msb",
+"mac__program_tx_with_qid",
+"mac_counter__program_400b",
+"stub_ret_9329f8",
+"tail_basic_if__alloc_evt_slot",
+"tx_ctx__next_slot",
+"uc_read_tsf_lo",
+"uc_send_event",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/sxd_utils.h",
+"txrx_api_cmd_handler.c"
+],
+"globals": [
+"0x80056c",
+"0x800610",
+"0x800614"
+]
+},
+"ucode_cmd_update_aw_ie": {
+"calls": [
+"aw_ie__copy_to_bcon",
+"uc_sysassert"
+],
+"callers": [
+"umac_if_cmd_handler"
+],
+"strings": [
+"txrx_api_cmd_handler.c"
+]
+},
+"rx_funcs_substep": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_b_s0_w5_uc",
+"bf_w_s2_w2_uc",
+"bf_w_s4_w4_uc",
+"bf_w_s8_w4_uc"
+],
+"callers": [
+"rx_funcs_step"
+]
+},
+"rx_funcs__send_direct_frame": {
+"calls": [
+"__ld_r13_ret_uc",
+"direct_tx__issue_cmd_33",
+"direct_tx__push_payload",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"rx_funcs_step"
+]
+},
+"direct_tx__send_short_frame": {
+"calls": [
+"__ld_r13_ret_uc",
+"direct_tx__issue_cmd_33",
+"direct_tx__program_cmd34",
+"direct_tx__push_payload",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"tail_direct_tx__send_short_frame",
+"tail_direct_tx__send_short_frame_9359f4"
+]
+},
+"abft__send_ssw_feedback": {
+"calls": [
+"direct_tx__issue_cmd_33",
+"direct_tx__program_cmd34",
+"direct_tx__push_payload",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"abft_responder__tx_ssw"
+]
+},
+"tail_direct_tx__send_short_frame": {
+"calls": [
+"direct_tx__send_short_frame"
+]
+},
+"tail_direct_tx__send_short_frame_9359f4": {
+"calls": [
+"direct_tx__send_short_frame"
+]
+},
+"bi_mode__load_qset_table": {
+"calls": [
+"memcpy_uc"
+],
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"bcon_txss_sweep_step": {
+"calls": [
+"__ld_r17_to_r13_ret_uc",
+"__st_r17_to_r13_uc",
+"bcon_sweep__next_sector",
+"get_g_80087c",
+"mac__build_tx_common_params",
+"mac__cmd_29000001",
+"mac__program_tx_beacon",
+"mac__program_tx_common",
+"mac__select_all_sectors_and_wait",
+"mac__select_sector_and_wait_a",
+"mac__select_sector_and_wait_b",
+"uc_spin_until_event"
+],
+"callers": [
+"bti_worker__bti_transmitter_beacon_sweep_flow",
+"txss__tx_sector_frame"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"bf_substate_sm__step": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf__enter_mode3",
+"bf_sm__state_action",
+"bf_substate__next_step",
+"bf_substate__set",
+"uc_res_886f00__acquire",
+"uc_sysassert"
+],
+"callers": [
+"bf_sm__substate_advance"
+],
+"strings": [
+"beamforming_substate_sm.c"
+],
+"globals": [
+"0x80060c",
+"0x80060d",
+"0x80060e"
+]
+},
+"bf_substate__txss_by_slot": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_sm__reset_slot_table",
+"set_g_800fa8_minus20",
+"txss__flow_body"
+],
+"callers": [
+"bf_substate__dispatch_by_state"
+]
+},
+"set_g_801b64_x2": {
+"callers": [
+"bi_mode_init_sequence"
+]
+},
+"ucode_cmd_0x0c_handler": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"mac__current_sector_index",
+"memcpy_uc",
+"tail_bcon_sweep_step_b"
+],
+"callers": [
+"umac_if_cmd_handler"
+]
+},
+"txss__init_sweep": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_substate__set",
+"mac__select_sector_and_wait_a",
+"mac__select_sector_and_wait_b",
+"mac_mode__switch_core_and_rf",
+"rx_flow__run",
+"sxd_hal__mac_write_indexed",
+"txss_flow_step",
+"uc_sysassert",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"txss__flow_body"
+],
+"strings": [
+"beamforming_flows_txss.c"
+],
+"globals": [
+"0x8005d8",
+"0x800604",
+"0x800608"
+]
+},
+"txss__prepare_frames": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_substate__set",
+"mac__select_sector_and_wait_b",
+"mac_mode__switch_core_and_rf",
+"rx_flow__run",
+"sxd_hal__mac_select_indexed",
+"sxd_hal__mac_write_indexed",
+"txss_copy_step",
+"uc_sysassert",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"txss__flow_body"
+],
+"strings": [
+"txss.c"
+]
+},
+"txss__flow_body": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_substate__set",
+"rate_search__apply_mcs",
+"txss__duration_by_index",
+"txss__init_sweep",
+"txss__prepare_frames",
+"txss__tx_sector_frame",
+"txss_copy_step",
+"txss_func__reorder_sectors"
+],
+"callers": [
+"bf_substate__txss_by_slot"
+],
+"globals": [
+"0x8005d8",
+"0x800604",
+"0x800608"
+]
+},
+"bf_substate_sm__is_state_9_11": {
+"calls": [
+"__ld_r13_ret_uc",
+"uc_sysassert"
+],
+"callers": [
+"bf_sm__substate_advance"
+],
+"strings": [
+"beamforming_substate_sm.c"
+]
+},
+"bf_substate__txss_step_by_slot": {
+"calls": [
+"__ld_r13_ret_uc",
+"bf_sm__reset_slot_table",
+"bf_sm__state_action",
+"set_g_800fa8_minus20",
+"txss_flow_step_b"
+],
+"callers": [
+"bf_substate__dispatch_by_state"
+]
+},
+"txss__init_sweep_b": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_substate__set",
+"mac__select_sector_and_wait_b",
+"rx_flow__run",
+"sxd_hal__wait_slot2_busy2",
+"uc_sysassert"
+],
+"callers": [
+"txss_flow_step_b"
+],
+"strings": [
+"beamforming_flows_txss.c"
+],
+"globals": [
+"0x8005d8",
+"0x800608"
+]
+},
+"txss_rx_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"mac__program_4f_52",
+"mac_mode__switch_core_and_rf",
+"rx_flow__run",
+"sxd_hal__mac_write_indexed",
+"txss__tx_sector_frame",
+"txss_copy_step",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"txss_flow_step_b"
+],
+"globals": [
+"0x800608"
+]
+},
+"txss_flow_step_b": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_sm__release_sta",
+"bf_substate__set",
+"rate_search__apply_mcs",
+"rx_funcs_step",
+"txss__init_sweep_b",
+"txss_copy_step",
+"txss_func__reorder_sectors",
+"txss_rx_step"
+],
+"callers": [
+"bf_substate__txss_step_by_slot"
+],
+"globals": [
+"0x8005d8",
+"0x800604",
+"0x800608"
+]
+},
+"txss_flow_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_b_s0_w5_uc",
+"bf_w_s0_w2_uc",
+"bf_w_s2_w2_uc",
+"bf_w_s4_w4_uc",
+"bf_w_s8_w4_uc",
+"direct_tx__issue_cmd_33",
+"direct_tx__program_cmd34",
+"direct_tx__push_payload",
+"get_g_80087c",
+"mac__program_tx_common",
+"mac__select_sector_and_wait_b",
+"uc_spin_until_event",
+"uc_wait_direct_tx_ready"
+],
+"callers": [
+"txss__init_sweep"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"txss__tx_sector_frame": {
+"calls": [
+"__ld_r19_to_r13_ret_uc",
+"__st_r19_to_r13_uc",
+"bcon_txss_sweep_step",
+"bf_s1_w1_uc",
+"direct_tx__program_cmd34",
+"mac__cmd_29000001",
+"mac__current_sector_index",
+"mac__program_tx_common",
+"mac__select_sector_and_wait_b",
+"tail_bcon_sweep_step_b",
+"uc_sysassert",
+"uc_wait_event_busy"
+],
+"callers": [
+"txss__flow_body",
+"txss_rx_step"
+],
+"strings": [
+"txss.c"
+],
+"globals": [
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"uc_tx__is_idle": {
+"calls": [
+"__ld_r13_ret_uc",
+"qset1_mask__any_pending"
+],
+"callers": [
+"bf_sm__background_step",
+"bi__decide_beacon_kind",
+"bi_tx_initiator_wrap",
+"ucode_cmd_trigger_bf"
+],
+"globals": [
+"0x80058c",
+"0x8005d6"
+]
+},
+"qset1_mask__any_pending": {
+"calls": [
+"__ld_r13_ret_uc",
+"ucode_pm__rx_off_step"
+],
+"callers": [
+"uc_tx__is_idle"
+]
+},
+"background_bi_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bi_ap_mon__window_code",
+"uc_pm__enter_idle",
+"uc_tsf_elapsed"
+],
+"callers": [
+"background_task__dispatch"
+],
+"globals": [
+"0x800580",
+"0x800584",
+"0x80058c"
+]
+},
+"ucode_pm__stamp_tsf_slots": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"uc_read_tsf_lo"
+],
+"callers": [
+"ucode_pm__set_busy_flag"
+]
+},
+"uc_pm__enter_idle": {
+"calls": [
+"__ld_r13_ret_uc",
+"mac_mode__enter_idle_seq",
+"uc_read_tsf64"
+],
+"callers": [
+"background_bi_step",
+"l1_bi_trigger_step",
+"rx_funcs__set_rx_off"
+],
+"globals": [
+"0x80058c"
+]
+},
+"ucode_pm__rx_off_step": {
+"calls": [
+"grant_detect_step",
+"rfc_ctrl__switch",
+"set_g_80058c",
+"sxd_hal__read_backoff_status",
+"uc_sysassert",
+"uc_wait_two_events"
+],
+"callers": [
+"qset1_mask__any_pending"
+],
+"strings": [
+"ucode_pm.c"
+]
+},
+"set_g_80058c": {
+"calls": [
+"uc_read_tsf64"
+],
+"callers": [
+"ucode_cmd__rx_on",
+"ucode_pm__rx_off_step"
+],
+"globals": [
+"0x80058c"
+]
+},
+"ucode_pm__set_busy_flag": {
+"calls": [
+"ucode_pm__stamp_tsf_slots"
+],
+"callers": [
+"bf_sm__background_step",
+"bf_sm__start_request",
+"rx_funcs__handle_ppdu_report",
+"ucode_cmd__rs_enable",
+"ucode_cmd_trigger_bf"
+]
+},
+"mac__switch_core_and_setup_dma": {
+"calls": [
+"__ld_r13_ret_uc",
+"dma_mac_setup_wrap",
+"hw_modes_mac__switch_core"
+],
+"callers": [
+"mac_mode__switch_sequence",
+"shallow_sleep_rfc_step"
+]
+},
+"uc_timers__start_defaults": {
+"calls": [
+"uc_timer__start"
+],
+"callers": [
+"mac_mode__switch_sequence",
+"uc_main_init"
+]
+},
+"uc_timers__start_defaults_b": {
+"calls": [
+"uc_timer__start"
+],
+"callers": [
+"mac_mode__switch_sequence"
+]
+},
+"umac_if_cmd_handler": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"bf__abort_to_state11",
+"bf_pending__set_bit",
+"bi_ap_mon__window_code",
+"get_selected_rf_sector_index_cmd_handler",
+"internal_tx__clear_pending",
+"psc_pending_agreement_cmd",
+"set_g_801b18_x4",
+"set_selected_rf_sector_index_cmd_handler",
+"traffic_deferral_cfg_cmd_handler",
+"txrx_umac_if_long_range_cmd_handler",
+"uc_sysassert",
+"ucode_cmd_0x00_handler",
+"ucode_cmd_0x04_handler",
+"ucode_cmd_0x05_handler",
+"ucode_cmd_0x07_handler",
+"ucode_cmd_0x0c_handler",
+"ucode_cmd_0x11_handler",
+"ucode_cmd_0x12_handler",
+"ucode_cmd_0x16_handler",
+"ucode_cmd_0x19_handler",
+"ucode_cmd_0x1b_handler",
+"ucode_cmd_0x21_handler",
+"ucode_cmd_0x23_handler",
+"ucode_cmd_0x30_handler",
+"ucode_cmd__bi_config",
+"ucode_cmd__discovery_mode_cfg",
+"ucode_cmd__echo",
+"ucode_cmd__queue_delete",
+"ucode_cmd__reset_queue_state",
+"ucode_cmd__rs_enable",
+"ucode_cmd__rx_off",
+"ucode_cmd__rx_on",
+"ucode_cmd_config_lmac_bf_sm",
+"ucode_cmd_install_key",
+"ucode_cmd_keep_alive_trigger",
+"ucode_cmd_phy_ina_det_cfg",
+"ucode_cmd_selective_neighbor_cfg",
+"ucode_cmd_trigger_bf",
+"ucode_cmd_update_aw_ie"
+],
+"callers": [
+"uc_mailbox__dispatch_one"
+],
+"strings": [
+"umac_if_cmd_handler FW command 0x%x",
+"umac_if_cmd_handler.cpp"
+],
+"globals": [
+"0x8005d0",
+"0x8005d2",
+"0x8005dc",
+"0x8005e0",
+"0x8005ec",
+"0x8005f0"
+]
+},
+"ucode_cmd_selective_neighbor_cfg": {
+"callers": [
+"umac_if_cmd_handler"
+],
+"globals": [
+"0x80054c"
+]
+},
+"stub_ret_937088": {
+"callers": [
+"bf_sm__post_slot_result",
+"bf_substate__brp_mode_by_slot"
+]
+},
+"bitstream__push": {
+"callers": [
+"rate_search__pick_tx_params",
+"tx_flow_size_step",
+"tx_initiator_substep"
+]
+},
+"bi_window_transition_prep": {
+"calls": [
+"memcpy_uc",
+"memset0_words_uc",
+"uc_read_tsf_lo",
+"uc_send_evt__mac_monitor"
+],
+"callers": [
+"bi_ap_mon_if__trigger_bhi",
+"bi_ap_mon_if__trigger_bhi_to_dti"
+]
+},
+"rx_funcs_copy_step": {
+"calls": [
+"__ld_r14_to_r13_ret_uc",
+"__st_r14_to_r13_uc",
+"bf_w_s0_w6_uc",
+"bf_w_s6_w2_uc",
+"memcpy_uc"
+],
+"callers": [
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__identify_peer"
+],
+"globals": [
+"0x800568",
+"0x8005c8"
+]
+},
+"mac__program_tx_rate": {
+"callers": [
+"tx_flows__program_mac_tx",
+"tx_initiator_step",
+"tx_mtp_queue_gate",
+"txop_initiator_open_txop_flow"
+]
+},
+"shallow_sleep_step": {
+"calls": [
+"memset0_words_uc",
+"perform_shallow_sleep"
+],
+"callers": [
+"ucode_cmd_0x05_handler"
+]
+},
+"mac__publish_masks": {
+"callers": [
+"mac__enable_qset_bit7",
+"mid_vring_mask_update",
+"rf_sector__clear_sta_bit",
+"set_reg_886f00_928d78",
+"uc_res_vote__acquire",
+"uc_res_vote__release"
+]
+},
+"brp__write_slot_txcfg": {
+"callers": [
+"brp__program_and_measure"
+]
+},
+"rf_sector__program_selected": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"bf_w_s0_w6_uc",
+"bf_w_s6_w2_uc"
+],
+"callers": [
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__identify_peer",
+"set_selected_rf_sector_index_cmd_handler"
+]
+},
+"bf_metrics__reset_and_stamp": {
+"calls": [
+"__ld_r13_ret_uc",
+"memset0_words_uc",
+"uc_read_tsf_lo"
+],
+"callers": [
+"rx_funcs__rx_flow",
+"tx_initiator_step"
+]
+},
+"peer__aid_mismatch_flag": {
+"callers": [
+"aw_worker__collect_awake_peers",
+"nav_db__update"
+]
+},
+"rx_flow_substep": {
+"callers": [
+"rx_flow__handle_frame",
+"rx_flow_step"
+]
+},
+"obj__set_field18_from_tbl_801130": {
+"callers": [
+"rx_funcs__rx_flow",
+"tx_initiator_step"
+]
+},
+"internal_tx__await_rx_frame_a": {
+"calls": [
+"mac_mode__wait_ppdu_and_kick_b",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"internal_tx_step"
+]
+},
+"bti_worker__collect_bf_metric": {
+"calls": [
+"bf_gpc__program_mac_by_mode",
+"bti__request_bf_metric",
+"bti_worker_bi2_step",
+"uc_sysassert",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"bti_transmitter_bi2_flow"
+],
+"strings": [
+"bti_worker.cpp"
+],
+"globals": [
+"0x800540",
+"0x80059c"
+]
+},
+"internal_tx__await_rx_frame_b": {
+"calls": [
+"mac_mode__wait_ppdu_and_kick_d",
+"uc_wait_event1_or_event4"
+],
+"callers": [
+"internal_tx_step"
+]
+},
+"sxd_hal__read_backoff_status": {
+"calls": [
+"uc_sysassert",
+"uc_wait_two_events"
+],
+"callers": [
+"bi_manager_rx_step",
+"bi_tx_initiator_wrap",
+"rx_funcs__handle_ppdu_report",
+"rx_funcs__rx_flow",
+"shallow_sleep_rfc_step",
+"ucode_cmd__rx_on",
+"ucode_pm__rx_off_step"
+],
+"strings": [
+"sxd_hal_optimized_size.c"
+]
+},
+"txss_func__reorder_sectors": {
+"calls": [
+"__ld_r18_to_r13_ret_uc",
+"__st_r18_to_r13_uc",
+"memcpy_uc",
+"uc_sysassert"
+],
+"callers": [
+"txss__flow_body",
+"txss_flow_step_b"
+],
+"strings": [
+"txss_func.c"
+]
+},
+"bf_s11_w5_uc": {
+"calls": [
+"bf_rmw_word_unaligned_uc"
+],
+"callers": [
+"mac_mode_program_a",
+"mac_mode_program_b"
+]
+},
+"bf_b_s0_w5_uc": {
+"calls": [
+"bf_b_core_uc"
+],
+"callers": [
+"mac_mode_program_a",
+"mac_mode_program_b",
+"rx_funcs_substep",
+"txss_flow_step"
+]
+},
+"bf_b_s0_w7_uc": {
+"calls": [
+"bf_b_core_uc"
+],
+"callers": [
+"ucode_cmd_0x30_handler"
+]
+},
+"bf_s1_w1_uc": {
+"calls": [
+"bf_rmw_half_uc"
+],
+"callers": [
+"txss__tx_sector_frame"
+]
+},
+"bf_w_s0_w2_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"txss_flow_step"
+]
+},
+"bf_w_s0_w4_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"ucode_cmd_0x05_handler",
+"ucode_cmd_0x19_handler"
+]
+},
+"bf_w_s0_w6_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"rf_sector__program_selected",
+"rx_funcs_copy_step"
+]
+},
+"bf_w_s15_w6_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"brp__reset_db",
+"brp__reset_db_b"
+]
+},
+"bf_w_s2_w2_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"rx_funcs_substep",
+"txss_flow_step"
+]
+},
+"bf_w_s2_w4_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"brp__write_pair_0x504"
+]
+},
+"bf_w_s4_w3_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"direct_tx__init_rx_desc"
+]
+},
+"bf_w_s4_w4_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"rx_funcs_substep",
+"txss_flow_step",
+"ucode_cmd_0x05_handler",
+"ucode_cmd_0x19_handler"
+]
+},
+"bf_w_s4_w5_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"brp__build_tx_params",
+"brp__reset_db"
+]
+},
+"bf_w_s6_w2_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"rf_sector__program_selected",
+"rx_funcs_copy_step"
+]
+},
+"bf_w_s8_w15_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"ucode_cmd_0x05_handler",
+"ucode_cmd_0x19_handler"
+]
+},
+"bf_w_s8_w4_uc": {
+"calls": [
+"bf_w_core_uc"
+],
+"callers": [
+"rx_funcs_substep",
+"txss_flow_step"
+]
+},
+"cf_end_mtp_step": {
+"calls": [
+"__ld_r15_to_r13_ret_uc",
+"__st_r15_to_r13_uc",
+"cf_end__tx_flow",
+"mtp_service__dispatch",
+"set_reg_88606c"
+],
+"callers": [
+"rx_flow__run",
+"tx_flows__program_mac_tx"
+],
+"globals": [
+"0x80056c",
+"0x800604",
+"0x800608",
+"0x800610",
+"0x800614"
+]
+},
+"mtp_queue__release_mgmt": {
+"calls": [
+"__ld_r17_to_r13_ret_uc",
+"__st_r17_to_r13_uc",
+"get_tx_eligibility__precheck",
+"mac__program_tx_with_qid",
+"tbl_801754__byte_by_index",
+"uc_sysassert"
+],
+"callers": [
+"tx_mtp_queue_gate",
+"txop_initiator_open_txop_flow"
+],
+"strings": [
+"Error: MTP Queue is empty",
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/sxd_utils.h",
+"Released one management frame due to no PEER availability for sta_id=%d",
+"/home/gatis/sdk/sparrow/fwsrc4/src/ucode/inc/txrx_funcs.h"
+],
+"globals": [
+"0x800540",
+"0x800604",
+"0x800610",
+"0x800614"
+]
+},
+"bf_core_insert_uc": {
+"callers": [
+"bf_b_core_uc",
+"bf_rmw_half_uc",
+"bf_rmw_word_unaligned_uc",
+"bf_u16_core_uc",
+"bf_w_core_uc"
+]
+},
+"bf_u16_core_uc": {
+"calls": [
+"bf_core_insert_uc"
+]
+},
+"bf_rmw_word_unaligned_uc": {
+"calls": [
+"bf_core_insert_uc"
+],
+"callers": [
+"bf_s11_w5_uc"
+]
+},
+"bf_w_core_uc": {
+"calls": [
+"bf_core_insert_uc"
+],
+"callers": [
+"bf_w_s0_w2_uc",
+"bf_w_s0_w4_uc",
+"bf_w_s0_w6_uc",
+"bf_w_s15_w6_uc",
+"bf_w_s2_w2_uc",
+"bf_w_s2_w4_uc",
+"bf_w_s4_w3_uc",
+"bf_w_s4_w4_uc",
+"bf_w_s4_w5_uc",
+"bf_w_s6_w2_uc",
+"bf_w_s8_w15_uc",
+"bf_w_s8_w4_uc"
+]
+},
+"bf_b_core_uc": {
+"calls": [
+"bf_core_insert_uc"
+],
+"callers": [
+"bf_b_s0_w5_uc",
+"bf_b_s0_w7_uc"
+]
+},
+"bf_rmw_half_uc": {
+"calls": [
+"bf_core_insert_uc"
+],
+"callers": [
+"bf_s1_w1_uc"
+]
+},
+"uc_log__init": {
+"calls": [
+"memset0_words_uc",
+"uc_sysassert"
+],
+"callers": [
+"uc_main_init"
+],
+"strings": [
+"log.c"
+]
+},
+"uc_buffers__init": {
+"calls": [
+"__ld_r16_to_r13_ret_uc",
+"__st_r16_to_r13_uc",
+"memset0_words_uc"
+],
+"callers": [
+"uc_main_init"
+]
+}
+}

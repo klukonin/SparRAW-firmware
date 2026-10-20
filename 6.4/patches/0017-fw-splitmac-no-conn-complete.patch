@@ -1,0 +1,21 @@
+fw: split MAC — завершение SW TX без соединения
+
+Кадр от хоста для адреса без соединения (первым после PCP_STARTED
+hostapd шлёт широковещательный Disassociation) handle_packet_splitmac
+отбрасывал молча: WMI_SW_TX_COMPLETE не приходил, драйвер ждал 2 с под
+wmi_mutex, копия кадра терялась в пуле.  Вызов строки «CONN OBJ is NULL»
+переведён на splitmac__no_conn: та же строка, завершение со статусом 1
+и освобождение кадра.
+--- a/src/asm/fw/_unknown/handle_packet_splitmac.S
++++ b/src/asm/fw/_unknown/handle_packet_splitmac.S
+@@ -53,7 +53,9 @@ L_8f3bce:
+ L_8f3bd4:
+ 	mov_s r0,0x1b
+ L_8f3bd6:
+-	bl.d L_8dcc80
++	/* 6.4: нет соединения — строка, WMI_SW_TX_COMPLETE(1) и освобождение
++	 * кадра в splitmac__no_conn (src/c/fw/new/splitmac_orphan.cpp) */
++	bl.d splitmac__no_conn
+ L_8f3bda:
+ 	ld_s r3,[r14]
+ L_8f3bdc:

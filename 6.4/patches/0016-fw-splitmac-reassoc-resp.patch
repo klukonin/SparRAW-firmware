@@ -1,0 +1,23 @@
+fw: split MAC — Reassociation Response от хоста
+
+handle_packet_splitmac пропускал от хоста только Association Response
+(1) и Disassociation (10); Reassociation Response (3) от hostapd молча
+отбрасывался.  Извлечение подтипа (lsr_s + bmsk_s) заменено вызовом
+splitmac__fc_subtype той же длины: подтип 3 ведётся веткой подтипа 1
+(тело совпадает, 802.11-2020 9.3.3.8; заголовок хоста копируется как
+есть).  В обработчике blink уже сохранён.
+--- a/src/asm/fw/_unknown/handle_packet_splitmac.S
++++ b/src/asm/fw/_unknown/handle_packet_splitmac.S
+@@ -62,9 +62,9 @@ L_8f3bdc:
+ L_8f3bde:
+ 	ldw_s r0,[r13]
+ L_8f3be0:
+-	lsr_s r0,r0,0x4
+-L_8f3be2:
+-	bmsk_s r0,r0,0x3
++	/* 6.4: подтип из FC через splitmac__fc_subtype (src/c/fw/new/splitmac.cpp):
++	 * Reassociation Response (3) идёт веткой Association Response (1) */
++	bl splitmac__fc_subtype
+ L_8f3be4:
+ 	breq r0,0x1,L_8f3c2e
+ L_8f3be8:

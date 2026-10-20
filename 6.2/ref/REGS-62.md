@@ -1,0 +1,1274 @@
+# Периферийные регистры 6.2 (0x880000..0x88ffff)
+
+Сгенерировано `tools/regmap.py` из дерева `src/asm` и `ref/REGS-KNOWN.txt` — руками не править, править REGS-KNOWN и пересобрать (`make regs`).
+
+Столбцы: адрес (выровнен на слово); имя и смысл из REGS-KNOWN; обращения — блоки fw/uc (R чтение, W запись, [] — массив с индексом в регистре, A — адрес передан аргументом вызова; распространение констант по блоку, обращения через аргументы функций не видны); документы, где адрес упомянут. Хостовое окно: fw_peri = 0x908000 + (A − 0x840000)… для 0x88xxxx — см. BLOBS.md.
+
+Регистровый файл MAC r36..r56 (ARC aux ucode) — отдельно, MSXD_LR_RGF в `ref/`.
+
+Всего регистров с обращениями: 870; со смыслом: 870.
+
+## 0x880000 — gpio, boot, pcie
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880000 | chip_stepping_id | читается при подъёме PCIe и сравнивается с JTAG ID Sparrow A0 0x0632072f и A1 0x1632072f; при совпадении вызывается обход «PCIe serdes configuration shlicht» (pcie_serdes__shlicht_wa). Драйвер и debug-tools держат JTAG ID в 0x880b34 (dft_idcode_dev_id), так что здесь, видимо, его копия или другой регистр ID; то же самое в 4.1 (по использованию: pcie__serdes_init; debug-tools WlctPciAcss.h USER_RGF_JTAG_DEVICE_SPARROW_A0/A1) | `pcie__serdes_init` R | — |
+| 0x880004 | RGF_USER_USAGE_1 | адрес кольца лога FW: fw_log__init_ring пишет сюда 0x843900 после обнуления кольца; драйвер обнуляет его до старта FW (драйвер RGF_USER_USAGE_1, wil_clear_fw_log_addr; debug-tools LogCollector REG_FW_USAGE_1) | `fw_log__init_ring` W | — |
+| 0x880008 | RGF_USER_USAGE_2 | адрес кольца лога ucode: uc_log__init_ring пишет 0x803234 (драйвер RGF_USER_USAGE_2, debugfs) | uc:`uc_log__init_ring` W | — |
+| 0x88000c | RGF_USER_USAGE_3 | ucode при старте пишет 0x800000 (начало данных ucode, кольцо MAC) (по использованию: boot_uc__init_g800610 -> boot_uc__set_88000c) | uc:`boot_uc__set_88000c` W | — |
+| 0x880010 | RGF_USER_USAGE_4 | ucode при старте пишет адрес gp+0x30 (0x800558); пишет трёхкомандная функция в голове блока vring_is_empty_uc (по использованию: boot_uc__init_g800610) | uc:`vring_is_empty_uc` W | — |
+| 0x880018 | RGF_USER_USAGE_6 | от хоста: бит 31 BIT_USER_OOB_MODE, бит 30 BIT_USER_OOB_R2_MODE, бит 0 = FW загружена хостом (wil_pre_fw_config). FW читает биты 31..29 целиком: 4 → R1 OOB, 2 → R2 OOB (драйвер RGF_USER_USAGE_6; 6.2/docs/MISC-FW.md) | `boot__read_oob_strap_bits` R | — |
+| 0x88001c | RGF_USER_USAGE_7 | слово, которое переживает перезапуск FW. Бит 0: при первом старте FW ставит его сама, если он уже стоит — это повторный старт, и тогда выполняется «BUG_5382_WA - hwd_pcie_perst_deassert_int_clear()». Бит 1: настройки PM PCIe хоста сохранены. Бит 2 ASPM L0s, бит 3 ASPM L1, бит 4 Clock PM из LnkCtl. Биты 5..8: подвключения L1SS; при сохранении и при восстановлении они раскладываются в зеркальном порядке. stats_timer_exp по биту 3 и битам 5..8 решает, включать ли обход L1 (лог-строка «pcie_pm_host_config:: LnkCtl=0x%x usage7=0x%x»; по использованию: boot__read_strap_bit, pcie_pm_host_config, stats_timer_exp) | `boot__read_strap_bit` RW, `pcie_pm_host_config` R, `stats_timer_exp` R | — |
+| 0x880020 | RGF_USER_USAGE_8 | хост: бит 0 PREVENT_DEEP_SLEEP, бит 1 SUPPORT_T_POWER_ON_0, бит 2 EXT_CLK; прошивка 6.2 к нему не обращается (драйвер RGF_USER_USAGE_8) | — | — |
+| 0x880050 | USER_RGF_SERIAL_BAUD_RATE | скорость UART; прошивка 6.2 к нему не обращается (debug-tools WlctPciAcss.h BAUD_RATE_REGISTER) | — | — |
+| 0x880068 | gpio_func_sel_0 | выбор функции GPIO по 4 бита на вывод, 8 выводов в слове, начиная с вывода 5 (слово = (pin-5)/8, полубайт = (pin-5)%8). После сброса 0x22222: выводы 5..9 в режиме 2. Печатается как GPIO0 (лог-строки «Resetting GPIOs configurations», «GPIO0 = 0x%8X GPIO1 = … GPIO2 = …»; по использованию: gpio__reset_config, gpio__set_pin_func_and_dump) | `gpio__reset_config` W, `gpio__set_pin_func_and_dump` R | — |
+| 0x88006c | gpio_func_sel_1 | вторая группа по 4 бита на вывод (выводы 13..20); после сброса 0; печатается как GPIO1 (лог-строка «GPIO0 = … GPIO1 = 0x%8X …»; по использованию: gpio__set_pin_func_and_dump, gpio__reset_config) | `gpio__reset_config` W, `gpio__set_pin_func_and_dump` R | — |
+| 0x880070 | gpio_func_sel_2 | третья группа по 4 бита на вывод (выводы 21..28); после сброса 0; печатается как GPIO2 (лог-строка «… GPIO2 = 0x%8X»; по использованию: gpio__set_pin_func_and_dump, gpio__reset_config) | `gpio__reset_config` W, `gpio__set_pin_func_and_dump` R | — |
+| 0x880074 | gpio_cfg_3 | обнуляется при сбросе настроек GPIO вслед за 0x880068..70; смысл не установлен (лог-строка «Resetting GPIOs configurations»; по использованию: gpio__reset_config); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | `gpio__reset_config` W | — |
+| 0x880078 | gpio_cfg_4 | обнуляется при сбросе настроек GPIO; смысл не установлен (по использованию: gpio__reset_config); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | `gpio__reset_config` W | — |
+| 0x88007c | gpio_cfg_5 | обнуляется при сбросе настроек GPIO; смысл не установлен (по использованию: gpio__reset_config); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | `gpio__reset_config` W | — |
+| 0x8800a8 | spi_flash_rdata | окно данных чтения SPI-флеш, массив до 64 слов (0x8800a8..0x8801a4, длина не больше 0x100 байт); читается после пуска через 0x8801a8..0x8801b0 (по использованию: hwd_spi_read) | `hwd_spi_read` AR | — |
+
+## 0x880100 — hwd_phy, hwd_spi, lmac_if
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880180 | user_rgf_base_180 | база: fw_main обращается через неё к 0x8801d8 (hw_sm_wa_ctl, «MAIN() HW statemachine WA»); от той же базы hwd_spi_read берёт 0x8801a8/ac/b0, hwd_phy_recording_get — 0x8801e0 (по использованию: fw_main) | `fw_main` A | — |
+| 0x8801a8 | spi_flash_ctrl | управление/состояние SPI-флеш: запись 0xc0000000 запускает чтение, бит 31 готово, бит 29 занято; 0 освобождает (по использованию: hwd_spi_read, hwd_spi__poll_done, лог-строка «SPI READ: waited %d usec») | `hwd_spi__poll_done` R, `hwd_spi__release_lock` W, `hwd_spi_read` RW | — |
+| 0x8801ac | spi_flash_cmd | команда SPI: длина или 0x3030000 (код 0x03 = READ) (по использованию: hwd_spi_read) | `hwd_spi_read` W | — |
+| 0x8801b0 | spi_flash_addr | адрес чтения флеш; данные затем из окна 0x8800a8.. (по использованию: hwd_spi_read) | `hwd_spi_read` W | — |
+| 0x8801d8 | hw_sm_wa_ctl | при старте пишется 0x80000000, ждётся код 0x15 в битах 0..4, затем 0x40000000; соседний RGF_USER_HW_MACHINE_STATE 0x8801dc (лог-строка «MAIN() HW statemachine WA», fw_main) | `fw_main` RW | — |
+| 0x8801e0 | RGF_USER_USER_CPU_0 | бит 1 ручной сброс user-CPU; биты 6..8 отдают банки памяти под запись PHY (hwd_phy_recording_get считает их, размер = число x 0x4000) (драйвер RGF_USER_USER_CPU_0; биты 6..8 по использованию: hwd_phy__recording_mode_set, ut 0x40b/0x40c) | `hwd_phy__recording_mode_set` RW, `hwd_phy__tx_play_buffer_start` RW, `hwd_phy__tx_play_buffer_stop` RW, `hwd_phy_recording_get` R | — |
+| 0x8801fc | RGF_USER_MAC_CPU_0 | управление MAC-CPU: запись 0x31 выпускает ucode из сброса (драйвер RGF_USER_MAC_CPU_0, лог-строка «Reseting the uCode») | `lmac_if__ucode_init` W | — |
+
+## 0x880200 — u_schd, power_halt, operational_if
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880200 | boot_wait_880200 | fw_main в самом начале крутит пустой цикл, пока в этом регистре не встанет бит 6, и только потом делает «HW statemachine WA». В 4.1 0x880200 — база блока таймеров (0x880208/24/48/58/70/74); смысл бита 6 не установлен (по использованию: fw_main); серия: 0xc3 при работающем MAC на обоих узлах, 0xc8 (200) на узле с выключенным радио (2026-09-29) | `fw_main` R | — |
+| 0x880204 | user_rgf_880204 | pcie__serdes_init всегда пишет 1 сразу после проверки степпинга; то же в 4.1; смысл не установлен (по использованию: pcie__serdes_init) | `pcie__serdes_init` W | — |
+| 0x880208 | sys_timer_a_load | значение загрузки аппаратного таймера A планировщика (по использованию: u_schd__hw_timer_a_start из u_schd__timer_init) | `u_schd__hw_timer_a_start` W | — |
+| 0x880224 | sys_timer_a_ctl | управление таймером A, пишется 0x65 = пуск (по использованию: u_schd__hw_timer_a_start) | `u_schd__hw_timer_a_start` W | — |
+| 0x880248 | sys_timer_b_load | значение загрузки таймера планировщика; истечение даёт бит 2 user-ICR (по использованию: u_schd__hw_timer_load_start) | `u_schd__hw_timer_load_start` W | — |
+| 0x88024c | sys_timer_b_compare | срок аппаратного таймера планировщика (6.2/docs/MISC-FW.md, u_schd__hw_timer_set_compare) | `u_schd__hw_timer_set_compare` W | — |
+| 0x880254 | sys_timer_now | свободно бегущий счётчик времени FW (fw_timestamp, не TSF) (по использованию: sys_timer__read_now; 4.1 4.1/docs/STRUCTS.md) | `sys_timer__read_now` R | — |
+| 0x880258 | sys_timer_b_ctl | управление таймером планировщика, пишется 0x65 = пуск (по использованию: u_schd__hw_timer_load_start) | `u_schd__hw_timer_load_start` W | — |
+| 0x880270 | halt_wake_time_lo | младшее слово 64-битного времени пробуждения из halt (по использованию: power_halt__set_wake_time64 из power_halt_seq) | `power_halt__set_wake_time64` W | — |
+| 0x880274 | halt_wake_time_hi | старшее слово времени пробуждения из halt (по использованию: power_halt__set_wake_time64) | `power_halt__set_wake_time64` W | — |
+| 0x88027c | halt_timer_read | читается после выхода из halt для поправки GP-таймера (по использованию: power_halt__read_88027c в power_halt_seq) | `power_halt__read_88027c` R | — |
+| 0x880280 | halt_led_ctl | управление halt: 0x41 при входе, 0x40 после выхода; user_led__prepare_halt гасит бит 2, ставит 0x48, снимает бит 3; блок из файла hw_drivers_user_led (по использованию: power_halt_seq, user_led__prepare_halt; FN-FILEMAP) | `power_halt_seq` AW, `user_led__prepare_halt` RW | — |
+| 0x880288 | rf_kill_pin | бит 0 уровень линии W_DISABLE (RF kill), бит 1 полярность срабатывания (переворачивается под текущий уровень) (по использованию: mac__toggle_880288_b1, rf_kill__irq_task; 4.1/docs/MISC.md) | `mac__toggle_880288_b1` RW, `rf_kill__irq_task` R, `rf_kill_sm__init` R | — |
+| 0x880290 | pcie_lp_params | байтовые поля параметров низкого энергопотребления PCIe (по использованию: pcie_lp__set_byte_field из hwd_pcie__set_low_power) | `pcie_lp__set_byte_field` RW | — |
+| 0x8802bc | RGF_USER_USER_SCRATCH_PAD | база: здесь лежит wil6210_mbox_ctl рабочего почтового ящика (WMI). mbox__init_descriptor пишет в неё: +0 tx.base = 0x8802e8, +4 tx.entry_size = 0x518, +6 tx.size = 5·8, +8/+0xc tail/head; +0x10 rx.base = 0x880318, +0x14 rx.entry_size = 0x510, +0x16 rx.size = 26·8, +0x18/+0x1c tail/head (= 0x8802d4/d8) (драйвер RGF_USER_USER_SCRATCH_PAD, HOST_MBOX, struct wil6210_mbox_ctl; лог-строка «Operational MBOX init»; по использованию: operational_if__mbox_init) | `operational_if__mbox_init` A | — |
+| 0x8802d4 | scratch_pad_6 | RGF_USER_USER_SCRATCH_PAD+0x18; deep_sleep_enter сравнивает с +0x1c (по использованию: deep_sleep__host_evt_mbox_pending) | `deep_sleep__host_evt_mbox_pending` R | — |
+| 0x8802d8 | scratch_pad_7 | RGF_USER_USER_SCRATCH_PAD+0x1c, пара к 0x8802d4 (по использованию: deep_sleep__host_evt_mbox_pending) | `deep_sleep__host_evt_mbox_pending` R | — |
+| 0x8802e0 | scratch_pad_9 | RGF_USER_USER_SCRATCH_PAD+0x24: адрес дескриптора кольца команд ucode 0x840158 (по использованию: lmac_if__build_cmd_rings) | `lmac_if__build_cmd_rings` W | — |
+| 0x8802e8 | op_mbox_tx_ring | база: кольцо дескрипторов {sync, addr} для команд хост→FW (tx по драйверу), 5 записей по 8 байт (0x8802e8..0x88030f); адрес пишется в mbox_ctl.tx.base (struct wil6210_mbox_ring_desc; по использованию: operational_if__mbox_init → mbox__init_descriptor) | `operational_if__mbox_init` A | — |
+
+## 0x880300 — operational_if, debug_mbox
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880318 | op_mbox_rx_ring | база: кольцо дескрипторов событий FW→хост (rx по драйверу), 26 записей по 8 байт (0x880318..0x8803e7); адрес пишется в mbox_ctl.rx.base (по использованию: operational_if__mbox_init → mbox__init_descriptor) | `operational_if__mbox_init` A | — |
+| 0x8803e8 | debug_mbox_ctl | база: второй mbox_ctl — отладочного ящика, сразу за rx-кольцом рабочего. Та же раскладка: tx.base = 0x880414, tx.entry_size = 0x64, tx.size = 2·8; rx.base = 0x88042c, rx.entry_size = 0x510, rx.size = 5·8. Драйвер этот ящик не читает (лог-строка «Debug MBOX init»; по использованию: debug_mbox__get_or_init → mbox__init_descriptor) | `debug_mbox__get_or_init` A | — |
+
+## 0x880400 — debug_mbox
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880414 | debug_mbox_tx_ring | база: tx-кольцо дескрипторов отладочного ящика, 2 записи (0x880414..0x880423) (по использованию: debug_mbox__get_or_init) | `debug_mbox__get_or_init` A | — |
+| 0x88042c | debug_mbox_rx_ring | база: rx-кольцо дескрипторов отладочного ящика, 5 записей (0x88042c..0x880453) (лог-строка «Debug MBOX init»; по использованию: debug_mbox__get_or_init) | `debug_mbox__get_or_init` A | — |
+
+## 0x880800 — mac
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880800 | user_rgf_base_800 | база: uc mac__set_880bf0_mode обращается через st.as/ld.as со смещением 0xfc (×4) к 0x880bf0 (pwr_mode_map_bf0) (по использованию: uc mac__set_880bf0_mode) | uc:`mac__set_880bf0_mode` A | — |
+
+## 0x880a00 — mac, fw_version, rf
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880a00 | bl_version_major | g_bl_version.major: FW копирует сюда версию загрузчика из image_info.version до записи своей (globals пака 11ad, лог-строка «Boot Loader version = %d.%d.%d») | `bootloader_version__log` W, `mac__read_880a00_0c` R | — |
+| 0x880a04 | bl_version_minor | g_bl_version.minor (globals пака 11ad, bootloader_version__log) | `bootloader_version__log` W, `mac__read_880a00_0c` R | — |
+| 0x880a08 | bl_version_subminor | g_bl_version.subminor (globals пака 11ad, bootloader_version__log) | `bootloader_version__log` W, `mac__read_880a00_0c` R | — |
+| 0x880a0c | bl_version_build | g_bl_version.build (globals пака 11ad; debug-tools BOOT_LOADER_VERSION_REG) | `bootloader_version__log` W, `mac__read_880a00_0c` R | — |
+| 0x880a10 | fw_image_flavor | g_fw_image_info.flavor: 1 BOOT_LOADER_FLAVOR, 2 FW_FLAVOR. FW пишет 2 после печати версий; до этого здесь поле загрузчика (globals пака 11ad image_flavor_e; по использованию: fw_image_info__set_flavor из fw_boot__log_versions) | `fw_image_info__set_flavor` W | — |
+| 0x880a14 | fw_timestamp_hour | g_fw_image_info.timestamp.hour (globals пака 11ad, debug-tools FW_TIMESTAMP_HOUR_REGISTER, лог-строка «FW time = %02d:%02d:%02d») | `fw_version__log_date` W, `mac__read_880a14_28` R | — |
+| 0x880a18 | fw_timestamp_minute | timestamp.minute (globals пака 11ad, fw_version__log_date) | `fw_version__log_date` W, `mac__read_880a14_28` R | — |
+| 0x880a1c | fw_timestamp_second | timestamp.second (globals пака 11ad, fw_version__log_date) | `fw_version__log_date` W, `mac__read_880a14_28` R | — |
+| 0x880a20 | fw_timestamp_day | timestamp.day (globals пака 11ad, лог-строка «FW date = %02d/%02d/%d») | `fw_version__log_date` W, `mac__read_880a14_28` R | — |
+| 0x880a24 | fw_timestamp_month | timestamp.month (globals пака 11ad, fw_version__log_date) | `fw_version__log_date` W, `mac__read_880a14_28` R | — |
+| 0x880a28 | fw_timestamp_year | timestamp.year (globals пака 11ad, debug-tools FW_TIMESTAMP_YEAR_REGISTER) | `fw_version__log_date` W, `mac__read_880a14_28` R | — |
+| 0x880a2c | fw_version_major | g_fw_image_info.version.major (globals пака 11ad, debug-tools FW_VERSION_MAJOR_REGISTER, лог-строка «FW version = %d.%d.%d») | `fw_version__log` W, `mac__read_880a2c_38` R | — |
+| 0x880a30 | fw_version_minor | version.minor (globals пака 11ad, debug-tools) | `fw_version__log` W, `mac__read_880a2c_38` R | — |
+| 0x880a34 | fw_version_subminor | version.subminor (globals пака 11ad; debug-tools FW_MODE_REG) | `fw_version__log` W, `mac__read_880a2c_38` R | — |
+| 0x880a38 | fw_version_build | version.build (globals пака 11ad, debug-tools FW_VERSION_BUILD_REGISTER) | `fw_version__log` W, `mac__read_880a2c_38` R | — |
+| 0x880a3c | reserved_platform_type | платформа: 1 = ASIC, 2 = FPGA; начало g_fw_dedicated_registers; пока работает загрузчик — boot_loader_ready его структуры (globals пака 11ad; драйвер RGF_USER_BL; hw__is_fpga_platform, platform__is_asic) | `boot__install_diag_magic` A, `fw_main` A, `hw__is_fpga_platform` R, `isr_880b50__dispatch_causes` A, `maintain_sm__action_8cab64` A, `platform__is_asic` R … (+1) | — |
+| 0x880a44 | fw_main_state | состояние FW для хоста: 4 — после инициализации (fw_main) и после разрыва (mlme_sm__disconnect_ev_handle), 5 — идёт подключение (l2_mgr__connect), 6 — ассоциирован (mlme_sm__association_done, l2mgr__data_port_open_and_keys), 0xdeaddead при фатале (globals пака 11ad fw_main_state; debug-tools FW_ASSOCIATION_REG 0x880A44, FW_ASSOCIATED_VALUE 6) | `fw_status__set_state` W | — |
+| 0x880a48 | fw_sub_state | подсостояние FW; 6.2 пишет сюда только 0xdeaddead в fw_sysassert_fatal (globals пака 11ad fw_sub_state; по использованию: fw_status__set_assert_marker) | `fw_status__set_assert_marker` W | — |
+| 0x880a50 | rx_mbox_int_count | счётчик прерываний почтового ящика хоста (+1 на бит 18 user-ICR) (globals пака 11ad, isr_880b50__dispatch_causes) | `isr_880b50__dispatch_causes` RW | — |
+| 0x880a58 | tx_goodput | полезная скорость TX для хоста; при старте 0 (globals пака 11ad, debug-tools TX_GP_REG, лог-строка «LINK_STATS TX_GOODPUT=%d RX_GOODPUT=%d PER=%d») | `fw_main` W, `link_stats__report` RW | — |
+| 0x880a5c | rx_goodput | полезная скорость RX (globals пака 11ad, debug-tools RX_GP_REG, link_stats__report) | `fw_main` W, `link_stats__report` RW | — |
+| 0x880a60 | bf_mcs | текущий MCS после поиска скорости (RS DONE); при старте 0; в раскладке загрузчика тут bl_shutdown_handshake (globals пака 11ad, debug-tools MCS_REG, лог-строка «RS DONE: CID=%d MCS:%d») | `fw_main` W, `lmac_if__rs_done_evt` W, `maintain_sm__action_8cab64` W | — |
+| 0x880a64 | special_flags | бит 0 dock_reset_after_disconnect (сбрасывается при старте), бит 9 пропускает маяки соседей к хосту (globals пака 11ad, special-flags-sys-config) | `fw_main` RW | — |
+| 0x880a68 | rf_status | 0 RF_OK, 1 RF_NO_COMM, 2 RF_WRONG_BOARD_FILE (globals пака 11ad, лог-строки «check_rf_boardfile : Mismatch», «COMM TEST FAILED») | `check_rf_boardfile` W, `rf__get_module_info` R, `rf__identify_type` W, `rf__is_present` R, `rf_comm_test` W | — |
+| 0x880a6c | per | PER линка в процентах (>90 долго — запрос BF) (globals пака 11ad, лог-строки «LINK_STATS ... PER=%d», «per(%u) too big») | `link_stats__report` W | — |
+| 0x880a78 | gui_flash_lock_cnt | счётчик захватов SPI-флеш хостом; FW обнуляет при старте (globals пака 11ad, лог-строка «SPI LOCK FAILED (GUI_LOCK_CNT=%d GUI_UNLOCK_CNT=%d)») | `fw_main` W, `hwd_spi_read` R | — |
+| 0x880a7c | gui_flash_unlock_cnt | счётчик освобождений SPI-флеш хостом (globals пака 11ad, fw_main) | `fw_main` W, `hwd_spi_read` R | — |
+| 0x880a80 | fw_pointer_table_validation_pattern | метка 0xbacacafe для хостовых утилит (globals пака 11ad, debug-tools DYNAMIC_ADDRESSING_PATTERN_ADDRESS, boot__install_diag_magic) | `boot__install_diag_magic` W, `car__enable_pll3_and_wait` A | — |
+| 0x880a84 | fw_pointer_table_base_address | адрес таблицы указателей 0x803b70 (globals пака 11ad, debug-tools POINTER_TABLE_ADDRESS) | `boot__install_diag_magic` W | — |
+| 0x880a88 | flash_lock_owner | владелец SPI-флеш: 0x1234 захватила FW, 0x4321 FW отпустила (globals пака 11ad, лог-строки «SPI LOCK FAILED (FW last locked/released/owner 0x%X)») | `hwd_spi__poll_done` W, `hwd_spi__release_lock` W, `hwd_spi_read` R | — |
+| 0x880a8c | rev_id | u16 baseband_type (3 A0, 4 A1, 5 B0, 6 C0, 7 D0 по JTAG ID) и u16 rf_type с 0x880a8e (0 нет, 1 Marlon, 2 Sparrow-R) (globals пака 11ad; драйвер RGF_USER_FW_REV_ID; лог-строки «Baseband type is ...», «Identify RF Type») | `baseband__identify` W, `hw__pll_mode_switch` R, `rf__get_module_info` R, `rf__identify_type` W, `rf__type_is_known` R, `rf__type_is_marlon` R … (+3) | — |
+| 0x880a90 | RGF_USER_FW_CALIB_RESULT | от драйвера: байт 0 значение RDAC, байты 8..15 сигнатура 0x11 (FW проверяет биты 8 и 12) (драйвер RGF_USER_FW_CALIB_RESULT, лог-строка «Driver set rdac val: %d») | `hwd_rfc_read_handle_driver_input` R | — |
+| 0x880a94 | platform_flags | бит 0 rf_kill_hw_enable: включает автомат RF kill по W_DISABLE; fw_main его сбрасывает (globals пака 11ad, rf_kill_sm__init) | `fw_main` RW, `rf_kill_sm__init` R | — |
+| 0x880ab8 | hw_personality | персональность платы для SDP/GPIO (0/1); в раскладке загрузчика bl_magic_number (globals пака 11ad, sdp_gpio__personality_step) | `boot__force_production_mode` W, `hw_personality_detect` W, `sdp_gpio__personality_step` R | — |
+| 0x880abc | RGF_USER_CLKS_CTL_0 | бит 1 CAR_AHB_SW_SEL: такт AHB от PLL (165 МГц), иначе опорный; переключение ждёт бит 3 в 0x880c60 (драйвер RGF_USER_CLKS_CTL_0, лог-строка «SysClock is not equal to 165MHz») | `car__enable_pll3_and_wait` RW, `hwd__wait_pll_lock` R, `hwm_power_33kHz_clk_detector` R | — |
+| 0x880af4 | clks_ctl_sw_clk_vec_0 | вектор тактов, парный SW_RST_VEC_0 (0x880b04): биты 18..31 PHY, биты 13,15..17 гейтинг PCIe; гипотеза по совпадению масок (по использованию: hwd_phy__enable_880a80, hwd_pcie__set_clk_gating, uc dma_mac__cfg_880c14/28) | `hwd_pcie__set_clk_gating` RW, `hwd_phy__enable_880a80` RW, `mac__set_bits_880af4_f8_fc` RW, uc:`dma_mac__cfg_880c14` RW, uc:`dma_mac__cfg_880c28` RW | — |
+| 0x880af8 | clks_ctl_sw_clk_vec_1 | вектор тактов, парный SW_RST_VEC_1 (0x880b08): биты 0..5 PHY, 19, 25, 30 режимы PCIe (по использованию: hwd_phy__enable_880a80, mac__set_880af8_afc_*) | `hwd_phy__enable_880a80` RW, `mac__set_880af8_afc_b25_b5` RW, `mac__set_880af8_afc_b30_b6` RW, `mac__set_bits_880af4_f8_fc` RW, uc:`dma_mac__cfg_880c28` RW | — |
+| 0x880afc | clks_ctl_sw_clk_vec_2 | вектор тактов, парный SW_RST_VEC_2: биты 4..6, 9..11 режимы PCIe, 26..29/31 режимы питания (по использованию: mac__set_880afc_bits*, uc mac__set_880afc_bits) | `mac__set_880af8_afc_b25_b5` RW, `mac__set_880af8_afc_b30_b6` RW, `mac__set_880afc_bits26_31_fw` RW, `mac__set_880afc_bits9_11` RW, `mac__set_bits_880af4_f8_fc` RW, uc:`mac__set_880afc_bits` RW | — |
+
+## 0x880b00 — sdp, gpio, hwd_dma
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880b00 | clks_ctl_sw_clk_vec_3 | вектор тактов, парный SW_RST_VEC_3: биты 4,5,7,8 (0x1b0) ABIF; импульс бита 8 в калибровке R-ladder (по использованию: hwd_abif__rgf_880b00, hwd_abif__sensor_get_comp_out, uc clk__gate_880b00) | `hwd_abif__rgf_880b00` RW, `hwd_abif__sensor_get_comp_out` RW, uc:`clk__gate_880b00` RW | — |
+| 0x880b04 | RGF_USER_CLKS_CTL_SW_RST_VEC_0 | вектор программного сброса 0: биты 18..31 PHY (драйвер, debug-tools PMC) | `hwd_pcie__port1_serdes_reset` RW, `hwd_phy__enable_880b00` RW, `pcie_serdes__shlicht_wa` W, uc:`dma_mac__cfg_880c2c` RW | — |
+| 0x880b08 | RGF_USER_CLKS_CTL_SW_RST_VEC_1 | вектор сброса 1: биты 0..5 PHY, бит 11 SerDes PCIe (драйвер; hwd_phy__enable_880b00, hwd_pcie__port1_serdes_reset) | `hwd_pcie__port1_serdes_reset` RW, `hwd_phy__enable_880b00` RW, `pcie_serdes__shlicht_wa` RW, uc:`dma_mac__cfg_880c2c` RW | — |
+| 0x880b0c | RGF_USER_CLKS_CTL_SW_RST_VEC_2 | вектор сброса 2: бит 13 на время обхода SerDes (драйвер; pcie_serdes__shlicht_wa) | `pcie_serdes__shlicht_wa` RW | — |
+| 0x880b34 | RGF_USER_JTAG_DEV_ID | JTAG ID: 0x0632072f Sparrow A0, 0x1632072f A1, 0x2632072f далее по маске 0x88afe4 (драйвер RGF_USER_JTAG_DEV_ID, baseband__identify) | `baseband__identify` R | — |
+| 0x880b50 | RGF_USER_USER_ICR.ICR | причина user-ICR, запись 1 квитирует: бит 2 таймер планировщика, 4 Awake TSF, 9 событие ucode, 18 WMI-ящик (SW_INT_2), 19 отладочный ящик, 27 RF kill; также биты SDP (драйвер struct RGF_ICR с базой 0x880b4c; 6.2/docs/MISC-FW.md) | `irq_ack_880b00` W, `isr_880b50__dispatch_causes` W, `power_halt__rearm_awake_tsf_irq` W, `rf_kill__ack_irq` W, `sdp__icr_ack_bit` W, `sysassert__wmi_lock_notice` R | — |
+| 0x880b54 | RGF_USER_USER_ICR.ICM | причина с учётом маски, читается ISR (драйвер RGF_ICR +8; isr_880b50__dispatch_causes) | `hw__has_cause_880b54` R, `isr_880b50__dispatch_causes` R | — |
+| 0x880b58 | RGF_USER_USER_ICR.ICS | установка причины: ucode ставит бит 9 при постановке события в очередь 0x802470 (драйвер RGF_ICR +0xc; uc uc_evt__enqueue) | uc:`uc_evt__enqueue` W | — |
+| 0x880b60 | RGF_USER_USER_ICR.IMS | установка маски (запрет) битов: 18/19 ящики, 9, 4, 27, 2 (драйвер RGF_ICR +0x14; gpio__pulse_880b60_18 и др.) | `gpio__pulse_880b60_18` W, `gpio__pulse_880b60_19` W, `host_irq__mask_awake_tsf` W, `irq_ack_880b00` W, `rf_kill__mask_irq` W, `uc_evt__mask_irq_and_defer_drain` W | — |
+| 0x880b64 | RGF_USER_USER_ICR.IMC | снятие маски (разрешение): бит 9 «Unmask the uCode interrupts», 18/19 после разбора ящика, 27, 4, 2 (драйвер RGF_ICR +0x18; лог-строка «Unmask the uCode interrupts») | `irq_ack_880b00` W, `lmac_if__ucode_init` W, `lmac_mbox__drain_task` W, `power_halt__rearm_awake_tsf_irq` W, `radio_mgr__call_method_10` W, `rf_kill__unmask_irq` W … (+1) | — |
+| 0x880b6c | sdp_gpio_enable | маска определённых SDP-линий (бит на линию); обнуляется при сбросе GPIO (по использованию: sdp__set_defined_bit, gpio__reset_config) | `gpio__reset_config` W, `sdp__set_defined_bit` RW | — |
+| 0x880b70 | sdp_gpio_cfg_b70 | обнуляется при сбросе GPIO (по использованию: gpio__reset_config, лог-строка «Resetting GPIOs configurations») | `gpio__reset_config` W | — |
+| 0x880b7c | sdp_gpio_strap_in | входной уровень линии SDP, бит на линию (strap персональности) (по использованию: hw_personality__read_strap) | `hw_personality__read_strap` R | — |
+| 0x880b84 | sdp_gpio_ctrl | управление GPIO, пишется 1 при сбросе (по использованию: gpio__write_ctrl_b84) | `gpio__write_ctrl_b84` W | — |
+| 0x880b88 | sdp_gpio_out_clr | запись 1 в бит линии выставляет 0 на SDP (по использованию: hwd_sdp_drive_value, лог-строка «hwd_sdp_drive_value() - value=[%d]») | `hwd_sdp_drive_value` W | — |
+| 0x880b90 | sdp_gpio_out_set | запись 1 в бит линии выставляет 1 на SDP (по использованию: hwd_sdp_drive_value) | `hwd_sdp_drive_value` W | — |
+| 0x880b98 | sdp_gpio_in | входное значение линии SDP (по использованию: sdp__read_880b98_bit) | `sdp__read_880b98_bit` R | — |
+| 0x880bb4 | sdp_gpio_int_ctrl | разрешение прерывания для SDP-линий с номером от 10 (бит = линия-10) (по использованию: sdp__set_int_ctrl_bit) | `sdp__set_int_ctrl_bit` RW | — |
+| 0x880bc0 | rng_ctl | бит 0 взводится при старте (fw_main -> mac__enable_880bc0_b0); соседний 0x880bc4 — ГСЧ; включение ГСЧ — гипотеза (по использованию: mac__set_880bc0_b0) | `mac__set_880bc0_b0` RW | — |
+| 0x880bc4 | hw_rng_value | аппаратный ГСЧ, 32-битное случайное слово; rand_below(n) = (val*n)>>32 (6.2/docs/BENCH.md; hw_rand__below_n, uc rng__rand_below) | `hw_rand__below_n` R, uc:`rng__rand_below` R | — |
+| 0x880be8 | pwr_mode_map_be8 | номер режима питания (0..4), размноженный в 8 полубайтов (по использованию: hwd_dma__set_power_mode_map, uc hwd_dma__set_mode_map из hw_modes__apply_power_mode) | `hwd_dma__set_power_mode_map` W, uc:`hwd_dma__set_mode_map` W | — |
+| 0x880bec | pwr_mode_map_bec | младший байт той же карты режима питания (по использованию: hwd_dma__set_power_mode_map) | `hwd_dma__set_power_mode_map` W, uc:`hwd_dma__set_mode_map` W | — |
+| 0x880bf0 | pwr_mode_map_bf0 | биты 0..7 режим питания в двух полубайтах (по использованию: mac__set_880bf0_mode_fw, uc mac__set_880bf0_mode) | `mac__set_880bf0_mode_fw` RW, uc:`mac__set_880bf0_mode` RW | — |
+
+## 0x880c00 — hwd_phy, pcie, hwd_pcie
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x880c04 | pwr_mode_map_c04 | режим питания в 8 полубайтах, домен PHY (по использованию: hwd_phy__uses_rgf_880c00_8d1d34, uc 929730) | `hwd_phy__uses_rgf_880c00_8d1d34` W, uc:`hwd_phy__uses_rgf_881000_929730` W | — |
+| 0x880c08 | pwr_mode_map_c08 | та же карта, 28 бит (по использованию: hwd_phy__uses_rgf_880c00_8d1d34) | `hwd_phy__uses_rgf_880c00_8d1d34` W, uc:`hwd_phy__uses_rgf_881000_929730` W | — |
+| 0x880c0c | pwr_mode_map_c0c | карта режима питания, 28 бит (7 полубайтов) (по использованию: hwd_dma__set_power_mode_map, uc hwd_dma__set_mode_map) | `hwd_dma__set_power_mode_map` W, uc:`hwd_dma__set_mode_map` W | — |
+| 0x880c14 | clks_ctl_ext_clk_vec_0 | биты 0..21 кроме 11 — гейтинг тактов PCIe, пара к EXT_SW_RST_VEC_0 (0x880c18); гипотеза (по использованию: hwd_pcie__set_clk_gating, uc dma_mac__cfg_880c14) | `hwd_pcie__set_clk_gating` RW, uc:`dma_mac__cfg_880c14` RW | — |
+| 0x880c18 | RGF_USER_CLKS_CTL_EXT_SW_RST_VEC_0 | расширенный вектор сброса 0: импульс битов 0 и 3 при открытии порта данных и установке ключей (драйвер; l2mgr__data_port_open_and_keys) | `l2mgr__data_port_open_and_keys` RW | — |
+| 0x880c28 | clks_ctl_ext_clk_vec_1 | биты 0..3 PHY, пара к EXT_SW_RST_VEC_1 (0x880c2c) (по использованию: hwd_phy__enable_880a80, uc dma_mac__cfg_880c28) | `hwd_phy__enable_880a80` RW, uc:`dma_mac__cfg_880c28` RW | — |
+| 0x880c2c | RGF_USER_CLKS_CTL_EXT_SW_RST_VEC_1 | расширенный вектор сброса 1: биты 0..3 PHY (драйвер; hwd_phy__enable_880b00, uc dma_mac__cfg_880c2c) | `hwd_phy__enable_880b00` RW, uc:`dma_mac__cfg_880c2c` RW | — |
+| 0x880c40 | pcie_serdes_cfg_c40 | бит 0 сбрасывается при программировании SerDes (по использованию: hwd_pcie__uses_rgf_880c00 из pcie__serdes_program_all) | `hwd_pcie__uses_rgf_880c00` RW | — |
+| 0x880c50 | RGF_USER_SPARROW_M_4 | бит 2 SEL_SLEEP_OR_REF (выбор такта сна/опорного, ждёт бит 2 в 0x880c60); бит 1 снимается при обходе PLL (драйвер RGF_USER_SPARROW_M_4; pcie__toggle_880c50_bit2, hw_modes__pll_bypass) | `hwd__wait_pll_lock` R, `pcie__clear_880c50_b2` RW, `pcie__set_880c50_b12` RW, `pcie__toggle_880c50_bit2` RW, `ut_hw_drivers_cmd_0x203` RW | — |
+| 0x880c54 | pcie_serdes_cfg_c54 | строб бит 31 + поле с бита 16 = 1 (по использованию: hwd_pcie__uses_rgf_880c00) | `hwd_pcie__uses_rgf_880c00` RW | — |
+| 0x880c60 | clk_switch_status | липкие флаги (запись 1 стирает): бит 2 переключение SEL_SLEEP_OR_REF завершено, бит 3 переключение AHB на PLL завершено (по использованию: pcie__toggle_880c50_bit2, car__enable_pll3_and_wait, лог-строка «DO_WHILE_WITH_MAX_ITER OCCUR») | `car__enable_pll3_and_wait` RW, `pcie__toggle_880c50_bit2` RW | — |
+| 0x880c78 | phy_pwr_ctl | биты 0..2 запрос питания доменов PHY, биты 3..5 (вероятно, изоляция) (по использованию: hwd_phy_pwr_fw, hwd_phy__uses_rgf_880c00_8d1d04, uc hwd_phy_pwr) | `hwd_phy__uses_rgf_880c00_8d1d04` RW, `hwd_phy_pwr_fw` RW, uc:`hwd_phy__uses_rgf_881000_9296e0` RW, uc:`hwd_phy_pwr` RW | — |
+| 0x880c7c | phy_pwr_status | биты 0..2 подтверждение питания доменов PHY; ожидание 200 итераций (по использованию: hwd_phy_pwr_fw, uc hwd_phy_pwr) | `hwd_phy_pwr_fw` R, uc:`hwd_phy_pwr` R | — |
+
+## 0x881000 — hwd_dma, mac_bringup
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88102c | dma_ring_sel_102c | пишется номер/значение перед настройкой поля кольца; при подъёме MAC = 3 (по использованию: hwd_dma__uses_rgf_881000 из dma_mgr__configure_ring, mac_bringup__prog_881000) | `hwd_dma__uses_rgf_881000` W, `mac_bringup__prog_881000` W | — |
+
+## 0x881100 — mac_bringup
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x881134 | dma_descq_valid | «descq valid»: биты 0..3 — действительность очередей дескрипторов (лог-строка uc «descq valid = %d»; dump_vring_pring_info) | uc:`dump_vring_pring_info` R | — |
+| 0x881144 | dma_cfg_1144 | при подъёме MAC пишется 1 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x88114c | dma_cfg_114c | при подъёме MAC пишется 1 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x881154 | dma_cfg_1154 | при подъёме MAC пишется 1 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x881160 | dma_cfg_1160 | при подъёме MAC пишется 1 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x881168 | dma_cfg_1168 | при подъёме MAC пишется 1 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x881170 | dma_cfg_1170 | при подъёме MAC пишется 1 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+
+## 0x881200 — mac_bringup, hwd_dma, nav
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88128c | dma_cfg_128c | при подъёме MAC пишется 5 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x881294 | dma_cfg_1294 | при подъёме MAC пишется 5 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x88129c | dma_cfg_129c | при подъёме MAC пишется 5 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x8812a8 | dma_cfg_12a8 | при подъёме MAC пишется 5 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x8812b0 | dma_cfg_12b0 | при подъёме MAC пишется 5 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x8812b8 | dma_cfg_12b8 | при подъёме MAC пишется 5 (по использованию: mac_bringup__prog_881000) | `mac_bringup__prog_881000` W | — |
+| 0x8812d4 | dma_diag_12d4 | читается в диагностике потери линка (по использованию: hwd_dma__read_8812d4 из link_lost_diag__dump_dma) | `hwd_dma__read_8812d4` R | — |
+| 0x8812d8 | dma_descq0_12d8 | аппаратное слово: бит 4 флаг, биты 16..20 длительность NAV; перед DESCQ<0> (IS в 0x8812dc) (по использованию: hwd_dma__get_8812d8, uc nav__read_hw_duration_flag; 4.1 NAMES-EXTRA) | `hwd_dma__get_8812d8` R, uc:`nav__read_hw_duration_flag` R | — |
+| 0x8812e8 | DMA_RGF.DESCQ<0>.SW_TAIL | sw_tail PRING (очередь дескрипторов 0), младшие 16 бит (лог-строка uc «PRING: sw_head %d sw_head_4_rd %d sw_tail %d»; dump_vring_pring_info) | uc:`dump_vring_pring_info` R | — |
+
+## 0x881300 — hwd_dma
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x881300 | DMA_RGF.DESCQ<0>.HW_HEAD | hw_head PRING, биты 0..3 (лог-строка uc «PRING: hw_head %d hw_tail %d») | uc:`dump_vring_pring_info` R | — |
+| 0x881304 | DMA_RGF.DESCQ<0>.HW_WB_HEAD | hw_wb_head PRING (голова обратной записи), биты 0..3 (лог-строка uc «PRING: hw_wb_head %d hw_wb_tail %d») | uc:`dump_vring_pring_info` R | — |
+| 0x881308 | DMA_RGF.DESCQ<0>.HW_TAIL | hw_tail PRING, биты 0..3 (лог-строка uc «PRING: hw_head %d hw_tail %d») | uc:`dump_vring_pring_info` R | — |
+| 0x88130c | DMA_RGF.DESCQ<0>.HW_WB_TAIL | hw_wb_tail PRING, биты 0..3 (лог-строка uc «PRING: hw_wb_head %d hw_wb_tail %d») | uc:`dump_vring_pring_info` R | — |
+| 0x881310 | DMA_RGF.DESCQ<0>.SW_HEAD.CRNT | sw_head PRING, младшие 16 бит (debug-tools PmcRegistersAccessor; лог-строка uc «PRING: sw_head %d ...») | uc:`dump_vring_pring_info` R | — |
+| 0x881318 | DMA_RGF.DESCQ<0>.SW_HEAD_4_RD | sw_head_4_rd PRING, младшие 16 бит (лог-строка uc «PRING: sw_head %d sw_head_4_rd %d sw_tail %d») | uc:`dump_vring_pring_info` R | — |
+| 0x8813c8 | DMA_RGF.DESCQ<2>.SW_TAIL | sw_tail очереди дескрипторов 2 (SW_HEAD-0x28, как в дампе PRING ucode) (debug-tools PMC DESCQ + лог-строка uc «PRING: sw_head %d sw_head_4_rd %d sw_tail %d»; sm_pring__bind_vring) | `hwd_dma__read_8813c8` R | — |
+| 0x8813f0 | DMA_RGF.DESCQ<2>.SW_HEAD.CRNT | текущая sw_head очереди дескрипторов 2 (debug-tools PmcRegistersAccessor; hwd_dma__read_8813f0) | `hwd_dma__read_8813f0` R | — |
+
+## 0x881400 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x8814d0 | DMA_RGF.DESCQ<4>.SW_HEAD.CRNT | sw_head очереди дескрипторов 4; прошивка 6.2 к нему не обращается (debug-tools PmcRegistersAccessor) | — | — |
+
+## 0x881b00 — mac_bringup, dma, l2_offload
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x881b00 | dma_l2_rgf_base_b00 | база: dma__set_881b24_bit1 обращается к 0x881b24 (l2_offload_tx_ctl), ставит бит 1 (по использованию: dma__set_881b24_bit1) | `dma__set_881b24_bit1` A | — |
+| 0x881b18 | l2_offload_cfg_b18 | при подъёме MAC = 0x3aaaa (по использованию: mac_bringup__prog_881b00) | `mac_bringup__prog_881b00` W | — |
+| 0x881b1c | l2_offload_cfg_b1c | при подъёме MAC = 0 (по использованию: mac_bringup__prog_881b00) | `mac_bringup__prog_881b00` W | — |
+| 0x881b20 | l2_offload_cfg_b20 | при подъёме MAC = 8 (по использованию: mac_bringup__prog_881b00) | `mac_bringup__prog_881b00` W | — |
+| 0x881b24 | l2_offload_tx_ctl | бит 0 сбрасывается при подъёме MAC и настройке TX-кольца, бит 1 ставится (по использованию: vring_hw__clear_tx_ctl_bit0, dma__set_881b24_bit1) | `dma__set_881b24_bit1` RW, `mac_bringup__prog_881b00` RW, `mac_enable_bcast_ring` RW, `vring_hw__clear_tx_ctl_bit0` RW, uc:`txop__clear_dma_ctl_bit1` RW | — |
+| 0x881b28 | l2_own_mac_lo | собственный MAC, байты 0..3 (по использованию: l2_offload__set_own_mac_addr) | `l2_offload__set_own_mac_addr` W | — |
+| 0x881b2c | l2_own_mac_hi | собственный MAC, байты 4..5 (по использованию: l2_offload__set_own_mac_addr) | `l2_offload__set_own_mac_addr` W | — |
+| 0x881b30 | l2_rx_decap_cfg | настройка декапсуляции RX (по использованию: l2_offload__set_rx_decap_cfg) | `l2_offload__set_rx_decap_cfg` W | — |
+| 0x881b34 | l2_offload_ethertypes | биты 0..15 = 0x0008 (IPv4 0x0800 в сетевом порядке), биты 16..31 = 0xdd86 (IPv6 0x86DD) (по использованию: mac_bringup__prog_881b00) | `mac_bringup__prog_881b00` RW | — |
+| 0x881b88 | dma_offload_decap_cfg | упакованные флаги декапсуляции (биты 0..7), бит 7 снимается при подъёме (по использованию: dma_offload__pack_decap_cfg) | `dma_offload__pack_decap_cfg` W, `mac_bringup__prog_881b00` RW, `mac_enable_bcast_ring` RW | — |
+| 0x881b94 | dma_offload_ctl_b94 | биты 4,5 из настройки декапсуляции RX; при подъёме биты 1,10,11 ставятся, 6,7 снимаются (по использованию: dma__set_881b94_bits45, mac_bringup__prog_881b00) | `dma__set_881b94_bits45` RW, `mac_bringup__prog_881b00` RW | — |
+| 0x881bf0 | RGF_DMA_EP_MISC_ICR.ICR | причина MISC-ICR; бит 27 HALP — запрос хоста на пробуждение, опрашивается в power_halt_seq (драйвер RGF_DMA_EP_MISC_ICR +4, BIT_DMA_EP_MISC_ICR_HALP) | `hwd_dma__get_881bf0_bit27` R | — |
+| 0x881bf8 | RGF_DMA_EP_MISC_ICR.ICS | FW поднимает прерывание хосту FW_INT(n): бит 28 FW_READY, 29 MBOX_EVT (событие WMI), 31 FW_ERROR (драйвер RGF_ICR +0xc, ISR_MISC_*; hwd_dma__raise_host_fw_int) | `hwd_dma__raise_host_fw_int` W | — |
+
+## 0x881c00 — hwd_dma, vring, dma
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x881c00 | RGF_DMA_EP_MISC_ICR.IMS | маска-установка MISC-ICR; прошивка 6.2 к нему не обращается (драйвер RGF_DMA_EP_MISC_ICR +0x14) | — | — |
+| 0x881c0c | dma_fw_icr_c08.ICR | ICR с базой 0x881c08 (завершения TX-колец): квитирование (по использованию: vring__reg_write_locked_0c из fwq_tx__handle_completion; раскладка RGF_ICR драйвера) | `vring__reg_write_locked_0c` W | — |
+| 0x881c10 | dma_fw_icr_c08.ICM | причина с маской, читает txrx_mgr__handle_dma_irq (по использованию: hwd_dma__uses_rgf_881c00_8d07d4) | `hwd_dma__uses_rgf_881c00_8d07d4` R | — |
+| 0x881c14 | dma_fw_icr_c08.ICS | программная установка причины кольца (1<<номер) (по использованию: первая функция блока tx_api__mask_from_queue) | `hwd_dma__uses_rgf_881c00_8d0b14` W | — |
+| 0x881c1c | dma_fw_icr_c08.IMS | маскирование кольца в обработчике (по использованию: hwd_dma__uses_rgf_881c00_8d0b44 из txrx_mgr__handle_dma_irq) | `hwd_dma__uses_rgf_881c00_8d0b44` W | — |
+| 0x881c20 | dma_fw_icr_c08.IMC | снятие маски кольца (по использованию: vring__reg_write_locked_20 из dma_mgr__configure_ring, fwq_tx__handle_completion) | `vring__reg_write_locked_20` W | — |
+| 0x881c28 | dma_fw_icr_c24.ICR | ICR с базой 0x881c24 (PRING): квитирование и чтение сырой причины (по использованию: vring__reg_write_locked_28, uc dma__read_881c28 в dma_is_tx_pipe_idle, uc dma__write_881c28) | `vring__reg_write_locked_28` W, uc:`dma__read_881c28` R, uc:`dma__write_881c28` W | — |
+| 0x881c2c | dma_fw_icr_c24.ICM | причина с маской, читает pring__isr_dispatch (по использованию: hwd_dma__uses_rgf_881c00_8d07f8; 4.1/docs/MISC.md) | `hwd_dma__uses_rgf_881c00_8d07f8` R | — |
+| 0x881c38 | dma_fw_icr_c24.IMS | маскирование в pring__isr_dispatch и vring__reset_pair (по использованию: hwd_dma__uses_rgf_881c00_8d0b74) | `hwd_dma__uses_rgf_881c00_8d0b74` W | — |
+| 0x881c3c | dma_fw_icr_c24.IMC | снятие маски при привязке/готовности кольца (по использованию: vring__reg_write_locked_3c) | `vring__reg_write_locked_3c` W | — |
+| 0x881c44 | dma_fw_icr_c40.ICR | ICR с базой 0x881c40 (планировщик vring): квитирование (по использованию: hwd_dma__ack_881c44, hwd_dma__set_881c00) | `hwd_dma__ack_881c44` W, `hwd_dma__set_881c00` W | — |
+| 0x881c48 | dma_fw_icr_c40.ICM | причина с маской; биты 27, 28, 31 — «DMA BAD Interrupt», фатал 0xbad1 (лог-строка «DMA BAD Interrupt: cause = %x»; hwd_dma__bad_cause) | `hwd_dma__bad_cause` R, `hwd_dma__uses_rgf_881c00_8d0870` R | — |
+| 0x881c54 | dma_fw_icr_c40.IMS | маскирование (по использованию: hwd_dma__uses_rgf_881c00_8d0c18 из vring_schdlr__isr_dispatch, vring__reset_pair) | `hwd_dma__uses_rgf_881c00_8d0c18` W | — |
+| 0x881c58 | dma_fw_icr_c40.IMC | снятие маски: при инициализации вместе с квитированием и в vring__ack_and_unmask_irq (по использованию: hwd_dma__set_881c00, vring_hw__unmask_irq) | `hwd_dma__set_881c00` W, `vring_hw__unmask_irq` W | — |
+| 0x881c60 | RGF_DMA_ITR_CNT_DATA | счётчик модерации прерываний (до Sparrow v2); прошивка 6.2 к нему не обращается (драйвер RGF_DMA_ITR_CNT_DATA) | — | — |
+| 0x881c84 | dma_rings_with_data | битовая карта колец с данными (бит на vring) (DATAPATH 4.1; hwd_dma__get_rings_with_data, hwd_dma__get_881c80, uc aw_worker__read_dma_881c84) | `hwd_dma__get_881c80` R, `hwd_dma__get_rings_with_data` R, uc:`aw_worker__read_dma_881c84` R | — |
+| 0x881c88 | dma_ring_select | номер кольца, пишется с кэшем в gp при программировании дескриптора/базы (по использованию: голова блока dpal__cpl_timeout_evt из hwd_dma__program_vring_desc) | `dpal__cpl_timeout_evt` W | — |
+
+## 0x881d00 — hwd_dma
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x881d24 | dma_fw_int_d24 | тот же бит FW_INT(n), что и в MISC ICS 0x881bf8, пишется вторым (по использованию: hwd_dma__raise_host_fw_int) | `hwd_dma__raise_host_fw_int` W | — |
+
+## 0x882000 — pcie, hwd_pcie
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882000 | pcie_sw_cfg_0 | бит 28 гасится при подъёме SerDes; блок 0x882000 обслуживает путь «EP under switch» (по использованию: hwd_pcie__clear_88b000_bits) | `hwd_pcie__clear_88b000_bits` RW, `pcie__force_clear_l0s` A | — |
+| 0x88200c | pcie_sw_pm_cfg | при загрузке пишется 0x7fff сразу перед строкой «Sparrow PCIe PM Support!» (лог-строка, по использованию: pcie__serdes_init) | `pcie__serdes_init` W | — |
+| 0x882024 | pcie_sw_ctl_24 | бит 24 — удержание канала вне L1 на пути «EP under switch» (выставляется и снимается в hwd_pcie_exit_l1 вместе с 0x882028 бит 19); бит 6 ставится при загрузке, бит 27 гасится при подъёме SerDes (по использованию: hwd_pcie_exit_l1, pcie__serdes_init, hwd_pcie__clear_88b000_bits) | `hwd_pcie__clear_88b000_bits` RW, `hwd_pcie_exit_l1` RW, `pcie__serdes_init` RW | — |
+| 0x882028 | pcie_sw_ctl_28 | бит 19 — удержание вне L1 на пути «EP under switch» (hwd_pcie_exit_l1); биты 5, 6, 21 ставятся при «Sparrow PCIe PM Support!»; бит 18 ставится перед проверкой L0s (по использованию: hwd_pcie_exit_l1, pcie__serdes_init, pcie__force_clear_l0s) | `hwd_pcie_exit_l1` RW, `pcie__force_clear_l0s` RW, `pcie__serdes_init` RW | — |
+| 0x882040 | pcie_sw_lane_cfg_40 | поле битов 8..14 := 0x25 при загрузке; то же поле пишется ещё в 0x882048/50, 0x882258/60, 0x8823e0/e8 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882048 | pcie_sw_lane_cfg_48 | поле битов 8..14 := 0x25 при загрузке, см. 0x882040 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882050 | pcie_sw_lane_cfg_50 | поле битов 8..14 := 0x25 при загрузке, см. 0x882040 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x8820c0 | pcie_sw_ltssm_state | состояние LTSSM (биты 0..4; 0x11/0x12 — L1) на пути «EP under switch», когда бит 3 в 0x8825bc равен 1; на пути «EP under serdes» читается 0x88258c (по использованию: hwd_pcie__get_ltssm_state, лог-строка «LTSSM STATE:0x%x») | `hwd_pcie__get_ltssm_state` R | — |
+| 0x8820c4 | pcie_sw_app_debug_if | слово «APP DEBUG IF» на пути «EP under switch» (на пути «EP under serdes» — 0x882590) (лог-строка «DEBUG PCIE: APP DEBUG IF: 0x%x», по использованию: pcie__read_app_debug_if) | `pcie__read_app_debug_if` R | — |
+
+## 0x882200 — pcie, wbe_driver, hwd_pcie
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882200 | pcie_port_b_base | база однотипного блока порта B: pcie__serdes_init обращается к 0x88223c (бит 6), 0x88224c (биты 8..9), 0x882258/0x882260 (поле [14:8] := 0x25) (по использованию: pcie__serdes_init) | `pcie__serdes_init` A | — |
+| 0x882224 | pcie_serdes1_ctl | биты 1..2 гасятся при сбросе SerDes1 (одновременно ставится бит 11 в 0x880b08 = CLKS_CTL_SW_RST_VEC_1) и ставятся при снятии сброса (лог-строка «Sparrow PCIe reset Serdes1!», по использованию: hwd_pcie__port1_serdes_reset) | `hwd_pcie__port1_serdes_reset` RW | — |
+| 0x88223c | pcie_port_b_ctl_24 | бит 6 ставится при загрузке, как бит 6 в 0x882024 и 0x8823c4 (однотипный блок) (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882240 | pcie_l1ss_ctl | бит 17 ставится при включении L1SS (лог-строка «Sparrow PCIe L1SS Support enabled», по использованию: pcie__l1ss_enable) | `pcie__l1ss_enable` RW | — |
+| 0x88224c | pcie_port_b_ctl_34 | при загрузке ставятся биты 8..9 (or 0x300), как и в 0x8823d4 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882258 | pcie_port_b_lane_cfg_40 | поле битов 8..14 := 0x25 при загрузке, см. 0x882040 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882260 | pcie_port_b_lane_cfg_48 | поле битов 8..14 := 0x25 при загрузке, см. 0x882040 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x8822d0 | SW_PORT1_DEBUG_RX_PCPL_REMOTE_0 | отладочный регистр порта 1 коммутатора PCIe, выводится в дамп PXE (лог-строка «PCIE.SW_PORT1.DEBUG.RX.PCPL.REMOTE…_0») | `wbe_driver__pcie_debug` R | — |
+| 0x8822d4 | SW_PORT1_DEBUG_RX_PCPL_REMOTE_1 | отладочный регистр порта 1 коммутатора PCIe (лог-строка «…RX_PCPL_REMOTE_1») | `wbe_driver__pcie_debug` R | — |
+| 0x8822d8 | SW_PORT1_DEBUG_RX_PCPL_REMOTE_2 | отладочный регистр порта 1 коммутатора PCIe (лог-строка «…RX_PCPL_REMOTE_2») | `wbe_driver__pcie_debug` R | — |
+| 0x8822dc | SW_PORT1_DEBUG_RX_PCPL_REMOTE_3 | отладочный регистр порта 1 коммутатора PCIe (лог-строка «…RX_PCPL_REMOTE_3») | `wbe_driver__pcie_debug` R | — |
+
+## 0x882300 — pcie, wbe_driver
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882334 | SW_PORT1_DEBUG_TX_PCPL_REMOTE_0 | отладочный регистр порта 1 коммутатора PCIe (лог-строка «PCIE.SW_PORT1.DEBUG.TX.PCPL.REMOTE…_0») | `wbe_driver__pcie_debug` R | — |
+| 0x882338 | SW_PORT1_DEBUG_TX_PCPL_REMOTE_1 | отладочный регистр порта 1 коммутатора PCIe (лог-строка «…TX_PCPL_REMOTE_1») | `wbe_driver__pcie_debug` R | — |
+| 0x88233c | SW_PORT1_DEBUG_TX_PCPL_REMOTE_2 | отладочный регистр порта 1 коммутатора PCIe (лог-строка «…TX_PCPL_REMOTE_2») | `wbe_driver__pcie_debug` R | — |
+| 0x882340 | SW_PORT1_DEBUG_TX_PCPL_REMOTE_3 | отладочный регистр порта 1 коммутатора PCIe (лог-строка «…TX_PCPL_REMOTE_3») | `wbe_driver__pcie_debug` R | — |
+| 0x882380 | pcie_port_c_base | база однотипного блока порта C: pcie__serdes_init обращается к 0x8823c4 (бит 6), 0x8823d4 (биты 8..9), 0x8823e0/0x8823e8 (поле [14:8] := 0x25) (по использованию: pcie__serdes_init) | `pcie__serdes_init` A | — |
+| 0x8823c4 | pcie_port_c_ctl_24 | бит 6 ставится при загрузке, как в 0x882024 и 0x88223c (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x8823d4 | pcie_port_c_ctl_34 | при загрузке ставятся биты 8..9 (or 0x300), как в 0x88224c (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x8823e0 | pcie_port_c_lane_cfg_40 | поле битов 8..14 := 0x25 при загрузке, см. 0x882040 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x8823e8 | pcie_port_c_lane_cfg_48 | поле битов 8..14 := 0x25 при загрузке, см. 0x882040 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+
+## 0x882500 — pcie, hwd_pcie, pcie_serdes
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882554 | pcie_serdes_l1_hold | бит 3 — запрос выхода из L1 и удержание вне L1 на пути «EP under serdes»: ставится, затем ждут ухода LTSSM из L1, после DBI-операций снимается; бит 18 гасится при подъёме SerDes (по использованию: hwd_pcie_exit_l1, pcie__l1ss_config, pcie_pm_host_config, hwd_pcie__clear_88b000_bits) | `hwd_pcie__clear_88b000_bits` RW, `hwd_pcie_exit_l1` RW, `pcie__l1ss_config` RW, `pcie_pm_host_config` RW | — |
+| 0x882560 | pcie_serdes_ctl_60 | бит 3 гасится при подъёме SerDes (по использованию: hwd_pcie__clear_88b000_bits) | `hwd_pcie__clear_88b000_bits` RW | — |
+| 0x882580 | pcie_serdes_base_580 | база: помощники pcie__apply_mode_fw_8825c0__8d10c8 и pcie__program_seq_fw_8825c0__8d1114 читают через неё 0x8825c0 (pcie_mode_flags, биты 0..3). pcie__serdes_init так же читает и правит 0x8825c0 (по использованию: те же) | `pcie__apply_mode_fw_8825c0__8d10c8` A, `pcie__program_seq_fw_8825c0__8d1114` A | — |
+| 0x88258c | pcie_serdes_ltssm_state | состояние LTSSM (биты 0..4) на пути «EP under serdes», когда бит 3 в 0x8825bc равен 0 (по использованию: hwd_pcie__get_ltssm_state) | `hwd_pcie__get_ltssm_state` R | — |
+| 0x882590 | pcie_serdes_app_debug_if | слово «APP DEBUG IF» на пути «EP under serdes»; не счётчики ошибок (лог-строка «DEBUG PCIE: APP DEBUG IF: 0x%x», по использованию: pcie__read_app_debug_if) | `pcie__read_app_debug_if` R | — |
+| 0x8825bc | pcie_topology_ctl | бит 3 задаёт топологию: 0 — «EP under serdes» (LTSSM в 0x88258c, DBI-порт 1), 1 — «EP under switch» (LTSSM в 0x8820c0, DBI-порт 0); бит 9 копирует бит 0 из 0x8825c0; бит 21 гасится при подъёме SerDes; бит 0 гасится в обходе «shlicht» (лог-строки pcie__l1_latency_wa «…EP under switch/serdes», по использованию: hwd_pcie__is_ep_under_serdes, pcie__mirror_link_bit, pcie_serdes__shlicht_wa) | `hwd_pcie__is_ep_under_serdes` R, `pcie__mirror_link_bit` RW, `pcie_serdes__shlicht_wa` RW | — |
+| 0x8825c0 | pcie_mode_flags | слово признаков режима PCIe: бит 0 → копия в 0x8825bc бит 9, при нём при загрузке пропускается «reset Serdes1»; бит 1 сбрасывает флаг в gp и включает pcie__l1_latency_wa; биты 2..3 задают гейтинг тактов; биты 17, 18, 23 (поле 17..26) пишутся в режиме «Sparrow wPCIeR support for backward compatibility with Marlon» (лог-строки, по использованию: pcie__serdes_init, pcie__program_seq_fw_8825c0__8d1114, pcie__apply_mode_fw_8825c0__8d10c8) | `hwd_pcie__read_8825c0` R, `pcie__apply_mode_fw_8825c0__8d10c8` R, `pcie__mirror_link_bit` R, `pcie__program_seq_fw_8825c0__8d1114` R, `pcie__serdes_clear_flag_if_bit1` R, `pcie__serdes_init` RW | — |
+
+## 0x882600 — pcie, hwd_pcie, pcie_dbg
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88262c | pcie_phy_status | бит 11 — phy_pll_lock; ожидается перед DBI-записями в обработчике PERST (лог-строка «PCIE_ISR could not start DBI writes, phy_pll_lock is not ready», по использованию: pcie__get_phy_pll_lock) | `pcie__get_phy_pll_lock` R | — |
+| 0x882644 | pcie_dbi_status | шлюз DBI: бит 29 — занят (ждут, пока он не сбросится, ~21000 опросов), запись бита 30 — квитирование завершения (лог-строка «Clearing DBI gateway», по использованию: pcie__wait_882644_ready, pcie__dbi_ack_done) | `pcie__dbi_ack_done` W, `pcie__wait_882644_ready` R | — |
+| 0x882648 | pcie_dbi_cmd | команда DBI: бит 31 — запись (1) или чтение (0), биты 16..27 — атрибуты доступа (порт, признаки shadow/CS), биты 0..3 — byte-enable (0xf при записи); запись 0x4000000 сбрасывает шлюз (по использованию: pcie__dbi_start_cmd, hwd_pcie__set_882600) | `hwd_pcie__set_882600` W, `pcie__dbi_start_cmd` W | — |
+| 0x88264c | pcie_dbi_addr | адрес в конфигурационном пространстве для DBI-доступа (лог-строка «dbi_write FAILED: address=0x%x…», по использованию: pcie__dbi_set_addr) | `pcie__dbi_set_addr` W | — |
+| 0x882650 | pcie_dbi_data | данные DBI: пишутся перед записью, после чтения отсюда берут результат (по использованию: pcie__dbi_set_data, hwd_pcie__read_882650 из pcie__dbi_read) | `hwd_pcie__read_882650` R, `pcie__dbi_set_data` W | — |
+| 0x88265c | RGF_HP_CTRL | бит 1 — «драйвер хоста поднят» (читает lmac_if__lmac_ready_evt); бит 15 — MAC link up, хост ставит его при сбросе цели; при загрузке прошивка гасит биты 13, 14, 11 и ставит 10; при записи в бит 0 уходит текущее значение бита 1 (драйвер RGF_HP_CTRL, по использованию: pcie__get_driver_is_up, pcie__hp_ctrl_write_bit) | `pcie__get_driver_is_up` R, `pcie__hp_ctrl_write_bit` RW | — |
+| 0x882670 | RGF_PAL_UNIT_ICR.ICR | причина прерывания PAL_UNIT (W1C): бит 4 — PERST assert, 5 — PERST deassert, 24 — D3→D0, 29 — вход в D3, 18 — событие канала (квитируется в WBE_DRIVER__link_down_notif); вектор 16 читает ICM и пишет её сюда (драйвер RGF_PAL_UNIT_ICR=0x88266c +4; по использованию: hwd_pcie__rgf_882600, hwd_pcie__perst_deassert_int_clear, wbe__rearm_link_down_irq) | `hwd_pcie__perst_deassert_int_clear` W, `hwd_pcie__rgf_882600` W, `wbe__rearm_link_down_irq` W | — |
+| 0x882674 | RGF_PAL_UNIT_ICR.ICM | маскированная причина PAL_UNIT, её читает вектор 16 (драйвер RGF_PAL_UNIT_ICR +8; по использованию: hwd_pcie__rgf_882600) | `hwd_pcie__rgf_882600` R | — |
+| 0x882680 | RGF_PAL_UNIT_ICR.IMS | маскирование причин PAL_UNIT: бит 18 гасится при link_down; биты 3, 13, 14 — при «DRIVER is UP» (драйвер RGF_PAL_UNIT_ICR +0x14; по использованию: wbe__mask_link_down_irq, wbe__mask_pcie_irqs_on_driver_up) | `wbe__mask_link_down_irq` W, `wbe__mask_pcie_irqs_on_driver_up` W | — |
+| 0x882684 | RGF_PAL_UNIT_ICR.IMC | снятие маски причин PAL_UNIT, при загрузке разрешаются биты 4, 5, 24, 29 (PERST assert/deassert, D3→D0, вход в D3) (драйвер RGF_PAL_UNIT_ICR +0x18; лог-строки «hwd_pcie_perst_assert_int_en()» и др.; по использованию: hwd_pcie__*_int_en, wbe__rearm_link_down_irq) | `hwd_pcie__d3_d0_int_en` W, `hwd_pcie__enter_d3_int_en` W, `hwd_pcie__perst_assert_int_en` W, `hwd_pcie__perst_deassert_int_en` W, `wbe__rearm_link_down_irq` W | — |
+| 0x88268c | pcie_debug_icr.ICR | причина отладочного ICR PCIe (вектор 15), квитирование W1C: бит 3 — port1_tx_fifo_pcpl_full_int (дедлок PXE), бит 12 — таймаут CPL (DPAL CPL TO); биты 0 и 9 переоткрываются при активации PXE (раскладка RGF_ICR с ICC в 0x882688; лог-строки; по использованию: pcie_debug__read_and_ack_cause, pcie_dbg__rearm_irq_bit*, pcie__clear_cpl_timeout) | `pcie__clear_cpl_timeout` W, `pcie_dbg__rearm_irq_bit0` W, `pcie_dbg__rearm_irq_bit3` W, `pcie_dbg__rearm_irq_bit9` W, `pcie_debug__read_and_ack_cause` W | — |
+| 0x882690 | pcie_debug_icr.ICM | маскированная причина отладочного ICR PCIe, её читает вектор 15 (по использованию: pcie_debug__read_and_ack_cause; 6.2/docs/MISC-FW.md §вектор 15) | `pcie_debug__read_and_ack_cause` R | — |
+| 0x88269c | pcie_debug_icr.IMS | маска отладочного ICR PCIe: бит 3 маскируется на входе в обработчик дедлока PXE, бит 12 — после таймаута CPL (по использованию: pcie_debug__mask_tx_fifo_full_irq, dpal__mask_cpl_timeout_irq) | `dpal__mask_cpl_timeout_irq` W, `pcie_debug__mask_tx_fifo_full_irq` W | — |
+| 0x8826a0 | pcie_debug_icr.IMC | снятие маски отладочного ICR PCIe, чтобы прерывание сработало снова (биты 0, 3, 9, 12) (по использованию: pcie_dbg__rearm_irq_bit0/3/9, pcie__clear_cpl_timeout) | `pcie__clear_cpl_timeout` W, `pcie_dbg__rearm_irq_bit0` W, `pcie_dbg__rearm_irq_bit3` W, `pcie_dbg__rearm_irq_bit9` W | — |
+| 0x8826b0 | pcie_host_event_set | установка события для хоста (как ICS в раскладке RGF_ICR с ICC в 0x8826a4). Бит 0 — FW ready, 2 — «DRIVER is UP», 0x19 — sysassert, 0x1a и 0x1b — очереди TX. Запись обрамлена hwd_pcie_exit_l1(1/0), то есть канал для неё выводится из L1 (по использованию: pcie__set_event_bit) | `pcie__set_event_bit` W | — |
+
+## 0x882a00 — WBE_DRIVER
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882a74 | wbe_close_ctl | при «WBE_DRIVER::CLOSE IDLES» пишется 2 (лог-строка, по использованию: WBE_DRIVER__CLOSE) | `WBE_DRIVER__CLOSE` W | — |
+
+## 0x882b00 — pcie, hwd_pcie
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882b88 | pcie_perst_status | бит 0 — PERST снят (1); при 0 печатается «hwd_pcie_exit_l1: PERST ASSERTED !!!» (лог-строка, по использованию: hwd_pcie__get_882b80, hwd_pcie_exit_l1, fw_vector_16, deep_sleep_enter) | `hwd_pcie__get_882b80` R | — |
+| 0x882b90 | pcie_pm_timer_0a | при загрузке пишется 0xa; один из 8 однотипных регистров 0x882b90..0x882bb8 с шагом 0xc (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882b94 | pcie_pm_timer_0b | при загрузке пишется 0xa, см. 0x882b90 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882b9c | pcie_pm_timer_1a | при загрузке пишется 0xa, см. 0x882b90 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882ba0 | pcie_pm_timer_1b | при загрузке пишется 0xa, см. 0x882b90 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882ba8 | pcie_pm_timer_2a | при загрузке пишется 0xa, см. 0x882b90 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882bac | pcie_pm_timer_2b | при загрузке пишется 0xa, см. 0x882b90 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882bb4 | pcie_pm_timer_3a | при загрузке пишется 0xa, см. 0x882b90 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882bb8 | pcie_pm_timer_3b | при загрузке пишется 0xa, см. 0x882b90 (по использованию: pcie__serdes_init) | `pcie__serdes_init` RW | — |
+| 0x882bf0 | pcie_wake_ctl | бит 5 — выдача сигнала Wake хосту (лог-строка «pcie_device_power_if::pcie_power_wake_signal - send Wake signal to PCIE EP», по использованию: hwd_pcie__rgf_882b80) | `hwd_pcie__rgf_882b80` RW | — |
+
+## 0x882d00 — dpal, mgmt_tx, pcie
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882d04 | dpal_cpl_to_ctl | при сбросе события таймаута CPL сюда пишется 0x3e7 (999), вероятно перезапуск или порог таймаута (по использованию: pcie__clear_cpl_timeout) | `pcie__clear_cpl_timeout` W | — |
+| 0x882d08 | dpal_cpl_valid_vector | младший байт — cpl_valid_vector (лог-строка «DPAL CPL TO Event: cpl_valid_vector = 0x%08X…», по использованию: dpal__cpl_timeout_evt) | `dpal__cpl_timeout_evt` R | — |
+| 0x882d0c | dpal_cpl_cnt_0_3 | счётчики cpl_cnt0..3 — пятибитные поля в байтах 0..3; если cnt0=cnt1=7 и остальные сходятся, печатается «DB2 DOCK - GBE Completion Timeout Disconnect» (лог-строки DPAL CPL TO, по использованию: dpal__cpl_timeout_evt) | `dpal__cpl_timeout_evt` R | — |
+| 0x882d10 | dpal_cpl_cnt_4_7 | счётчики cpl_cnt4..7 — пятибитные поля в байтах 0..3 (лог-строки DPAL CPL TO, по использованию: dpal__cpl_timeout_evt) | `dpal__cpl_timeout_evt` R | — |
+| 0x882d80 | pxe_rgf_base | база: хвост блока mgmt_tx__copy_ie_max96 (отдельная склеенная функция) ставит бит 31 в 0x882dd4 (pxe_ctl) (по использованию: mgmt_tx__copy_ie_max96) | `mgmt_tx__copy_ie_max96` A | — |
+| 0x882dd4 | pxe_ctl | управление PXE: бит 31 ставится при «WBE_DRIVER::ACTIVATING PXE» и после каждой перенастройки (применение или включение); на время смены isoc-обхода биты 1, 2, 6 гасятся, потом значение возвращается (лог-строки, по использованию: WBE_DRIVER__pxe_isoc_in_dir_bypass, mgmt_tx__copy_ie_max96) | `WBE_DRIVER__pxe_isoc_in_dir_bypass` RW, `mgmt_tx__copy_ie_max96` RW | — |
+
+## 0x882e00 — wbe_driver, WBE_DRIVER
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882e08 | pxe_ch_cfg_0 | бит 14 — isoc_in_dir_bypass для первого из трёх каналов PXE (лог-строка «WBE_DRIVER::pxe_isoc_in_dir_bypass: %d», по использованию: WBE_DRIVER__pxe_isoc_in_dir_bypass) | `WBE_DRIVER__pxe_isoc_in_dir_bypass` RW | — |
+| 0x882e1c | pxe_ch_cfg_1 | бит 14 — isoc_in_dir_bypass для второго канала PXE (лог-строка «…pxe_isoc_in_dir_bypass», по использованию: WBE_DRIVER__pxe_isoc_in_dir_bypass) | `WBE_DRIVER__pxe_isoc_in_dir_bypass` RW | — |
+| 0x882e6c | pxe_ch_cfg_2 | бит 14 — isoc_in_dir_bypass для третьего канала PXE (лог-строка «…pxe_isoc_in_dir_bypass», по использованию: WBE_DRIVER__pxe_isoc_in_dir_bypass) | `WBE_DRIVER__pxe_isoc_in_dir_bypass` RW | — |
+| 0x882e84 | PCIE_PXE_PDN_CACHE_REQ_FIFO | состояние FIFO запросов кэша PXE (вниз), выводится в дамп при дедлоке PXE (лог-строка «PCIE.PXE.PDN.CACHE_REQ_FIFO_CONTROLLER.PCIE_PXE_PDN_CACHE_REQ_FIFO») | `wbe_driver__pcie_debug` R | — |
+| 0x882e88 | PCIE_PXE_PDN_TX_DP_FIFO_CONTROLLER | состояние FIFO TX datapath PXE (вниз) (лог-строка «PCIE.PXE.PDN.TX_DP_FIFO_CONTROLLER») | `wbe_driver__pcie_debug` R | — |
+| 0x882e8c | PCIE_PCIE_PXE_PUP_DBG_0 | отладочное слово PXE (вверх) (лог-строка «PCIE.PXE.PUP.DBG.PCIE_PCIE_PXE_PUP_DBG_0») | `wbe_driver__pcie_debug` R | — |
+| 0x882ed8 | pxe_dbg_select | селектор отладочной шины PXE: кольцо в битах 0..2, дубль в 4..6, бит 8 включён для кольца ≠0; от этого адреса читается окно из 16 слов (0x882ed8..0x882f14) для дампа «PCIE DEBUG %d (ring#=%d)» (лог-строка, по использованию: wbe_driver__pcie_debug) | `wbe_driver__pcie_debug` RW | — |
+| 0x882edc | pxe_dbg_csu_lock | младший байт — dbg_csu_lock, битовая карта заблокированных колец; ненулевое значение даёт «PXE DEADLOCK: Disconnect» (лог-строка «…port1_tx_fifo_pcpl_full_int (dbg_csu_lock=0x%X)», по использованию: wbe_driver__pcie_debug_isr) | `wbe_driver__pcie_debug` R, `wbe_driver__pcie_debug_isr` R | — |
+
+## 0x882f00 — hwd_pcie, pcie, pcie_serdes
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x882f64 | pcie_pwr_mode_map_0 | карта режима питания: номер режима 0..4, размноженный по полубайтам (0x11111111·m); здесь занята старшая половина слова (по использованию: hwd_pcie__set_mode_map из hw_modes__apply_power_mode) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f68 | pcie_pwr_mode_map_1 | карта режима питания, все 8 полубайтов = m (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f6c | pcie_pwr_mode_map_2 | карта режима питания, младшие 4 полубайта = m (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f70 | pcie_pwr_mode_map_3 | карта режима питания, младшие 6 полубайтов = m (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f74 | pcie_pwr_mode_map_4 | карта режима питания, младшие 6 полубайтов = m (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f78 | pcie_pwr_mode_map_5 | карта режима питания, младшие 6 полубайтов = m (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f7c | pcie_pwr_mode_map_6 | карта режима питания, младшие 6 полубайтов = m (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f80 | pcie_pwr_mode_map_7 | карта режима питания, все 8 полубайтов = m. Это не регистр отладки LTSSM: вектор 18 работает с ICR по адресу 0x882fd0 (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f84 | pcie_pwr_mode_map_8 | карта режима питания, младшие 2 полубайта = m (по использованию: hwd_pcie__set_mode_map) | `hwd_pcie__set_mode_map` W | — |
+| 0x882f88 | pcie_pm_ctl_88 | биты 26 и 29 ставятся и гасятся парой вместе с битом 6 в 0x88b0b0 (hwd_pcie__toggle_882f80_bits из pcie_pm_host_config и stats_timer_exp); при подъёме SerDes гасятся биты 29, 30 (по использованию) | `hwd_pcie__rgf_882f80_8d196c` RW, `hwd_pcie__toggle_882f80_bits` RW | — |
+| 0x882f8c | pcie_serdes_shlicht_cfg_0 | при нулевом поле битов 16..22 включается обход «shlicht» и пишется OR 0x7f7f0000 (поля 16..22 и 24..30 в максимум) (лог-строка «PCIe serdes configuration shlicht», по использованию: pcie_serdes__shlicht_wa) | `pcie_serdes__shlicht_wa` RW | — |
+| 0x882f90 | pcie_serdes_shlicht_cfg_1 | обход «shlicht»: шестибитные поля в байтах 1..3 := 0x18, 0x18, 0x23 (лог-строка «PCIe serdes configuration shlicht», по использованию: pcie_serdes__shlicht_wa) | `pcie_serdes__shlicht_wa` RW | — |
+| 0x882fd0 | UNIT_ICR_PORT0_LTSSM_DBG_1.ICR | причина ICR отладки LTSSM (вектор 18), W1C: бит 14 — вход в L1, бит 19 — выход из L1; при загрузке пишется 0xffffffff («Clear and mask PCIe interrupts») (лог-строка «PCIE UNIT_ICR_PORT0_LTSSM_DBG_1: UN HANDLED INTERRUPT», раскладка RGF_ICR с ICC в 0x882fcc; по использованию: hwd_pcie__rgf_882f80, pcie__ack_l1_exit_irq, pcie__mask_interrupts) | `hwd_pcie__rgf_882f80` W, `hwd_pcie__rgf_882f80_8d15b4` W, `pcie__ack_l1_exit_irq` W, `pcie__mask_interrupts` W | — |
+| 0x882fd4 | UNIT_ICR_PORT0_LTSSM_DBG_1.ICM | маскированная причина, её читает вектор 18; бит 19 проверяется перед deep sleep (лог-строка «deep_sleep_enter: No L1 exit interrupt…», по использованию: hwd_pcie__rgf_882f80, hwd_pcie__get_882fd4_bit19) | `hwd_pcie__get_882fd4_bit19` R, `hwd_pcie__rgf_882f80` R | — |
+| 0x882fd8 | UNIT_ICR_PORT0_LTSSM_DBG_1.ICS | программная установка причины: запись 0x80000 вызывает прерывание выхода из L1, если оно не пришло (по использованию: pcie__l1_exit_irq_recover из deep_sleep_enter) | `pcie__l1_exit_irq_recover` W | — |
+| 0x882fdc | UNIT_ICR_PORT0_LTSSM_DBG_1.IMV | маска целиком: при загрузке пишется 0xffffffff (лог-строка «Clear and mask PCIe interrupts», по использованию: pcie__mask_interrupts, hwd_pcie__rgf_882f80_8d15b4) | `hwd_pcie__rgf_882f80_8d15b4` R, `pcie__mask_interrupts` W | — |
+| 0x882fe0 | UNIT_ICR_PORT0_LTSSM_DBG_1.IMS | маскирование: бит 14 — вход в L1, бит 19 — выход из L1 (по использованию: pcie__mask_l1_enter_irq, pcie__mask_l1_exit_irq) | `pcie__mask_l1_enter_irq` W, `pcie__mask_l1_exit_irq` W | — |
+| 0x882fe4 | UNIT_ICR_PORT0_LTSSM_DBG_1.IMC | снятие маски: бит 19 — выход из L1 (перед deep sleep), бит 14 — вход в L1 (по использованию: pcie__unmask_l1_exit_irq, hwd_pcie__rgf_882f80_8d15b4) | `hwd_pcie__rgf_882f80_8d15b4` W, `pcie__unmask_l1_exit_irq` W | — |
+
+## 0x883000 — hwd_phy, rx_meas, hwf_calib
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883000 | phy_self_mode_ctl_rx | управление self-режимом PHY: пары битов [1:0] и [3:2] (бит разрешения + строб 0-1-0); self_rx_mode_entry взводит обе пары, self_tx_mode_entry только [3:2], self_mode_exit сбрасывает (UT 0x401/0x402/0x403 по таблице переходов UT_HW_DRIVERS_cmd_handler + wmiUT.xml) | `hwd_phy__recording_mode_set` A, `hwd_phy__self_mode_exit` RW, `hwd_phy__self_rx_mode_entry` RW, `hwd_phy__self_tx_mode_entry` RW | — |
+| 0x883004 | phy_self_mode_ctl_tx | self TX режим PHY: бит 1 разрешение, бит 0 строб; взводит self_tx_mode_entry, снимает self_mode_exit; бит 1 сохраняет hwf_calib__acquire_hw (UT 0x401/0x403, wmiUT.xml) | `hwd_phy__self_mode_exit` RW, `hwd_phy__self_tx_mode_entry` RW, `hwf_calib__acquire_hw` R | — |
+| 0x883010 | phy_rx_ctl | бит 0 = PHY_RX_EN (лог-строка «PHY_RX_EN=1», UT 0x410 hwd_phy_rgf_rx_en); бит 1 = self digital loopback (UT 0x404); бит 2 = признак self RX режима (UT 0x402/0x403, временно в recording_mode_set); бит 3 = пуск измерения RX-коррелятора (hwd_phy__rx_cal_corr, UT 0x424) (wmiUT.xml, по использованию) | `hwd_phy__recording_mode_set` RW, `hwd_phy__rx_cal_corr` RW, `hwd_phy__rx_enable` RW, `hwd_phy__rx_is_enabled` R, `hwd_phy__self_digital_loopback` RW, `hwd_phy__self_mode_exit` RW … (+3) | — |
+| 0x883020 | phy_rx_channel_freq_ratio | частотное слово канала, пропорционально частоте: 0x64fcace/0x68ba2e9/0x6c77b03/0x703531e для каналов 1..4 (debug-tools HostDefinitions.h, константа регистра канала для чипов до MA; UT 0x414 hwd_phy_rx_channel_freq_ratio_switch) | `phy__program_channel_regs` W | — |
+| 0x883038 | phy_rx_swap_iq | бит 0 инверсия I, бит 1 инверсия Q на приёме; 3 = g_default_rx_swap_iq (лог-строки hwd_phy_get_rx_swap_iq, hwd_PHY_STORE_TXRX_SWAP_IQ; UT 0x432 hwd_phy_set_rx_swap_iq) | `hwd_PHY_STORE_TXRX_SWAP_IQ` R, `hwd_phy__set_rx_swap_iq` RW, `hwd_phy_get_rx_swap_iq` R | — |
+| 0x883048 | phy_rx_agc_index_force | бит 15 = force, [14:0] = agc_val — принудительный индекс AGC; сохраняется калибровками (UT 0x413 hwd_phy_rx_agc_index_force_mode, поля force/agc_val из wmiUT.xml) | `hwd_phy__rx_agc_index_force_mode` RW, `hwf_calib__acquire_hw` R | — |
+| 0x883054 | phy_rx_cal_corr_cfg | конфигурация RX-коррелятора калибровки: бит 1 = cal_mode_corr, [17:2] = cal_corr_freq_mhz*65536/2640 со знаком (UT 0x423 hwd_phy_rx_cal_corr_config, wmiUT.xml) | `hwd_phy__rx_cal_corr_config` RW | — |
+| 0x883058 | phy_rx_cal_corr_length | длина накопления RX-коррелятора cal_corr_length (UT 0x423 hwd_phy_rx_cal_corr_config, wmiUT.xml) | `hwd_phy__rx_cal_corr_config` W | — |
+| 0x88306c | phy_rx_agc_row | [5:0] строка AGC (печатается как agc_row_val); ucode задаёт в rx_mode__configure, rx_flow__measure_snr_select_best временно подменяет на [0x8025dc] (лог-строка get_rssi_and_snr_statistics; по использованию) | `phy__get_88306c_6bit` R, uc:`phy__set_88306c_field` RW, uc:`rx_flow__measure_snr_select_best` RW, uc:`rx_meas__append_sample` R, uc:`rx_meas__capture_frame` R | — |
+| 0x8830ec | phy_rx_meas_8830ec | замер принятого кадра: [4:0] и [22:5] кладутся в запись rx_meas (+0x52, +0x3c), целиком в +0x54; смысл не установлен (по использованию: rx_meas__capture_frame, rx_meas__finish_with_8830ec); на стенде: 0 в простое, под iperf на приёмной стороне скачет до 0x401844c8 — замер приёма, обновляется только при данных (снимки regsnap r1, 2026-09-28); серия: у станции всегда 0x4c0, у AP 0 — зависит от роли (2026-09-29) | uc:`rx_meas__capture_frame` R, uc:`rx_meas__finish_with_8830ec` R | — |
+
+## 0x883100 — hwd_phy, phy, link_lost_diag
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88312c | phy_rx_ina_agc_start | [5:0] стартовая строка AGC ina_agc_start; печатается как AGC_START и agc_row (лог-строки link_lost_diag__dump_phy, hwd_phy_rx_set_agc_start_val_and_gain_array, hw_sysapi_get_rx_energy_data_free_run; UT 0x437) | `hwd_phy_rx_set_agc_start_val_and_gain_array` W, `link_lost_diag__dump_phy` R, `phy__get_88312c_6bit` R, uc:`hwd_phy_rx_set_agc_start_val_and_gain_array_uc` W | — |
+| 0x883138 | phy_rx_agc_max_index | [5:0] максимальный индекс AGC, по нему обрезаются agc_start и шаги массива усиления (лог-строка find_agc_start «greater than %d (MAX index)») | `calib_silent_rssi_sparrow__find_agc_start` R, `hwd_phy__uses_rgf_883100` R | — |
+| 0x883150 | phy_rx_ina_det_mode | режим INA-детектора PHY RX, ina_det_en_e 0..3; в 4.1 импульс 0-0x40-3 (UT 0x411/0x433 hwd_phy_rx_ina_det_mode, wmiUT.xml; 4.1 cf_end__pulse_883150) | `hwd_phy__rx_ina_det_mode` W, `phy__get_rx_ina_det_mode` R, uc:`phy_rx__set_ina_det_mode_uc` W | — |
+| 0x88317c | phy_abif_override_flag | ucode ставит 1 на время подмены регистров ABIF/TOF и восстанавливает сохранённое; смысл бита не установлен (по использованию: abif__save_override_restore); на стенде: 0x10 на обоих узлах во всех режимах (снимки regsnap r1, 2026-09-28) | uc:`abif__save_override_restore` RW | — |
+| 0x8831c0 | phy_rx_agc_steps_a | поля [5:0] и [11:6] шагов AGC; 0x21 в [5:0] = шаги отключены, иначе значения из глобалов 0x800237..0x80023a (UT 0x412 hwd_phy_rx_agc_steps_disable по таблице переходов; hwd_phy__get_883180 проверяет ==0x21) | `hwd_phy__get_883180` R, `hwd_phy__rx_agc_steps_disable` RW, uc:`hwd_phy__set_mode_uc` RW | — |
+| 0x8831c4 | phy_rx_agc_steps_b | второй регистр шагов AGC, то же устройство полей, что 0x8831c0 (UT 0x412 hwd_phy_rx_agc_steps_disable; ucode rf__set_normal_mode) | `hwd_phy__rx_agc_steps_disable` RW, uc:`hwd_phy__set_mode_uc` RW | — |
+| 0x8831cc | phy_rx_ina_agc_gain_array | массив шагов усиления AGC, 4 поля по 6 бит (step0..step3) (лог-строка hwd_phy_rx_set_agc_start_val_and_gain_array «ina_agc_gain_array»; UT 0x437) | `hwd_phy_rx_set_agc_start_val_and_gain_array` W, uc:`hwd_phy_rx_set_agc_start_val_and_gain_array_uc` W | — |
+
+## 0x883500 — hwd_phy
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883580 | phy_rec_base | база рекордера PHY: hwd_phy_recording_get читает 0x8835a4 (phy_rec_last_address, [12:0]) (по использованию: hwd_phy_recording_get) | `hwd_phy_recording_get` A | — |
+| 0x883584 | phy_rx_postdist_dc | бит 9 = postdist_dc_enable, бит 8 = force_dc_set, [3:0]/[7:4] = force_dc_val_i/q (знаковые 4 бита) (UT 0x416/0x419/0x41a по таблице переходов, поля из wmiUT.xml) | `hwd_phy__rx_postdist_dc_enable` RW, `hwd_phy__rx_postdist_force_dc_config` RW, `hwd_phy__rx_postdist_force_dc_set` RW | — |
+| 0x883594 | phy_rec_data_mode | [15:0] rec_data_mode_e рекордера PHY; для режима 0xb ставится бит 15 (UT 0x42b hwd_phy_recording_mode_set, wmiUT.xml) | `hwd_phy__recording_mode_set` RW | — |
+| 0x883598 | phy_rec_trigger_mode | [15:0] rec_trigger_mode_e рекордера PHY, 0x1f заменяется на 0x1e (UT 0x42b hwd_phy_recording_mode_set, wmiUT.xml) | `hwd_phy__recording_mode_set` RW | — |
+| 0x88359c | phy_rec_post_trigger_duration | [15:0] post_trigger_duration рекордера PHY (UT 0x42b hwd_phy_recording_mode_set, wmiUT.xml) | `hwd_phy__recording_mode_set` RW | — |
+| 0x8835a4 | phy_rec_last_address | [12:0] текущий адрес записи рекордера PHY, из него считается start_addr (лог-строка hwd_phy_recording_get; ср. UT hwd_phy_rx_get_rec_last_address) | `hwd_phy_recording_get` R | — |
+
+## 0x883600 — hwd_phy, brp
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x8836c8 | phy_brp_meas_8836c8 | [21:0] замер после BRP, кладётся в 0x801504+4; смысл не установлен (по использованию: brp__program_and_measure); на стенде: меняется от снимка к снимку (0x120..0x13d44), растёт под нагрузкой — живой замер приёма (снимки regsnap r1, 2026-09-28); серия: у AP 0x108..0x292, у станции 0x6644..0x9150 — зависит от роли/приёма (2026-09-29) | uc:`brp__program_and_measure` R | — |
+| 0x8836e4 | phy_rx_cal_corr_result_i | результат RX-коррелятора, составляющая I (UT 0x424 hwd_phy_rx_cal_corr rx_correlator_result_rgf_i, wmiUT.xml; hwd_phy__rx_cal_corr) | `hwd_phy__rx_cal_corr` R | — |
+| 0x8836e8 | phy_rx_cal_corr_result_q | результат RX-коррелятора, составляющая Q (UT 0x424 hwd_phy_rx_cal_corr rx_correlator_result_rgf_q, wmiUT.xml) | `hwd_phy__rx_cal_corr` R | — |
+| 0x8836ec | phy_rx_cal_corr_done | бит 0 = измерение коррелятора готово, опрос до 200000 итераций, иначе фатал 0x1559 (по использованию: hwd_phy__rx_cal_corr) | `hwd_phy__rx_cal_corr` R | — |
+
+## 0x883700 — phy, link_lost_diag, rx_meas
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883700 | phy_rx_ina_rssi_adc_db | [5:0] ina_rssi_adc_db — RSSI на входе INA в дБ АЦП; по нему строится гистограмма silent RSSI (лог-строки link_lost_diag__dump_phy и phy_stats__dump «INA_RSSI_ADC_DB») | `link_lost_diag__dump_phy` R, `phy__get_ina_rssi_adc_db` R, `silent_rssi__hist_window_index` R | — |
+| 0x883708 | phy_rx_ina_rssi_adc_db_sfd_locked | [5:0] ina_rssi_adc_db_sfd_locked — то же, защёлкнутое по SFD (лог-строки link_lost_diag__dump_phy и phy_stats__dump) | `IF_GAIN__GAIN` R, `link_lost_diag__dump_phy` R, `phy__get_ina_rssi_adc_db_sfd_locked` R | — |
+| 0x8837b0 | phy_rx_status_8837b0 | бит 1 при режиме r40[2:0]==2 запускает выбор лучшего сектора по SNR; смысл не установлен (по использованию: rx_flow__run); на стенде: 2, под iperf кратко 1 — состояние приёмника (снимки regsnap r1, 2026-09-28) | uc:`rx_flow__run` R | — |
+| 0x8837d8 | phy_rx_meas_8837d8 | [15:0] знаковое, кладётся в запись rx_meas +0x44; смысл не установлен (по использованию: rx_meas__capture_frame); на стенде: 16-битное значение, меняется постоянно (0x1e1..0xff3c) — живой замер (снимки regsnap r1, 2026-09-28) | uc:`rx_meas__capture_frame` R | — |
+| 0x8837dc | phy_rx_meas_8837dc | [15:0] знаковое, кладётся в запись rx_meas +0x40; смысл не установлен (по использованию: rx_meas__capture_frame); на стенде: 16-битное значение, меняется постоянно — живой замер (пара к 0x8837d8) (снимки regsnap r1, 2026-09-28) | uc:`rx_meas__capture_frame` R | — |
+| 0x8837f4 | phy_brp_meas_8837f4 | [6:0] замер после BRP, в байт 0x801505; смысл не установлен (по использованию: brp__program_and_measure); на стенде: 0xd..0x33, в простое и после отключения держится 0x10 (снимки regsnap r1, 2026-09-28) | uc:`brp__program_and_measure` R | — |
+
+## 0x883800 — phy, brp, link_lost_diag
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883800 | phy_brp_meas_883800 | [4:0] замер после BRP, в байт 0x801506; смысл не установлен (по использованию: brp__program_and_measure); на стенде: 0..0x19, растёт под нагрузкой (снимки regsnap r1, 2026-09-28) | uc:`brp__program_and_measure` R | — |
+| 0x883830 | phy_rx_signal_gain_adc_db | [6:0] phy_rx_signal_gain_adc_db, [20:14] phy_rx_signal_gain_adc_db_sfd_locked (лог-строки link_lost_diag__dump_phy и phy_stats__dump «SIGNAL_GAIN_ADC_DB») | `link_lost_diag__dump_phy` R, `phy__get_signal_gain_adc_db` R, `phy__get_signal_gain_adc_db_sfd_locked` R, uc:`phy__read_signal_gain_adc_db` R, uc:`phy__read_signal_gain_adc_db_sfd_locked` R, uc:`rx_flow__measure_snr_select_best` R | — |
+| 0x883848 | phy_dbg_regs_883844 | слово окна отладочных регистров PHY, начинающегося с 0x883844; ucode копирует n слов в отладочный снимок (по использованию: phy__read_regs_883844) | uc:`phy__read_regs_883844` R | — |
+| 0x8838a8 | phy_rec_ram_mask | [2:0] маска банков ОЗУ рекордера PHY 1/3/7 по num_of_rams (UT 0x42b hwd_phy_recording_mode_set, wmiUT.xml) | `hwd_phy__recording_mode_set` RW | — |
+
+## 0x883900 — hwd_phy, phy, phy_stats
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883900 | phy_rx_stats_base | база счётчиков приёма PHY: hwd_phy__rx_statistics_clear пишет 1 в 0x883960 (phy_rx_statistics_clear) (по использованию: hwd_phy__rx_statistics_clear) | `hwd_phy__rx_statistics_clear` A | — |
+| 0x88395c | phy_rx_statistics_lock | запись 1 защёлкивает счётчики приёма перед чтением (UT 0x420 hwd_phy_rx_statistics_lock по таблице переходов, wmiUT.xml) | `hwd_phy__rx_statistics_lock` W, uc:`phy_stats__clear_counters_88395c` W | — |
+| 0x883960 | phy_rx_statistics_clear | запись 1 сбрасывает счётчики приёма; fw запоминает момент сброса в 0x800524 (UT 0x421 hwd_phy_rx_statistics_clear по таблице переходов, wmiUT.xml) | `hwd_phy__rx_statistics_clear` W, uc:`phy_stats__clear_counters_883960` W | — |
+| 0x883964 | phy_ina_sync_counter_dp | счётчик INA sync, SC/DP (UT 0x422 hwd_phy_rx_get_statistics поле +0x00, wmiUT.xml; 6.2/docs/MISC-FW.md «Счётчики приёма PHY») | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x883968 | phy_sfd_sync_counter_sc | счётчик SFD sync, SC (UT 0x422 поле +0x04, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x88396c | phy_crc_ok_counter_sc | счётчик заголовков с верным CRC, SC (UT 0x422 поле +0x0c, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x883970 | phy_ber_last_zero_counter_sc | счётчик BER_LAST_ZERO, SC (UT 0x422 поле +0x14, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x883974 | phy_sfd_timeout_counter_dp | счётчик SFD timeout, SC/DP (UT 0x422 поле +0x08, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x883978 | phy_crc_error_counter_sc | счётчик ошибок CRC заголовка, SC; печатается как HEADER_CRC_ERROR_COUNTER_SC и LINK_STATS PHY_ERROR_DP (лог-строки phy_stats__dump, link_stats__phy_counters; UT 0x422 поле +0x10) | `link_stats__phy_counters` R, `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x88397c | phy_ber_last_non_zero_counter_sc | счётчик BER_LAST_NON_ZERO, SC (лог-строка phy_stats__dump; UT 0x422 поле +0x18) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x883980 | phy_rx_counter_sc_ext0 | дополнительный счётчик приёма SC 0 из 8 подряд после основных; смысл не установлен (по использованию: phy_stats__accumulate_to_shared через hwd_phy__uses_rgf_883800_929af4); на стенде: SC — 0 без данных, под iperf растёт очень быстро (переполняется за секунды) только на приёмной стороне; после отключения обнуляется на AP (снимки regsnap r1, 2026-09-28); серия: без данных 0 в простое во всех опытах; растёт только при приёме данных (iperf) (2026-09-29) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x883984 | phy_rx_counter_sc_ext1 | дополнительный счётчик приёма SC 1 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: почти всегда 0, под iperf 0..2 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x883988 | phy_rx_counter_sc_ext2 | дополнительный счётчик приёма SC 2 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: растёт вместе с 0x883980, примерно вдвое медленнее (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x88398c | phy_rx_counter_sc_ext3 | дополнительный счётчик приёма SC 3 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: почти всегда 0, под iperf 0..1 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x883990 | phy_rx_counter_sc_ext4 | дополнительный счётчик приёма SC 4 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x883994 | phy_rx_counter_sc_ext5 | дополнительный счётчик приёма SC 5 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x883998 | phy_rx_counter_sc_ext6 | дополнительный счётчик приёма SC 6 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x88399c | phy_rx_counter_sc_ext7 | дополнительный счётчик приёма SC 7 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839a0 | phy_ina_sync_counter_cp | счётчик INA sync, Control PHY (UT 0x422 поле +0x1c, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x8839a4 | phy_sfd_sync_counter_cp | счётчик SFD sync, CP (UT 0x422 поле +0x20, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x8839a8 | phy_crc_ok_counter_cp | счётчик заголовков с верным CRC, CP (UT 0x422 поле +0x28, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x8839ac | phy_ber_last_zero_counter_cp | счётчик BER_LAST_ZERO, CP (UT 0x422 поле +0x30, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x8839b0 | phy_sfd_timeout_counter_cp | счётчик SFD timeout, CP (UT 0x422 поле +0x24, wmiUT.xml) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x8839b4 | phy_crc_error_counter_cp | счётчик ошибок CRC заголовка, CP; печатается как HEADER_CRC_ERROR_COUNTER_CP и LINK_STATS PHY_ERROR_CP (лог-строки phy_stats__dump, link_stats__phy_counters; UT 0x422 поле +0x2c) | `link_stats__phy_counters` R, `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x8839b8 | phy_ber_last_non_zero_counter_cp | счётчик BER_LAST_NON_ZERO, CP (лог-строка phy_stats__dump; UT 0x422 поле +0x34) | `phy__read_rx_counters` R, uc:`hwd_phy__uses_rgf_883800_929b94` R | — |
+| 0x8839bc | phy_rx_counter_cp_ext0 | дополнительный счётчик приёма CP 0 из 8 подряд после основных; смысл не установлен (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: CP — растёт на станции уже в простое (маяки CP), под iperf быстрее; пара к SC 0x883980 (снимки regsnap r1, 2026-09-28); серия: растёт только у станции (приём CP-кадров, маяков), у AP 0 — зависит от роли (2026-09-29) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839c0 | phy_rx_counter_cp_ext1 | дополнительный счётчик приёма CP 1 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839c4 | phy_rx_counter_cp_ext2 | дополнительный счётчик приёма CP 2 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: растёт вместе с 0x8839bc, примерно вдвое медленнее (пара к SC 0x883988) (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839c8 | phy_rx_counter_cp_ext3 | дополнительный счётчик приёма CP 3 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839cc | phy_rx_counter_cp_ext4 | дополнительный счётчик приёма CP 4 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839d0 | phy_rx_counter_cp_ext5 | дополнительный счётчик приёма CP 5 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839d4 | phy_rx_counter_cp_ext6 | дополнительный счётчик приёма CP 6 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+| 0x8839d8 | phy_rx_counter_cp_ext7 | дополнительный счётчик приёма CP 7 (по использованию: hwd_phy__uses_rgf_883800_929af4); на стенде: всегда 0 (снимки regsnap r1, 2026-09-28) | uc:`hwd_phy__uses_rgf_883800_929af4` R | — |
+
+## 0x883a00 — hwd_phy, link_lost_diag, brp
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883a68 | phy_apu_in_1 | вход APU: [15:0] phy_apu_in_i1, [31:16] phy_apu_in_q1 (UT 0x42a hwd_phy_rx_apu_calc по таблице переходов, wmiUT.xml) | `hwd_phy__rx_apu_calc` RW | — |
+| 0x883a6c | phy_apu_in_2 | вход APU: [15:0] phy_apu_in_i2, [31:16] phy_apu_in_q2 (UT 0x42a hwd_phy_rx_apu_calc, wmiUT.xml) | `hwd_phy__rx_apu_calc` RW | — |
+| 0x883a70 | phy_apu_in_phase | вход APU phy_apu_in_phase, 16 бит (UT 0x42a hwd_phy_rx_apu_calc, wmiUT.xml) | `hwd_phy__rx_apu_calc` W | — |
+| 0x883a74 | phy_apu_opcode | код операции APU phy_apu_opcode (UT 0x42a hwd_phy_rx_apu_calc, wmiUT.xml) | `hwd_phy__rx_apu_calc` W | — |
+| 0x883a78 | phy_apu_out | выход APU: [15:0] phy_apu_out_i, [31:16] phy_apu_out_q (UT 0x42a hwd_phy_rx_apu_calc, wmiUT.xml) | `hwd_phy__rx_apu_calc` R | — |
+| 0x883a7c | phy_apu_div_out_man | выход делителя APU, мантисса phy_apu_div_out_man (UT 0x42a hwd_phy_rx_apu_calc, wmiUT.xml) | `hwd_phy__rx_apu_calc` R | — |
+| 0x883a80 | phy_apu_div_out_exp | [3:0] выход делителя APU, порядок phy_apu_div_out_exp (UT 0x42a hwd_phy_rx_apu_calc, wmiUT.xml) | `hwd_phy__rx_apu_calc` R | — |
+| 0x883a84 | phy_rx_ldpc_iter | итерации LDPC последнего принятого пакета: [7:0] заголовок, [29:8] всего по данным (лог-строка link_lost_diag__dump_phy «LDPC iter header / data_total») | `link_lost_diag__dump_phy` R | — |
+| 0x883aa4 | phy_brp_meas_883aa4 | [5:0] замер после BRP, в байт 0x801504; смысл не установлен (по использованию: brp__program_and_measure); на стенде: 0..0xbef, растёт под нагрузкой (снимки regsnap r1, 2026-09-28) | uc:`brp__program_and_measure` R | — |
+| 0x883aec | phy_rx_snr_883aec | [17:9] знаковое 9 бит, (x+2)>>2 записывается в 0x802204+8 при выборе лучшего сектора; вероятно SNR (по использованию: rx_flow__measure_snr_select_best) | uc:`rx_flow__measure_snr_select_best` R | — |
+
+## 0x883b00 — phy_rx, phy, hwd_phy
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883b00 | phy_rx_base_b00 | база: uc brp_initiator_brp_transaction_flow правит поле [25:24] в 0x883b78 (phy_brp_883b78) (по использованию: uc brp_initiator_brp_transaction_flow) | uc:`brp_initiator_brp_transaction_flow` A | — |
+| 0x883b3c | phy_rx_channel_cfg | зависит от канала: 0x6b000101/0x68000101/0x65000101/0x62000101 для каналов 1..4 (по использованию: phy__program_channel_regs, UT 0x414) | `phy__program_channel_regs` W | — |
+| 0x883b78 | phy_brp_883b78 | [25:24] двухбитное поле, задаётся на время BRP-обмена инициатора и сбрасывается; смысл не установлен (по использованию: brp_initiator_brp_transaction_flow); на стенде: константа 0x324a на обоих узлах (снимки regsnap r1, 2026-09-28) | uc:`brp_initiator_brp_transaction_flow` RW | — |
+| 0x883be4 | phy_rx_rssi_adc | [9:0] знаковое rssi_adc свободного хода (лог-строки hw_sysapi_get_rx_energy_data_free_run, get_rssi_and_snr_statistics) | `phy_rx__read_rssi_adc` R | — |
+| 0x883bec | phy_rx_rssi_adc_locked | [9:0] знаковое rssi_adc защёлкнутое (при use_rssi_locked); [20:10] знаковое 11 бит = rssi_raw_value в discovery_handle_probe_resp (лог-строки get_rssi_and_snr_statistics, discovery_handle_probe_resp) | `hwd_phy__get_883b80` R, `phy_rx__read_rssi_adc_locked` R | — |
+
+## 0x883d00 — hwd_phy
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883d60 | phy_dbg_clk_gate | бит 0 = 1 выключает отладочный такт PHY (пишется инверсия enable); нужен для чтения BRP RAM и рекордера (лог-строка «BUG_5661_WA: hwd_phy_dbg_clk_enable»; UT 0x405/0x434) | `hwd_phy__dbg_clk_enable_get` R, `hwd_phy_dbg_clk_enable` RW | — |
+
+## 0x883f00 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x883f40 | phy_brp_ram_ctl | бит 0 = доступ к BRP RAM вкл., бит 2 сбрасывается перед чтением (по использованию: hwd_phy_rx_read_and_parse_brp_ram, лог-строка «hwd_phy_rx_read_and_parse_brp_ram») | `hwd_phy_rx_read_and_parse_brp_ram` RW | — |
+| 0x883f64 | phy_brp_ram_data | окно данных BRP RAM, 8 слов 0x883f64..0x883f80, оценка канала (по использованию: hwd_phy_rx_read_and_parse_brp_ram) | `hwd_phy_rx_read_and_parse_brp_ram` R | — |
+| 0x883f84 | phy_brp_ram_addr | [7:0] адрес строки BRP RAM, бит 8 = строб чтения (по использованию: hwd_phy_rx_read_and_parse_brp_ram) | `hwd_phy_rx_read_and_parse_brp_ram` RW | — |
+
+## 0x884000 — hwd_phy, hwf_calib, brp
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x884008 | phy_tx_en | бит 0 = разрешение TX PHY (UT 0x406 hwd_phy_rgf_tx_en по таблице переходов); play_buffer_start ставит, stop снимает; ucode rf__set_normal_mode (wmiUT.xml, по использованию) | `hwd_phy__tx_enable` RW, `hwd_phy__tx_play_buffer_start` RW, `hwd_phy__tx_play_buffer_stop` RW, `hwf_calib__acquire_hw` R, uc:`hwd_phy__uses_rgf_884000` RW | — |
+| 0x88400c | phy_tx_self_silence | phy_tx_silence_duration — пауза между кадрами self transmit (UT 0x407 hwd_phy_tx_self_transmit, wmiUT.xml) | `hwd_phy__tx_self_transmit` RW | — |
+| 0x884024 | phy_tx_predist_iq | TX IQ-предыскажение: поля [9:0] и [25:16]; выключение пишет 0x10000000 (UT 0x40d hwd_phy_tx_predist_iq_config, wmiUT.xml) | `hwd_phy__tx_predist_iq_config` RW | — |
+| 0x884028 | phy_tx_swap_iq | бит 0 инверсия I, бит 1 инверсия Q на передаче; 3 = g_default_tx_swap_iq (лог-строки hwd_phy_get_tx_swap_iq, hwd_PHY_STORE_TXRX_SWAP_IQ; UT 0x431 hwd_phy_set_tx_swap_iq) | `hwd_PHY_STORE_TXRX_SWAP_IQ` R, `hwd_phy__set_tx_swap_iq` RW, `hwd_phy_get_tx_swap_iq` R | — |
+| 0x884054 | phy_tx_self_nframes | [15:0] nFrames для self transmit; 0xffff = бесконечно, ожидание завершения тогда запрещено (UT 0x407/0x408, wmiUT.xml) | `hwd_phy__tx_self_transmit` RW, `hwd_phy__tx_self_transmit_wait_completion` R | — |
+| 0x884058 | phy_tx_self_start | запись 1 запускает self transmit (UT 0x407 hwd_phy_tx_self_transmit) | `hwd_phy__tx_self_transmit` W | — |
+| 0x88405c | phy_tx_test_88405c | UT TEST_TRIAL_1 пишет туда аргумент, другая UT-ветка константу 0x55443311; смысл не установлен (по использованию: UT_HW_FLOWS_OPERATIONAL_cmd_handler); на стенде: 0xabcdef01 — тестовый шаблон, константа на обоих узлах (снимки regsnap r1, 2026-09-28) | `UT_HW_FLOWS_OPERATIONAL_cmd_handler` W | — |
+| 0x884060 | phy_tx_brp_884060 | ucode обнуляет перед отправкой BRP-кадра (инициатор и ответчик); смысл не установлен (по использованию: brp__set_phy_884060); на стенде: 0 (снимки regsnap r1, 2026-09-28); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | uc:`brp__set_phy_884060` W | — |
+| 0x884064 | phy_tx_singen_transmit | запись start_stop_val: вкл/выкл передачи синус-генератора (UT 0x40a hwd_phy_tx_singen_transmit, wmiUT.xml) | `hwd_phy__tx_singen_transmit` W | — |
+| 0x884068 | phy_tx_singen_config | tx_singen_config (UT 0x409 hwd_phy_tx_singen_config, wmiUT.xml) | `hwd_phy__tx_singen_config` W | — |
+| 0x88406c | phy_tx_singen_freq | [15:0] tx_singen_freq_a, [31:16] tx_singen_freq_b, каждое f_МГц*65536/2640 со знаком (UT 0x409 hwd_phy_tx_singen_config, wmiUT.xml) | `hwd_phy__tx_singen_config` RW | — |
+| 0x884070 | phy_tx_ctrl_884070 | [1:0] управление TX; калибровка ставит 1, hwf_calib__release_hw восстанавливает сохранённое (по использованию: hwd_phy__tx_ctrl_884070, hwf_calib__acquire_hw) | `hwd_phy__tx_ctrl_884070` W, `hwf_calib__acquire_hw` R | — |
+| 0x884074 | phy_tx_self_plcp | [4:0] phy_tx_plcp_mcs, [22:5] phy_tx_plcp_length для self transmit (UT 0x407 hwd_phy_tx_self_transmit, wmiUT.xml) | `hwd_phy__tx_self_transmit` RW | — |
+| 0x8840ec | phy_tx_self_busy | [21:0] ненулевое, пока идёт self transmit; ждётся нуль (UT 0x408 hwd_phy_tx_self_transmit_wait_completion; hwd_phy__tx_self_transmit_wait_completion) | `hwd_phy__tx_self_transmit_wait_completion` R | — |
+| 0x8840f0 | phy_tx_self_remaining | [15:0] ненулевое, пока идёт self transmit, вероятно остаток кадров; ждётся нуль (UT 0x408; hwd_phy__tx_self_transmit_wait_completion) | `hwd_phy__tx_self_transmit_wait_completion` R | — |
+
+## 0x884100 — hwd_phy, phy
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x884130 | phy_tx_man_atten_enable | tx_man_atten_enable, бит 0 сохраняется калибровкой (UT 0x40e hwd_phy_tx_predist_atten_man_config, wmiUT.xml) | `hwd_phy__get_884100` R, `hwd_phy__tx_predist_atten_man_config` W | — |
+| 0x884134 | phy_tx_atten_val | [7:0] tx_atten_val_i, [15:8] tx_atten_val_q (UT 0x40e hwd_phy_tx_predist_atten_man_config, wmiUT.xml; if_gain читает) | `hwd_phy__get_884100` R, `hwd_phy__tx_predist_atten_man_config` RW, `if_gain` R | — |
+| 0x884138 | phy_tx_predist_dc | [9:0] tx_dc_val_i, [25:16] tx_dc_val_q (UT 0x40f hwd_phy_tx_predist_dc_config, wmiUT.xml) | `hwd_phy__tx_predist_dc_config` RW | — |
+| 0x88413c | phy_tx_predist_dc_bypass | 1 при tx_dc_en=0, 0 при включённой DC-коррекции TX (UT 0x40f hwd_phy_tx_predist_dc_config, по использованию) | `hwd_phy__tx_predist_dc_config` W | — |
+| 0x884140 | phy_tx_play_buffer_en | бит 0 = разрешение проигрывания буфера TX, ставит start и снимает stop (UT 0x40b/0x40c hwd_phy_tx_play_buffer_start/stop) | `hwd_phy__tx_play_buffer_start` RW, `hwd_phy__tx_play_buffer_stop` RW | — |
+| 0x884144 | phy_tx_play_buffer_go | бит 0 = пуск проигрывания (UT 0x40b hwd_phy_tx_play_buffer_start) | `hwd_phy__tx_play_buffer_start` RW | — |
+| 0x884148 | phy_tx_play_buffer_stop | запись 1 останавливает проигрывание (UT 0x40c hwd_phy_tx_play_buffer_stop) | `hwd_phy__tx_play_buffer_stop` RW | — |
+| 0x88414c | phy_tx_play_buffer_mode | бит 0 = play_buffer_mode (UT 0x40b hwd_phy_tx_play_buffer_start, wmiUT.xml) | `hwd_phy__tx_play_buffer_start` RW | — |
+| 0x884150 | phy_tx_play_buffer_start_addr | [12:0] начальный адрес буфера, при пуске обнуляется (UT 0x40b, по использованию) | `hwd_phy__tx_play_buffer_start` RW | — |
+| 0x884154 | phy_tx_play_buffer_last_addr | [12:0] play_buffer_last_address, не больше 0x17ff (UT 0x40b hwd_phy_tx_play_buffer_start, wmiUT.xml) | `hwd_phy__tx_play_buffer_start` RW | — |
+| 0x884158 | phy_tx_play_buffer_loops | play_buffer_num_of_loops (UT 0x40b hwd_phy_tx_play_buffer_start, wmiUT.xml) | `hwd_phy__tx_play_buffer_start` RW | — |
+| 0x88416c | phy_tx_fir_coef | массив из 84 регистров (0x88416c..0x8842b8), грузится полусловами из таблицы 0x803838 по вызову из power_mngr__check_mode. Таблица — 4 симметричных набора по 21 знаковому 10-битному коэффициенту (0x3f3 0x3f3 0x9 … 0x172 … 0x3f3), то есть коэффициенты КИХ-фильтра; вероятно, формирующего TX (соседи 0x884130.. — регистры TX). В 4.1 (rgf_reg_88416c из rf__apply_tx_power) — две такие таблицы на выбор по аргументу (по использованию: phy__load_88416c_table; данные fw_data 0x803838) | `phy__load_88416c_table` W | — |
+
+## 0x884800 — uc_sysassert
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x884804 | uc_assert_code | ucode пишет сюда код своего ассерта, сдвинутый на 4 (по использованию: uc_sysassert__write_code; 4.1 set_reg_884804) | uc:`uc_sysassert__write_code` W | — |
+
+## 0x885000 — hwd_phy
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x885000 | phy_sar_meas_ctl | управление онлайн- и SAR-измерениями: бит 0 = вкл., бит 6 = пуск SAR-замера, бит 7 ставит настройка SAR-замера (UT 0x425), выше поля en_sel/phasor_bypass/in_sel/порогов (UT 0x41b/0x41c/0x425/0x426/0x435, wmiUT.xml) | `hwd_phy__online_measurement_config` W, `hwd_phy__online_measurement_start` RW, `hwd_phy__online_measurement_stop` RW, `hwd_phy__rx_sar_cal_measurement_config` RW, `hwd_phy__rx_sar_measurement_start` RW | — |
+| 0x885004 | phy_sar_meas_status | бит 12 = онлайн-измерение готово (UT 0x41d/0x436), бит 13 = SAR-замер готов (UT 0x427, опрос с фаталом 0x1333); при настройке пишется 1 (wmiUT.xml, по использованию) | `hwd_phy__online_measurement_completed` R, `hwd_phy__online_measurement_config` W, `hwd_phy__online_sar_measurement_valid` R, `hwd_phy__rx_sar_measurement_completed` R | — |
+| 0x885008 | phy_sar_meas_length_lo | длина измерения, младшее слово (онлайн: 1<<sar_cal_length_log2) (UT 0x41b/0x425 sar_cal_length_lo, wmiUT.xml) | `hwd_phy__online_measurement_config` W, `hwd_phy__rx_sar_cal_measurement_config` W | — |
+| 0x88500c | phy_sar_meas_length_hi | длина измерения, старшее слово (UT 0x425 sar_cal_length_hi, wmiUT.xml) | `hwd_phy__online_measurement_config` W, `hwd_phy__rx_sar_cal_measurement_config` W | — |
+
+## 0x885100 — hwd_phy, phy
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x885110 | phy_online_dc_meas | таблица по sar_index (шаг 4): [26:16] sar_dc_i, [10:0] sar_dc_q, 11 бит со смещением (UT 0x41e hwd_phy_online_dc_measurement_read, wmiUT.xml) | `hwd_phy__online_dc_measurement_read` R[] | — |
+| 0x885130 | phy_online_gain_meas | таблица по sar_index (шаг 4): [26:16] sar_gain_i, [10:0] sar_gain_q (UT 0x41f hwd_phy_online_gain_measurement_read, wmiUT.xml) | `hwd_phy__online_gain_measurement_read` R[] | — |
+| 0x885178 | phy_ram_read_sel | [2:0] селектор; на время чтения BRP RAM/оценки канала ставится 3, потом восстанавливается (по использованию: hwd_phy_rx_read_and_parse_brp_ram, channel_estimation_cmd_start) | `phy__get_885178_3bit` R, `phy__set_885178_3bit` RW | — |
+| 0x8851a0 | phy_rx_postdist_dc_per_sar | бит 0 = postdist_dc_per_sar_mode (UT 0x417 hwd_phy_rx_postdist_dc_per_sar_mode по таблице переходов, wmiUT.xml) | `hwd_phy__rx_postdist_dc_per_sar_mode` RW | — |
+
+## 0x886000 — mac, mac_parser, bti
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886000 | prs_rgf_base | база парсера MAC: mac_filter__write_one пишет через неё 0x886280 (prs_tbl_a_data0, st.as смещение 0xa0); uc bti__bi2_event_step снимает бит 31 в 0x886024 (prs_own_addr_hi, адрес недействителен) (по использованию: mac_filter__write_one, uc bti__bi2_event_step) | `mac_filter__write_one` A, uc:`bti__bi2_event_step` A | — |
+| 0x886018 | prs_mcast_addr_lo | второй (multicast) MAC-адрес фильтра приёма, байты 0..3; ucode (ucode_cmd_0x00_handler) копирует пару 0x886018/1c к себе в gp-область (по использованию: mac_parser__set_886000_8dfb84 из mac__apply_multicast_addr, лог-строка «!!! Multicast MAC address is now applied !!!») | `mac_parser__set_886000_8dfb84` W, uc:`ucode_cmd_0x00_handler` R | — |
+| 0x88601c | prs_mcast_addr_hi | multicast MAC-адрес, байты 4..5 в битах 15:0, бит 31 = запись действительна (по использованию: mac_parser__set_886000_8dfb84) | `mac_parser__set_886000_8dfb84` W, uc:`ucode_cmd_0x00_handler` R | — |
+| 0x886020 | prs_own_addr_lo | собственный MAC-адрес фильтра приёма, байты 0..3 (по использованию: mac_parser__set_886000_8dfb68 из l2mgr__apply_mac_address и rm_ch_switch__program_mac) | `mac_parser__set_886000_8dfb68` W | — |
+| 0x886024 | prs_own_addr_hi | собственный MAC, байты 4..5 в битах 15:0, бит 31 = адрес действителен; ucode взводит бит 31 в bi_manager_step_a и снимает в bti__bi2_event_step (по использованию: mac_parser__set_886000_8dfb68, bi_manager_step_a, bti__bi2_event_step) | `mac_parser__set_886000_8dfb68` W, uc:`bi_manager_step_a` RW, uc:`bti__bi2_event_step` RW | — |
+| 0x886028 | mac_irq_ctl_886028 | управление источниками прерывания MAC (вектор 12): при подъёме MAC пишется 0xffffff88, в обработчике isr_mac_886028_fw пишется -1; маска это или W1C-квитирование, не установлено, в модель RGF_ICR не ложится — 0x886018..24 заняты адресами (по использованию: isr_mac_886028_fw, mac_bringup__ack_and_unmask_irqs); на стенде: 0xffffffff во всех режимах (снимки regsnap r1, 2026-09-28) | `isr_mac_886028_fw` W, `mac_bringup__ack_and_unmask_irqs` W | — |
+| 0x88602c | rx_key_tbl_ctrl | окно косвенной записи таблицы ключей приёма: 0x40000000 = пуск (по общей схеме окон бит 29 = занято) (по использованию: add_key) | `add_key` W | — |
+| 0x886030 | rx_key_tbl_cmd | команда окна ключей: бит 31 = запись (по использованию: add_key) | `add_key` W | — |
+| 0x886034 | rx_key_tbl_addr | индекс записи ключа (номер ключа или соединения, его же add_key печатает и ставит битом в 0x8860d8) (по использованию: add_key, лог-строка «In the add_key function. KEY[0]ADDRESS: %x») | `add_key` W | — |
+| 0x886038 | rx_key_tbl_data0 | ключ шифрования, слово 0 из 4 (128 бит, 0x886038..44) (по использованию: add_key) | `add_key` W | — |
+| 0x88603c | rx_key_tbl_data1 | ключ, слово 1 (по использованию: add_key) | `add_key` W | — |
+| 0x886040 | rx_key_tbl_data2 | ключ, слово 2 (по использованию: add_key) | `add_key` W | — |
+| 0x886044 | rx_key_tbl_data3 | ключ, слово 3 (по использованию: add_key) | `add_key` W | — |
+| 0x88605c | tx_key_0 | ключ шифрования передачи, слово 0 из 4 (128 бит, 0x88605c..68); ucode грузит сюда 16 байт записи соседа 0x801104+0x50·cid+0x38, если стоит флаг ключа +0x4b (его взводит и снимает ucode_cmd_0x18); (по использованию: mac__load_tx_key) | uc:`mac__load_tx_key` W | — |
+| 0x886060 | tx_key_1 | ключ передачи, слово 1 (по использованию: mac__load_tx_key) | uc:`mac__load_tx_key` W | — |
+| 0x886064 | tx_key_2 | ключ передачи, слово 2 (по использованию: mac__load_tx_key) | uc:`mac__load_tx_key` W | — |
+| 0x886068 | tx_key_3 | ключ передачи, слово 3 (по использованию: mac__load_tx_key) | uc:`mac__load_tx_key` W | — |
+| 0x88606c | tx_crypto_ctl | перед передачей пишется 0x102, обычно сразу после загрузки ключа в 0x88605c..68 (TXOP, широковещательная передача, разрешение MTP) (по использованию: tx_flow__arm_88606c_0x102) | uc:`tx_flow__arm_88606c_0x102` W | — |
+| 0x88607c | MAC_MAC_RGF_PMC_GENERAL_0 | управление записью PMC: 15:0 delimiter, 16 rec_en_set, 17 rec_en_clr, 18 rec_active, 24 rx_en, 25 tx_en, 26 ucode_event_en, 27 idle_sm_en, 28 fw_udef_en, 29 ucpu_udef_en; handle_pmc_triggers ставит бит 16 («start recording at trigger»), pmc__stop_recording снимает биты 31:24 и после паузы ставит бит 17 («stop recording») (пак 11ad PmcRegistersAccessor.cpp, docs/MAC-COMMANDS.md, лог-строки handle_pmc_triggers) | uc:`handle_pmc_triggers` RW, uc:`pmc__stop_recording` RW | — |
+| 0x886080 | MAC_MAC_RGF_PMC_GENERAL_1 | сам регистр — PMC GENERAL_1: бит 0 intf_type, бит 2 dma_if_en, биты 16..27 pkt_treshhold (debug-tools PmcRegistersAccessor). Как база: UT_HW_FLOWS_OPERATIONAL_cmd_handler обращается к 0x8860d4 (+0x54), поле [7:1] и шаблон 0x22446688 (debug-tools PmcRegistersAccessor.cpp; по использованию: UT_HW_FLOWS_OPERATIONAL_cmd_handler) | `UT_HW_FLOWS_OPERATIONAL_cmd_handler` A | — |
+| 0x8860d4 | mac_test_reg_8860d4 | тестовый регистр UT: поле бит 7:1 задаёт UT_HW_FLOWS_SUBTYPE_TEST_TRIAL_1 (значение < 0x80), подтип 0 на FPGA пишет шаблон 0x22446688; в паке 11ad рядом лежит PMC_IDLE_SM_0 (0x8860d0), так что возможно PMC_IDLE_SM_1 (по использованию: UT_HW_FLOWS_OPERATIONAL_cmd_handler) | `UT_HW_FLOWS_OPERATIONAL_cmd_handler` RW | — |
+| 0x8860d8 | rx_key_valid_bitmap | битовая карта действительных ключей: add_key ставит бит с номером индекса ключа (по использованию: add_key) | `add_key` RW | — |
+| 0x8860fc | mac_mode_map_0 | карта режимов MAC-подблоков: режим 0..4 во всех 8 полубайтах; то же пишут в 0x886100..0x886110 (по использованию: hwd_mac__set_power_mode_map из hw_modes__apply_power_mode, uc mac__fill_mode_nibbles из hw__bring_up_phy_dma; аналоги hwd_dma__set_mode_map 0x880be8 и hwd_pcie__set_mode_map) | `hwd_mac__set_power_mode_map` W, uc:`mac__fill_mode_nibbles` W | — |
+
+## 0x886100 — hwd_mac, mac
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886100 | mac_mode_map_1 | карта режимов, 8 полубайтов (по использованию: hwd_mac__set_power_mode_map, mac__fill_mode_nibbles) | `hwd_mac__set_power_mode_map` W, uc:`mac__fill_mode_nibbles` W | — |
+| 0x886104 | mac_mode_map_2 | карта режимов, 5 полубайтов (биты 19:0) (по использованию: hwd_mac__set_power_mode_map, mac__fill_mode_nibbles) | `hwd_mac__set_power_mode_map` W, uc:`mac__fill_mode_nibbles` W | — |
+| 0x886108 | mac_mode_map_3 | карта режимов, 8 полубайтов (по использованию: hwd_mac__set_power_mode_map, mac__fill_mode_nibbles) | `hwd_mac__set_power_mode_map` W, uc:`mac__fill_mode_nibbles` W | — |
+| 0x88610c | mac_mode_map_4 | карта режимов, 8 полубайтов (по использованию: hwd_mac__set_power_mode_map, mac__fill_mode_nibbles) | `hwd_mac__set_power_mode_map` W, uc:`mac__fill_mode_nibbles` W | — |
+| 0x886110 | mac_mode_map_5 | карта режимов, 6 полубайтов (биты 23:0) (по использованию: hwd_mac__set_power_mode_map, mac__fill_mode_nibbles) | `hwd_mac__set_power_mode_map` W, uc:`mac__fill_mode_nibbles` W | — |
+
+## 0x886200 — mac_parser, mac_filter, hwd_mac
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886200 | MAC_PRS_CTRL_0 | управление парсером приёма: бит 16 pmc_post_dec_mode (пак 11ad); бит 11 = 0/1 ставят калибровки (calib_corr__estimate_and_apply_rx_gain, hwf_calib__restore_path); бит 8 ставит сниффер (WMI_CFG_RX_CHAIN, «configuring PRS TBL, PRS RGFs, PRP RGFs») (пак 11ad PmcRegistersAccessor.cpp, по использованию: hwd_mac__uses_rgf_886200, wmi_cfg_rx_chain) | `hwd_mac__uses_rgf_886200` RW, `wmi_cfg_rx_chain` RW, uc:`bi_mode_init_sequence` A | — |
+| 0x886210 | PRS_ICR | ICR прерываний парсера (поле ICR структуры RGF_ICR с базой 0x88620c); ucode печатает его при крахе; при подъёме MAC сюда пишется 0xa3ff (W1C-сброс) (лог-строка uc «PRS_ICR=0x%08X» в uc_sysassert, драйвер struct RGF_ICR, по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W, uc:`uc_sysassert` R | — |
+| 0x886224 | PRS_IMC | IMC прерываний парсера (база 0x88620c + 0x18): 0xa3ff = открыть те же источники, что сброшены в 0x886210 (драйвер struct RGF_ICR, по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W | — |
+| 0x886250 | prs_rx_ctrl_886250 | управление приёмом парсера: бит 13 снимается при «HWD MAC: Enable Multi Cast traffic» (1 = multicast отбрасывается), бит 16 снимает ucode в bi_mode_init_sequence (лог-строка hwd_mac__enable_multicast, по использованию: bi_mode_init_sequence) | `hwd_mac__enable_multicast` RW, uc:`bi_mode_init_sequence` RW | — |
+| 0x886258 | prs_cfg_886258 | четыре байтовых поля: mac_parser__configure(arg) пишет [7:0]=[15:8]=[31:24]=arg и [23:16]=arg или 1 (зависит от глобала gp); при подъёме arg=0x1f; сниффер ставит [4:0]=2 (по использованию: mac_parser__set_886200, wmi_cfg_rx_chain) | `mac_parser__set_886200` W, `wmi_cfg_rx_chain` RW | — |
+| 0x88625c | prs_cfg_88625c | спутник 0x886258: то же значение arg (по использованию: mac_parser__set_886200) | `mac_parser__set_886200` W | — |
+| 0x886264 | prs_rule_ctl_1 | массив 0x886260+4·i (i = 0..3), в REGS-62 не попал: адрес вычисляется; при подъёме [1]=0x4102, [3]=0x102, в других режимах [2]=0x3f02 или 0x3702 с битом 11, [2]=[3]=0x102; по 6.2/docs/MISC-FW.md — включение и выключение RX discovery (6.2/docs/MISC-FW.md §hw_drivers_mac_parser, по использованию: mac_parser__set_886260) | — | — |
+| 0x886274 | prs_tbl_a_ctrl | окно A косвенной записи таблиц парсера (фильтры, правила, ключевые поля): 0x40000000 = пуск, опрос бита 29 = занято (по использованию: mac_filter__write_entries, mac_filter__write_one, mac_parser__pack_rule_halfword) | `mac_filter__write_entries` RW, `mac_filter__write_one` RW, `mac_parser__pack_rule_halfword` RW | — |
+| 0x886278 | prs_tbl_a_cmd | команда окна A: бит 31 = запись, биты 31:16 код таблицы (по использованию: те же) | `mac_filter__write_entries` W, `mac_filter__write_one` W, `mac_parser__pack_rule_halfword` W | — |
+| 0x88627c | prs_tbl_a_addr | индекс записи окна A (у mac_filter__write_one = n + группа·8, n < 8) (по использованию: те же) | `mac_filter__write_entries` W, `mac_filter__write_one` W, `mac_parser__pack_rule_halfword` W | — |
+| 0x886280 | prs_tbl_a_data0 | данные окна A, слово 0 (по использованию: те же) | `mac_filter__write_entries` AW, `mac_filter__write_one` W, `mac_parser__pack_rule_halfword` W | — |
+| 0x886284 | prs_tbl_a_data1 | данные окна A, слово 1 (по использованию: mac_filter__write_entries, mac_parser__pack_rule_halfword) | `mac_filter__write_entries` W, `mac_parser__pack_rule_halfword` W | — |
+| 0x886288 | prs_default_ctrl | управляющее слово парсера, при инициализации 0xf0c3f0f0 (по использованию: mac_parser__set_default_ctrl из mac_parser__init) | `mac_parser__set_default_ctrl` W | — |
+| 0x88628c | prs_tbl_b_ctrl | окно B косвенной записи правил парсера: 0x40000000 = пуск, опрос бита 29 (по использованию: mac_parser__uses_rgf_886280) | `mac_parser__uses_rgf_886280` RW | — |
+| 0x886290 | prs_tbl_b_cmd | команда окна B: бит 31 = запись, биты 31:16 код таблицы (по использованию: mac_parser__uses_rgf_886280) | `mac_parser__uses_rgf_886280` W | — |
+| 0x886294 | prs_tbl_b_addr | индекс правила окна B (по использованию: mac_parser__uses_rgf_886280) | `mac_parser__uses_rgf_886280` W | — |
+| 0x886298 | prs_tbl_b_data0 | данные правила, слово 0 (по использованию: mac_parser__uses_rgf_886280) | `mac_parser__uses_rgf_886280` W | — |
+| 0x88629c | prs_tbl_b_data1 | данные правила, слово 1 (по использованию: mac_parser__uses_rgf_886280) | `mac_parser__uses_rgf_886280` W | — |
+
+## 0x886400 — rx_macq, mac_bringup
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886400 | rx_q_base_cfg | биты 9:0 = базовое смещение в 8-байтовых единицах, к нему прибавляется (длина+7)>>3 при проверке окна BA (фаталы 0x101b/0x101c); бит 10 = режим, в котором флаг-аргумент дескриптора недопустим (фатал 0x1017) (по использованию: rx_macq__build_ba_desc, rx_macq__pack_desc; 4.1 rx_queue__calc_offset) | `rx_macq__build_ba_desc` R, `rx_macq__pack_desc` R | — |
+| 0x886438 | mac_icr_886434_icr | ICR блока прерываний с базой 0x886434: при подъёме MAC пишется 0x1f (W1C-сброс) (драйвер struct RGF_ICR, по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W | — |
+| 0x88644c | mac_icr_886434_imc | IMC того же блока (база + 0x18): 0x1f = открыть (драйвер struct RGF_ICR, по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W | — |
+
+## 0x886500 — mac_q, brp_init, direct_tx
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886500 | mac_tx_rgf_base_500 | база: uc brp_init__tx_request, brp_responder_transmission_flow, direct_tx__send_with_seq и tx_fifo__push_frame_3ies через неё пишут 0x886544 (mac_mgmt_seq_num): (SN+1)<<16, бит 28 (по использованию: те же) | uc:`brp_init__tx_request` A, uc:`brp_responder_transmission_flow` A, uc:`direct_tx__send_with_seq` A, uc:`tx_fifo__push_frame_3ies` A | — |
+| 0x886508 | mac_icr_886504_icr | ICR блока прерываний с базой 0x886504: при подъёме MAC пишется 3 (по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W | — |
+| 0x88651c | mac_icr_886504_imc | IMC того же блока: 3 = открыть (драйвер struct RGF_ICR, по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W | — |
+| 0x886544 | mac_mgmt_seq_num | номер последовательности 802.11 для кадров, которые собирает ucode: чтение биты 11:0 = текущий SN; запись (SN+1)<<16 с битом 28 загружает новое значение (по использованию: brp_init__tx_request, brp_responder_transmission_flow, direct_tx__send_with_seq, tx_fifo__push_frame_3ies; docs/BF-ENGINE.md, docs/UCODE-TASKS.md) | uc:`brp_init__tx_request` RW, uc:`brp_responder_transmission_flow` RW, uc:`direct_tx__send_with_seq` RW, uc:`tx_fifo__push_frame_3ies` RW | — |
+| 0x886548 | bap_q_avail_vec | вектор очередей с данными у BAP (гипотеза 4.1: пара к MTP avail 0x886f9c); fw читает его вместе с 0x886f9c и значение не использует (DATAPATH 4.1, пак MSXD R41[12] BAP_Q_AVAIL, по использованию: sm_pring__bind_vring) | `sm_pring__bind_vring` R | — |
+| 0x88656c | tx_engine_state | биты 3:0 перед передачей PPDU из очереди обязаны быть 0 (передатчик свободен), иначе uc_sysassert 3 (по использованию: mac_q__tx_ppdu*, tx_bcast_flow, ucode_cmd_0x08/0x0b_handler) | uc:`mac_q__tx_ppdu` R, uc:`mac_q__tx_ppdu_3009` R, uc:`mac_q__tx_ppdu_cmd08` R, uc:`tx_bcast_flow` R, uc:`ucode_cmd_0x08_handler` R, uc:`ucode_cmd_0x0b_handler` R … (+1) | — |
+
+## 0x886600 — macq_desc, qh
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886600 | qdesc_win_base | база окна дескрипторов очередей MAC: помощники macq_desc__read/read_typed/write/write_type6 обращаются к 0x886608 (управление, пуск 0x40000000, опрос бита 29), 0x88660c (команда, бит 31 = запись), 0x886610 (индекс), 0x886614.. (данные) (по использованию: macq_desc__*) | `macq_desc__read` A, `macq_desc__read_typed` A, `macq_desc__write` A, `macq_desc__write_type6` A | — |
+| 0x886608 | qdesc_win_ctrl | окно дескрипторов очередей MAC (QH): бит 30 = пуск, бит 29 = занято (опрос), бит 31 = удержание окна (ставится вместе с пуском, если байт-флаг gp равен 0; снимается записью 0 в macq_desc__release_window) (по использованию: macq_desc__*, qh__*; 6.2/docs/MISC-FW.md, 6.2/docs/MISC-UC.md) | `macq_desc__read` R, `macq_desc__read_typed` R, `macq_desc__release_window` W, `macq_desc__wait_window_free` R, `macq_desc__write` R, `macq_desc__write_type6` RW … (+7) | — |
+| 0x88660c | qdesc_win_cmd | команда окна: бит 31 = запись, биты 30:16 тип/поле дескриптора, младшие биты длина (ucode пишет 0x80000008 ИЛИ тип<<16) (по использованию: macq_desc__write, macq_desc__write_uc) | `macq_desc__read` W, `macq_desc__read_typed` W, `macq_desc__write` W, `macq_desc__write_type6` W, uc:`macq_desc__read_uc` W, uc:`macq_desc__write_uc` W … (+3) | — |
+| 0x886610 | qdesc_win_addr | индекс записи (qid) окна дескрипторов (по использованию: macq_desc__*, qh__*) | `macq_desc__write_type6` W, uc:`macq_desc__read_uc` W, uc:`macq_desc__write_uc` W, uc:`qh__pack_descriptor` W, uc:`qh__read_desc_window` W, uc:`qh__write_desc_window` W | — |
+| 0x886614 | qdesc_win_data0 | данные окна дескрипторов, слово 0 (дальше 0x886618.. — 2 или 4 слова) (по использованию: macq_desc__read, macq_desc__read_typed, macq_desc__write) | `macq_desc__read` R, `macq_desc__read_typed` R, `macq_desc__write` AW | — |
+| 0x886618 | qdesc_win_data1 | данные окна дескрипторов, слово 1; ucode читает и пишет одиночное слово здесь (по использованию: macq_desc__read_uc, macq_desc__write_uc, qh__*) | uc:`macq_desc__read_uc` R, uc:`macq_desc__write_uc` W | — |
+
+## 0x886800 — mac_bringup, rx_macq, vring
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886800 | prp_qid_ring_map | массив 0x886800..0x88680c: номер RX-кольца (0..11) по полубайту на qid (слово qid/8, полубайт qid&7), в REGS-62 не попал: адрес вычисляется (по использованию: rx_macq__bind_queue) | `wmi_cfg_rx_chain` A | — |
+| 0x886824 | prp_qid_map_sel1 | битовая карта qid (0..31) для селектора 1; карты селекторов 0/1/2 лежат в 0x886820/24/28 (по использованию: rx_macq__bind_queue) | `rx_macq__bind_queue` RW | — |
+| 0x88682c | prp_avail_vec | вектор qid, в которых у PRP лежат данные; fw ждёт, пока бит нужного кольца не снимется (лог-строка «Wait prp_avail_vec_val ...» в vring__wait_drain) | `vring__wait_drain` R | — |
+| 0x886838 | prp_ctrl | управление PRP: бит 0 ставит сниффер («configuring PRS TBL, PRS RGFs, PRP RGFs»), а при подъёме MAC он снимается; биты 11:8 = номер DMA-кольца, записывается только при настройке кольца 7 (по использованию: mac__set_886838_b0, wmi_cfg_rx_chain, dma_mgr__configure_ring) | `dma_mgr__configure_ring` RW, `mac__set_886838_b0` RW, `wmi_cfg_rx_chain` RW | — |
+| 0x886840 | mac_icr_88683c_icr | ICR блока прерываний с базой 0x88683c: при подъёме MAC пишется 7 (по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W | — |
+| 0x886854 | mac_icr_88683c_imc | IMC того же блока: 7 = открыть (драйвер struct RGF_ICR, по использованию: mac_bringup__ack_and_unmask_irqs) | `mac_bringup__ack_and_unmask_irqs` W | — |
+
+## 0x886a00 — macq, vring, txq
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886a00 | txq_ctrl_0 | при подъёме MAC пишется 5 перед инициализацией TX-очередей (по использованию: mac_bringup__init_dma_ctrl) | `mac_bringup__init_dma_ctrl` W, uc:`macq__kick_queue_tx` A | — |
+| 0x886a04 | txq_ctrl_1 | при подъёме MAC пишется 9 (по использованию: mac_bringup__init_dma_ctrl) | `mac_bringup__init_dma_ctrl` W | — |
+| 0x886a14 | txq_ring_enable | маска разрешённых колец/очередей передачи, бит = qid (по использованию: mac_ring_enable, macq__kick_queue_tx) | `mac_ring_enable` RW, uc:`macq__kick_queue_tx` RW | — |
+| 0x886a18 | txq_req_select | маска qid, к которым применяется запись в 0x886a1c (по использованию: macq__kick_queue, mac_ring_disable, macq__flush_queue) | `mac_ring_disable` W, `macq__kick_queue` W, uc:`macq__flush_queue` W, uc:`macq__kick_queue_tx` W | — |
+| 0x886a1c | txq_req_value | битовая карта активных запросов очередей (RW): kick ставит бит qid, disable и flush снимают (по использованию: те же) | `mac_ring_disable` RW, `macq__kick_queue` W, uc:`macq__flush_queue` RW, uc:`macq__kick_queue_tx` W | — |
+| 0x886a20 | txq_req_apply | строб: 1 = применить 0x886a18/1c (по использованию: те же) | `mac_ring_disable` W, `macq__kick_queue` W, uc:`macq__flush_queue` W, uc:`macq__kick_queue_tx` W | — |
+| 0x886a24 | txq_ptp_avail | вектор доступности PTP по qid; если после включения кольца бит не встал — фатал 0x12a1 (лог-строки «PTP Availibilty = %x m_vring_index %d», «ptp_avial» в sm_pring__timeout) | `sm_pring__bind_vring` R, `sm_pring__timeout` R | — |
+| 0x886a28 | txq_ptr_reset | биты 1:0 импульсом (взвести, затем снять) перед привязкой кольца и перед передачей из очереди (по использованию: macq__clear_886a28_low2, macq__kick_queue_tx) | `macq__clear_886a28_low2` RW, uc:`macq__kick_queue_tx` RW | — |
+| 0x886a38 | txq_fifo_sm_a | автомат FIFO тракта TX: запись бита 31 = снимок, затем чтение состояния в битах 1:0 (0 = простой); бит 30 = сброс автомата (по использованию: txq__fifo_ptp_idle_snapshot, vring__disconnect_flush) | uc:`txq__fifo_ptp_idle_snapshot` RW, uc:`vring__disconnect_flush` W | — |
+| 0x886a3c | txq_fifo_sm_b | то же, состояние в битах 2:0 (по использованию: txq__fifo_ptp_idle_snapshot, vring__disconnect_flush) | uc:`txq__fifo_ptp_idle_snapshot` RW, uc:`vring__disconnect_flush` W | — |
+| 0x886a44 | txq_fifo_sm_c | то же, состояние в битах 1:0; входит в проверку «non_idle» (лог-строка «txq_ptp_sw_is_fifo_idle: non_idle 0x%x», по использованию: txq__fifo_ptp_idle_snapshot, vring__disconnect_flush) | `txq_ptp_sw_is_fifo_idle` RW, uc:`txq__fifo_ptp_idle_snapshot` RW, uc:`vring__disconnect_flush` W | — |
+| 0x886a48 | txq_ptp_sm | автомат PTP: бит 31 = снимок, биты 2:0 состояние ptp_sm; состояние 5 = зависание, его сбрасывают записью 0, затем 0x40000000 (лог-строки «Vring disconnect flow timeout: ptp_sm = 0x%x», «PTP was reset to Idle: Must be state 0», «PTP stuck (but PFIFO2 sm != 5)») | `txq_ptp_sw_is_fifo_idle` RW, uc:`txq__fifo_ptp_idle_snapshot` RW, uc:`vring__disconnect_flush` RW | — |
+| 0x886aa0 | mac_ctl_886aa0 | бит 0 ставится при подъёме MAC (по использованию: mac_bringup__set_886a80_ctl_bit0) | `mac_bringup__set_886a80_ctl_bit0` RW | — |
+| 0x886aa8 | RGF_MAC_MTRL_COUNTER_0 | таймер MAC в мкс, по нему считается время жизни пакета (драйвер RGF_MAC_MTRL_COUNTER_0, лог-строка «Lifetime: MTRL count %x ->%x, set to %x») | `tx_desc__set_lifetime` R | — |
+
+## 0x886b00 — mac_bringup, mac
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886b00 | cid_mcs_tbl | массив 0x886b00+4·cid: индекс MCS соединения, допустимые значения по маске 0x1c1ddf; при подъёме cid 0..8 = 8; запись идёт вместе с таймингами MCS в 0x886c70/74 (docs/LMAC-PROTOCOL.md 4.1 hwd_mac__apply_timing_entry, по использованию: mac_bringup__init_tx_queues, mac__set_cid_mcs, mac__set_cid_mcs_uc) | `mac_bringup__init_tx_queues` W | — |
+| 0x886b04 | cid_mcs_tbl_1 | элемент 1 массива cid_mcs_tbl (0x886b00+4·cid); цикл при подъёме MAC пишет 8 в 0x886b04..0x886b20 (cid 1..8), cid 0 пишется отдельно (по использованию: mac_bringup__init_tx_queues) | `mac_bringup__init_tx_queues` W | — |
+| 0x886bf8 | mac_tbl_886c00_ctrl | окно косвенной записи таблицы 0x886c00: 0x40000000 = пуск, опрос бита 29 = занято (по использованию: mac__program_886c00_entry из mlme_sm__disconnect_ev_handle) | `mac__program_886c00_entry` RW | — |
+| 0x886bfc | mac_tbl_886c00_cmd | команда окна: 0x80000000 = запись; адрес и данные в 0x886c00/04/08 (по использованию: mac__program_886c00_entry) | `mac__program_886c00_entry` W | — |
+
+## 0x886c00 — mac, tx_queue, mac_bringup
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886c00 | mac_ind_wr_data0 | слово данных 0 косвенной записи в таблицу MAC: сюда кладётся CID, затем пуск 0x886bfc=0x80000000, 0x886bf8=0x40000000 и ожидание сброса бита 29 в 0x886bf8; при разрыве пишется (cid,0,0) (по использованию: mac__program_886c00_entry из mlme_sm__disconnect_ev_handle) | `mac__program_886c00_entry` W, `tx_queue__config_by_mode` A | — |
+| 0x886c04 | mac_ind_wr_data1 | слово данных 1 той же косвенной записи; при разрыве связи = 0 (по использованию: mac__program_886c00_entry) | `mac__program_886c00_entry` W | — |
+| 0x886c08 | mac_ind_wr_data2 | слово данных 2 той же косвенной записи; при разрыве связи = 0 (по использованию: mac__program_886c00_entry) | `mac__program_886c00_entry` W | — |
+| 0x886c70 | mac_tx_mcs_param16 | [15:0] параметр передачи, зависящий от MCS: ucode берёт полуслово из таблицы 0x80178c по индексу MCS (в 4.1 для MCS4 = 0x20), fw при подъёме для MCS8 пишет 0x14; в tx_queue__config_by_mode при включённом режиме = конфиг (по умолчанию 200), при выключенном = 1 (по использованию: mac__set_cid_mcs_uc, mac__set_cid_mcs, tx_queue__config_by_mode, docs/LMAC-PROTOCOL.md 4.1) | `mac__set_cid_mcs` RW, `tx_queue__config_by_mode` RW, uc:`mac__set_cid_mcs_uc` RW | — |
+| 0x886c74 | mac_tx_mcs_param8 | [7:0] парный параметр, зависящий от MCS: байт из таблицы 0x8017a8 (в 4.1 для MCS4 = 0x50), для MCS8 = 0x30, по умолчанию режима 0x40, при выключенном = 0, при подъёме MAC = 0x2e (по использованию: mac__set_cid_mcs_uc, mac_bringup__init_tx_queues, tx_queue__config_by_mode) | `mac__set_cid_mcs` RW, `mac_bringup__init_tx_queues` W, `tx_queue__config_by_mode` RW, uc:`mac__set_cid_mcs_uc` W | — |
+
+## 0x886d00 — mac, bi_mode, l1_task
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886d00 | mac_ifs_sifs | ответный IFS в виде пары {такты 165 МГц, мкс} (байт 0 такты, байт 1 мкс) плюс постоянные биты 0x0173 в [24:16]; штатно SIFS 3 мкс (0x01730300), на время SLS ucode ставит 3*SIFS (MBIFS, копия 0x802974) и затем возвращает SIFS (копия 0x802968) (6.2/docs/MISC-FW.md, docs/BF-ENGINE.md, по использованию: txrx_api_step_b_uc, mac_mode_kick, mac_ifs__restore_sifs) | uc:`mac_ifs__restore_sifs` W, uc:`mac_mode_kick` W, uc:`rx_flow__handle_frame` W, uc:`rx_funcs__handle_ppdu_report` W, uc:`rx_funcs__rx_flow` W, uc:`sls__rx_ssw_frame` W … (+6) | — |
+| 0x886d04 | mac_ifs_slot | slot time {такты, мкс} = 5 мкс плюс постоянные биты 22, 24, 25 (0x03400500) (6.2/docs/MISC-FW.md, по использованию: txrx_api_step_b_uc) | uc:`txrx_api_step_b_uc` W | — |
+| 0x886d08 | mac_ifs_pifs_2slot | [15:0] SIFS+slot (PIFS, 8 мкс), [31:16] 2*slot (10 мкс), пары {такты, мкс} (6.2/docs/MISC-FW.md, по использованию: txrx_api_step_b_uc) | uc:`txrx_api_step_b_uc` W | — |
+| 0x886d0c | mac_ifs_rifs_sbifs | [15:0] RIFS, [31:16] SBIFS (по 1 мкс), пары {такты, мкс}; байт [31:24] (SBIFS мкс) читается при расчёте времени развёртки TXSS и длительности кадра BTI (6.2/docs/MISC-FW.md, по использованию: txrx_api_step_b_uc, txss__sweep_timing, bti__measure_frame_duration) | uc:`bti__measure_frame_duration` R, uc:`txrx_api_step_b_uc` W, uc:`txss__sweep_timing` R | — |
+| 0x886d10 | mac_rx2tx_resp_start | момент запуска ответа RX->TX {такты, мкс}: при init 0x100, затем пересчитывается по каждому принятому кадру из SIFS_CNT (R55) + поправки {4,1} из тела LMAC 0x00 (6.2/docs/MISC-FW.md, 6.2/docs/BENCH.md, по использованию: rx_flow_step) | uc:`rx_flow_step` W, uc:`txrx_api_step_b_uc` W | — |
+| 0x886d14 | mac_ifs_const_452 | постоянная 0x452, пишется вместе с IFS-регистрами при LMAC 0x00; смысл не установлен (по использованию: txrx_api_step_b_uc; 6.2/docs/MISC-FW.md); на стенде: 0x452 (1106) на обоих узлах (снимки regsnap r1, 2026-09-28); серия: 0x452 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0x96 (150) — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 150, 4000 на STA и 64 на обоих — эффекта нет, запись держится | uc:`txrx_api_step_b_uc` W | — |
+| 0x886d18 | mac_bi_reload_us | перезагрузка таймера BI, мкс: период - 7 - 1 (0x18ff8 = 102392 при BI 100), без поправки = период (по использованию: mac__program_deadline_slack из txrx_api_cmd_step; docs/MAC-COMMANDS.md 4.1 memscan); серия regseries: BI 50/100/200 → 0xc7f8/0x18ff8/0x31ff8 = BI·1024 − 8 мкс, формула подтверждена; при невключённом MAC 0 (2026-09-29) | uc:`mac__program_deadline_slack` W | — |
+| 0x886d1c | mac_bi_reload_clk | дробная часть той же перезагрузки в тактах 165 МГц: 165 - 80 = 85 (вместе с 0x886d18 дают опережение 7 мкс + 80 тактов), без поправки 0 (по использованию: mac__program_deadline_slack); серия: 0x55 при любом BI и канале; при невключённом MAC 0 (2026-09-29) | uc:`mac__program_deadline_slack` W | — |
+| 0x886d20 | mac_bi_init_arg0 | при инициализации режима BI = 5000 (0x1388); смысл не установлен (по использованию: bi_init__set_mac_arg_pair из bi_mode_init_sequence); на стенде: 0x1388 = 5000 — совпадает с наибольшей NAV-отсрочкой маяка 5000 мкс (beacon-nav-delay) [гипотеза] (снимки regsnap r1, 2026-09-28); серия: 5000 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 100 и 0 на AP — эффекта нет при одном маячащем узле; navtest: гипотеза «предел NAV» ОПРОВЕРГНУТА — 0x886e84 под iperf доходит до 1982 и при 0x886d20=100 | uc:`bi_init__set_mac_arg_pair` W | — |
+| 0x886d24 | mac_bi_init_arg1 | при инициализации режима BI = 1, парный к 0x886d20; смысл не установлен (по использованию: bi_init__set_mac_arg_pair); на стенде: 1 (снимки regsnap r1, 2026-09-28); серия: 1 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0 на AP — эффекта нет при одном маячащем узле; navtest: гипотеза «включение NAV» ОПРОВЕРГНУТА — при 0x886d24=0 поведение 0x886e84 не меняется | uc:`bi_init__set_mac_arg_pair` W | — |
+| 0x886d28 | mac_bi_init_zero_28 | при инициализации режима BI пишется 0; смысл не установлен (по использованию: bi_mode_init_substep); на стенде: 0 (снимки regsnap r1, 2026-09-28); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | uc:`bi_mode_init_substep` W | — |
+| 0x886d30 | mac_tsf_event_lo | младшее слово значения TSF для компаратора события TSF (по использованию: set_tsf_event, лог-строка «set_tsf_event()») | uc:`set_tsf_event` W | — |
+| 0x886d34 | mac_tsf_event_hi | старшее слово значения TSF для компаратора события TSF (по использованию: set_tsf_event) | uc:`set_tsf_event` W | — |
+| 0x886d38 | mac_tsf_event_ctrl | управление событием TSF: 0x000c0050 взведено (бит 6), 0x000c0010 снято, 0 при входе в простой; вместе с командой MAC 0x02000040 (ожидание бита 6) (по использованию: set_tsf_event, disable_tsf_event «disable_tsf_event()», ucode_cmd_0x01_handler, mac_mode__enter_idle_seq) | uc:`disable_tsf_event` W, uc:`mac_mode__enter_idle_seq` W, uc:`set_tsf_event` W, uc:`ucode_cmd_0x01_handler` W | — |
+| 0x886d3c | uc_sleep_wake_mask | маска событий, будящих ucode из sleep: перед инструкцией sleep = маска r42 с битом 9, после пробуждения = 0; при инициализации BI = 0 (по использованию: uc_sleep_until_event, bi_mode_init_substep) | uc:`bi_mode_init_substep` W, uc:`uc_sleep_until_event` W | — |
+| 0x886d40 | mac_bi_init_ones_40 | при инициализации режима BI пишется -1, рядом с маской пробуждения 0x886d3c; смысл не установлен (по использованию: bi_mode_init_substep); на стенде: читается 0x00ffffff при записи -1 — регистр 24-битный (маска) (снимки regsnap r1, 2026-09-28); серия: 0x00ffffff не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0 на AP — линк рвётся сразу: пинг 100 %, разрыв, станция перестаёт принимать CP-кадры (маяки) — AP перестаёт передавать; запись держится; побайтно (regpoke этап 2): снятие ЛЮБОГО байта рвёт линк — 0x00ffff00 и 0x0000ffff: разрыв, пинг 100 %, CP-кадры станции 0; 0x00ff00ff: ucode вернул регистр в 0x00ffffff, разрыва нет, но пинг 100 % — все 24 бита нужны для работы передачи (2026-09-29) | uc:`bi_mode_init_substep` W | — |
+| 0x886d44 | mac_bi_init_const_44 | при инициализации режима BI = 0x00028010, пишется рядом с маской пробуждения 0x886d3c и uc_irq_set_level(0xa); других обращений нет, смысл не установлен (по использованию: bi_mode_init_substep); на стенде: 0x00028010 (снимки regsnap r1, 2026-09-28); серия: 0x28010 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0 на AP — то же: линк рвётся, CP-кадры у станции пропадают; побитно (regpoke этап 2): снятие бита 15 (0x20010) — линк рвётся сразу, CP-кадры у станции пропадают; бит 4 (0x28000) — без эффекта; бит 17 (0x8010) — линк держится, iperf 952→906→837 Мбит/с (просадка, нужен повтор) (2026-09-29) | uc:`bi_mode_init_substep` W | — |
+| 0x886d50 | mac_timed_wait_us | длительность ожидания, мкс: 2000 при инициализации BI, 3000 в фиксированном расписании; после записи ucode включает маску событий (0x27007e00) и ждёт бит 1 r42 (по использованию: mac__set_sector_arg_and_select_all, bi_mode_init_sequence) | uc:`bi_mode_init_sequence` W, uc:`mac__set_sector_arg_and_select_all` W | — |
+| 0x886d58 | mac_usec_clk_div | делитель микросекундного тика MAC: [15:0] N тактов на мкс, [31:16] N/2+1; 165 (0x5300a5) штатно, 40/38 при переключении PLL в экономный режим, после смены TSF перезагружается через 0x886dc0/c4 (по использованию: hw__pll_mode_switch -> mac__set_usec_clk_div, bi_mode__program_mac_timing) | `mac__set_usec_clk_div` W, uc:`bi_mode__program_mac_timing` W | — |
+| 0x886d5c | mac_timing_const_5c | постоянная 0x00040063, пишется вместе с делителем 0x886d58 при инициализации BI; смысл не установлен, гипотеза 4.1 «{clks, usec}» не доказана (по использованию: bi_mode__program_mac_timing); на стенде: 0x00040063 (поля 4 и 99) (снимки regsnap r1, 2026-09-28); серия: 0x40063 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0x00040031 на AP — эффекта нет | uc:`bi_mode__program_mac_timing` W | — |
+| 0x886d60 | mac_timing_const_60 | постоянная 0x00010001, там же; смысл не установлен (по использованию: bi_mode__program_mac_timing); на стенде: 0x00010001 (снимки regsnap r1, 2026-09-28); серия: 0x10001 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0x00020002 на AP — эффекта нет | uc:`bi_mode__program_mac_timing` W | — |
+| 0x886d64 | mac_beacon_interval | [15:0] интервал маяка в TU (период_мкс >> 10), init 100; горячий регистр: одиночная запись останавливает маячный цикл; у станции 6.2 брался из WMI_ECHO (0x5678) (6.2/docs/BENCH.md, docs/MAC-COMMANDS.md 4.1, по использованию: txrx_api_cmd_step, bi_mode_init_sequence, mac__get_beacon_interval_tu/us) | `mac__get_beacon_interval_tu` R, `mac__get_beacon_interval_us` R, `mac__read_next_tbtt64` R, `mac__tsf_lo_after_n_bi` R, uc:`aw__compute_tbtt_from_hw` R, uc:`bi_mode_init_sequence` W … (+2) | — |
+| 0x886d80 | mac_sxd_base | база: hwm__probe_33khz_clk пишет через неё команды MAC 0x63001e04 и 0x63000108 в 0x886dc8 (sxd_local_wr_data, порт «uCode CORE WRITE») (docs/MAC-COMMANDS.md; по использованию: hwm__probe_33khz_clk) | `hwm__probe_33khz_clk` A | — |
+| 0x886d88 | mac_cmd1e_operand | постоянная 0x0c0a0f1e, пишется непосредственно перед командами MAC 0x1e010004/0x1e010001, читателей нет; вероятно операнд команды 0x1e, НЕ тайминги IFS (4.1/docs/STRUCTS.md 4.1, MAC-CMD-MAP 4.1, по использованию: bi_mode__load_cmd1e_operand) | uc:`bi_mode__load_cmd1e_operand` W | — |
+| 0x886d8c | QSET0_MASK_VECTOR | маска очередей (qid) набора 0; ucode ставит все единицы при сбросе, наборы 1..6 (0x886d90..0x886da4) обнуляет; банк 0x886d8c+4*i (DATAPATH 4.1, R41 QSETn_MASK_VECTOR из пака; по использованию: mac_qset__reset_masks) | uc:`mac_qset__reset_masks` W | — |
+| 0x886d90 | QSET1_MASK_VECTOR | маска очередей набора 1; при сбросе = 0 (DATAPATH 4.1; по использованию: mac_qset__reset_masks) | uc:`mac_qset__reset_masks` W | — |
+| 0x886d94 | QSET2_MASK_VECTOR | маска очередей набора 2; при сбросе = 0 (DATAPATH 4.1; по использованию: mac_qset__reset_masks) | — | — |
+| 0x886d98 | QSET3_MASK_VECTOR | маска очередей набора 3 = набор ответчика (RD), на .12 было 2 (qid 1) (DATAPATH 4.1; по использованию: rx_funcs__rx_flow) | uc:`rx_funcs__rx_flow` W | — |
+| 0x886d9c | QSET4_MASK_VECTOR | маска очередей набора 4 (служебные qid 25, 26), публикуется из тени (DATAPATH 4.1) | uc:`mac__publish_masks` W | — |
+| 0x886da0 | QSET5_MASK_VECTOR | маска очередей набора 5 (DATAPATH 4.1) | — | — |
+| 0x886da4 | QSET6_MASK_VECTOR | маска очередей набора 6 (живьём 1) (DATAPATH 4.1) | uc:`ucode_cmd_0x08_handler` W | — |
+| 0x886da8 | QSET7_MASK_VECTOR | маска очередей набора 7 (DATAPATH 4.1) | — | — |
+| 0x886dac | mac_bi_init_zero_ac | обнуляется при инициализации BI вместе с 0x886dc0=0xfa и 0x886d50=2000; стоит сразу за банком QSET0..7 (0x886d8c..0x886da8), но в него не входит (индекс i=8 нигде не используется); смысл не установлен (по использованию: bi_mode_init_sequence); на стенде: 0 (снимки regsnap r1, 2026-09-28); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | uc:`bi_mode_init_sequence` W | — |
+| 0x886dc0 | mac_cmd0d_time_lo | младшее слово 64-битного операнда времени для команды MAC 0x0d: первый TBTT (TSF старта + период) при запуске BI, текущий TSF при перезагрузке после смены такта или сна; init 0xfa; НЕ регистр периода (6.2/docs/BENCH.md, docs/MAC-COMMANDS.md 4.1, по использованию: txrx_api_cmd_step, mac__reload_tsf64) | `mac__reload_tsf64` W, uc:`bi_mode_init_sequence` W, uc:`txrx_api_cmd_step` W | — |
+| 0x886dc4 | mac_cmd0d_time_hi | старшее слово того же 64-битного операнда команды 0x0d (по использованию: txrx_api_cmd_step, mac__reload_tsf64) | `mac__reload_tsf64` W, uc:`txrx_api_cmd_step` W | — |
+| 0x886dc8 | sxd_local_wr_data | порт «uCode CORE WRITE» MAC_RGF.MAC_SXD.LOCAL_REGISTER_IF.LOCAL_WR_REG: fw (и ucode по AHB) пишет сюда слово команды MAC [31:24] код, [23:0] параметр, то же, что ucode шлёт через r32 (PmcRegistersAccessor.cpp пака пак 11ad, docs/MAC-COMMANDS.md) | `hwd_mac__sxd_mode_neutral` W, `hwd_mac__sxd_rx_mode_entry` W, `hwd_mac__sxd_tx_phy_frame_start` W, `hwd_mac__trigger_sxd_tx_mode` W, `hwm__measure_33khz_wait` W, `hwm__probe_33khz_clk` W … (+7) | — |
+| 0x886dd0 | fw2uc_ICR | причина прерывания fw->ucode (ICR, W1C): бит 0 новая команда в кольце LMAC, бит 1 запрос на останов/смену режима MAC, бит 2 запрос на выход из сна; ucode квитирует записью бита, fw ждёт сброса бита (драйвер struct RGF_ICR, база ICC 0x886dcc; по использованию: l1_task__kick_and_dispatch_uc, mac_mode__switch_sequence, fw2uc__signal_wake_and_wait_ack) | `fw2uc__signal_halt_and_wait_ack` R, `fw2uc__signal_wake_and_wait_ack` R, uc:`background_task__dispatch` R, uc:`l1_task__kick_and_dispatch_uc` W, uc:`mac_mode__switch_sequence` W | — |
+| 0x886dd4 | fw2uc_ICM | маскированная причина (ICR & ~IMV), читается в начале L1-задачи ucode для разбора битов 0..2 (драйвер struct RGF_ICR; по использованию: l1_task__entry) | uc:`l1_task__entry` R | — |
+| 0x886dd8 | fw2uc_ICS | установка причины (только запись): fw пишет 1 после постановки команды в кольцо 0x804280, 2 при POWER_MNGR__halt, 4 при deep_sleep_exit (драйвер struct RGF_ICR; по использованию: lmac_if__post_cmd, fw2uc__signal_wake_and_wait_ack(_b)) | `fw2uc__signal_halt_and_wait_ack` W, `fw2uc__signal_wake_and_wait_ack` W, `lmac_if__post_cmd` W | — |
+| 0x886ddc | fw2uc_IMV | маска прерываний fw->ucode (1 = замаскировано): 0xf маскирует всё (окно AW), 8 открывает биты 0..2 (готовность, пробуждение) (драйвер struct RGF_ICR; по использованию: mac__ddc_mask_all_on, mac__ddc_mask_bit3) | uc:`mac__ddc_mask_all_on` W, uc:`mac__ddc_mask_bit3` W | — |
+| 0x886de0 | fw2uc_IMS | установка маски (запись 1 маскирует бит): ucode маскирует источник на время обработки, бит 0 команды, бит 1 и 2 с откладыванием в фоновую задачу 3/4 (драйвер struct RGF_ICR; по использованию: l1_task__kick_and_dispatch_uc, l1_task__mask_halt_req_and_defer, l1_task__mask_wake_req_and_defer) | uc:`l1_task__kick_and_dispatch_uc` W, uc:`l1_task__mask_halt_req_and_defer` W, uc:`l1_task__mask_wake_req_and_defer` W | — |
+| 0x886de4 | fw2uc_IMC | снятие маски (запись 1 открывает бит): после опустошения кольца команд (бит 0) и после смены режима MAC (биты 1, 2) (драйвер struct RGF_ICR; по использованию: l1_task__kick_and_dispatch_uc, mac_mode__switch_sequence) | uc:`l1_task__kick_and_dispatch_uc` W, uc:`mac_mode__switch_sequence` W | — |
+| 0x886de8 | mac_timing_const_e8 | постоянная 0x00060025 при инициализации BI; смысл не установлен (по использованию: bi_mode__program_mac_timing; docs/LMAC-PROTOCOL.md 4.1); на стенде: 0x00060025 (поля 6 и 37) (снимки regsnap r1, 2026-09-28); серия: 0x60025 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0x00060012 на AP — iperf вверх 956 → ~785 Мбит/с в обоих замерах (повтор в этапе 2); повтор regpoke (3×iperf до/после): 0x00060012 и 0x0006004a — эффекта нет (972→976, 971→969 Мбит/с); прежнее падение до ~785 было шумом (2026-09-29) | uc:`bi_mode__program_mac_timing` W | — |
+| 0x886dec | mac_timing_const_ec | постоянная 0x0002000b при инициализации BI; смысл не установлен (по использованию: bi_mode__program_mac_timing; docs/LMAC-PROTOCOL.md 4.1); на стенде: 0x0002000b (поля 2 и 11) (снимки regsnap r1, 2026-09-28); серия: 0x2000b не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0x00020005 на AP — эффекта нет | uc:`bi_mode__program_mac_timing` W | — |
+| 0x886df0 | mac_own_addr_lo | собственный MAC-адрес, байты 0..3 (по использованию: mac__set_own_addr из l2mgr__apply_mac_address, rm_ch_switch__program_mac) | `mac__set_own_addr` W | — |
+| 0x886df4 | mac_own_addr_hi | собственный MAC-адрес, байты 4..5 (по использованию: mac__set_own_addr) | `mac__set_own_addr` W | — |
+| 0x886df8 | mac_mcast_addr_lo | второй фильтруемый адрес (групповой), байты 0..3 (лог-строка «!!! Multicast MAC address is now applied !!!», по использованию: mac__set_mcast_addr) | `mac__set_mcast_addr` W | — |
+| 0x886dfc | mac_mcast_addr_hi | второй фильтруемый адрес (групповой), байты 4..5 (по использованию: mac__set_mcast_addr) | `mac__set_mcast_addr` W | — |
+
+## 0x886e00 — mac, irq, link_lost_diag
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886e08 | mac_lmac0_timing_0 | поле тела LMAC 0x00 (байты b1 b0 b5 b4), живьём 0x010400a1; 16-битные задержки в тактах 165 МГц, вендорского имени нет (6.2/docs/MISC-FW.md, по использованию: mac__program_886e0c_20b) | uc:`mac__program_886e0c_20b` W | — |
+| 0x886e0c | mac_lmac0_timing_1 | байты тела LMAC 0x00 b7 b6 b3 b2, живьём 0x007b0096 (такты 165 МГц; вероятно задержки переключения RX/TX) (6.2/docs/MISC-FW.md) | uc:`mac__program_886e0c_20b` W | — |
+| 0x886e10 | mac_lmac0_timing_2 | байты тела LMAC 0x00 b11 b10 b9 b8, живьём 0x00120016 (6.2/docs/MISC-FW.md) | uc:`mac__program_886e0c_20b` W | — |
+| 0x886e14 | mac_lmac0_timing_3 | байты тела LMAC 0x00 b19 b18 b13 b12, живьём 0x006a0060 (6.2/docs/MISC-FW.md) | uc:`mac__program_886e0c_20b` W | — |
+| 0x886e18 | mac_lmac0_timing_4 | байты тела LMAC 0x00 b17 b16 b15 b14, живьём 0x020a0291 (6.2/docs/MISC-FW.md) | uc:`mac__program_886e0c_20b` W | — |
+| 0x886e1c | mac_lmac0_timing_const | константа 0x0be41190, пишется ucode в конце раскладки тела LMAC 0x00; в 4.1 и 6.2 одинакова (6.2/docs/MISC-FW.md, 6.2/docs/BENCH.md) | uc:`mac__program_886e0c_20b` W | — |
+| 0x886e24 | MAC_SXD.MAC_HW_ICR | ICR прерывания MAC для ucode (INT6), блок RGF_ICR с базой 0x886e20: ICR = причина, W1C; ucode пишет -1 при старте и квитирует бит 7 из сторожа, fw печатает его при сисассерте 0x26 (лог-строка «uCode INT6 additional info: MAC_SXD.MAC_HW_ICR»; модель ICC/ICR/ICM/ICS/IMV/IMS/IMC — драйвер struct RGF_ICR) | `sysassert__dump_ucode_int6` R, uc:`irq__init_event_masks` W, uc:`l2_task__kick_mac_events` W | — |
+| 0x886e2c | mac_hw_icr_ics | ICS (установка причины, WO) блока MAC_HW_ICR 0x886e20; fw в isr_mac_886028_fw пишет 0x8000, т.е. взводит бит 15 прерывания ucode (драйвер struct RGF_ICR +0xc; по использованию: isr_mac_886028_fw) | `isr_mac_886028_fw` W | — |
+| 0x886e30 | mac_hw_icr_imv | IMV (маска, 1 = замаскировано) блока MAC_HW_ICR; ucode пишет ~[маска разрешённых] при инициализации (драйвер struct RGF_ICR +0x10; по использованию: irq__init_event_masks) | uc:`irq__init_event_masks` W | — |
+| 0x886e34 | mac_hw_icr_ims | IMS (установить маску) блока MAC_HW_ICR; сторож ucode маскирует бит 7 перед квитированием (драйвер struct RGF_ICR +0x14; по использованию: l2_task__kick_mac_events) | uc:`l2_task__kick_mac_events` W | — |
+| 0x886e38 | mac_hw_icr_imc | IMC (снять маску) блока MAC_HW_ICR; сторож ucode снова открывает бит 7 (драйвер struct RGF_ICR +0x18; по использованию: l2_task__kick_mac_events) | uc:`l2_task__kick_mac_events` W | — |
+| 0x886e40 | mac_sxd_errors_icr | ICR прерывания MAC для fw (вектор 6, MAC_SXD_ERRORS_ISR), блок RGF_ICR с базой 0x886e3c; W1C-квитирование: бит 15 = Awake TSF, бит 6 = LMAC CRASH; ucode при старте пишет -1 (лог-строка «MAIN() set MAC_SXD_ERRORS_ISR interrupt…», fw_vector_06; драйвер struct RGF_ICR +4) | `fw_vector_06` W, `mac_icr__rearm_awake_tsf` W, uc:`irq__init_event_masks` W | — |
+| 0x886e44 | mac_sxd_errors_icm | ICM (причина с учётом маски) того же блока; fw_vector_06 читает его и пишет обратно в 0x886e40 (драйвер struct RGF_ICR +8; по использованию: fw_vector_06) | `fw_vector_06` R | — |
+| 0x886e48 | mac_sxd_errors_ics | ICS блока 0x886e3c: ucode пишет 0x40 (бит 6) при сисассерте — сам поднимает fw прерывание «LMAC CRASH» (вектор 6), парно с IMC 0x886e54 (драйвер struct RGF_ICR +0xc; по использованию: uc_sysassert) | uc:`uc_sysassert` W | — |
+| 0x886e4c | mac_sxd_errors_imv | IMV (маска) блока 0x886e3c; ucode при инициализации пишет -1 (всё замаскировано) (драйвер struct RGF_ICR +0x10; по использованию: irq__init_event_masks) | uc:`irq__init_event_masks` W | — |
+| 0x886e50 | mac_sxd_errors_ims | IMS (установить маску) блока 0x886e3c: 0x8000 глушит Awake TSF, 0x40 глушит LMAC CRASH после разбора (драйвер struct RGF_ICR +0x14; по использованию: mac_icr__mask_awake_tsf, fw_vector_06) | `fw_vector_06` W, `mac_icr__mask_awake_tsf` W | — |
+| 0x886e54 | mac_sxd_errors_imc | IMC (снять маску) блока 0x886e3c: fw открывает бит 15 перед глубоким сном, ucode в uc_sysassert открывает бит 6 (драйвер struct RGF_ICR +0x18; по использованию: mac_icr__rearm_awake_tsf, uc_sysassert) | `mac_icr__rearm_awake_tsf` W, uc:`uc_sysassert` W | — |
+| 0x886e58 | mac_ppdu_report_1 | отчёт о последнем PPDU, слово 1 (ср. LR PPDU_REPORT_1_R36) (лог-строка «DEBUG MAC RX: PPDU Report 1») | `link_lost_diag__dump_mac_rx` R | — |
+| 0x886e5c | mac_ppdu_report_2 | отчёт о последнем PPDU, слово 2 (ср. LR PPDU_REPORT_2_R37) (лог-строка «DEBUG MAC RX: PPDU Report 2») | `link_lost_diag__dump_mac_rx` R | — |
+| 0x886e60 | mac_ppdu_report_3 | отчёт о последнем PPDU, слово 3 (ср. LR PPDU_REPORT_3_R38) (лог-строка «DEBUG MAC RX: PPDU Report 3») | `link_lost_diag__dump_mac_rx` R | — |
+| 0x886e64 | mac_ppdu_report_4 | отчёт о последнем PPDU, слово 4 (вероятно LR PPDU_REPORT_MISC_R39) (лог-строка «DEBUG MAC RX: PPDU Report 4») | `link_lost_diag__dump_mac_rx` R | — |
+| 0x886e84 | mac_nav_hw_value | младшие 16 бит читаются при обновлении NAV по полю Duration и ограничиваются сверху порогом из 0x80146c+0x18; точный смысл (текущий NAV или предел) не установлен (по использованию: rx_nav__set_from_duration; docs/HARDWARE-BLOCKS.md); на стенде: бит 31 + младшие биты; в простое 0x13 (19), под iperf до 0x7ac (1964) — счётчик NAV в мкс с флагом в бите 31 [гипотеза] (снимки regsnap r1, 2026-09-28); серия: у AP бит 31 взведён только пока подключена станция (AP один — 0), у станции 0x13; от BI и канала не зависит (2026-09-29); проверка navtest 2026-09-29: под iperf младшие биты доходят до 1982 (≈ TXOP 2000 мкс − 18) на обоих узлах, бит 31 взведён в ~99 % чтений; предел 1982 не меняется при 0x886d20=100 и при 0x886d24=0 — похоже на аппаратный NAV по полю Duration кадров партнёра [гипотеза] | uc:`rx_nav__set_from_duration` R | — |
+| 0x886eb4 | mac_timing_status | бит 31 = значения времени MAC (TSF, начало BI, 26-битный счётчик) действительны; все читатели TSF крутятся на нём перед чтением; предположительно TIMING_INDIRECT_REG_4 (по использованию: mac_read_tsf64, mac__read_usec_to_tbtt, mac__read_bi_start_tsf64) | `mac__read_bi_start_tsf64` R, `mac__read_usec_to_tbtt` R, `mac_read_tsf64` R, uc:`mac__read_bi_start_tsf64_uc` R, uc:`mac__read_usec_to_tbtt_uc` R, uc:`uc_sysassert__snapshot_mac` R | — |
+| 0x886eb8 | MAC_SXD.TIMING_INDIRECT.TIMING_INDIRECT_REG_5 | msrb_capture_ts_low — текущий TSF, младшее слово, мкс; источник всех меток времени fw/ucode (PmcRegistersAccessor.cpp; по использованию: mac_read_tsf64) | `PS_CONNECTION__psc_complete_8e1794` R, `link_stats__fill_sta_entry` R, `mac_read_tsf64` R, `ps_assoc_mgr__shallow_sleep_enter` R, `rm_ch_switch_sm__fwtx_channel_stopped_8cb6e8` R, `rm_ch_switch_sm__switch_on` R … (+2) | — |
+| 0x886ebc | mac_tsf_hi | текущий TSF, старшее слово; читается до и после младшего для согласованности (по использованию: mac_read_tsf64, link_stats__fill_sta_entry) | `link_stats__fill_sta_entry` R, `mac_read_tsf64` R, uc:`uc_sysassert__snapshot_mac` R | — |
+| 0x886ec0 | mac_usec_to_tbtt | обратный отсчёт до следующего TBTT в мкс, 26 бит (читаются биты 0..25 под флагом готовности 0x886eb4): убывает со скоростью TSF и при TBTT перезаряжается на BI; фаза TSF в BI + значение ≈ 102400 (стенд, быстрая серия regfast f1 2026-09-28: d(ec0) = −d(TSF) на 40 выборках обоих узлов; по использованию: mac__read_usec_to_tbtt, mac__read_usec_to_tbtt_uc); серия: максимум ≈51200/102400/204800 при BI 50/100/200 — обратный отсчёт до TBTT подтверждён; при невключённом MAC читается 0x3ffffff (все 26 бит — счётчик стоит) (2026-09-29) | `mac__read_usec_to_tbtt` R, uc:`mac__read_usec_to_tbtt_uc` R | — |
+| 0x886ecc | mac_busy_status | бит 3 = занятость: fw ждёт его снятия (с задержкой 0xa0 циклов) перед удалением очереди MAC и перед открытием порта данных с установкой ключей (по использованию: STREAM_MGR__2, l2mgr__data_port_open_and_keys) | `STREAM_MGR__2` R, `l2mgr__data_port_open_and_keys` R | — |
+
+## 0x886f00 — mac, internal_tx, txop
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x886f3c | mrfc_switch2tx_status_bus | статусная шина переключения MRFC на передачу, печатается ucode при сисассерте (лог-строка «mrfc_switch2tx_status_bus=0x%08X», uc_sysassert) | uc:`uc_sysassert` R | — |
+| 0x886f40 | mrfc_switch2rx_status_bus | статусная шина переключения MRFC на приём (лог-строка «mrfc_switch2rx_status_bus=0x%08X», uc_sysassert) | uc:`uc_sysassert` R | — |
+| 0x886f4c | ucpu_sp | отладочный снимок sp процессора ucode (адрес ucode, +0x140000 = окно хоста); с него fw и ucode дампят стек ucode при крахе (лог-строка «UCODE :: SYSTEM FATAL CRASH1: sp=…», fw_vector_06, sysassert__dump_ucode_stack) | `fw_vector_06` R, `sysassert__dump_ucode_stack` R, uc:`uc_sysassert__scan_stack` R | — |
+| 0x886f50 | ucpu_ilink1 | отладочный снимок ilink1 процессора ucode (лог-строка «UCODE :: SYSTEM FATAL CRASH1: … ilink1=0x%X», fw_vector_06) | `fw_vector_06` R | — |
+| 0x886f54 | ucpu_ilink2 | отладочный снимок ilink2 процессора ucode (лог-строка «UCODE :: SYSTEM FATAL CRASH1: … ilink2=0x%X», fw_vector_06) | `fw_vector_06` R | — |
+| 0x886f5c | mac_tx_qid_enable_mask | битовая маска очередей MAC по qid, разрешённых к обслуживанию; зеркало в глобале ucode; бит 31 = внутренняя очередь ucode (internal TX), взводится/снимается отдельно (по использованию: internal_tx__set_pending_flag, internal_tx__drop_event_mask_and_publish, tx_sta__run_txop; DATAPATH 4.1: qid 31 = internal TX) | uc:`internal_tx__drop_event_mask_and_publish` W, uc:`internal_tx__set_pending_flag` W, uc:`tx_sta__run_txop` W | — |
+| 0x886f60 | mac_slot_timing_886f60 | при инициализации BI пишется 0x03780378 (два 16-битных поля по 888) вместе с MAC-командой 0x4a000018; единицы и смысл не установлены (по использованию: mac__set_slot_timing_886f60); на стенде: 0x03780378 — два 16-битных поля по 888 (снимки regsnap r1, 2026-09-28); серия: 0x03780378 не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 200/200 и 4095/4095 на обоих — эффекта нет | uc:`mac__set_slot_timing_886f60` W | — |
+| 0x886f70 | mac_txop_limit_0 | пределы TXOP, мкс: (V1<<16) OR min(V0,V1); живьём 0x07d007d0 = 2000 мкс, в OOB 0x05000500 (6.2/docs/MISC-UC.md LMAC 0x21, docs/LMAC-PROTOCOL.md 4.1; по использованию: txop__apply_limits_regs) | uc:`txop__apply_limits_regs` W | — |
+| 0x886f74 | mac_txop_limit_1 | пределы TXOP, мкс: V2 OR (V3<<16); живьём 0x07d007d0 (6.2/docs/MISC-UC.md LMAC 0x21; по использованию: txop__apply_limits_regs) | uc:`txop__apply_limits_regs` W | — |
+| 0x886f78 | mac_886f78 | обнуляется при инициализации режима BI вместе с 0x886f7c; смысл не установлен (по использованию: bi_mode_init_sequence); на стенде: 0 (снимки regsnap r1, 2026-09-28); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | uc:`bi_mode_init_sequence` W | — |
+| 0x886f7c | mac_886f7c | обнуляется при инициализации режима BI; смысл не установлен (по использованию: bi_mode_init_sequence); на стенде: 0 (снимки regsnap r1, 2026-09-28); серия: 0 во всех опытах (BI 50/100/200, каналы 1/2, AP один) (2026-09-29) | uc:`bi_mode_init_sequence` W | — |
+| 0x886f84 | mac_sched_slot_end | запись слота расписания DTI: конец слота (TSF начала + длительность); начало пишется в 0x88c050, тип/флаги в 0x886f88; до 4 записей подряд из событий ucode (NAMES-EXTRA sched__program_alloc_slot_regs; по использованию: lmac_if__evt_walk) | `sched__program_alloc_slot_regs` W | — |
+| 0x886f88 | mac_sched_slot_ctrl | слово типа/флагов слота расписания (16 бит из записи ESE, бит 6 взведён, для последнего слота биты 26/28 и сброс 22..25); пишется последним — вероятно фиксирует запись (по использованию: sched__program_alloc_slot_regs, lmac_if__evt_walk) | `sched__program_alloc_slot_regs` W | — |
+| 0x886f8c | mac_sched_slot_status | состояние текущего запланированного слота: биты 0..3 = id слота, бит 7 и бит 6 — флаги ветвления, байт 1 — ещё одно поле; ucode читает его по событию начала слота (лог-строка «dti_worker::scheduled_dti_allocation_event: starting slot id=%d», dti_worker__scheduled_dti_allocation_event) | uc:`dti_worker__scheduled_dti_allocation_event` R | — |
+| 0x886f9c | MTP_Q_AVAIL | вектор непустых очередей MTP (бит на qid), отображение LR-регистра R41[11] mtp_q_avail_vec (лог-строка «PTP Availibilty = %x», sm_pring__bind_vring; MSXD_LR_RGF, DATAPATH 4.1) | `sm_pring__bind_vring` R | — |
+| 0x886fbc | mac_886fbc | ucode пишет 0 при инициализации BI перед установкой уровня своего прерывания 14, затем 0x886fc0 = -1; по форме похоже на пару ICC/ICR, но 0x886fc4 занят TSF начала BI, так что модель RGF_ICR сюда не ложится (по использованию: bi_mode_init_substep) | uc:`bi_mode_init_substep` W | — |
+| 0x886fc0 | mac_886fc0 | ucode пишет 0xffffffff при инициализации BI сразу после 0x886fbc = 0; смысл (сброс причин или «никогда» для компаратора) не установлен (по использованию: bi_mode_init_substep); на стенде: читается 0x00ffffff — 24-битная маска (как 0x886d40) (снимки regsnap r1, 2026-09-28); серия: 0x00ffffff не зависит от BI (50/100/200), канала (1/2) и роли; при выключенном радио станции 0 — пишется стартом MAC (2026-09-29); вмешательство regpoke 2026-09-29 (запись на живом линке, замер пинг/iperf/CP-кадры станции/ход TSF): 0 на AP — разрыв, затем линк восстанавливается сам; при чтении снова 0x00ffffff — ucode переписал при переподключении | uc:`bi_mode_init_substep` W | — |
+| 0x886fc4 | mac_bi_start_tsf_lo | TSF начала текущего BI (TBTT), младшее слово, мкс; следующий BI = это + период 0x886d64 ×1024 (6.2/docs/MISC-FW.md; по использованию: mac__get_bi_start_tsf, mac__tsf_lo_after_n_bi); на стенде (regfast f1): кратно BI (сетка TBTT от нуля TSF); держит TBTT текущего BI и переводится на следующий за ~7–8 мс до него на обоих узлах; серия: шаг = BI·1024 при BI 50/100/200, всегда кратно BI (2026-09-29) | `mac__get_bi_start_tsf` R, `mac__read_bi_start_tsf64` R, `mac__tsf_lo_after_n_bi` R, uc:`mac__read_bi_start_tsf64_uc` R | — |
+| 0x886fc8 | mac_bi_start_tsf_hi | TSF начала текущего BI, старшее слово; читается парой с 0x886fc4 под флагом 0x886eb4 (по использованию: mac__read_bi_start_tsf64, mac__read_bi_start_tsf64_uc) | `mac__read_bi_start_tsf64` R, uc:`mac__read_bi_start_tsf64_uc` R | — |
+| 0x886fcc | mac_awake_tsf_lo | момент пробуждения (TSF, младшее слово); ставится перед глубоким сном, по нему срабатывает бит 15 «Awake TSF interrupt expired» в 0x886e40 (по использованию: ps__set_wake_time64, deep_sleep_enter) | `ps__set_wake_time64` W | — |
+| 0x886fd0 | mac_awake_tsf_hi | момент пробуждения (TSF, старшее слово) (по использованию: ps__set_wake_time64) | `ps__set_wake_time64` W | — |
+
+## 0x887000 — mac_icr, cnt_handler, isr_vec10
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x887000 | mac_rgf_base_7000 | база с отрицательными смещениями: uc bi_mode_init_sequence пишет 0x886dc0 = 0xfa, 0x886dac = 0, 0x886d50 = 2000, 0x886f78 = 0, 0x886f7c = 0 (по использованию: uc bi_mode_init_sequence) | uc:`bi_mode_init_sequence` A | — |
+| 0x887008 | mac_cnt_ctrl | командный регистр блока счётчиков MAC: запись команды (0x3d8000 = 0x7b<<15, 0x2a4000, 0x1a2000), ожидание флагов готовности в битах 30/31 до 1000 опросов, иначе фатал 0x1187..0x1189 (лог-строка «MAIN() Configurre MAC counters»; по использованию: cnt_handler__clear_all) | `cnt_handler__clear_all` RW | — |
+| 0x887010 | mac_cnt_icr | ICR (W1C) блока RGF_ICR с базой 0x88700c, прерывание fw вектор 10; обработчик только квитирует: пишет сюда значение ICM (по использованию: isr_vec10__ack_mac_icr; драйвер struct RGF_ICR +4) | `isr_vec10__ack_mac_icr` W | — |
+| 0x887014 | mac_cnt_icm | ICM (причина с учётом маски) блока 0x88700c (по использованию: mac_icr__read_cause_887014; драйвер struct RGF_ICR +8) | `mac_icr__read_cause_887014` R | — |
+| 0x88702c | mac_cnt2_icr | ICR (W1C) второго блока RGF_ICR с базой 0x887028, прерывание fw вектор 11; обработчик пишет сюда ICM (по использованию: isr_vec11__ack_mac_icr2; драйвер struct RGF_ICR +4) | `isr_vec11__ack_mac_icr2` W | — |
+| 0x887030 | mac_cnt2_icm | ICM второго блока 0x887028 (по использованию: mac_icr__read_cause_887030; драйвер struct RGF_ICR +8) | `mac_icr__read_cause_887030` R | — |
+
+## 0x887100 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x887144 | mac_cnt_cfg_a_17 | настройка счётчика MAC a[17] при загрузке: 0x00040000 (старшее полуслово 0x4, младшее 0x0); в паре с 0x8873c4 = 0x1; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887148 | mac_cnt_cfg_a_18 | настройка счётчика MAC a[18] при загрузке: 0x00240000 (старшее полуслово 0x24, младшее 0x0); в паре с 0x8873c8 = 0x4; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88714c | mac_cnt_cfg_a_19 | настройка счётчика MAC a[19] при загрузке: 0x00440000 (старшее полуслово 0x44, младшее 0x0); в паре с 0x8873cc = 0x5; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887150 | mac_cnt_cfg_a_20 | настройка счётчика MAC a[20] при загрузке: 0x00640000 (старшее полуслово 0x64, младшее 0x0); в паре с 0x8873d0 = 0x7; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887154 | mac_cnt_cfg_a_21 | настройка счётчика MAC a[21] при загрузке: 0x00840000 (старшее полуслово 0x84, младшее 0x0); в паре с 0x8873d4 = 0x9; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887158 | mac_cnt_cfg_a_22 | настройка счётчика MAC a[22] при загрузке: 0x00a40000 (старшее полуслово 0xa4, младшее 0x0); в паре с 0x8873d8 = 0xa; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88715c | mac_cnt_cfg_a_23 | настройка счётчика MAC a[23] при загрузке: 0x00c40000 (старшее полуслово 0xc4, младшее 0x0); в паре с 0x8873dc = 0xb; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887160 | mac_cnt_cfg_a_24 | настройка счётчика MAC a[24] при загрузке: 0x00e40000 (старшее полуслово 0xe4, младшее 0x0); в паре с 0x8873e0 = 0xc; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887164 | mac_cnt_cfg_a_25 | настройка счётчика MAC a[25] при загрузке: 0x01040000 (старшее полуслово 0x104, младшее 0x0); в паре с 0x8873e4 = 0xd; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887168 | mac_cnt_cfg_a_26 | настройка счётчика MAC a[26] при загрузке: 0x01240000 (старшее полуслово 0x124, младшее 0x0); в паре с 0x8873e8 = 0xe; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88716c | mac_cnt_cfg_a_27 | настройка счётчика MAC a[27] при загрузке: 0x01440000 (старшее полуслово 0x144, младшее 0x0); в паре с 0x8873ec = 0xf; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887170 | mac_cnt_cfg_a_28 | настройка счётчика MAC a[28] при загрузке: 0x01640000 (старшее полуслово 0x164, младшее 0x0); в паре с 0x8873f0 = 0x10; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887174 | mac_cnt_cfg_a_29 | настройка счётчика MAC a[29] при загрузке: 0x01840000 (старшее полуслово 0x184, младшее 0x0); в паре с 0x8873f4 = 0x11; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887178 | mac_cnt_cfg_a_30 | настройка счётчика MAC a[30] при загрузке: 0x01a40000 (старшее полуслово 0x1a4, младшее 0x0); в паре с 0x8873f8 = 0x12; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88717c | mac_cnt_cfg_a_31 | настройка счётчика MAC a[31] при загрузке: 0x01c40000 (старшее полуслово 0x1c4, младшее 0x0); в паре с 0x8873fc = 0x13; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887180 | mac_cnt_cfg_a_32 | настройка счётчика MAC a[32] при загрузке: 0x01e40000 (старшее полуслово 0x1e4, младшее 0x0); в паре с 0x887400 = 0x14; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887184 | mac_cnt_cfg_a_33 | настройка счётчика MAC a[33] при загрузке: 0x02040000 (старшее полуслово 0x204, младшее 0x0); в паре с 0x887404 = 0x15; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887188 | mac_cnt_cfg_a_34 | настройка счётчика MAC a[34] при загрузке: 0x02240000 (старшее полуслово 0x224, младшее 0x0); в паре с 0x887408 = 0x16; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88718c | mac_cnt_cfg_a_35 | настройка счётчика MAC a[35] при загрузке: 0x02440000 (старшее полуслово 0x244, младшее 0x0); в паре с 0x88740c = 0x17; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887190 | mac_cnt_cfg_a_36 | настройка счётчика MAC a[36] при загрузке: 0x02640000 (старшее полуслово 0x264, младшее 0x0); в паре с 0x887410 = 0x18; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887194 | mac_cnt_cfg_a_37 | настройка счётчика MAC a[37] при загрузке: 0x02840000 (старшее полуслово 0x284, младшее 0x0); в паре с 0x887414 = 0x19; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887198 | mac_cnt_cfg_a_38 | настройка счётчика MAC a[38] при загрузке: 0x02a40000 (старшее полуслово 0x2a4, младшее 0x0); в паре с 0x887418 = 0x1a; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88719c | mac_cnt_cfg_a_39 | настройка счётчика MAC a[39] при загрузке: 0x02c40000 (старшее полуслово 0x2c4, младшее 0x0); в паре с 0x88741c = 0x1b; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871a0 | mac_cnt_cfg_a_40 | настройка счётчика MAC a[40] при загрузке: 0x02e40000 (старшее полуслово 0x2e4, младшее 0x0); в паре с 0x887420 = 0x1c; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871a4 | mac_cnt_cfg_a_41 | настройка счётчика MAC a[41] при загрузке: 0x03040000 (старшее полуслово 0x304, младшее 0x0); в паре с 0x887424 = 0x1d; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871a8 | mac_cnt_cfg_a_42 | настройка счётчика MAC a[42] при загрузке: 0x03240000 (старшее полуслово 0x324, младшее 0x0); в паре с 0x887428 = 0x1e; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871ac | mac_cnt_cfg_a_43 | настройка счётчика MAC a[43] при загрузке: 0x03440000 (старшее полуслово 0x344, младшее 0x0); в паре с 0x88742c = 0x1f; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871b0 | mac_cnt_cfg_a_44 | настройка счётчика MAC a[44] при загрузке: 0x03640000 (старшее полуслово 0x364, младшее 0x0); в паре с 0x887430 = 0x20; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871b4 | mac_cnt_cfg_a_45 | настройка счётчика MAC a[45] при загрузке: 0x03840000 (старшее полуслово 0x384, младшее 0x0); в паре с 0x887434 = 0x21; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871b8 | mac_cnt_cfg_a_46 | настройка счётчика MAC a[46] при загрузке: 0x03a40000 (старшее полуслово 0x3a4, младшее 0x0); в паре с 0x887438 = 0x22; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871bc | mac_cnt_cfg_a_47 | настройка счётчика MAC a[47] при загрузке: 0x03c40000 (старшее полуслово 0x3c4, младшее 0x0); в паре с 0x88743c = 0x23; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871c0 | mac_cnt_cfg_a_48 | настройка счётчика MAC a[48] при загрузке: 0x03e40000 (старшее полуслово 0x3e4, младшее 0x0); в паре с 0x887440 = 0x24; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871c4 | mac_cnt_cfg_a_49 | настройка счётчика MAC a[49] при загрузке: 0x04040000 (старшее полуслово 0x404, младшее 0x0); в паре с 0x887444 = 0x2a; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871c8 | mac_cnt_cfg_a_50 | настройка счётчика MAC a[50] при загрузке: 0x04240000 (старшее полуслово 0x424, младшее 0x0); в паре с 0x887448 = 0x2b; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871cc | mac_cnt_cfg_a_51 | настройка счётчика MAC a[51] при загрузке: 0x04440000 (старшее полуслово 0x444, младшее 0x0); в паре с 0x88744c = 0x2c; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871d0 | mac_cnt_cfg_a_52 | настройка счётчика MAC a[52] при загрузке: 0x04640000 (старшее полуслово 0x464, младшее 0x0); в паре с 0x887450 = 0x2d; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871d4 | mac_cnt_cfg_a_53 | настройка счётчика MAC a[53] при загрузке: 0x04840000 (старшее полуслово 0x484, младшее 0x0); в паре с 0x887454 = 0x2e; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871d8 | mac_cnt_cfg_a_54 | настройка счётчика MAC a[54] при загрузке: 0x04a40000 (старшее полуслово 0x4a4, младшее 0x0); в паре с 0x887458 = 0x2f; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871dc | mac_cnt_cfg_a_55 | настройка счётчика MAC a[55] при загрузке: 0x04c40000 (старшее полуслово 0x4c4, младшее 0x0); в паре с 0x88745c = 0x30; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871e0 | mac_cnt_cfg_a_56 | настройка счётчика MAC a[56] при загрузке: 0x04e40000 (старшее полуслово 0x4e4, младшее 0x0); в паре с 0x887460 = 0x32; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871e4 | mac_cnt_cfg_a_57 | настройка счётчика MAC a[57] при загрузке: 0x05040000 (старшее полуслово 0x504, младшее 0x0); в паре с 0x887464 = 0x33; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871e8 | mac_cnt_cfg_a_58 | настройка счётчика MAC a[58] при загрузке: 0x052c0000 (старшее полуслово 0x52c, младшее 0x0); в паре с 0x887468 = 0x34; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871ec | mac_cnt_cfg_a_59 | настройка счётчика MAC a[59] при загрузке: 0x05640000 (старшее полуслово 0x564, младшее 0x0); в паре с 0x88746c = 0x36; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871f0 | mac_cnt_cfg_a_60 | настройка счётчика MAC a[60] при загрузке: 0x05840000 (старшее полуслово 0x584, младшее 0x0); в паре с 0x887470 = 0x37; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871f4 | mac_cnt_cfg_a_61 | настройка счётчика MAC a[61] при загрузке: 0x05a40000 (старшее полуслово 0x5a4, младшее 0x0); в паре с 0x887474 = 0x39; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871f8 | mac_cnt_cfg_a_62 | настройка счётчика MAC a[62] при загрузке: 0x05c40000 (старшее полуслово 0x5c4, младшее 0x0); в паре с 0x887478 = 0x3a; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8871fc | mac_cnt_cfg_a_63 | настройка счётчика MAC a[63] при загрузке: 0x05ec0000 (старшее полуслово 0x5ec, младшее 0x0); в паре с 0x88747c = 0x3b; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+
+## 0x887200 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x887200 | mac_cnt_cfg_a_64 | настройка счётчика MAC a[64] при загрузке: 0x06240000 (старшее полуслово 0x624, младшее 0x0); в паре с 0x887480 = 0x3d; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887204 | mac_cnt_cfg_a_65 | настройка счётчика MAC a[65] при загрузке: 0x06440000 (старшее полуслово 0x644, младшее 0x0); в паре с 0x887484 = 0x3e; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887208 | mac_cnt_cfg_a_66 | настройка счётчика MAC a[66] при загрузке: 0x06640000 (старшее полуслово 0x664, младшее 0x0); в паре с 0x887488 = 0x40; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88720c | mac_cnt_cfg_a_67 | настройка счётчика MAC a[67] при загрузке: 0x06840000 (старшее полуслово 0x684, младшее 0x0); в паре с 0x88748c = 0x41; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887210 | mac_cnt_cfg_a_68 | настройка счётчика MAC a[68] при загрузке: 0x06a40000 (старшее полуслово 0x6a4, младшее 0x0); в паре с 0x887490 = 0x42; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887214 | mac_cnt_cfg_a_69 | настройка счётчика MAC a[69] при загрузке: 0x06c40000 (старшее полуслово 0x6c4, младшее 0x0); в паре с 0x887494 = 0x45; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+
+## 0x887300 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x8873c4 | mac_cnt_sel_a_17 | номер события/источника для счётчика MAC a[17] при загрузке: 0x1; в паре с 0x887144 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873c8 | mac_cnt_sel_a_18 | номер события/источника для счётчика MAC a[18] при загрузке: 0x4; в паре с 0x887148 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873cc | mac_cnt_sel_a_19 | номер события/источника для счётчика MAC a[19] при загрузке: 0x5; в паре с 0x88714c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873d0 | mac_cnt_sel_a_20 | номер события/источника для счётчика MAC a[20] при загрузке: 0x7; в паре с 0x887150 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873d4 | mac_cnt_sel_a_21 | номер события/источника для счётчика MAC a[21] при загрузке: 0x9; в паре с 0x887154 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873d8 | mac_cnt_sel_a_22 | номер события/источника для счётчика MAC a[22] при загрузке: 0xa; в паре с 0x887158 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873dc | mac_cnt_sel_a_23 | номер события/источника для счётчика MAC a[23] при загрузке: 0xb; в паре с 0x88715c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873e0 | mac_cnt_sel_a_24 | номер события/источника для счётчика MAC a[24] при загрузке: 0xc; в паре с 0x887160 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873e4 | mac_cnt_sel_a_25 | номер события/источника для счётчика MAC a[25] при загрузке: 0xd; в паре с 0x887164 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873e8 | mac_cnt_sel_a_26 | номер события/источника для счётчика MAC a[26] при загрузке: 0xe; в паре с 0x887168 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873ec | mac_cnt_sel_a_27 | номер события/источника для счётчика MAC a[27] при загрузке: 0xf; в паре с 0x88716c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873f0 | mac_cnt_sel_a_28 | номер события/источника для счётчика MAC a[28] при загрузке: 0x10; в паре с 0x887170 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873f4 | mac_cnt_sel_a_29 | номер события/источника для счётчика MAC a[29] при загрузке: 0x11; в паре с 0x887174 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873f8 | mac_cnt_sel_a_30 | номер события/источника для счётчика MAC a[30] при загрузке: 0x12; в паре с 0x887178 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8873fc | mac_cnt_sel_a_31 | номер события/источника для счётчика MAC a[31] при загрузке: 0x13; в паре с 0x88717c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+
+## 0x887400 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x887400 | mac_cnt_sel_a_32 | номер события/источника для счётчика MAC a[32] при загрузке: 0x14; в паре с 0x887180 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887404 | mac_cnt_sel_a_33 | номер события/источника для счётчика MAC a[33] при загрузке: 0x15; в паре с 0x887184 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887408 | mac_cnt_sel_a_34 | номер события/источника для счётчика MAC a[34] при загрузке: 0x16; в паре с 0x887188 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88740c | mac_cnt_sel_a_35 | номер события/источника для счётчика MAC a[35] при загрузке: 0x17; в паре с 0x88718c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887410 | mac_cnt_sel_a_36 | номер события/источника для счётчика MAC a[36] при загрузке: 0x18; в паре с 0x887190 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887414 | mac_cnt_sel_a_37 | номер события/источника для счётчика MAC a[37] при загрузке: 0x19; в паре с 0x887194 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887418 | mac_cnt_sel_a_38 | номер события/источника для счётчика MAC a[38] при загрузке: 0x1a; в паре с 0x887198 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88741c | mac_cnt_sel_a_39 | номер события/источника для счётчика MAC a[39] при загрузке: 0x1b; в паре с 0x88719c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887420 | mac_cnt_sel_a_40 | номер события/источника для счётчика MAC a[40] при загрузке: 0x1c; в паре с 0x8871a0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887424 | mac_cnt_sel_a_41 | номер события/источника для счётчика MAC a[41] при загрузке: 0x1d; в паре с 0x8871a4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887428 | mac_cnt_sel_a_42 | номер события/источника для счётчика MAC a[42] при загрузке: 0x1e; в паре с 0x8871a8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88742c | mac_cnt_sel_a_43 | номер события/источника для счётчика MAC a[43] при загрузке: 0x1f; в паре с 0x8871ac (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887430 | mac_cnt_sel_a_44 | номер события/источника для счётчика MAC a[44] при загрузке: 0x20; в паре с 0x8871b0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887434 | mac_cnt_sel_a_45 | номер события/источника для счётчика MAC a[45] при загрузке: 0x21; в паре с 0x8871b4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887438 | mac_cnt_sel_a_46 | номер события/источника для счётчика MAC a[46] при загрузке: 0x22; в паре с 0x8871b8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88743c | mac_cnt_sel_a_47 | номер события/источника для счётчика MAC a[47] при загрузке: 0x23; в паре с 0x8871bc (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887440 | mac_cnt_sel_a_48 | номер события/источника для счётчика MAC a[48] при загрузке: 0x24; в паре с 0x8871c0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887444 | mac_cnt_sel_a_49 | номер события/источника для счётчика MAC a[49] при загрузке: 0x2a; в паре с 0x8871c4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887448 | mac_cnt_sel_a_50 | номер события/источника для счётчика MAC a[50] при загрузке: 0x2b; в паре с 0x8871c8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88744c | mac_cnt_sel_a_51 | номер события/источника для счётчика MAC a[51] при загрузке: 0x2c; в паре с 0x8871cc (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887450 | mac_cnt_sel_a_52 | номер события/источника для счётчика MAC a[52] при загрузке: 0x2d; в паре с 0x8871d0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887454 | mac_cnt_sel_a_53 | номер события/источника для счётчика MAC a[53] при загрузке: 0x2e; в паре с 0x8871d4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887458 | mac_cnt_sel_a_54 | номер события/источника для счётчика MAC a[54] при загрузке: 0x2f; в паре с 0x8871d8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88745c | mac_cnt_sel_a_55 | номер события/источника для счётчика MAC a[55] при загрузке: 0x30; в паре с 0x8871dc (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887460 | mac_cnt_sel_a_56 | номер события/источника для счётчика MAC a[56] при загрузке: 0x32; в паре с 0x8871e0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887464 | mac_cnt_sel_a_57 | номер события/источника для счётчика MAC a[57] при загрузке: 0x33; в паре с 0x8871e4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887468 | mac_cnt_sel_a_58 | номер события/источника для счётчика MAC a[58] при загрузке: 0x34; в паре с 0x8871e8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88746c | mac_cnt_sel_a_59 | номер события/источника для счётчика MAC a[59] при загрузке: 0x36; в паре с 0x8871ec (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887470 | mac_cnt_sel_a_60 | номер события/источника для счётчика MAC a[60] при загрузке: 0x37; в паре с 0x8871f0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887474 | mac_cnt_sel_a_61 | номер события/источника для счётчика MAC a[61] при загрузке: 0x39; в паре с 0x8871f4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887478 | mac_cnt_sel_a_62 | номер события/источника для счётчика MAC a[62] при загрузке: 0x3a; в паре с 0x8871f8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88747c | mac_cnt_sel_a_63 | номер события/источника для счётчика MAC a[63] при загрузке: 0x3b; в паре с 0x8871fc (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887480 | mac_cnt_sel_a_64 | номер события/источника для счётчика MAC a[64] при загрузке: 0x3d; в паре с 0x887200 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887484 | mac_cnt_sel_a_65 | номер события/источника для счётчика MAC a[65] при загрузке: 0x3e; в паре с 0x887204 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887488 | mac_cnt_sel_a_66 | номер события/источника для счётчика MAC a[66] при загрузке: 0x40; в паре с 0x887208 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88748c | mac_cnt_sel_a_67 | номер события/источника для счётчика MAC a[67] при загрузке: 0x41; в паре с 0x88720c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887490 | mac_cnt_sel_a_68 | номер события/источника для счётчика MAC a[68] при загрузке: 0x42; в паре с 0x887210 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887494 | mac_cnt_sel_a_69 | номер события/источника для счётчика MAC a[69] при загрузке: 0x45; в паре с 0x887214 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+
+## 0x887600 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x887644 | mac_cnt_cfg_b_17 | настройка счётчика MAC b[17] при загрузке: 0x00080000 (старшее полуслово 0x8, младшее 0x0); в паре с 0x887844 = 0x1; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887648 | mac_cnt_cfg_b_18 | настройка счётчика MAC b[18] при загрузке: 0x00300000 (старшее полуслово 0x30, младшее 0x0); в паре с 0x887848 = 0x4; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88764c | mac_cnt_cfg_b_19 | настройка счётчика MAC b[19] при загрузке: 0x00640000 (старшее полуслово 0x64, младшее 0x0); в паре с 0x88784c = 0x7; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887650 | mac_cnt_cfg_b_20 | настройка счётчика MAC b[20] при загрузке: 0x00880000 (старшее полуслово 0x88, младшее 0x0); в паре с 0x887850 = 0x2; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887654 | mac_cnt_cfg_b_21 | настройка счётчика MAC b[21] при загрузке: 0x00b00000 (старшее полуслово 0xb0, младшее 0x0); в паре с 0x887854 = 0x5; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887658 | mac_cnt_cfg_b_22 | настройка счётчика MAC b[22] при загрузке: 0x00e40000 (старшее полуслово 0xe4, младшее 0x0); в паре с 0x887858 = 0x8; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88765c | mac_cnt_cfg_b_23 | настройка счётчика MAC b[23] при загрузке: 0x01080000 (старшее полуслово 0x108, младшее 0x0); в паре с 0x88785c = 0x3; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887660 | mac_cnt_cfg_b_24 | настройка счётчика MAC b[24] при загрузке: 0x01300000 (старшее полуслово 0x130, младшее 0x0); в паре с 0x887860 = 0x6; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887664 | mac_cnt_cfg_b_25 | настройка счётчика MAC b[25] при загрузке: 0x01640000 (старшее полуслово 0x164, младшее 0x0); в паре с 0x887864 = 0x9; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887668 | mac_cnt_cfg_b_26 | настройка счётчика MAC b[26] при загрузке: 0x01840000 (старшее полуслово 0x184, младшее 0x0); в паре с 0x887868 = 0xa; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88766c | mac_cnt_cfg_b_27 | настройка счётчика MAC b[27] при загрузке: 0x01a40000 (старшее полуслово 0x1a4, младшее 0x0); в паре с 0x88786c = 0xb; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887670 | mac_cnt_cfg_b_28 | настройка счётчика MAC b[28] при загрузке: 0x01c40000 (старшее полуслово 0x1c4, младшее 0x0); в паре с 0x887870 = 0xc; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887674 | mac_cnt_cfg_b_29 | настройка счётчика MAC b[29] при загрузке: 0x01e40000 (старшее полуслово 0x1e4, младшее 0x0); в паре с 0x887874 = 0xd; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887678 | mac_cnt_cfg_b_30 | настройка счётчика MAC b[30] при загрузке: 0x02040000 (старшее полуслово 0x204, младшее 0x0); в паре с 0x887878 = 0xe; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88767c | mac_cnt_cfg_b_31 | настройка счётчика MAC b[31] при загрузке: 0x02240000 (старшее полуслово 0x224, младшее 0x0); в паре с 0x88787c = 0xf; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887680 | mac_cnt_cfg_b_32 | настройка счётчика MAC b[32] при загрузке: 0x02480000 (старшее полуслово 0x248, младшее 0x0); в паре с 0x887880 = 0x10; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887684 | mac_cnt_cfg_b_33 | настройка счётчика MAC b[33] при загрузке: 0x02680000 (старшее полуслово 0x268, младшее 0x0); в паре с 0x887884 = 0x11; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887688 | mac_cnt_cfg_b_34 | настройка счётчика MAC b[34] при загрузке: 0x02880000 (старшее полуслово 0x288, младшее 0x0); в паре с 0x887888 = 0x12; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88768c | mac_cnt_cfg_b_35 | настройка счётчика MAC b[35] при загрузке: 0x02a40200 (старшее полуслово 0x2a4, младшее 0x200); в паре с 0x88788c = 0x20013; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887690 | mac_cnt_cfg_b_36 | настройка счётчика MAC b[36] при загрузке: 0x02c40000 (старшее полуслово 0x2c4, младшее 0x0); в паре с 0x887890 = 0x14; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887694 | mac_cnt_cfg_b_37 | настройка счётчика MAC b[37] при загрузке: 0x02e40000 (старшее полуслово 0x2e4, младшее 0x0); в паре с 0x887894 = 0x15; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887698 | mac_cnt_cfg_b_38 | настройка счётчика MAC b[38] при загрузке: 0x03040000 (старшее полуслово 0x304, младшее 0x0); в паре с 0x887898 = 0x16; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88769c | mac_cnt_cfg_b_39 | настройка счётчика MAC b[39] при загрузке: 0x03240000 (старшее полуслово 0x324, младшее 0x0); в паре с 0x88789c = 0x17; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876a0 | mac_cnt_cfg_b_40 | настройка счётчика MAC b[40] при загрузке: 0x03440000 (старшее полуслово 0x344, младшее 0x0); в паре с 0x8878a0 = 0x18; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876a4 | mac_cnt_cfg_b_41 | настройка счётчика MAC b[41] при загрузке: 0x03640000 (старшее полуслово 0x364, младшее 0x0); в паре с 0x8878a4 = 0x19; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876a8 | mac_cnt_cfg_b_42 | настройка счётчика MAC b[42] при загрузке: 0x03840000 (старшее полуслово 0x384, младшее 0x0); в паре с 0x8878a8 = 0x1a; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876ac | mac_cnt_cfg_b_43 | настройка счётчика MAC b[43] при загрузке: 0x03a40000 (старшее полуслово 0x3a4, младшее 0x0); в паре с 0x8878ac = 0x1b; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876b0 | mac_cnt_cfg_b_44 | настройка счётчика MAC b[44] при загрузке: 0x03c40000 (старшее полуслово 0x3c4, младшее 0x0); в паре с 0x8878b0 = 0x1c; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876b4 | mac_cnt_cfg_b_45 | настройка счётчика MAC b[45] при загрузке: 0x03e40000 (старшее полуслово 0x3e4, младшее 0x0); в паре с 0x8878b4 = 0x1d; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876b8 | mac_cnt_cfg_b_46 | настройка счётчика MAC b[46] при загрузке: 0x04040000 (старшее полуслово 0x404, младшее 0x0); в паре с 0x8878b8 = 0x1e; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876bc | mac_cnt_cfg_b_47 | настройка счётчика MAC b[47] при загрузке: 0x04240000 (старшее полуслово 0x424, младшее 0x0); в паре с 0x8878bc = 0x1f; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876c0 | mac_cnt_cfg_b_48 | настройка счётчика MAC b[48] при загрузке: 0x04480002 (старшее полуслово 0x448, младшее 0x2); в паре с 0x8878c0 = 0x11820; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876c4 | mac_cnt_cfg_b_49 | настройка счётчика MAC b[49] при загрузке: 0x04640000 (старшее полуслово 0x464, младшее 0x0); в паре с 0x8878c4 = 0x21; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876c8 | mac_cnt_cfg_b_50 | настройка счётчика MAC b[50] при загрузке: 0x04840000 (старшее полуслово 0x484, младшее 0x0); в паре с 0x8878c8 = 0x22; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876cc | mac_cnt_cfg_b_51 | настройка счётчика MAC b[51] при загрузке: 0x04a40000 (старшее полуслово 0x4a4, младшее 0x0); в паре с 0x8878cc = 0x23; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876d0 | mac_cnt_cfg_b_52 | настройка счётчика MAC b[52] при загрузке: 0x04c40000 (старшее полуслово 0x4c4, младшее 0x0); в паре с 0x8878d0 = 0x24; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876d4 | mac_cnt_cfg_b_53 | настройка счётчика MAC b[53] при загрузке: 0x04e40000 (старшее полуслово 0x4e4, младшее 0x0); в паре с 0x8878d4 = 0x25; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876d8 | mac_cnt_cfg_b_54 | настройка счётчика MAC b[54] при загрузке: 0x05040000 (старшее полуслово 0x504, младшее 0x0); в паре с 0x8878d8 = 0x26; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876dc | mac_cnt_cfg_b_55 | настройка счётчика MAC b[55] при загрузке: 0x05240000 (старшее полуслово 0x524, младшее 0x0); в паре с 0x8878dc = 0x27; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876e0 | mac_cnt_cfg_b_56 | настройка счётчика MAC b[56] при загрузке: 0x05441200 (старшее полуслово 0x544, младшее 0x1200); в паре с 0x8878e0 = 0x20028; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876e4 | mac_cnt_cfg_b_57 | настройка счётчика MAC b[57] при загрузке: 0x05642200 (старшее полуслово 0x564, младшее 0x2200); в паре с 0x8878e4 = 0x20029; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876e8 | mac_cnt_cfg_b_58 | настройка счётчика MAC b[58] при загрузке: 0x05843200 (старшее полуслово 0x584, младшее 0x3200); в паре с 0x8878e8 = 0x2002a; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8876ec | mac_cnt_cfg_b_59 | настройка счётчика MAC b[59] при загрузке: 0x05a44200 (старшее полуслово 0x5a4, младшее 0x4200); в паре с 0x8878ec = 0x2002b; вероятно адрес/шаг ячейки счётчика и флаги (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+
+## 0x887800 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x887844 | mac_cnt_sel_b_17 | номер события/источника для счётчика MAC b[17] при загрузке: 0x1; в паре с 0x887644 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887848 | mac_cnt_sel_b_18 | номер события/источника для счётчика MAC b[18] при загрузке: 0x4; в паре с 0x887648 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88784c | mac_cnt_sel_b_19 | номер события/источника для счётчика MAC b[19] при загрузке: 0x7; в паре с 0x88764c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887850 | mac_cnt_sel_b_20 | номер события/источника для счётчика MAC b[20] при загрузке: 0x2; в паре с 0x887650 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887854 | mac_cnt_sel_b_21 | номер события/источника для счётчика MAC b[21] при загрузке: 0x5; в паре с 0x887654 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887858 | mac_cnt_sel_b_22 | номер события/источника для счётчика MAC b[22] при загрузке: 0x8; в паре с 0x887658 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88785c | mac_cnt_sel_b_23 | номер события/источника для счётчика MAC b[23] при загрузке: 0x3; в паре с 0x88765c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887860 | mac_cnt_sel_b_24 | номер события/источника для счётчика MAC b[24] при загрузке: 0x6; в паре с 0x887660 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887864 | mac_cnt_sel_b_25 | номер события/источника для счётчика MAC b[25] при загрузке: 0x9; в паре с 0x887664 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887868 | mac_cnt_sel_b_26 | номер события/источника для счётчика MAC b[26] при загрузке: 0xa; в паре с 0x887668 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88786c | mac_cnt_sel_b_27 | номер события/источника для счётчика MAC b[27] при загрузке: 0xb; в паре с 0x88766c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887870 | mac_cnt_sel_b_28 | номер события/источника для счётчика MAC b[28] при загрузке: 0xc; в паре с 0x887670 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887874 | mac_cnt_sel_b_29 | номер события/источника для счётчика MAC b[29] при загрузке: 0xd; в паре с 0x887674 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887878 | mac_cnt_sel_b_30 | номер события/источника для счётчика MAC b[30] при загрузке: 0xe; в паре с 0x887678 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88787c | mac_cnt_sel_b_31 | номер события/источника для счётчика MAC b[31] при загрузке: 0xf; в паре с 0x88767c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887880 | mac_cnt_sel_b_32 | номер события/источника для счётчика MAC b[32] при загрузке: 0x10; в паре с 0x887680 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887884 | mac_cnt_sel_b_33 | номер события/источника для счётчика MAC b[33] при загрузке: 0x11; в паре с 0x887684 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887888 | mac_cnt_sel_b_34 | номер события/источника для счётчика MAC b[34] при загрузке: 0x12; в паре с 0x887688 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88788c | mac_cnt_sel_b_35 | номер события/источника для счётчика MAC b[35] при загрузке: 0x20013; в паре с 0x88768c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887890 | mac_cnt_sel_b_36 | номер события/источника для счётчика MAC b[36] при загрузке: 0x14; в паре с 0x887690 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887894 | mac_cnt_sel_b_37 | номер события/источника для счётчика MAC b[37] при загрузке: 0x15; в паре с 0x887694 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x887898 | mac_cnt_sel_b_38 | номер события/источника для счётчика MAC b[38] при загрузке: 0x16; в паре с 0x887698 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x88789c | mac_cnt_sel_b_39 | номер события/источника для счётчика MAC b[39] при загрузке: 0x17; в паре с 0x88769c (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878a0 | mac_cnt_sel_b_40 | номер события/источника для счётчика MAC b[40] при загрузке: 0x18; в паре с 0x8876a0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878a4 | mac_cnt_sel_b_41 | номер события/источника для счётчика MAC b[41] при загрузке: 0x19; в паре с 0x8876a4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878a8 | mac_cnt_sel_b_42 | номер события/источника для счётчика MAC b[42] при загрузке: 0x1a; в паре с 0x8876a8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878ac | mac_cnt_sel_b_43 | номер события/источника для счётчика MAC b[43] при загрузке: 0x1b; в паре с 0x8876ac (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878b0 | mac_cnt_sel_b_44 | номер события/источника для счётчика MAC b[44] при загрузке: 0x1c; в паре с 0x8876b0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878b4 | mac_cnt_sel_b_45 | номер события/источника для счётчика MAC b[45] при загрузке: 0x1d; в паре с 0x8876b4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878b8 | mac_cnt_sel_b_46 | номер события/источника для счётчика MAC b[46] при загрузке: 0x1e; в паре с 0x8876b8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878bc | mac_cnt_sel_b_47 | номер события/источника для счётчика MAC b[47] при загрузке: 0x1f; в паре с 0x8876bc (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878c0 | mac_cnt_sel_b_48 | номер события/источника для счётчика MAC b[48] при загрузке: 0x11820; в паре с 0x8876c0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878c4 | mac_cnt_sel_b_49 | номер события/источника для счётчика MAC b[49] при загрузке: 0x21; в паре с 0x8876c4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878c8 | mac_cnt_sel_b_50 | номер события/источника для счётчика MAC b[50] при загрузке: 0x22; в паре с 0x8876c8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878cc | mac_cnt_sel_b_51 | номер события/источника для счётчика MAC b[51] при загрузке: 0x23; в паре с 0x8876cc (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878d0 | mac_cnt_sel_b_52 | номер события/источника для счётчика MAC b[52] при загрузке: 0x24; в паре с 0x8876d0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878d4 | mac_cnt_sel_b_53 | номер события/источника для счётчика MAC b[53] при загрузке: 0x25; в паре с 0x8876d4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878d8 | mac_cnt_sel_b_54 | номер события/источника для счётчика MAC b[54] при загрузке: 0x26; в паре с 0x8876d8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878dc | mac_cnt_sel_b_55 | номер события/источника для счётчика MAC b[55] при загрузке: 0x27; в паре с 0x8876dc (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878e0 | mac_cnt_sel_b_56 | номер события/источника для счётчика MAC b[56] при загрузке: 0x20028; в паре с 0x8876e0 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878e4 | mac_cnt_sel_b_57 | номер события/источника для счётчика MAC b[57] при загрузке: 0x20029; в паре с 0x8876e4 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878e8 | mac_cnt_sel_b_58 | номер события/источника для счётчика MAC b[58] при загрузке: 0x2002a; в паре с 0x8876e8 (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+| 0x8878ec | mac_cnt_sel_b_59 | номер события/источника для счётчика MAC b[59] при загрузке: 0x2002b; в паре с 0x8876ec (лог-строка «MAIN() Configurre MAC counters»; по использованию: boot_fill_addr_tables) | `boot_fill_addr_tables` W | — |
+
+## 0x889000 — hwd_abif, marlon_r_if_class, rfc
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x8890cc | rfc_core_ctrl | управление записью в ядро RFC: бит 30 запускает операцию, бит 29 означает «занят», ждут его снятия до 200000 итераций (docs/HW-DRIVERS.md; лог-строка «hwd_rfc_write_core busy set before write!») | `hwd_abif__dvs_lo_splitter_config_buf_val` R, `hwd_abif__dvs_lo_splitter_enable` R, `hwd_abif__dvs_rf_activate` R, `hwd_abif__dvs_rfca_cmd_enable` R, `hwd_rfc_write_core_fw` RW, `marlon_r_if_class__rf_write_with_block_retries` R … (+2) | — |
+| 0x8890d0 | rfc_core_opcode | биты [23:20] = rfc_opcode (номер операции RFC, 4 бита, пишется со сдвигом 4+16); остальное сохраняется (лог-строка «rfc_opcode=%d» в hwd_rfc_write_core) | `hwd_rfc_write_core_fw` RW, uc:`hwd_rfc_write_core` RW | — |
+| 0x8890d4 | rfc_core_addr | rfc_addr, адрес регистра RF не больше 0x7fff (лог-строка «rfc_addr=0x%x» в hwd_rfc_write_core) | `hwd_rfc_write_core_fw` RW, uc:`hwd_rfc_write_core` RW | — |
+| 0x8890d8 | rfc_core_data | rfc_data для записи; после операции чтения (opcode 4) отсюда же берут прочитанное значение (лог-строка «rfc_data=0x%x»; по использованию: hwd_rfc_read_rgf, rfc__read_core_result_fw) | `hwd_rfc_read_rgf` R, `hwd_rfc_write_core_fw` RW, `marlon_r_if_class__rf_write_with_block_retries` R, `rfc__read_core_result_fw` R, uc:`hwd_rfc_read_rgf_uc` R, uc:`hwd_rfc_write_core` RW … (+1) | — |
+| 0x8890f8 | rfc_ctrl_f8 | при активации RFC и в hwd_rfc_read_calibrate: старшая половина = 0xc8 (биты 19,22,23), младшие 16 бит сохраняются; смысл не установлен (по использованию: hwd__program_889_group, hwd_rfc_read_calibrate); на стенде: 0x00c80001 (поля 200 и 1) (снимки regsnap r1, 2026-09-28); серия: 0x00c80001 при работающем радио, 0xffff0001 при выключенном — старшее полуслово 200 пишется при старте (2026-09-29) | `hwd__program_889_group` RW, `hwd_rfc_read_calibrate` RW | — |
+
+## 0x889100 — rfc, hwd, rf
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x889100 | rfc_rgf_base_100 | база: hwd__program_889_group ставит или снимает биты 11 и 16 (активация RFCA) в 0x889154 (rfc_rfca_cfg); в той же группе обращается к 0x8890f8, 0x889394, 0x88941c, 0x889488, 0x8894a0 (по использованию: hwd__program_889_group) | `hwd__program_889_group` A | — |
+| 0x889108 | rfc_mac_go_when_busy_err_cnt | биты [14:0]: счётчик запусков RFC, поданных при занятом ядре (лог-строка «[NNL] mac_go_when_busy_err_cnt=%d» в hwd_rfc_write_core) | `hwd_rfc_write_core_fw` R | — |
+| 0x889118 | rfc_reset_ctrl | бит 4 = сброс RF с активным нулём (hwd_rfc_rf_reset, UT 0x50b, держит 0 паузу, потом ставит 1); бит 6 = импульс перед чтением через RFC (6.2/docs/UT-DRIVERS.md 0x50b; по использованию: hwd_rfc_read_rgf, rfc__read_core_result_fw) | `hwd_rfc__uses_rgf_889100` RW, `hwd_rfc_read_rgf` RW, `rfc__read_core_result_fw` RW, `rfc__restore_txrx_sets_fw` RW, uc:`hwd_rfc_read_rgf_uc` RW, uc:`rfc__read_core_result` RW … (+1) | — |
+| 0x889154 | rfc_rfca_cfg | биты [15:12] = rdac чтения RFC (индекс+6), биты [3:0] и [7:4] = набор TX/RX, биты 11 и 16 = активация RFCA (dvs_rfca_activate); сохраняется вместе с 0x889488 (лог-строка «hwd_rfc_read_calibrate - initial register rdac val»; «Driver set rdac val») | `hwd__program_889_group` RW, `hwd_abif__dvs_rfca_activate` RW, `hwd_rfc_read_calibrate` RW, `hwd_rfc_read_handle_driver_input` RW, `rf__set_txrx_sets_save_fw` RW, `rfc__restore_txrx_sets_fw` W … (+2) | — |
+| 0x8891b4 | rfc_tx_power_tbl | массив из 13 регистров (0x8891b4..0x8891e4). При set_low_gain=0 грузится из байтовой таблицы 0x803908 = 1,1,1,1,1,0,1,1,1,0,0,0,0 и в 0x857730 пишется -3; при set_low_gain≠0 все 13 обнуляются и 0x857730 = 0. fw_main при старте грузит ту же таблицу (лог-строка «hwd_rfc_tx_power_cfg set_low_gain = %d»; по использованию: hwd_rfc_tx_power_cfg, fw_main) | `fw_main` W, `hwd_rfc_tx_power_cfg` W | — |
+
+## 0x889200 — —
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x8892b4 | rfc_read_hyst | регистр гистерезиса чтения RFC: калибровка пишет в биты [2:1] значение 1, в конце восстанавливает (лог-строка «hwd_rfc_read_calibrate - initial register hyst val: 0x%x») | `hwd_rfc_read_calibrate` RW, `hwd_rfc_read_handle_driver_input` RW | — |
+
+## 0x889300 — hwd_abif, abif, rfc
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x889364 | abif_sensor_bgap_ctrl | датчик температуры и bandgap: бит 0 bgap_ctrl, биты 1..2 sensor_measure_start, бит 4 sensor_set_thermal_mode, 6-битные поля [13:8],[21:16],[29:24] sensor_set_bgp_params (docs/HW-DRIVERS.md; UT 0x131/0x125/0x124/0x139) | `abif__power_down_889300` RW, `abif__power_down_88af80` RW, `hwd_abif__bgap_ctrl` RW, `hwd_abif__sensor_measure_start` RW, `hwd_abif__sensor_set_bgp_params` RW, `hwd_abif__sensor_set_thermal_mode` RW | — |
+| 0x889368 | abif_sensor_comp_value | hwd_abif_sensor_set_comp_value, код компаратора датчика; rladder__step_code перебирает его при измерении температуры (6.2/docs/UT-DRIVERS.md 0x126) | `hwd_abif__sensor_set_comp_value` W | — |
+| 0x889390 | abif_sensor_comp_out | бит 0 = выход компаратора датчика, читается после N импульсов бита 8 в 0x880b00 (UT 0x127 hwd_abif_sensor_get_comp_out = блок hwd_abif__sensor_get_comp_out @0x8cf9b0) | `hwd_abif__sensor_get_comp_out` R | — |
+| 0x889394 | rfc_divider_ctrl | бит 0 = делитель тактов RFC вне сброса (0 = в сбросе); hwd_abif_rfc_divider_restart: 0, пауза с переключением такта RFC, потом 1 (лог-строка «Calling hwd_abif_rfc_divider_restart»; по использованию: hwd_abif__rfc_divider_restart, uc hwd_abif__rfc_divider_restart_uc, hwd__program_889_group) | `hwd__program_889_group` RW, `hwd_abif__rgf_889380` RW, uc:`hwd_abif__rfc_divider_restart_uc` RW | — |
+| 0x889398 | abif_rgf_889398 | поле [4:0]; rf__configure_chain пишет 0x17 (по использованию: hwd_abif__uses_rgf_889380) | `hwd_abif__uses_rgf_889380` RW | — |
+| 0x88939c | abif_rgf_88939c | слово целиком; rf__configure_chain пишет 0x47974700 (по использованию: hwd_abif__uses_rgf_889380) | `hwd_abif__uses_rgf_889380` W | — |
+| 0x8893ec | rfc_read_valid | ==1 значит, что чтение через RFC вернуло данные в 0x8890d8; иначе результат 0xdeadbeef и повтор (по использованию: hwd_rfc_read_rgf, rfc__read_core_result) | `hwd_rfc_read_rgf` R, `rfc__read_core_result_fw` R, uc:`hwd_rfc_read_rgf_uc` R, uc:`rfc__read_core_result` R | — |
+| 0x8893f4 | abif_pll_ctrl | управление PLL (UT 0x101 hwd_abif_pll_ctrl = abif__power_up_analog): биты [2:0]=3, бит 4 сбросить, биты 5..6 на время захвата; потом ждут биты 2 и 3 в 0x88afec (6.2/docs/UT-DRIVERS.md; по использованию) | `abif__power_up_analog` RW | — |
+
+## 0x889400 — hwd_abif, channel, abif
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x889400 | abif_rgf_base_400 | база: hwd_abif__fs_on и hwd__program_889_group обращаются к 0x88941c (abif_fs_ctrl): биты 5..6 и 3, индекс канала в [19:16] (docs/HW-DRIVERS.md; debug-tools: 0x88941C — регистр канала для более новых чипов 11ad; по использованию: hwd_abif__fs_on) | `hwd_abif__fs_on` A | — |
+| 0x88941c | abif_fs_ctrl | управление синтезатором частоты (FS): биты [19:16] = индекс канала 0..3 (номер канала минус 1: hwm_analog_channel_switch печатает r17+1, UT 0x105 передаёт аргумент минус 1) (вендор: константа регистра канала для чипов MA и новее = 0x88941C), биты [1:0] включение, бит 4 выключение (fs_off), бит 3 = такт RFC выключен (rfc_clk_ctrl, UT 0x107), биты 5..6 держат при захвате (debug-tools HostDefinitions.h; UT 0x106/0x107; по использованию: hwd_abif__fs_on) | `hwd__program_889_group` RW, `hwd_abif__fs_off` RW, `hwd_abif__fs_on` RW, `hwd_abif__rfc_clk_ctrl` RW, uc:`hwd_abif__rfc_divider_restart_uc` RW | — |
+| 0x889420 | abif_fs_ch1_int | канал 1: 10-битное поле [9:0], по-видимому целая часть слова частоты FS (по использованию: channel__check_range, «channel num %d is out of range») | `channel__check_range` RW | — |
+| 0x889424 | abif_fs_ch1_frac | канал 1: 24-битная дробная часть слова частоты FS [23:0]; orig_fract берёт её за основу (лог-строка «orig_fract:%u off:%u»; по использованию: channel__check_range) | `channel__check_range` RW, `orig_fract` R | — |
+| 0x889428 | abif_fs_ch2_int | канал 2: поле [9:0] слова частоты FS (по использованию: channel__check_range) | `channel__check_range` RW | — |
+| 0x88942c | abif_fs_ch2_frac | канал 2: дробь [23:0]; отладочная WMI-команда orig_fract качает её значениями orig_fract+i*шаг (по использованию: channel__check_range, orig_fract) | `channel__check_range` RW, `orig_fract` W | — |
+| 0x889430 | abif_fs_ch3_int | канал 3: поле [9:0] слова частоты FS (по использованию: channel__check_range) | `channel__check_range` RW | — |
+| 0x889434 | abif_fs_ch3_frac | канал 3: дробь [23:0] (по использованию: channel__check_range) | `channel__check_range` RW | — |
+| 0x889438 | abif_fs_ch4_int | канал 4: поле [9:0] слова частоты FS (по использованию: channel__check_range) | `channel__check_range` RW | — |
+| 0x88943c | abif_fs_ch4_frac | канал 4: дробь [23:0] (по использованию: channel__check_range) | `channel__check_range` RW | — |
+| 0x88946c | RGF_CAF_ICR | CAF_ICR.ICC, начало структуры RGF_ICR (ICC +0, ICR +4, ICM +8, ICS +0xc, IMV +0x10, IMS +0x14, IMC +0x18) (драйвер RGF_CAF_ICR; debug-tools USER_RGF_CAF_ICR) | — | — |
+| 0x889470 | RGF_CAF_ICR_ICR | причина прерывания CAF, W1C: бит 2 = PLL5 UNLOCK, бит 7 = FS8 UNLOCK; вектор 13 пишет сюда прочитанное ICM, abif__ack_unmask_pll_unlock_irq и abif__ack_unmask_fs_unlock_irq гасят бит 2/7 (драйвер RGF_CAF_ICR+4; лог-строки «PLL5 UNLOCK interrupt!!!», «FS8 UNLOCK interrupt!!!») | `abif__ack_unmask_fs_unlock_irq` W, `abif__ack_unmask_pll_unlock_irq` W, `fw_vector_13` W | — |
+| 0x889474 | RGF_CAF_ICR_ICM | причина с учётом маски (ICR & ~IMV); fw_vector_13 читает отсюда (драйвер struct RGF_ICR, CAF_ICR+8) | `fw_vector_13` R | — |
+| 0x889480 | RGF_CAF_ICR_IMS | установка маски: 0x4 маскирует PLL5 UNLOCK перед включением PLL (hw_modes__enable_pll), 0x80 маскирует FS8 UNLOCK перед выключением FS (драйвер RGF_CAF_ICR+0x14; по использованию: abif__mask_pll_unlock_irq, abif__mask_fs_unlock_irq) | `abif__mask_fs_unlock_irq` W, `abif__mask_pll_unlock_irq` W, `rf__set_txrx_sets_save_fw` A, uc:`bi_rx__start_rx_window` A, uc:`brp_init__tx_request` A, uc:`brp_responder_transmission_flow` A … (+6) | — |
+| 0x889484 | RGF_CAF_ICR_IMC | снятие маски: после захвата PLL/FS снимают маску бита 2/7 (драйвер RGF_CAF_ICR+0x18; по использованию: abif__ack_unmask_pll_unlock_irq, abif__ack_unmask_fs_unlock_irq) | `abif__ack_unmask_fs_unlock_irq` W, `abif__ack_unmask_pll_unlock_irq` W | — |
+| 0x889488 | abif_dvs_rf_ctrl | RF_STATE_REG вендора: [7:0] dvs_rf_activate, [15:8] маска RFCA, принимающих команды (rfca_en), [23:16] dvs_rfca_config_en (временно для рассылки), [25:24] dvs_if_splitter_enable, бит 27 из init_rf_hw; ucode меняет набор RF на время TX/RX (debug-tools RF_STATE_REG; лог-строка «rfca_en=0x%02x»; UT 0x156..0x162; docs/HW-DRIVERS.md) | `hwd__program_889_group` RW, `hwd_abif__dvs_if_splitter_enable` RW, `hwd_abif__dvs_rf_activate` RW, `hwd_abif__dvs_rfca_activate` RW, `hwd_abif__dvs_rfca_cmd_enable` RW, `hwd_abif__dvs_rfca_config_en` RW … (+43) | — |
+| 0x889494 | rf_regd_ctrl | поле [3:0] = 0xf, когда страна не задана или JP (regd__is_unset_or_jp), иначе 0 (по использованию: rf__set_889494_low_nibble из power_mngr__check_mode) | `rf__set_889494_low_nibble` RW | — |
+| 0x8894a0 | abif_dvs_clk_cfg | поля [8:5]=6, [12:9]=0xe, [20:17]=0xc при активации RFC; [20:17] меняет calib_lo_power__step; [31:21] все единицы при остановке тактов RF (по использованию: hwd__program_889_group, rf__set_8894a0_field, hwd_abif__uses_rgf_889480_8ced4c) | `hwd__program_889_group` RW, `hwd_abif__uses_rgf_889480_8ced4c` RW, `rf__set_8894a0_field` RW | — |
+| 0x8894a4 | abif_dvs_ctrl_24 | бит 0 переключается вместе с bandgap при PLL bypass/engage и power_halt; поле [10:6]: fs_on пишет 8, fs_off пишет 0x10; бит 5 при остановке тактов RF; биты [14:11] и 15 в hwf__rf_lo_setup (по использованию: ut_hw_modes_cmd_0x304_fw, hwd_abif__fs_on, hwd_abif__fs_off) | `abif__power_down_889300` RW, `abif__power_down_88af80` RW, `hwd_abif__fs_off` RW, `hwd_abif__fs_on` RW, `hwd_abif__uses_rgf_889480_8ced4c` RW, `hwd_abif__uses_rgf_889480_8cf958` RW … (+1) | — |
+| 0x8894e4 | abif_dvs_stat_64 | поле [21:16] (6 бит) снимается в результат калибровки IF-усиления (по использованию: if_gain) | `if_gain` R | — |
+| 0x8894f0 | abif_dvs_stat_70 | три 4-битных поля [15:12],[19:16],[23:20] снимаются в результат калибровки IF-усиления (по использованию: if_gain) | `if_gain` R | — |
+
+## 0x889500 — abif, tof, internal_tx
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x889528 | tof_meas_cfg | в режиме 7 internal_tx ucode пишет 0x20001, при восстановлении 0x20000 (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` W | — |
+| 0x889530 | tof_meas_trigger | импульс 0x10100, затем 0 после установки смещений ToF (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` W | — |
+| 0x889548 | tof_tx_offset | смещение TX для ToF; ucode пишет его по команде 0x2c (WMI_TOF_SET_TX_RX_OFFSET), fw читает для WMI_TOF_GET_TX_RX_OFFSET (лог-строка «tof_tx_offset=%d»; docs/HW-DRIVERS.md; UT 0x438) | `tof__get_tx_offset` R, uc:`abif__save_override_restore` W, uc:`tof__set_tx_rx_offset_regs` W | — |
+| 0x889550 | tof_rx_offset | смещение RX для ToF (пара к 0x889548) (лог-строка «tof_rx_offset=%d» в wmi_tof_get_tx_rx_offset; по использованию: tof__get_rx_offset, uc tof__set_tx_rx_offset_regs) | `tof__get_rx_offset` R, uc:`abif__save_override_restore` W, uc:`tof__set_tx_rx_offset_regs` W | — |
+| 0x889568 | tof_meas_result_0 | результат измерения после internal_tx, ucode сохраняет в 0x802424 (по использованию: uc internal_tx__read_result_889568, internal_tx__flow_sm4) | uc:`internal_tx__read_result_889568` R | — |
+| 0x889570 | tof_meas_result_1 | второе слово результата, сохраняется в 0x802428 (по использованию: uc internal_tx__read_result_889570, internal_tx__flow_sm4) | uc:`internal_tx__read_result_889570` R | — |
+
+## 0x889600 — uc_sysassert
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x8896ac | hw_state3 | поле [2:0] читается в историю простоя для ассерта ucode (по использованию: uc uc_sysassert__read_hw_state3) | uc:`uc_sysassert__read_hw_state3` R | — |
+
+## 0x88a000 — hwd_abif
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88a000 | abif_tx_table_ctrl | бит 0 = tx_table_index_force_en (импульс 0/1 = tx_table_force_reload), [5:1] = индекс принудительной строки, [20:16] = txrx_table_index_lpbk_mode (docs/HW-DRIVERS.md; UT 0x10e/0x137/0x138/0x150/0x10c) | `hwd_abif__tx_table_force_reload` RW, `hwd_abif__tx_table_index_force_en_get` R, `hwd_abif__tx_table_index_force_mode` RW, `hwd_abif__tx_table_index_force_val_get` R, `hwd_abif__txrx_table_index_lpbk_mode` RW | — |
+| 0x88a004 | abif_tx_table | таблица TX, строка = слово: [6:0] dac_fssel, остальные поля iftx/lo_leak/xif/mixer_gate (лог-строка «ABIF_TX_TABLE_READ_DAC_FSSEL: dac_fssel=[%d]»; docs/HW-DRIVERS.md; драйвер: окно AGC_tbl 0x88a000..0x88b000) | `hwd_abif__tx_table_read_dac_fssel` R[] | — |
+
+## 0x88a200 — hwd_abif, abif, rf
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88a200 | abif_rgf_base_a200 | база: abif__mode_switch при выключении ABIF ставит биты 13..18 (or 0x7e000) в 0x88a204 (abif_rx_table_ctrl) (docs/HW-DRIVERS.md, docs/HW-DRIVERS.md; по использованию: abif__mode_switch) | `abif__mode_switch` A | — |
+| 0x88a204 | abif_rx_table_ctrl | бит 0 = rx_table_index_force_en (импульс = rx_table_force_reload), [6:1] индекс, [18:13] ставят в 0x3f при обычном режиме, [24:19] индекс для loopback, бит 25 = sar_dc_config_rgf_mode (docs/HW-DRIVERS.md; UT 0x10f/0x129/0x12a/0x151/0x110/0x128/0x10c) | `abif__get_rx_table_index_force_val` R, `abif__mode_switch` RW, `hwd_abif__rx_rgf_sar_dc_load` RW, `hwd_abif__rx_table_force_reload` RW, `hwd_abif__rx_table_index_force_en_get` R, `hwd_abif__rx_table_index_force_mode` RW … (+5) | — |
+| 0x88a208 | abif_rx_table | таблица RX (AGC), 64 строки: vga_gain/vga_dc/vga_bias/vga_atten/stg1_fine_bias/ifrx; раскладка полей по таблицам 0x800530/0x800570 (лог-строка «hwd_abif_rx_table_read_vga_gain»; docs/HW-DRIVERS.md) | `hwd_abif__rx_table_read_vga_atten` R[], `hwd_abif__rx_table_read_vga_bias` R[], `hwd_abif__rx_table_read_vga_dc` R[], `hwd_abif__rx_table_read_vga_stg1_fine_bias` R[], `hwd_abif__uses_rgf_88a208_8cf5fc` R[], `hwd_abif_rx_table_read_vga_gain` R[] | — |
+
+## 0x88ae00 — abif, hwd_abif
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88ae08 | abif_caf_pwdn_mode | бит 0 = caf_pwdn_mode; ucode ставит его в rf__set_normal_mode (UT 0x109 hwd_abif_caf_pwdn_mode; docs/HW-DRIVERS.md) | `hwd_abif__caf_pwdn_mode` RW, uc:`abif__set_enable_bit` RW | — |
+| 0x88ae10 | abif_caf_ovr_10 | на время internal_tx режима 7 ucode сохраняет и пишет 0x1f87, потом восстанавливает (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` RW | — |
+| 0x88ae14 | abif_caf_ovr_14 | то же, перекрытие 0x1f87 (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` RW | — |
+| 0x88ae18 | abif_caf_ovr_18 | то же, перекрытие 0x1f7f (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` RW | — |
+| 0x88ae5c | abif_caf_ovr_5c | то же, перекрытие 0x3cfc (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` RW | — |
+| 0x88ae60 | abif_rx_prepare_pwdn | [13:11] rx_prepare_ifrx_pwdn, [9:2] rx_prepare_rvga_pwdn (UT 0x12b/0x12c/0x12d/0x12e; docs/HW-DRIVERS.md) | `hwd_abif__rx_prepare_ifrx_pwdn` RW, `hwd_abif__rx_prepare_rvga_pwdn` RW, `hwd_abif__rx_prepared_ifrx_pwdn_get` R, `hwd_abif__rx_prepared_rvga_pwdn_get` R | — |
+| 0x88ae64 | abif_caf_ovr_64 | то же, перекрытие 0x3cfc (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` RW | — |
+| 0x88ae68 | abif_caf_ovr_68 | то же, перекрытие 0x38fc (по использованию: uc abif__save_override_restore) | uc:`abif__save_override_restore` RW | — |
+| 0x88ae6c | abif_lpbk_ctrl_6c | биты 11..13 ставят при входе в loopback калибровки, снимают при выходе (по использованию: ut_hw_modes_step) | `ut_hw_modes_step` RW | — |
+| 0x88aeb0 | abif_lpbk_switch_0 | [12:9] = первый аргумент hwd_abif_lpbk_mode_switches_config (UT 0x10d = hwd_abif__lpbk_mode_switches_config) | `hwd_abif__lpbk_mode_switches_config` RW, `ut_hw_modes_step` RW | — |
+
+## 0x88af00 — hwd_abif, abif, baseband
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88af08 | abif_adc_clk_ctrl | 0 = такт АЦП включён, 1 = выключен (UT 0x102 hwd_abif_adc_clk_ctrl = hwd_abif__adc_clk_ctrl) | `hwd_abif__adc_clk_ctrl` W | — |
+| 0x88af10 | abif_sar_dc | банк SAR DC: 5-битные поля по 4 в слове (rx_rgf_read_sar_dc) (UT 0x114/0x111/0x112/0x115; docs/HW-DRIVERS.md) | `hwd_abif__rx_rgf_read_sar_dc` R[], `hwd_abif__sar_cal_dc_rgf_clear_all` W | — |
+| 0x88af40 | abif_ctrl_40 | бит 0 (инверсия читается при захвате калибровки), биты 4, 8..11 переключаются при входе и выходе loopback (по использованию: hwd_abif__get_88af00, ut_hw_modes_step) | `hwd_abif__get_88af00` R, `ut_hw_modes_step` RW | — |
+| 0x88af44 | abif_out_to_bump_ctl | вывод аналоговых сигналов на контакт: 0 = выкл, режимы 0..3 ставят биты 8..19 (лог-строка «UT_HW_DRIVERS_SUBTYPE_ABIF_OUT_TO_BUMP_CTL: enable [%d], mode [%d]») | `hwd_abif__out_to_bump_ctl` RW | — |
+| 0x88af48 | abif_adc_sar_vreg_ctrl | [4:0]: бит 3 или бит 4 = adc_sar_vreg_ctrl; бит 18 ставит ut_hw_modes_cmd_0x30b (UT 0x10b hwd_abif_adc_sar_vreg_ctrl) | `abif__set_ctrl48_bit18` RW, `hwd_abif__adc_sar_vreg_ctrl` RW | — |
+| 0x88af58 | abif_lpbk_switch_1 | [7:4] и [11:8] = 2-й и 3-й аргументы hwd_abif_lpbk_mode_switches_config (UT 0x10d) | `hwd_abif__lpbk_mode_switches_config` RW | — |
+| 0x88af5c | abif_lo_splitter_0 | [3:0] dvs_lo_splitter_config_buf_val (группа 1), бит 4 = сплиттер выключен, когда в группе RF 0,1,4,5 нет активных (UT 0x161/0x160 = hwd_abif__dvs_lo_splitter_config_buf_val/hwd_abif__dvs_lo_splitter_enable) | `hwd_abif__dvs_lo_splitter_config_buf_val` RW, `hwd_abif__dvs_lo_splitter_enable` RW | — |
+| 0x88af64 | abif_ctrl_64 | поле [7:4], одно из трёх одинаковых (0x88af64/70/7c); пишет calib_lo_power__step (по использованию: abif__set_nibble_all_chains) | `abif__set_nibble_all_chains` RW | — |
+| 0x88af6c | abif_ctrl_6c | поле [2:0], одно из трёх (0x88af6c/78/84); пишется вместе с tx_table xif_gain строк 0 и 1 (по использованию: abif__set_3bit_all_chains) | `abif__set_3bit_all_chains` RW | — |
+| 0x88af70 | abif_ctrl_70 | поле [7:4], второе из трёх (по использованию: abif__set_nibble_all_chains) | `abif__set_nibble_all_chains` RW | — |
+| 0x88af78 | abif_ctrl_78 | поле [2:0], второе из трёх (по использованию: abif__set_3bit_all_chains) | `abif__set_3bit_all_chains` RW | — |
+| 0x88af7c | abif_ctrl_7c | поле [7:4], третье из трёх (по использованию: abif__set_nibble_all_chains) | `abif__set_nibble_all_chains` RW | — |
+| 0x88af84 | abif_ctrl_84 | поле [2:0], третье из трёх (по использованию: abif__set_3bit_all_chains) | `abif__set_3bit_all_chains` RW | — |
+| 0x88afa0 | abif_lo_splitter_1 | [3:0] dvs_lo_splitter_config_buf_val (группа 0), бит 4 = сплиттер выключен, когда в группе RF 2,3,6,7 нет активных (UT 0x161/0x160) | `hwd_abif__dvs_lo_splitter_config_buf_val` RW, `hwd_abif__dvs_lo_splitter_enable` RW | — |
+| 0x88afa4 | RGF_CAF_OSC_CONTROL | бит 0 = BIT_CAF_OSC_XTAL_EN (xtal_ctrl, UT 0x103), бит 1 = включение кольцевого генератора (rosc_ctrl, UT 0x104); power_halt снимает бит 0 (драйвер RGF_CAF_OSC_CONTROL) | `abif__power_down_889300` RW, `abif__power_down_88af80` RW, `hwd_abif__rosc_ctrl` RW, `hwd_abif__xtal_ctrl` RW | — |
+| 0x88afb0 | abif_pll_cfg | при включении PLL: биты 12..15 и 17 обнуляют, ставят бит 15 (по использованию: abif__power_up_analog) | `abif__power_up_analog` RW | — |
+| 0x88afb4 | abif_ctrl_b4 | 6-битное поле [13:8] пишет boot__load_from_flash (по использованию: hwd_abif__uses_rgf_88af80_8ce660) | `hwd_abif__uses_rgf_88af80_8ce660` RW | — |
+| 0x88afbc | abif_battery_config | [7:4] и [3:0] = значения банка battery_index 0..3 из таблицы в ОЗУ (лог-строка «hwd_abif_battery_config: battery_index %d») | `hwd_abif_battery_config` RW | — |
+| 0x88afe4 | RGF_USER_REVISION_ID | [1:0] ревизия Sparrow: бит 1 = D0, только бит 0 = C0 (тест-чип), 0 = B0 (драйвер RGF_USER_REVISION_ID; лог-строки baseband__identify) | `baseband__identify` R | — |
+| 0x88afe8 | abif_caf_mode | бит 0 = caf_phy_control_mode (UT 0x108), бит 2 = caf_lpbk_mode (UT 0x10a) (6.2/docs/UT-DRIVERS.md; docs/HW-DRIVERS.md) | `hwd_abif__caf_lpbk_mode` RW, `hwd_abif__caf_phy_control_mode` RW | — |
+| 0x88afec | RGF_CAF_PLL_LOCK_STATUS | бит 0 = XTAL стабилен, бит 1 = ROSC готов, бит 2 = PLL захвачен, бит 3 = PLL3 (такт 165 МГц), бит 4 = FS захвачен, бит 5 = FS готов (драйвер RGF_CAF_PLL_LOCK_STATUS, бит 0; остальные по использованию: ожидания в rosc_ctrl/pll_ctrl/fs_on, car__get_pll3_status_bit3) | `abif__power_up_analog` R, `car__get_pll3_status_bit3` R, `hwd_abif__fs_on` R, `hwd_abif__rosc_ctrl` R, `hwd_abif__uses_rgf_88af80_8d0010` R, `hwd_abif__xtal_ctrl` R | — |
+| 0x88aff0 | abif_stat_f0 | поле [4:0] со значениями 1..16, по ним идёт выбор при захвате калибровки (по использованию: hwd_abif__uses_rgf_88af80_8ce614 из hwf_calib__acquire_hw) | `hwd_abif__uses_rgf_88af80_8ce614` R | — |
+
+## 0x88b000 — pcie, hwd_pcie
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88b02c | pcie_rgf_ext_2c | бит 0 снимает pcie__l1ss_enable, бит 3 снимает программирование SerDes (по использованию: pcie__l1ss_enable, hwd_pcie__clear_88b000_bits) | `hwd_pcie__clear_88b000_bits` RW, `pcie__l1ss_enable` RW | — |
+| 0x88b060 | pcie_rgf_ext_60 | бит 0 снимает pcie__l1ss_enable (по использованию) | `pcie__l1ss_enable` RW | — |
+| 0x88b0b0 | pcie_rgf_ext_b0 | бит 0 снимает L1SS; бит 2 снимает SerDes; бит 6 = 0 при включённом гейтинге 0x882f88 и 1 при выключенном (по использованию: pcie__l1ss_enable, hwd_pcie__clear_88b000_bits, hwd_pcie__toggle_882f80_bits) | `hwd_pcie__clear_88b000_bits` RW, `hwd_pcie__toggle_882f80_bits` RW, `pcie__l1ss_enable` RW | — |
+| 0x88b0b4 | pcie_rgf_ext_b4 | биты [6:3] обнуляют при программировании SerDes (по использованию: pcie__mirror_link_bit) | `pcie__mirror_link_bit` RW | — |
+| 0x88b0b8 | pcie_l1ss_cfg | с L1SS ставят биты 13 и 20, без него биты 16 и 23 (лог-строка «Sparrow PCIe L1SS Support enabled»; по использованию: pcie__l1ss_enable) | `pcie__l1ss_enable` RW | — |
+| 0x88b0bc | pcie_traffic_deferral | [2:0]: бит 0 = 1 во время отсрочки трафика хосту (по использованию: pcie__set_traffic_deferral_flag из l2mgr__send_traffic_deferral_evt/resume_evt) | `pcie__set_traffic_deferral_flag` RW | — |
+| 0x88b0c0 | pcie_link_state | поле [5:2], состояние канала PCIe; читают при deep sleep и диагностике потери линка (по использованию: hwd_pcie__get_88b0c0_state4) | `hwd_pcie__get_88b0c0_state4` R | — |
+| 0x88b0d0 | pcie_ltssm_status | бит 23 = LTSSM в L1 idle (по использованию: hwd_pcie_ltssm_is_l1_idle) | `hwd_pcie_ltssm_is_l1_idle` R | — |
+
+## 0x88c000 — mid, sched
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88c048 | mac_ext_sched_48 | mid__init_sched_scheme обнуляет (по использованию: mid__reset_sched_alloc_regs; драйвер: окно mac_rgf_ext) | `mid__reset_sched_alloc_regs` W | — |
+| 0x88c04c | mac_ext_sched_4c | mid__init_sched_scheme пишет 0x80001f00 (по использованию: mid__reset_sched_alloc_regs) | `mid__reset_sched_alloc_regs` W | — |
+| 0x88c050 | mac_ext_sched_slot_start | начало слота расписания (r0); пара к 0x886f84/0x886f88 (NAMES-EXTRA sched__program_alloc_slot_regs; по использованию из lmac_if__evt_walk) | `sched__program_alloc_slot_regs` W | — |
+| 0x88c068 | mac_ext_sched_68 | бит 31 = включено, [28:16] и [12:0] из глобалов схемы расписания 0x800284/0x800288 (по использованию: mid__program_88c068) | `mid__program_88c068` W | — |
+| 0x88c06c | mac_ext_sched_6c | то же для второй пары 0x80028c/0x800290 (по использованию: mid__program_88c068) | `mid__program_88c068` W | — |
+
+## 0x88c100 — hwm, mac
+
+| адрес | имя | смысл | обращения | документы |
+|---|---|---|---|---|
+| 0x88c120 | mac_ext_window_remain | [23:0] остаток текущего окна в тактах MAC; перед приёмом сравнивают с 48 и 31 мкс (STANDARD-MAPPING 4.1; по использованию: uc mac__read_time_88c120 из bi_rx__start_rx_window) | uc:`mac__read_time_88c120` R | — |
+| 0x88c180 | mac_ext_33k_meas_stat | поле [7:4] ждут ненулевым после команды MAC 0x63 (измерение такта 33 кГц) (по использованию: hwm__measure_33khz_wait, hwm__probe_33khz_clk) | `hwm__measure_33khz_wait` R, `hwm__probe_33khz_clk` R | — |
