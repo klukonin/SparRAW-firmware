@@ -6,6 +6,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "abft.h"
 
 
 /* ---- Портированные в других файлах ---- */
@@ -1126,7 +1127,12 @@ void bf_gpc_program_mac_by_mode_b(u32 a0)
     u32 r3 = period_tab[mode - 4];   /* ldw.as = x2 */
     u32 f = ((bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7;
     u32 v = (f & 7) + 1;
-    u32 r4 = (v * r3 + 0x5cd - a0) | 0x51000000;
+#ifdef UC_ABFT_STA_STD
+    /* Конец A-BFT станции: граница слота 0 (MBIFS) + n·aSSSlotTime + хвост 3 мкс (как vendor, см. abft.h). */
+    u32 r4 = (v * r3 + ABFT_STA_STD_SLOT0_CLK + ABFT_STA_STD_TAIL_CLK - a0) | 0x51000000;
+#else
+    u32 r4 = (v * r3 + ABFT_V62_STA_END_CLK - a0) | 0x51000000;
+#endif
     uc_mac_cmd(r4);
     uc_mac_cmd(0x5400070e);
     uc_mac_cmd(0x49000100);
