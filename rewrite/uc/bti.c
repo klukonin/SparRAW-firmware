@@ -81,7 +81,7 @@ u32 abft_arm_response_window(void)
     arc_nops(3);
     u32 r0 = period_tab[0];
     u32 r2 = arc_core_rd(55);
-#ifdef UC_ABFT_STA_STD
+#ifdef ABFT_STA_STD
     /* GP1 взведён на UC_ABFT_STA_PREP_CLK раньше границы слота: первый SSW abft_responder_tx_ssw выдаст,
      * когда остаток GP2 (H-CLK2) дойдёт до значения на границе. Лишние 2–3 инструкции до сторожа SIFS_CNT. */
     bti_cnt.abft_tmark = (r2 > UC_ABFT_STA_PREP_CLK) ? r2 - UC_ABFT_STA_PREP_CLK + UC_ABFT_STA_GOLAT_CLK : 0;
@@ -100,10 +100,10 @@ void aw_compute_tbtt_from_hw(u32 a, u32 *out)
 }
 
 /* GP1 станции: граница слота 0 после конца GP0 (триггер 0x07 — по концу GP0, H-GP); a — на сколько тактов
- * конец GP0 позже конца BTI. vendor: 0x3de (6 мкс) — не MBIFS; UC_ABFT_STA_STD: MBIFS − подготовка SSW. */
+ * конец GP0 позже конца BTI. vendor: 0x3de (6 мкс) — не MBIFS; ABFT_STA_STD: MBIFS − подготовка SSW. */
 void bti_tx_program_bi2_regs(u32 a)
 {
-#ifdef UC_ABFT_STA_STD
+#ifdef ABFT_STA_STD
     u32 v = ABFT_STA_STD_SLOT0_CLK - UC_ABFT_STA_PREP_CLK;
     uc_mac_cmd(((a < v) ? v - a : 1u) | 0x50000000u);
 #else
@@ -323,27 +323,27 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
      * r42.16, сверка BSSID, копия BI Control, метрика r40, mac_mon) ~250 инструкций (vendor ~ так же);
      * запас: сотни тактов (~2 мкс из 4); съедают ветка rx_meas (захват кадра) и вытеснение L2.
      * Путь длиннее 4 мкс — GP0 после конца BTI, сетка A-BFT станции (bti_arm_period_gp0) позже AP. */
-#ifdef UC_ABFT_STA_STD
-    /* Конец BTI = конец маяка в эфире + Duration (10.42.5.1). Путь от события приёма (r42.12, Timer1 в
-     * bti_bi2_event_step) до команды 0x4f вычитается измеренным, а не константой vendor «4 мкс»;
-     * UC_ABFT_STA_EVT_CLK — задержка самого события. Нет метки (kind 1) или Timer1 сброшен — путь
-     * считается равным 4 мкс, как у vendor. off — насколько конец GP0 позже конца BTI (поздно). */
+#ifdef ABFT_STA_STD
+    /* GP0 = Duration − 0x284 (− UC_ABFT_STA_EVT_CLK): пуск 0x5200090c — по концу GP2 (триггер 0x09;
+     * стенд A2: GP1 AP с тем же триггером срабатывает от начала слота = конца GP2), а GP2 = 0x284 =
+     * 3,903 мкс с триггером 0x05 стартует концом приёма кадра (bti_reset_sweep_state) — H-GP5.
+     * Конец GP0 = конец маяка + 3,903 + (Duration − 3,903) = конец BTI (10.42.5.1) — путь uc сюда не
+     * входит. vendor «Duration − 4 мкс» — то же с ошибкой 16 тактов (на 0,1 мкс раньше). Если uc не
+     * успел взвести GP0 до конца GP2 (3,9 мкс от конца маяка), r54.8 уже стоит — A-BFT в этом BI
+     * пропускается (bcn_rx.x1c; стенд A1: так кончались все 64 попытки в 6 загрузках из 8). */
+    u32 sub = ABFT_STA_GP2_RXEND_CLK + UC_ABFT_STA_EVT_CLK;
     u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
-    u32 t_evt = bti_cnt.abft_tmark;
-    bti_cnt.abft_tmark = 0;
+    u32 mlo = (d165 >= sub + ABFT_CLK_PER_US) ? d165 - sub : ABFT_CLK_PER_US;
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x49000040);
-    u32 lead = abft_t1() - t_evt;
-    if (t_evt == 0 || lead > ABFT_T1_SANE)
-        lead = ABFT_V62_STA_GP0_ADV_US * ABFT_CLK_PER_US;
-    lead += UC_ABFT_STA_EVT_CLK;
-    u32 mlo = ABFT_CLK_PER_US, sta_off = 0;
-    if (d165 >= lead + ABFT_CLK_PER_US)
-        mlo = d165 - lead;
-    else
-        sta_off = lead + ABFT_CLK_PER_US - d165;
     uc_mac_cmd(mlo | 0x4f000000);
+    uc_mac_cmd(0x5200090c);
+    if (bti_bi2_gp2_end_flag() != 0) {          /* 0x923bec: r54.8 уже взведён → L_923c64 */
+        bcn_rx.x1c += 1;
+        c->status = 4;
+        return;
+    }
 #else
     u32 n = rx_buf_duration;
     u32 r1 = (n < ABFT_V62_STA_GP0_ADV_US) ? ABFT_V62_STA_GP0_ADV_US
@@ -353,16 +353,16 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x49000040);
     uc_mac_cmd(mlo | 0x4f000000);
-#endif
     uc_mac_cmd(0x5200090c);
     if (bti_bi2_gp2_end_flag() != 0) {          /* 0x923bec: r54.8 уже взведён → L_923c64 */
         bcn_rx.x1c += 1;
         c->status = 4;
         return;
     }
+#endif
     if (bcn_rx.abft_here != 0) {
-#ifdef UC_ABFT_STA_STD
-        u32 off = sta_off;
+#ifdef ABFT_STA_STD
+        u32 off = 0;                            /* конец GP0 = конец BTI (аппаратная привязка) */
 #else
         /* vendor: при Duration ≥ 4 мкс off = 4 ТАКТА (mov.cc 4 — не мкс), GP1/GP2 короче на 24 нс. */
         u32 r8 = rx_buf_duration;
@@ -476,15 +476,17 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
          * станции (она строит её по Duration маяка) — SSW станций ложатся на край слота. */
         while (!(arc_core_rd(42) & (1u << 7)))    /* L_923fd4: bbit0 → spin */
             ;
-#ifdef UC_ABFT_AP_STD
-        /* Сетка A-BFT от конца BTI (txop_event, H-TXOP): слот 0 через MBIFS (10.42.5.1), путь от события
-         * до каждой команды вычитается по Timer1 (триггер 0x03 — старт по команде, H-GP). GP1 (по концу
-         * GP2 — от начала слота) — за UC_ABFT_AP_FB_PREP_CLK до точки SSW-Feedback (10.42.5.2). */
-        u32 t_txop = abft_t1();
-        u32 slot0 = ABFT_MBIFS_CLK - UC_ABFT_AP_EVT_CLK;
+#ifdef ABFT_AP_STD
+        /* Сетка A-BFT от конца BTI (10.42.5.1): GP0/GP2 с триггером 0x03 стартуют не по команде, а через
+         * ~SIFS после txop_event (стенд A2: граница слота = txop + 8,05 мкс при GP2 = 5 мкс), поэтому
+         * путь uc сюда не входит и Timer1 не нужен. Слот 0 = txop + MBIFS (+ UC_ABFT_AP_BTI_END_CLK, если
+         * объявленный в Duration конец BTI позже txop_event). GP1 (триггер 0x09 — по концу GP2, т. е. от
+         * начала каждого слота; стенд: событие в aSSDuration + 1,0 мкс) — за UC_ABFT_AP_FB_PREP_CLK до
+         * точки SSW-Feedback (10.42.5.2). */
+        u32 slot0 = ABFT_MBIFS_CLK + UC_ABFT_AP_BTI_END_CLK - ABFT_AP_TRIG03_CLK;
 #endif
         uc_mac_cmd(0x14000000);
-#ifdef UC_ABFT_AP_STD
+#ifdef ABFT_AP_STD
         u32 r13 = slot0 + bti_sw.abft_dur - ABFT_AP_STD_END_GUARD_CLK;
 #else
         u32 r13 = bti_sw.abft_dur + ABFT_V62_AP_END_CLK;
@@ -492,15 +494,9 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
         uc_mac_cmd(0x52000000);
         uc_mac_cmd(0x52000000);
         uc_mac_cmd(0x49000040);
-#ifdef UC_ABFT_AP_STD
-        {
-            u32 e = abft_t1() - t_txop;
-            r13 -= (e < ABFT_T1_SANE) ? e : 0;
-        }
-#endif
         uc_mac_cmd(r13 | 0x4f000000);
         uc_mac_cmd(0x52000308);
-#ifdef UC_ABFT_AP_STD
+#ifdef ABFT_AP_STD
         r13 = ABFT_AIRPROP_CLK + bti_sw.ssw_slot_a + ABFT_MBIFS_CLK - UC_ABFT_AP_FB_PREP_CLK;
 #else
         r13 = bti_sw.ssw_slot_a + ABFT_V62_AP_FB_CLK;
@@ -513,11 +509,8 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
         uc_mac_cmd(0x54000000);
         uc_mac_cmd(0x54000000);
         uc_mac_cmd(0x49000100);
-#ifdef UC_ABFT_AP_STD
-        {
-            u32 e = abft_t1() - t_txop;              /* ~60 инструкций против 1485 тактов */
-            uc_mac_cmd(((e < slot0) ? slot0 - e : 1u) | 0x51000000);
-        }
+#ifdef ABFT_AP_STD
+        uc_mac_cmd(slot0 | 0x51000000);
 #else
         uc_mac_cmd(0x51000000 | ABFT_V62_AP_SLOT0_CLK);
 #endif
@@ -791,7 +784,7 @@ u32 abft_responder_tx_ssw(u32 a)
             uc_mac_cmd(0x6000103);
             r17 = 0;
         }
-#ifdef UC_ABFT_STA_STD
+#ifdef ABFT_STA_STD
         /* Первый SSW — ровно в начало слота: кадр готов заранее (GP1 раньше на UC_ABFT_STA_PREP_CLK), ждать
          * остатка GP2 = цели из abft_arm_response_window. Выход по Timer1 при неверной шкале (H-CLK2). */
         {
@@ -854,9 +847,6 @@ u32 bti_bi2_event_step(struct bi_ctx_s *c)
 
     for (;;) {                                        /* L_936e90 */
         uc_wait_event_busy(0x20u | (1u << 12), 0);
-#ifdef UC_ABFT_STA_STD
-        u32 t_bcn = abft_t1();                       /* момент события приёма маяка (до разбора) */
-#endif
         if (!(arc_core_rd(42) & (1u << 12))) {
             /* L_937298 */
             u32 r1 = mac_sel_shadow & 0xffff0fff;
@@ -871,9 +861,6 @@ u32 bti_bi2_event_step(struct bi_ctx_s *c)
             return 0;
         }
         if (bti_worker_bi2_step(c->kind, 1) != 0) {   /* breq_s → L_936e90 */
-#ifdef UC_ABFT_STA_STD
-            bti_cnt.abft_tmark = t_bcn;               /* bti_transmitter_bi2_flow: GP0 от этого события */
-#endif
             break;
         }
     }
@@ -1048,22 +1035,22 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
         /* L_93dcbc */
         uc_wait_event1_or_event4(1u << 12, r16, 0);  /* r1 = r16 (биты r54), r2 = 0 */
         if (arc_core_rd(42) & (1u << 12)) {        /* btst r3,0xc */
-#ifdef UC_ABFT_STA_LASTBCN
-            u32 t_bcn = abft_t1();
-#endif
             if (bti_worker_bi2_step(c->kind, 0) == 0)   /* breq → цикл */
                 continue;
 #ifdef UC_ABFT_STA_LASTBCN
-            /* Конец BTI — по Duration последнего принятого маяка (10.42.5.1): GP0 перевзводится от
-             * каждого маяка своей BSS (гипотеза H-REARM, uc/abft.h). Только пока GP0 идёт. */
+            /* Опыт (по умолчанию выключен): конец BTI по Duration последнего маяка (10.42.5.1) — GP0
+             * перевзводится от каждого маяка своей BSS, пока его GP2 (3,9 мкс от конца приёма) ещё идёт
+             * и GP0 не кончился. Гипотеза H-REARM: перезапись GP0 до его старта переносит старт на конец
+             * GP2 этого маяка. */
             if (bcn_rx.abft_here != 0 && !(arc_core_rd(54) & 0x40u)) {
+                u32 sub = ABFT_STA_GP2_RXEND_CLK + UC_ABFT_STA_EVT_CLK;
                 u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
-                uc_mac_cmd(0x52000000);
-                uc_mac_cmd(0x52000000);
-                uc_mac_cmd(0x49000040);
-                u32 lead = abft_t1() - t_bcn + UC_ABFT_STA_EVT_CLK;
-                if (d165 >= lead + ABFT_CLK_PER_US) {
-                    uc_mac_cmd((d165 - lead) | 0x4f000000);
+                if (d165 >= sub + ABFT_CLK_PER_US) {
+                    uc_mac_cmd(0x52000000);
+                    uc_mac_cmd(0x52000000);
+                    uc_mac_cmd(0x49000040);
+                    uc_mac_cmd(0x49000100);     /* r54.8 прежнего маяка */
+                    uc_mac_cmd((d165 - sub) | 0x4f000000);
                     uc_mac_cmd(0x5200090c);
                 }
             }
@@ -1175,7 +1162,7 @@ void bti_arm_period_gp0(void)
      * должна совпадать с сеткой AP с точностью ~aAirPropagationTime (0,1 мкс). От чтения r55 до 0x50
      * ~11 инструкций + 4 на каждый уже прошедший слот в цикле вычитания (vendor 0x930838 — тот же
      * цикл); запас: десятки. Каждый такт здесь сдвигает границы слотов станции позже AP. */
-#ifdef UC_ABFT_STA_STD
+#ifdef ABFT_STA_STD
     if (arc_core_rd(54) & 0x80u) {
         /* Поздно: первая граница GP1 уже прошла. Прошло от конца GP0 e = (ход GP2) − остаток (H-CLK2);
          * границы GP1 — first + k·P. vendor (ветка ниже) считал фазу от конца GP0 + MBIFS, а не от своей

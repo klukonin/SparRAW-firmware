@@ -1013,7 +1013,7 @@ void mac_mode_program_c(struct sls_peer_rec *a)
              * ассоциация срывается. Не добавлять код между чтением r55 и 0x19000001. */
             uc_mac_cmd(0x49000080u);
             mac_set_mode_a000(evt);
-#ifdef UC_ABFT_AP_STD
+#ifdef ABFT_AP_STD
             /* Точка SSW-Feedback — по сетке слота (10.42.5.2), а не «MBIFS после последнего SSW»: остаток
              * GP2 (H-CLK2) = aSSFBDuration + MBIFS. Опоздали больше UC_ABFT_AP_FB_LATE_CLK или остаток не
              * похож на этот слот — не отвечать. Сторож vendor SIFS_CNT ≥ 0x700 здесь не годится: GP1
@@ -1026,13 +1026,13 @@ void mac_mode_program_c(struct sls_peer_rec *a)
             uc_mac_cmd(0x4d000000u);
             arc_nops(3);
             u32 r55 = arc_core_rd(55);
-#ifndef UC_ABFT_AP_STD
+#ifndef ABFT_AP_STD
             if (r55 >= 0x700)
                 return;
 #endif
             if (r55 == 0 || first == 0)
                 return;
-#ifdef UC_ABFT_AP_STD
+#ifdef ABFT_AP_STD
             bti_cnt.abft_tmark = ABFT_AP_STD_FB_REM_CLK + UC_ABFT_AP_GOLAT_CLK;   /* цель для direct_tx_step */
 #endif
             /* L_92c27e */
@@ -1603,7 +1603,7 @@ void direct_tx_step(struct sls_peer_rec *a)
     direct_tx_build_desc(a, buf);
     direct_tx_program_cmd34(0x10, 0x18);
     mac_program_tx_common();
-#ifdef UC_ABFT_AP_STD
+#ifdef ABFT_AP_STD
     {
         u32 tgt = bti_cnt.abft_tmark;          /* SSW-Feedback A-BFT: старт в точке слота (mac_mode_program_c) */
         bti_cnt.abft_tmark = 0;
