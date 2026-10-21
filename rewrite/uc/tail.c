@@ -2826,14 +2826,8 @@ u32 txss_resp_wait_fdbk(u32 a) {
     u32 r13 = 0;
     for (;;) {
         r13 = sxd_hal_wait_slot2_busy2(resp_wait_slots);
-        u16 seq = ifs.sifs;
-        if (mac_ifs_shadow != seq) {
-            mac_ifs_shadow = seq;
-            *(volatile u32 *)HW_MAC_IFS_SIFS = seq | 0x1730000;
-            arc_sync();
-            uc_mac_cmd(0x38000200);
-        }
-        txss_ifs_restore = 0;
+        /* Vendor (0x93be68) здесь, до приёма SSW-Feedback, возвращал в 0x886d00 SIFS — и SSW-Ack
+         * уходил через ~5 мкс вместо MBIFS. MBIFS держится до отправки SSW-Ack (txss_resp_flow). */
         if (r13 != 0) {
             rx_flow_run();
             r15 = 0;

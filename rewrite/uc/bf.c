@@ -169,13 +169,25 @@ void txss_resp_flow(u32 a)
     u32 r = txss_resp_wait_iss_end(r13, rss);
     if (r == 1) {
         r = txss_resp_wait_fdbk(r13);
-        /* СРОК: SSW-Feedback → SSW-Ack через MBIFS (802.11-2020 10.42.2.2); здесь ~3 инструкции,
-         * путь и запас — у sls_send_ssw_ack. Внимание: txss_resp_wait_fdbk до разбора кадра уже
-         * вернул в 0x886d00 SIFS вместо MBIFS — если MAC отсчитывает ответ по этому регистру,
-         * Ack уходит не по MBIFS (vendor так же). */
+        /* SSW-Feedback → SSW-Ack через MBIFS (802.11-2020 10.42.2.2, 10.3.2.3.10). MAC отсчитывает
+         * ответ по 0x886d00: в нём MBIFS (3×SIFS) с начала SLS. Vendor возвращал SIFS ещё в
+         * txss_resp_wait_fdbk — Ack уходил через 5,0 мкс; с MBIFS до отправки Ack — 9,05 мкс
+         * (стенд 2026-10-21, опыт E1, двусторонний замер, notes/timing/IFS-MEASURED.md). */
         if (r == 1) {
             sls_send_ssw_ack(r13, 0);
             bf_store_flow_status(r13, 9);
+        }
+        /* SIFS обратно — после SSW-Ack (или после неудачного ожидания Feedback), как vendor делал
+         * в txss_resp_wait_fdbk: без 0x1f000601. */
+        if (txss_ifs_restore != 0) {
+            u16 w = ifs.sifs;
+            if (mac_ifs_shadow != w) {
+                mac_ifs_shadow = w;
+                MMIO32(HW_MAC_IFS_SIFS) = w | 0x1730000;
+                arc_sync();
+                uc_mac_cmd(0x38000200);
+            }
+            txss_ifs_restore = 0;
         }
         if (txss_rank_needed == 1)
             txss_rank_best_sector();
