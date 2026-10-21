@@ -1329,8 +1329,7 @@ _Static_assert(__builtin_offsetof(struct bti_sweep_cfg, abft_dur) == 0x8, "bti_s
 /* bti_cnt (0x802a6c). Счётчики развёртки (0x24 Б, 0x802a6c..0x802a8f; memset0 в bti__clear_sweep_counters). */
 struct bti_sweep_cnt {
     u32  rounds;                    /* +0x00 +0: раундов развёртки (bti__count_sweep_round). */
-    u32  abft_tmark;                /* +0x04 vendor не использовал. Стандартный тайминг A-BFT (uc/abft.h): станция — цель
-                                       GP_CLK2 первого SSW, AP — цель GP_CLK2 SSW-Feedback; 0 — нет цели. */
+    u32  x04;                       /* +0x04 не используется в uc */
     u32  net_bcn_rx;                /* +0x08 +8: принято маяков/SSW сети (rx_flow__handle_frame, r36 б7). Не литерал. */
     u32  bi2_tsf;                   /* +0x0c +0xc: TSF события BI2 (bti__bi2_event_step). */
     u32  cid[4];                    /* +0x10 счётчики по CID: [0], [1] — сбрасываются при смене лучшего сектора (bi_manager_step_a),
