@@ -744,6 +744,13 @@ PLCP, RX_GET_PKT_DATA, PHY_RX_STATISTICS) в [VENDOR-ENUMS.md](VENDOR-ENUMS.md) 
   `temp__store_lo_temp` от таймера температуры).
 * **SAR:** `calib_sar_step2` 0x8d47e4 / 4.1 0x8d1734 (выборки SAR PHY 0x885000, 64-битный
   сдвиг `fw_ashr64` 0x8c0620).
+* **Накопители замеров PHY 0x885010…0x88510c [код]:** две пары массивов по индексу `idx` (шаг 8 Б).
+  `hwd_phy__read_sar_sample` 0x8d2474 (в таблице UT — `hwd_phy_rx_cal_dc_measurement_read`, 0x428)
+  собирает 32-битные знаковые отсчёты A = `[0x885010+8i][15:0] | [0x885014+8i] << 16` и
+  B = то же из 0x885050/0x885054. `hwd_phy__rx_cal_gain_measurement_read` 0x8d24bc (UT 0x429) —
+  56-битные накопители усиления A = `[0x885090+8i] + ([0x885094+8i] << 24)` и B из
+  0x8850d0/0x8850d4; старшее слово u64 vendor обнуляет, перенос сложения теряется. По имени UT
+  первые — накопители DC-замера RX-калибровки, по имени функции — отсчёты SAR; что верно, не установлено.
 * **Silent RSSI / AGC:** `calib_silent_rssi_sparrow__set_agc_start_val`
   0x8ea8d8, `silent_rssi__set_agc_search_window`,
   `silent_rssi__hist_window_index` 0x8dde0c (поиск старта AGC, тест связи с

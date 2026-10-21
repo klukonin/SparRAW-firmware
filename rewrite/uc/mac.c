@@ -405,7 +405,7 @@ u32 macq_hw_trigger_read_state(u32 q)
 
 void macq_hw_commit_rptr(u32 q)
 {
-    /* 0x92a640: прочитать 16-бит rptr очереди q и записать его в +0x60 (затем с bit31). */
+    /* 0x92a640: прочитать 16-бит rptr очереди q и записать его на 0x60 бит (0xc Б) дальше — DESCQ+0x44 (затем с bit31). */
     u32 raw = ((q * 7) << 7) + 0x4409880;
     u32 rptr = (u16)(MMIO32((raw >> 3) & ~3u) >> (raw & 0x1f));
     u32 addr = (((q * 7) << 7) + 0x44098e0) >> 3;

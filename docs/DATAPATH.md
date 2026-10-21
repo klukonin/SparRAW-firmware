@@ -90,7 +90,8 @@ FWQ, TX_API, BA-автоматы, разбор кадров управления
   `mac__publish_masks` @0x9373b0 **[код]**. Адреса 6.2 — в §8.
 * **CBAP/EDCA в железе.** LMAC 0x04 (fw `lmac_if__build_cmd_0x04` @0x8d8d30,
   4 записи по 12 Б {ac, cwmin_exp, cwmax_exp, aifsn=2}) → `txrx_api_step_c`
-  @0x9319e8: `[0x886d68+4·ac] = aifsn<<28 | 0x1ff`, `[0x886d78+4·ac] =
+  @0x9319e8: `[0x886d68+4·ac] = aifsn<<28 | 0x1ff` (6.2 `txrx_api_step_c` 0x9368d8 — `| 0x201ff`:
+  лишний бит 17, смысл не установлен; [8:0] и бит 17 — не AIFSN), `[0x886d78+4·ac] =
   0xc0adc0ad<<ac` (затравка ГПСЧ backoff — гипотеза), MAC-команда
   **`(0x09+ac)<<24 | (2^cwmin−1)`** — окно CW движка ac; `0x800ac8+4·ac =
   {cwmin, cwmax, cw}` **[код]**. Профили fw: 0x800b1c {4,4}, 0x800b20 {4,7},

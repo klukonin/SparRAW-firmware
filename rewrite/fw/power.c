@@ -31,6 +31,9 @@ void pcie_clear_880c50_b2(u32 a)
     arc_nops_mb(10);
 }
 
+/* Загрузить TSF = {b:a}. MAC-команда 0x0d = регистр BI_TSF_CONTROL (MSXD_CMD+0x34, имя пака 11ad):
+ * бит 1 — ход таймера TSF, бит 2 — загрузка TSF из защёлки 0x886dc0/0x886dc4; 0x0a1e53 —
+ * штатное значение (бит 1 есть, бита 2 нет). Проверено на стенде — docs/MAC-COMMANDS.md §7.12. */
 __attribute__((section(".textlate")))
 void mac_reload_tsf64(u32 a, u32 b)
 {

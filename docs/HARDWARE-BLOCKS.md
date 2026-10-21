@@ -41,7 +41,7 @@
 | 0x886d34 | `TSF_TARGET_HI` | `mac_tsf_event_hi` | целевой TSF компаратора, старшее слово |
 | 0x886d38 | `TSF_EVENT_CTL` | `mac_tsf_event_ctrl` | **0xc0050 = взведён** (бит 6), **0xc0010 = снят**; 0 при входе в простой |
 | 0x886d64 | период BI | `mac_beacon_interval` | [15:0] интервал маяка в TU (период_мкс >> 10); одиночная запись на лету останавливает маячный цикл; писатели по версиям — [BEACONING.md §7](BEACONING.md#7-период-bi-и-tbtt) **[железо]** |
-| 0x886dc0/0x886dc4 | — | `mac_cmd0d_time_lo` | 64-битная защёлка аргумента MAC-команды 0x0d (первый TBTT при запуске BI) |
+| 0x886dc0/0x886dc4 | — | `mac_cmd0d_time_lo` | 64-битная защёлка значения TSF: бит 2 MAC-команды 0x0d (`BI_TSF_CONTROL`) загружает её в счётчик TSF 0x886eb8/0x886ebc **[железо]** ([MAC-COMMANDS §7.12](MAC-COMMANDS.md#712-0x0d--bi_tsf_control-железо)); fw пишет пару при запуске BI и при смене делителя такта (`mac_reload_tsf64`); в работе там видно 0x19000 (BI 100 TU в мкс) |
 | 0x886dd4 | причины L1-прерывания | `fw2uc_ICM` | маскированная причина (ICR & ~IMV); биты 0/1/2 → разные L1-события |
 | 0x886e84 | маска/лимит NAV (`nav_db.c`) | `mac_nav_hw_value` | младшие 16 бит читаются при обновлении NAV по Duration (`rx_nav__set_from_duration`, предел из 0x80146c+0x18); на стенде в простое 0x13, под iperf до 1982 (≈ TXOP 2000 мкс − 18), бит 31 — флаг **[железо]**; аппаратный NAV по Duration кадров партнёра **[гипотеза]** |
 | 0x886eb4 | `TSF_STATUS` | `mac_timing_status` | бит 31 = значения времени MAC действительны; читатели TSF ждут его перед чтением |
@@ -145,6 +145,21 @@ USAGE_1…USAGE_8 для 6.2 — `6.2/ref/REGS-62.md`.
 | 0x8802bc | `RGF_USER_USER_SCRATCH_PAD` | scratch |
 | 0x880c50 | `RGF_USER_SPARROW_M_4` | специфика Sparrow |
 
+Слова 0x880a00…0x880abc — не аппаратные регистры, а служебная область в USER_RGF, которую
+раскладывают загрузчик и прошивка (у Talyn — структуры `bl_dedicated_registers` и
+`g_fw_dedicated_registers`). Значения полей **[пак Talyn: globals XML, debug-tools, драйвер]**; что
+из этого видно на Sparrow — отмечено:
+
+| адрес | поле | значения |
+|---|---|---|
+| 0x880a10 | `g_fw_image_info.flavor` | 1 BOOT_LOADER_FLAVOR, 2 FW_FLAVOR |
+| 0x880a3c | `boot_loader_ready` | загрузчик пишет 1, драйвер ждёт его (у Talyn — бит 0 `BL_BIT_READY`); fw Sparrow читает то же слово как тип платформы: 1 = ASIC, 2 = FPGA (`platform__is_asic` 0x8da61c) |
+| 0x880a48 | `baseband_type` (загрузчик) / `fw_sub_state` (fw) | одно слово у двух структур; прошивка Sparrow пишет сюда маркер ассерта 0xdeaddead |
+| 0x880a68 | `rf_status` | 0 RF_OK, 1 RF_NO_COMM, 2 RF_WRONG_BOARD_FILE; отдаётся хосту в WMI_GET_RF_STATUS |
+| 0x880a8c | `rev_id` [15:0] `baseband_type` | 0 UNKNOWN, 1 MAR-DB1, 2 MAR-DB2, 3 SPR-A0, 4 SPR-A1, 5 SPR-B0, 6 SPR-C0, 7 SPR-D0, 8/9/10 TLN-M-A0/B0/C0; прошивка Sparrow сравнивает с 5 (SPR-B0) |
+| 0x880a8e | `rev_id` [31:16] `rf_type` | 0 нет RF, 1 MARLON, 2 SPR-R (Sparrow), 3 TLN-A1, 4 TLN-A2 |
+| 0x880a90 | `FW_CALIB_RESULT` | [7:0] результат, [15:8] подпись 0x11 (`CALIB_RESULT_SIGNATURE`) |
+
 ## Тактирование и сброс **[драйвер]**
 
 `0x880abc` CLKS_CTL_0; `0x880b04`/`b08`/`b0c`/`b10` SW_RST_VEC_0..3;
@@ -172,6 +187,30 @@ TX-idle `0x881d60..68`; RX-блок `0x881d44..0x881d50`, RX-idle `0x881d54..5c`
 `0x881d6c` DMA_MISC_CTL; `0x881cd4` DMA_OFUL_NID_0; `0x88265c` HP_CTRL.
 Эти регистры драйвер экспортирует в debugfs на запись (`doff_io32`) — единственные,
 доступные на запись штатно.
+
+### Очереди дескрипторов DMA_RGF.DESCQ
+
+12 одинаковых блоков по 0x70 Б с 0x8812d8: блок `n` = 0x8812d8 + 0x70·n (последний кончается на
+0x881817). Имена полей — **[пак Talyn: debug-tools `PmcRegistersAccessor.cpp`, ревизия «любая»]**,
+адреса совпадают с обращениями Sparrow; использование — **[код]** 6.2:
+
+| смещение | имя (Talyn) | у Sparrow |
+|---|---|---|
+| +0x00 | — | обнуляется при остановке очереди (`macq_hw_clear_2d8`); `hw_rgf_block_program` (fw) |
+| +0x04 | `IS` (бит 6 `is_pmc_dma`) | — |
+| +0x08 | — | uc `tail.c` |
+| +0x1c | — | uc: запись бита 31, чтение [2:0] |
+| +0x28 / +0x2c | — | uc: `macq_hw_read_state0/1` (полубайт) |
+| +0x28…+0x34 | — | лог PRING (UC-REGISTERS называет `HW_HEAD`) |
+| +0x38 | `SW_HEAD.CRNT` | uc `macq_hw_read_rptr`: младшие 16 бит; `macq_hw_commit_rptr` копирует их в +0x44 |
+| +0x40 | — | uc `macq_hw_read_wptr` (16 бит) |
+| +0x44 | — | uc `macq_hw_commit_rptr`: сюда пишется rptr из +0x38 |
+| +0x58 | — | fw `hw_rgf_block_program`; uc `tail.c` |
+| +0x60 | — | бит 0: `macq_hw_disable_queue` снимает, uc `tail.c` проверяет; бит 3 ставит `macq_hw_set_ctrl_bit`; пишет fw `hw_rgf_block_program` |
+| +0x6c | `RX_MAX_SIZE.MAX_RX_PL_PER_DESCRIPTOR` [15:0] | — |
+
+uc адресует эти слова битовыми адресами (`0x44096c0 + 0x380·q` = байт 0x8812d8 + 0x70·q).
+0x881818…0x881828 лежат за последним блоком — отдельные регистры.
 
 ## OTP / XPM **[драйвер]**
 
