@@ -5,6 +5,7 @@
 #include "ifs.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "abft.h"
 
 
 #include "evt17.h"
@@ -2581,8 +2582,17 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
     u32 sect = 0;                               /* [sp,0x10] — флаг смены RF-модуля */
     u32 h5c = (u32)ss_plan_cdown << 1;
 
+#ifdef UC_DUR_VENDOR
+    u32 dur_add = 0;
+#else
+    /* Duration SSW в ISS/RSS — до конца SSW с CDOWN = 0 плюс MBIFS (802.11-2020 9.3.1.15). ss_plan_tx_dur —
+     * время от конца этого кадра до конца последнего, а «TXOP» 0x15 (биты 24/26/28) отсчитывается от
+     * начала своего кадра (H-DUR, abft.h): + кадр + MBIFS. vendor: последний SSW ≈ 0 вместо 9. У маяка (f = 0)
+     * TXOP BTI уже включает свой кадр (bti.c), не трогать. */
+    u32 dur_add = (f != 0) ? ((const struct ss_timing *)c)->frame + ABFT_MBIFS_CLK / ABFT_CLK_PER_US : 0;
+#endif
     if (b != 1) {
-        uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
+        uc_mac_cmd((ss_plan_tx_dur + dur_add) | (1u << 24) | (1u << 26) | (1u << 28));
         uc_mac_cmd(0x14000007);
     }
     {
@@ -2651,7 +2661,7 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
         u32 r0 = (u32)ss_plan_sector << 10;
         uc_mac_cmd(r1);
         if (f != 0) {
-            uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
+            uc_mac_cmd((ss_plan_tx_dur + dur_add) | (1u << 24) | (1u << 26) | (1u << 28));
             uc_mac_cmd(0x14000007);
             r0 = 0x14000007;
         }
@@ -2930,8 +2940,14 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
         abif_dvs_rf_ctrl_shadow = v;
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = v;
     }
+#ifdef UC_DUR_VENDOR
     u32 t = (u16)*(volatile u32 *)HW_MAC_IFS_SIFS;
     u32 r0 = txss_timing_add + (t >> 8);
+#else
+    /* Duration SSW-Feedback в DTI (9.3.1.16 a/b): TXTIME(SSW-Ack) + MBIFS, + ещё MBIFS при запросе BRP (L-RX
+     * ниже — у станции на поддержании); значение 0x15 — с учётом своего кадра (H-DUR, abft.h). */
+    u32 r0 = (maint_sta_mask & (1u << b)) ? SSWFB_DUR_TXOP_BRP : SSWFB_DUR_TXOP;
+#endif
     r0 |= (1u << 24) | (1u << 26) | (1u << 28);
     uc_mac_cmd(r0);
     uc_mac_cmd(0x14000007);

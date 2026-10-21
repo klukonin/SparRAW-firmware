@@ -350,10 +350,12 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
 #ifdef ABFT_STA_STD
     /* GP0 взведён в bti_bi2_event_step сразу после сверки BSSID (abft_sta_arm_gp0); без него (kind 1 при
      * CDOWN = 0) — здесь, с той же проверкой окна GP2. */
-    u32 st = bti_cnt.x04;
-    bti_cnt.x04 = 0;
-    if (st == 0)
+    u32 st = bti_cnt.x04 >> 30;
+    bti_cnt.x04 &= 0x3fffffffu;                     /* остаётся «конец BTI» первого маяка (Timer1) */
+    if (st == 0) {
         st = abft_sta_arm_gp0();
+        bti_cnt.x04 = 0;                            /* t маяка нет — без поправки по последнему маяку */
+    }
     if (st != 1) {
         bcn_rx.x1c += 1;
         c->status = 4;
@@ -759,7 +761,14 @@ u32 abft_responder_tx_ssw(u32 a)
         r18->bi_ctrl[1] = (u8)((r5 >> 30) | (r5 << 2));
         return 0;
     }
-    u32 r15 = ssw_tab_a[r14 - 4];
+#ifdef UC_DUR_VENDOR
+    u32 r15 = ssw_tab_a[r14 - 4];                 /* vendor: aSSDuration в мкс, −16 мкс на кадр */
+#else
+    /* Duration SSW в A-BFT — время до конца текущего SSW-слота (802.11-2020 9.3.1.15): от конца кадра k
+     * (кадры с начала слота, SBIFS держит MAC) до конца слота aSSSlotTime. Счёт в 1/1024 мкс, Duration —
+     * с округлением вверх. vendor: aSSDuration − 16·k — на 21 мкс короче у первого кадра (0xfe против 275). */
+    u32 r15 = (u32)(((u64)period_tab[r14 - 4] * ABFT_CLK2FX_MUL) >> 10) - ABFT_SSW_TXTIME_FX;
+#endif
     ssw_tpl_fc = 0x864;
     ssw_tpl_fb_sector = (r18->antenna << 6) | r18->sector;
     ssw_tpl_fb_snr = r18->metric;
@@ -781,9 +790,15 @@ u32 abft_responder_tx_ssw(u32 a)
         uc_mac_cmd((*(u8 *)&rf_chain_cfg << 16) |
                            ((r14 << 1) | 0x2d000001 | (r13 << 10)));   /* asl r11,r14 = r14<<1 */
         abft_send_ssw_feedback(0);
+#ifdef UC_DUR_VENDOR
         uc_mac_cmd(r15 | 0x15000000);
         uc_mac_cmd(0x14000007);
         r15 -= 0x10;
+#else
+        uc_mac_cmd(((r15 + 1023u) >> 10) | 0x15000000);
+        uc_mac_cmd(0x14000007);
+        r15 -= ABFT_SSW_STEP_FX;
+#endif
         mac_program_tx_common();
         while (!(arc_core_rd(43) & (1u << 31)))
             ;
@@ -876,8 +891,14 @@ u32 bti_bi2_event_step(struct bi_ctx_s *c)
     if (!uc_read_bi_sync())
         goto err;
 
+#ifdef ABFT_STA_STD
+    u32 t_bcn = 0;
+#endif
     for (;;) {                                        /* L_936e90 */
         uc_wait_event_busy(0x20u | (1u << 12), 0);
+#ifdef ABFT_STA_STD
+        t_bcn = abft_t1();                           /* r42.12 первого маяка: конец BTI для ABFT_STA_LASTBCN */
+#endif
         if (!(arc_core_rd(42) & (1u << 12))) {
             /* L_937298 */
             u32 r1 = mac_sel_shadow & 0xffff0fff;
@@ -898,7 +919,12 @@ u32 bti_bi2_event_step(struct bi_ctx_s *c)
 
     uc_mac_cmd(0x49000100);
 #ifdef ABFT_STA_STD
-    bti_cnt.x04 = abft_sta_arm_gp0();               /* bti_transmitter_bi2_flow берёт результат */
+    {
+        /* б31..30 — итог взвода GP0 (для bti_transmitter_bi2_flow), б29..0 — Timer1 «конца BTI» по этому маяку
+         * (t r42.12 + Duration; для поправки по последнему маяку в bti_bi2_track_best_metric). Timer1 < 2^29. */
+        u32 st = abft_sta_arm_gp0();
+        bti_cnt.x04 = ((t_bcn + (u32)rx_buf_duration * ABFT_CLK_PER_US) & 0x3fffffffu) | (st << 30);
+    }
 #endif
     bcn_rx.my_bss = arc_core_rd(38) & 1;                 /* bmsk r1,r38,0x0 */
     u32 r3 = (rx_buf_body18 | ((u32)rx_buf_body19 << 8)) & 0x780;
@@ -1069,23 +1095,30 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
         /* L_93dcbc */
         uc_wait_event1_or_event4(1u << 12, r16, 0);  /* r1 = r16 (биты r54), r2 = 0 */
         if (arc_core_rd(42) & (1u << 12)) {        /* btst r3,0xc */
+#ifdef ABFT_STA_LASTBCN
+            u32 t_bcn = abft_t1();
+#endif
             if (bti_worker_bi2_step(c->kind, 0) == 0)   /* breq → цикл */
                 continue;
-#ifdef UC_ABFT_STA_LASTBCN
-            /* Опыт (по умолчанию выключен): конец BTI по Duration последнего маяка (10.42.5.1) — GP0
-             * перевзводится от каждого маяка своей BSS, пока его GP2 (3,9 мкс от конца приёма) ещё идёт
-             * и GP0 не кончился. Гипотеза H-REARM: перезапись GP0 до его старта переносит старт на конец
-             * GP2 этого маяка. */
-            if (bcn_rx.abft_here != 0 && !(arc_core_rd(54) & 0x40u)) {
-                u32 sub = ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK;
-                u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
-                if (d165 >= sub + ABFT_CLK_PER_US) {
-                    uc_mac_cmd(0x52000000);
-                    uc_mac_cmd(0x52000000);
-                    uc_mac_cmd(0x49000040);
-                    uc_mac_cmd(0x49000100);     /* r54.8 прежнего маяка */
-                    uc_mac_cmd((d165 - sub) | 0x4f000000);
-                    uc_mac_cmd(0x5200090c);
+#ifdef ABFT_STA_LASTBCN
+            /* Конец BTI — по Duration ПОСЛЕДНЕГО принятого маяка (802.11-2020 10.42.5.1). GP0 не трогаем (он
+             * стартовал по концу GP2 первого маяка); границы слотов (GP1) и конец A-BFT (GP2) ещё не
+             * стартовали — их значения сдвигаются на разницу «конец BTI по этому маяку − по первому»
+             * (Timer1 r42.12 + Duration; задержка r42.12 от начала кадра у маяков одной длины одинакова).
+             * Стенд std2/std3: у нашего AP разница до +1,33 мкс (CDOWN 0), у vendor до +1,0. Разница вне
+             * ±5 мкс (обнуление Timer1 тиком L1) — не трогать. */
+            if (bcn_rx.abft_here != 0 && !(arc_core_rd(54) & 0x40u) && bti_cnt.x04 != 0) {
+                s32 dl = (s32)(((t_bcn + (u32)rx_buf_duration * ABFT_CLK_PER_US) & 0x3fffffffu) - bti_cnt.x04);
+                u32 fss = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
+                if (dl > -(s32)(5 * ABFT_CLK_PER_US) && dl < (s32)(5 * ABFT_CLK_PER_US) && fss >= 4) {
+                    if (bcn_rx.abft_go != 0) {       /* как bti_tx_program_bi2_regs, без квитирования r54.7 */
+                        uc_mac_cmd((u32)((s32)ABFT_STA_STD_GP1_CLK + dl) | 0x50000000u);
+                        uc_mac_cmd(0x5300070e);
+                    }
+                    u32 n = ((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7 & 7) + 1;
+                    /* как bf_gpc_program_mac_by_mode_b, без квитирования r54.8 (его ждёт этот цикл, r16) */
+                    uc_mac_cmd((u32)((s32)(n * period_tab[fss - 4] + ABFT_MBIFS_CLK) + dl) | 0x51000000u);
+                    uc_mac_cmd(0x5400070e);
                 }
             }
 #endif

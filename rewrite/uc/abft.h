@@ -18,7 +18,9 @@
  *   UC_ABFT_STA_VENDOR — станция как vendor 6.2 (GP0 = Duration − 4 мкс, GP1 = 0x3de, вход в BTI с пути
  *                        приёма — без ожидания следующего маяка);
  *   UC_ABFT_AP_VENDOR  — AP как vendor 6.2 (слот 0 = GP2 0x339, GP1 = aSSDuration + 1 мкс).
- *   UC_ABFT_STA_LASTBCN — опыт, по умолчанию выключен: перевзвод GP0 по каждому маяку BTI (H-REARM).
+ *   UC_ABFT_STA_FIRSTBCN — станция берёт конец BTI по первому принятому маяку (vendor); по умолчанию —
+ *                        по последнему (10.42.5.1): GP1/GP2 сдвигаются на поправку от каждого маяка BTI;
+ *   UC_DUR_VENDOR      — Duration SSW (A-BFT, ISS/RSS), SSW-Feedback, SSW-Ack как vendor 6.2.
  *
  * Стандартный тайминг:
  *   станция — GP0 = Duration − 0x284 от конца GP2 (= конец приёма маяка + 3,903 мкс) кончается в конец
@@ -56,6 +58,10 @@
  *            где d из r47 округлено вверх до мкс (20 при TXTIME 19,13) — ≈ 55 мкс простоя на 64 маяка.
  *            Что Duration маяков объявляет конец BTI = txop_event — не проверено (UC_ABFT_AP_BTI_END_CLK);
  *   H-T1   [подтверждено]: Timer1 = 165 МГц (период SSW 2626 тактов = 15,92 мкс).
+ *   H-DUR  [маяки, стенд]: 0x15 с битами 24/26/28 — «TXOP» от начала кадра, MAC пишет в Duration остаток
+ *            после своего кадра с отбрасыванием дробной части (маяки: значение 1344 → Duration 1324 у
+ *            CDOWN 63, 56 у CDOWN 0, txop_event — через 1344 мкс от начала первого маяка); без битов —
+ *            Duration буквально (SSW в A-BFT: 0xfe в эфире). Для SSW-Feedback/ISS в DTI не измерено.
  *   H-HDR  [стенд std2]: rx_frame_event (r42.12) приходит после разбора заголовка MPDU — через ~9,06 мкс от
  *            начала кадра (r42.19 → r42.12 у SSW-Feedback 9,01–9,12 мкс), а не в конце кадра: у маяка 34 Б
  *            за 10,07 мкс до конца, у маяка vendor 38 Б — за 10,65. Окно взвода GP0 станции (до конца GP2) —
@@ -103,14 +109,41 @@
 /* AP. */
 #define ABFT_AP_TRIG03_CLK    502u      /* пуск GP0/GP2 (0x…030c/0x…0308) после txop_event: стенд 8,05 − 5,00 мкс; std-сборка дала 8,98 */
 #ifndef UC_ABFT_AP_BTI_END_CLK
-#define UC_ABFT_AP_BTI_END_CLK 0u       /* объявленный (Duration) конец BTI позже txop_event (H-TXOP) */
+/* Конец BTI, объявленный в Duration ПОСЛЕДНЕГО маяка нашего AP, относительно txop_event (H-TXOP). MAC пишет
+ * Duration = остаток TXOP BTI в целых мкс с отбрасыванием дробной части (TXOP = n·(20 + 1) от начала первого
+ * маяка, d из r47 округлено вверх): стенд std2/std3 (64 маяка × 34 Б), сверка станции и AP: по последнему
+ * маяку (Duration 56) конец BTI = txop − 0,64 мкс, по первому — txop − 1,97 (стабильно от загрузки к
+ * загрузке). Сетка A-BFT — от объявленного конца BTI (стандартная станция берёт последний маяк, 10.42.5.1). */
+#define UC_ABFT_AP_BTI_END_CLK (-105)
 #endif
 #define ABFT_AP_STD_END_GUARD_CLK 330u  /* GP0 (конец A-BFT у AP) за 2 мкс до последней границы GP2 — как vendor, см. выше */
 
-#if defined(UC_ABFT_STA_LASTBCN) && !defined(ABFT_STA_STD)
-#error "UC_ABFT_STA_LASTBCN — только со стандартным таймингом станции"
+/* Конец BTI станции — по последнему маяку (поправка GP1/GP2, bti_bi2_track_best_metric); отказ —
+ * UC_ABFT_STA_FIRSTBCN (по первому принятому, как vendor). */
+#if defined(ABFT_STA_STD) && !defined(UC_ABFT_STA_FIRSTBCN)
+#define ABFT_STA_LASTBCN 1
 #endif
 
+/* Duration кадров SLS (9.3.1.15–17); отказ — UC_DUR_VENDOR. */
+#define ABFT_CLK2FX_MUL      6355u      /* такты → 1/1024 мкс: 1024/165 = 6,2061 ≈ 6355/1024 */
+#define ABFT_SSW_TXTIME_FX   15267u     /* TXTIME(SSW 26 Б) = 14,909 мкс в 1/1024 мкс */
+#define ABFT_SSW_STEP_FX     16291u     /* TXTIME(SSW) + SBIFS = 15,909 мкс */
+/* SSW-Feedback в DTI: MAC пишет в Duration остаток «TXOP» из 0x15 (биты 24/26/28) после своего кадра, с
+ * отбрасыванием дробной части (как у маяков, H-DUR). Нужное поле — TXTIME(SSW-Ack) + MBIFS = 27,255 → 28
+ * мкс (без BRP), + 2·MBIFS = 36,255 → 37 (запрошен BRP: L-RX ≠ 0 у станции на поддержании); значение
+ * 0x15 = поле + 19 (TXTIME(SSW-Feedback) 18,255). vendor: 17 + MBIFS = 26 → в эфире ≈ 7 мкс (по H-DUR). */
+#define SSWFB_DUR_TXOP       (28u + 19u)
+#define SSWFB_DUR_TXOP_BRP   (37u + 19u)
+/* SSW-Ack: Duration SSW-Feedback − MBIFS − TXTIME(SSW-Ack) (9.3.1.17), вверх: D − 27 (литерально, без битов). */
+#define SSWACK_DUR_SUB       27u
+
+/* Timer1 (AUX 0x100 COUNT1) одной инструкцией; предел 0x13ab6680, обнуляется тиком L1. */
+static inline __attribute__((always_inline)) u32 abft_t1(void)
+{
+    u32 v;
+    __asm__ volatile("lr %0,[0x100]" : "=r"(v) :: "memory");
+    return v;
+}
 /* GP_CLK2_TIMER: остаток хода GP2 в тактах (H-CLK2), 24 бита. */
 static inline __attribute__((always_inline)) u32 abft_gp_clk2(void)
 {
