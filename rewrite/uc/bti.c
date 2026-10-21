@@ -4,6 +4,9 @@
 #include "../include/hw.h"
 #include "../include/arc.h"
 #include "abft.h"
+#ifdef ABFT_STA_STD
+static u32 abft_sta_arm_gp0(void);
+#endif
 
 
 
@@ -345,27 +348,13 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
      * — меньше 3,9 мкс. При входе с пути приёма (kind 1) маяк уже разобран rx_flow и окно пропущено
      * (стенд 2026-10-21: отказ на каждом маяке BTI, у vendor-кода путь тот же). */
 #ifdef ABFT_STA_STD
-    /* GP0 = Duration − 0x284 (− UC_ABFT_STA_EVT_CLK): пуск 0x5200090c — по концу GP2 (триггер 0x09;
-     * стенд A2: GP1 AP с тем же триггером срабатывает от начала слота = конца GP2), а GP2 = 0x284 =
-     * 3,903 мкс с триггером 0x05 стартует концом приёма кадра (bti_reset_sweep_state) — H-GP5.
-     * Конец GP0 = конец маяка + 3,903 + (Duration − 3,903) = конец BTI (10.42.5.1) — путь uc сюда не
-     * входит. vendor «Duration − 4 мкс» — то же с ошибкой 16 тактов (на 0,1 мкс раньше). Если uc не
-     * успел взвести GP0 до конца GP2 (3,9 мкс от конца маяка), r54.8 уже стоит — A-BFT в этом BI
-     * пропускается (bcn_rx.x1c; стенд A1: так кончались все 64 попытки в 6 загрузках из 8). */
-    u32 sub = ABFT_STA_GP2_RXEND_CLK + UC_ABFT_STA_EVT_CLK;
-    u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
-    u32 mlo = (d165 >= sub + ABFT_CLK_PER_US) ? d165 - sub : ABFT_CLK_PER_US;
-    uc_mac_cmd(0x52000000);
-    uc_mac_cmd(0x52000000);
-    uc_mac_cmd(0x49000040);
-    uc_mac_cmd(mlo | 0x4f000000);
-    uc_mac_cmd(0x5200090c);
-    /* ХРУПКО: GP0 стартует по концу GP2 этого маяка, только если GP2 ещё идёт. r54.8 — GP2 уже кончился
-     * (как vendor); GP_CLK2 = 0 без r54.8 — GP2 не идёт вовсе (кончился до квитирования 0x49000100 в
-     * bti_bi2_event_step или не был запущен этим кадром): GP0 стартовал бы по концу следующего кадра и
-     * конец BTI уехал бы на период маяка (~20 мкс) — vendor этого не ловил. В обоих случаях A-BFT в
-     * этом BI не начинать. */
-    if (bti_bi2_gp2_end_flag() != 0 || abft_gp_clk2() == 0) {
+    /* GP0 взведён в bti_bi2_event_step сразу после сверки BSSID (abft_sta_arm_gp0); без него (kind 1 при
+     * CDOWN = 0) — здесь, с той же проверкой окна GP2. */
+    u32 st = bti_cnt.x04;
+    bti_cnt.x04 = 0;
+    if (st == 0)
+        st = abft_sta_arm_gp0();
+    if (st != 1) {
         bcn_rx.x1c += 1;
         c->status = 4;
         return;
@@ -851,6 +840,30 @@ u32 abft_responder_tx_ssw(u32 a)
     return 1;
 }
 
+#ifdef ABFT_STA_STD
+/* GP0 станции: конец BTI по Duration принятого маяка (802.11-2020 10.42.5.1).
+ * Пуск 0x5200090c — по концу GP2 (H-GP9), GP2 = 0x284 = 3,903 мкс стартует концом приёма кадра (H-GP5):
+ * GP0 = Duration − 0x284 + UC_ABFT_STA_GP0_TRIM_CLK кончается в конец BTI. Стенд std2 (5 пачек, оба AP):
+ * конец GP0 − конец BTI = −0,25 мкс при TRIM = 0 (r42.12 — через 9,06 мкс от начала кадра, не в конце).
+ * ХРУПКО: взвести до конца GP2 = конец маяка + 3,9 мкс = r42.12 + (TXTIME − 9,06) + 3,9 ≈ r42.12 + 14 мкс
+ * (маяк 34 Б); путь r42.12 → 0x4f на стенде 12,6–13,2 мкс, запас < 1 мкс (r2std_4 — отказ), поэтому взвод
+ * сразу после сверки BSSID в bti_bi2_event_step, до разбора BI Control, метрики и mac_mon. Порядок команд —
+ * как vendor: квитирование r54.8 (0x49000100) до взвода. Возврат: 1 — GP2 идёт, GP0 стартует по его концу;
+ * 2 — опоздание (r54.8 после квитирования или GP_CLK2 = 0: GP2 не идёт) — A-BFT в этом BI не начинать. */
+static u32 abft_sta_arm_gp0(void)
+{
+    u32 sub = ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK;
+    u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
+    u32 v = (d165 >= sub + ABFT_CLK_PER_US) ? d165 - sub : ABFT_CLK_PER_US;
+    uc_mac_cmd(0x52000000);
+    uc_mac_cmd(0x52000000);
+    uc_mac_cmd(0x49000040);
+    uc_mac_cmd(v | 0x4f000000);
+    uc_mac_cmd(0x5200090c);
+    return (bti_bi2_gp2_end_flag() != 0 || abft_gp_clk2() == 0) ? 2u : 1u;
+}
+#endif
+
 u32 bti_bi2_event_step(struct bi_ctx_s *c)
 {
     /* 6.2 asm 0x936e40. */
@@ -884,6 +897,9 @@ u32 bti_bi2_event_step(struct bi_ctx_s *c)
     }
 
     uc_mac_cmd(0x49000100);
+#ifdef ABFT_STA_STD
+    bti_cnt.x04 = abft_sta_arm_gp0();               /* bti_transmitter_bi2_flow берёт результат */
+#endif
     bcn_rx.my_bss = arc_core_rd(38) & 1;                 /* bmsk r1,r38,0x0 */
     u32 r3 = (rx_buf_body18 | ((u32)rx_buf_body19 << 8)) & 0x780;
 
@@ -1061,7 +1077,7 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
              * и GP0 не кончился. Гипотеза H-REARM: перезапись GP0 до его старта переносит старт на конец
              * GP2 этого маяка. */
             if (bcn_rx.abft_here != 0 && !(arc_core_rd(54) & 0x40u)) {
-                u32 sub = ABFT_STA_GP2_RXEND_CLK + UC_ABFT_STA_EVT_CLK;
+                u32 sub = ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK;
                 u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
                 if (d165 >= sub + ABFT_CLK_PER_US) {
                     uc_mac_cmd(0x52000000);

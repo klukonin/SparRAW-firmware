@@ -56,6 +56,10 @@
  *            где d из r47 округлено вверх до мкс (20 при TXTIME 19,13) — ≈ 55 мкс простоя на 64 маяка.
  *            Что Duration маяков объявляет конец BTI = txop_event — не проверено (UC_ABFT_AP_BTI_END_CLK);
  *   H-T1   [подтверждено]: Timer1 = 165 МГц (период SSW 2626 тактов = 15,92 мкс).
+ *   H-HDR  [стенд std2]: rx_frame_event (r42.12) приходит после разбора заголовка MPDU — через ~9,06 мкс от
+ *            начала кадра (r42.19 → r42.12 у SSW-Feedback 9,01–9,12 мкс), а не в конце кадра: у маяка 34 Б
+ *            за 10,07 мкс до конца, у маяка vendor 38 Б — за 10,65. Окно взвода GP0 станции (до конца GP2) —
+ *            ~14 мкс от r42.12; станция по стандарту на стенде: первый SSW = конец BTI + 8,73 мкс (оба AP).
  */
 
 #define ABFT_CLK_PER_US     165u
@@ -88,8 +92,8 @@
 #endif
 /* Станция. */
 #define ABFT_STA_GP2_RXEND_CLK  0x284u  /* GP2 станции от конца приёма кадра (bti_reset_sweep_state, H-GP5) */
-#ifndef UC_ABFT_STA_EVT_CLK
-#define UC_ABFT_STA_EVT_CLK   0u        /* задержка пуска GP2 после конца маяка в эфире (H-GP5), уточнить опытом */
+#ifndef UC_ABFT_STA_GP0_TRIM_CLK
+#define UC_ABFT_STA_GP0_TRIM_CLK 41u    /* стенд std2: конец GP0 на 0,25 мкс раньше конца BTI (GP2 стартует до конца кадра в эфире) */
 #endif
 #ifndef UC_ABFT_MACLAT_CLK
 #define UC_ABFT_MACLAT_CLK    91u       /* старт прямой передачи после события GP + IFS(0x886d00): стенд 0,55 мкс (H-ORIGIN) */
