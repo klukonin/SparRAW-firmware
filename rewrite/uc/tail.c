@@ -2694,6 +2694,23 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
 }
 
 
+/* Ожидание SSW-Ack и повтор SSW-Feedback (аудит IFS, P12). 802.11-2020 10.42.6.2: если SSW-Ack не
+ * принят, инициатор повторяет SSW-Feedback (до dot11BFRetryLimit раз) «PIFS following the expected
+ * end of the SSW-Ack frame»: ответчик начинает Ack через MBIFS после Feedback (10.42.2.5, 10.42.6.2),
+ * значит повтор — через MBIFS + TXTIME(SSW-Ack) + PIFS = 9 + 18,255 + 8 = 35,255 мкс (5817 тактов)
+ * после конца Feedback. GP1 и есть это окно: ожидание Ack и момент повтора. vendor 0x2087 = 8327
+ * тактов (50,47 мкс) — повтор на ~15 мкс позже стандарта. GP1 взводится через ~40 инструкций и
+ * ожидание события 5 после tx_end Feedback, а после срабатывания до 0x19 повтора ещё
+ * txss_init_send_ssw_fdbk (~1,5–2 мкс) — в эфире повтор ≈ 37 мкс; этот путь не вычитается.
+ * Запас на приём Ack: Ack ответчика по стандарту кончается через 27,26 + 0,49 мкс (наш ответчик —
+ * 9,05 мкс + 18,26, vendor 6.2 — 5,03 + 18,26), до срабатывания GP1 остаётся PIFS 8 мкс на задержку
+ * события конца приёма. UC_DBG=-DUC_SSWFB_RETRY_VENDOR — прежние 50,47 мкс.
+ * Не сделано (как у vendor): проверка, что до конца выделения хватит времени на Feedback + Ack. */
+#ifdef UC_SSWFB_RETRY_VENDOR
+#define SSWFB_ACK_WAIT_CLK  (0x87u | (1u << 13))                                  /* 8327 */
+#else
+#define SSWFB_ACK_WAIT_CLK  (DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_PIFS_CLK)  /* 5817 */
+#endif
 void txss_init_send_fdbk_wait_ack(u32 a) {
     /* 6.2 asm 0x93b9c0. */
     txrx_state2 = 0x400000;
@@ -2713,7 +2730,7 @@ void txss_init_send_fdbk_wait_ack(u32 a) {
     uc_mac_cmd(0x41 << 19);
     mac_evt_enable_bit_sync(5);
     u32 r14 = 1;
-    gp_timer_arm(r14, 0x87 | (1u << 13), 0, 0);
+    gp_timer_arm(r14, SSWFB_ACK_WAIT_CLK, 0, 0);
     for (;;) {
         uc_wait_event1_or_event4(1u << 19, 0x80, 0);
         u32 r42 = arc_core_rd(42);
@@ -2749,7 +2766,7 @@ void txss_init_send_fdbk_wait_ack(u32 a) {
         u32 v2 = (abif_dvs_rf_ctrl_shadow & ~(1u << 24) & ~(1u << 25)) | (rf_set_rx << 24);
         abif_dvs_rf_ctrl_shadow = v2;
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = v2;
-        gp_timer_arm(1, 0x87 | (1u << 13), 0, 0);
+        gp_timer_arm(1, SSWFB_ACK_WAIT_CLK, 0, 0);
         r14 += 1;
     }
 }

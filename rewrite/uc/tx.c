@@ -959,6 +959,16 @@ void internal_tx_flow_sm2(u32 a)
     u32 v = sta_tab[sta].qid_mask_q6;
     ctx->qid = (30 - arc_norm(v));      /* norm + rsub 0x1e */
     gp0_arm_usec_b(0x12);
+    /* Duration RTS = 40 мкс (vendor), оставлено (аудит IFS, P12). По 802.11-2020 9.2.5.2 a) 1) —
+     * TXTIME(кадр) + TXTIME(DMG CTS) + TXTIME(Ack) + 3·SIFS, с округлением вверх. Известно:
+     * DMG CTS 20 Б на control PHY = 14,04 мкс (ответ на RTS в control PHY; окно GP0 18 мкс от конца
+     * RTS вмещает SIFS + 14,04), 3·SIFS = 9 мкс. Кадр берёт MTP из очереди станции только после
+     * CTS (tx_submit_frame), его длина и MCS здесь неизвестны; окно Ack GP0 12 мкс (ниже) не
+     * вмещает Ack на control PHY (SIFS + 13,16), значит кадр и Ack — SC (Ack на MCS1 = 3,09 мкс).
+     * Итого 40 мкс покрывают кадр до 13,87 мкс в эфире (≈ 540 Б на MCS1; QoS Null 30 Б — 3,38 мкс,
+     * тогда по стандарту было бы 30 мкс). Считать по TXTIME можно, только узнав кадр до RTS
+     * (поставить его в MTP раньше и прочитать длительность PPDU из r47, как bti_measure_frame_duration)
+     * — это перестройка пути CTS → данные (СРОК выше), без стенда не делается. */
     uc_mac_cmd(0x15000028);
     uc_mac_cmd(0x14000007);
     direct_tx_program_cmd34(0x10, 0x10);

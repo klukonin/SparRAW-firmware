@@ -695,7 +695,8 @@ u32 sls_rx_ssw_frame(void)
  * из txss_resp_flow — rx_flow_run + txss_resp_wait_fdbk, из sls_rx_ssw_frame — ~130 инструкций;
  * итого ≈ 450–600 ≈ 3,5–5 мкс (vendor ~то же, 107 инструкций у него против наших 103). Запас:
  * сотни инструкций до 9 мкс (задержка PHY RX-end → r42.16 не учтена). Срыв: Ack позже MBIFS;
- * инициатор ждёт GP1 = 0x2087 тактов ≈ 50 мкс и повторяет SSW-Feedback (до 3 раз), затем
+ * инициатор ждёт GP1 = MBIFS + TXTIME(SSW-Ack) + PIFS ≈ 35,3 мкс (tail.c, P12; vendor 0x2087 ≈ 50 мкс)
+ * и повторяет SSW-Feedback (до 3 раз), затем
  * провал SLS. После TX: r42.15 → RF на приём ~15 инструкций (BRP после SLS — не раньше SIFS):
  * запас большой. */
 void sls_send_ssw_ack(u32 a, u32 b)
