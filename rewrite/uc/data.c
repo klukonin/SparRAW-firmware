@@ -275,9 +275,14 @@ UCDATA(801664) u16 ssw_tab_b[12] = {
     0x329b, 0x3cdb, 0x471b, 0x515b, 0x5b9b, 0x65db, 0x701b, 0x7a5b,
     0x849b, 0x8edb, 0x991b, 0xa35b,
 };
+/* period_tab — конец слота A-BFT в тактах по FSS (4..15): aSSSlotTime (802.11-2020 10.42.5.2) =
+ * aAirPropagationTime (100 нс) + aSSDuration (FSS × (TXTIME(SSW) + SBIFS) = ssw_tab_b) + MBIFS +
+ * aSSFBDuration (TXTIME(SSW-Feedback) = 18,25 мкс) + MBIFS = ssw_tab_b + 5998 тактов. Vendor 6.2
+ * держал + 9281 (на 3283 такта ≈ 20 мкс за концом слота: 0x56dc, 0x611c, …); исправление — как в
+ * 6.4 (патч 0003-uc-abft-slot-end-per-standard). */
 UCDATA(80167c) u16 period_tab[12] = {
-    0x56dc, 0x611c, 0x6b5c, 0x759c, 0x7fdc, 0x8a1c, 0x945c, 0x9e9c,
-    0xa8dc, 0xb31c, 0xbd5c, 0xc79c,
+    0x4a09, 0x5449, 0x5e89, 0x68c9, 0x7309, 0x7d49, 0x8789, 0x91c9,
+    0x9c09, 0xa649, 0xb089, 0xbac9,
 };
 
 /* ---- 0x8016e4..0x801be8 ---- */

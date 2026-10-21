@@ -565,7 +565,10 @@ void abft_responder_respond_flow(struct sls_peer_rec *r)
     uc_mac_cmd(0x3d000002);
     u32 r17 = arc_core_rd(54);
     u32 r16 = 0x180;
-    u32 r14 = ((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7) & 7;
+    /* Число слотов A-BFT = поле A-BFT Length + 1 (802.11-2020 9.3.4.2; 10.42.5.2 — случайный слот из
+     * [0, число слотов)). Vendor 6.2 брал & 7 без +1: при двух слотах всегда первый, при одном
+     * диапазон пуст. Как в 4.1 и 6.4 (патч 0008-uc-abft-length-is-slot-count). */
+    u32 r14 = (((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7) & 7) + 1;
     u32 g = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = g | (1u << 17);
     uc_mac_cmd(g | 0x1d020000);
@@ -623,7 +626,7 @@ void abft_responder_respond_flow(struct sls_peer_rec *r)
         }
         /* L_930578: feedback не получен — новый случайный слот */
         bcn_rx.abft_nofb_cnt += 1;
-        r14 = ((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7) & 7;
+        r14 = (((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7) & 7) + 1;   /* поле + 1 (см. выше) */
         g = mac_sel_shadow & 0xfff0ffff;
         mac_sel_shadow = g | (1u << 17);
         uc_mac_cmd(g | 0x1d020000);
