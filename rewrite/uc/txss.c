@@ -2,6 +2,7 @@
 /* TXSS/SLS/STA/RFC/RF/QH/DMA/TXOP uCode. */
 #include "../include/types.h"
 #include "../include/bitfield.h"
+#include "ifs.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
 #include "../include/macq_desc.h"
@@ -1263,7 +1264,12 @@ void txss_sweep_timing(u32 out, u32 byte1, u32 byte2)
      * где base=*(0x801598), r13=(0x886d0c>>24). */
     u32 r13 = MMIO32(HW_MAC_IFS_RIFS_SBIFS) >> 24;
     u32 base = txss_timing_base;
-    u32 r1 = (byte2 * 0x11 - 0x11) + (base + r13) * byte1 * byte2;
+#ifdef UC_LBIFS_STD
+    /* смена антенны пира: + (LBIFS − SBIFS) = frame + gap на каждую (ifs.h, P11); byte2 = 0 — как vendor */
+    u32 r1 = (byte2 != 0 ? (byte2 - 1) * (base + r13) : byte2 * 0x11 - 0x11) + (base + r13) * byte1 * byte2;
+#else
+    u32 r1 = (byte2 * 0x11 - 0x11) + (base + r13) * byte1 * byte2;   /* vendor: +17 мкс на смену (ifs.h, P11) */
+#endif
     struct ss_timing *t = (struct ss_timing *)out;
     t->total = (u16)r1;
     t->frame = (u16)base;

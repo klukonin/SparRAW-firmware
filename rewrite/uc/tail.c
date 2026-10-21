@@ -2,6 +2,7 @@
 /* Последний батч uCode — остаток ~101 функции (структурные порты). */
 #include "../include/types.h"
 #include "../include/bitfield.h"
+#include "ifs.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
 
@@ -2637,7 +2638,11 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             uc_mac_cmd(0x36000038);
             uc_mac_cmd(0x6000103);
         } else {
-            bcon_txss_program_sector(3, 0x29u << 6, 4);
+#ifdef UC_LBIFS_STD
+            bcon_txss_program_sector(3, DMG_LBIFS_CLK, 4);   /* смена антенны: LBIFS (ifs.h, P11) */
+#else
+            bcon_txss_program_sector(3, 0x29u << 6, 4);      /* vendor 0xa40 (ifs.h, P11) */
+#endif
             uc_mac_cmd(0x83u << 25);
         }
         uc_spin_until_event(1u << 15);
@@ -3433,6 +3438,10 @@ u32 ss_plan_next_sector(u32 a, u32 b) {
         if (b != 0) {
             ss_plan_cdown = (u8)(r13 - 1);
             *(u32 *)b = 1;
+#ifdef UC_LBIFS_STD
+            /* LBIFS — одна передача в CDOWN и frame + gap в Duration (ifs.h, P11) */
+            ss_plan_tx_dur -= ((const struct ss_timing *)a)->frame + ((const struct ss_timing *)a)->gap;
+#endif
         }
         u8 r1 = ss_plan_idx;
         u8 r2v = ss_order_cur[r1];

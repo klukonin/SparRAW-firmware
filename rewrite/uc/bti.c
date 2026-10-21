@@ -223,10 +223,12 @@ void bti_measure_frame_duration(u32 a)
     d = (d + r13) * mul - r13;
     struct ss_timing *t = (struct ss_timing *)r14;
     t->total = (u16)d;
-    if (fwsh_n_sets >= 2) {
+#ifndef UC_LBIFS_STD
+    if (fwsh_n_sets >= 2) {             /* vendor +10 мкс; в BTI смены антенны нет (ifs.h, P11) */
         d += 0xa;
         t->total = (u16)d;
     }
+#endif
     t->frame = (u16)r47b;                       /* stw_s r1,[r14,2] */
     t->gap = (u16)r13;
 }
