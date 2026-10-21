@@ -42,8 +42,11 @@ import hashlib, os, re, shutil, subprocess, tempfile
 
 M32 = 0xffffffff
 
-TC = os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                  '../../../../../toolchain/arc_gnu_2021.03_prebuilt_elf32_le_linux_install/bin'))
+TC = (os.environ['ARC_DIR'] + '/bin') if os.environ.get('ARC_DIR') else \
+    os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                 '../../../../../toolchain/arc_gnu_2021.03_prebuilt_elf32_le_linux_install/bin'))
+if not os.path.exists(TC + '/arc-elf32-objcopy'):   # из git worktree вне дерева: путь не найдётся молча
+    raise SystemExit('нет тулчейна ARC в %s — задайте ARC_DIR' % TC)
 OBJDUMP = TC + '/arc-elf32-objdump'
 OBJCOPY = TC + '/arc-elf32-objcopy'
 AS = TC + '/arc-elf32-as'

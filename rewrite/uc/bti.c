@@ -647,6 +647,7 @@ u32 abft_responder_tx_ssw(u32 a)
     u32 r16 = r11 & ~(1u << (0x1f - r13));
     /* СРОК: аппаратная отсечка опоздания — SIFS_CNT ≥ 0x160 (1 мкс + 96 тактов) или 0 → SSW в этом
      * слоте не передаётся (как vendor 0x93095a); путь до чтения — см. abft_responder_respond_flow. */
+    UC_PAD(PAD_ABFT_SIFSCHK);
     uc_mac_cmd(0x4d000000);
     arc_nops(3);
     u32 aux55 = arc_core_rd(55);
@@ -691,6 +692,7 @@ u32 abft_responder_tx_ssw(u32 a)
      * SSW-Feedback AP (через MBIFS после aSSDuration): AP 6.2 держит слот на 20 мкс дольше (таблица 3,
      * STANDARD-MAPPING.md), AP по стандарту (6.4, чужие) — нет. Удлинение пути — меньше SSW в слоте. */
     do {
+        UC_PAD(PAD_ABFT_SSW);
         uc_mac_cmd((*(u8 *)&rf_chain_cfg << 16) |
                            ((r14 << 1) | 0x2d000001 | (r13 << 10)));   /* asl r11,r14 = r14<<1 */
         abft_send_ssw_feedback(0);

@@ -1575,6 +1575,7 @@ void vring_disconnect_flush(u32 a, u32 b, u32 c, u32 d)
 
 void direct_tx_step(struct sls_peer_rec *a)
 {
+    UC_PAD(PAD_SSWFB_ABFT);
     u32 r9 = rf_chain_cfg;
     u8 r10 = a->fb_sector;
     mac_program_rx_window(1, r9 | 0x30 | (r10 << 8), 0);

@@ -694,6 +694,7 @@ void mac_set_chain_modes(u32 a)
  * приёма и rx_send_response_frame (не оценено). Срыв: CTS позже SIFS — RTS считается неудачным. */
 void mac_mode_switch_after_ppdu(u32 a)
 {
+    UC_PAD(PAD_CTS_SWITCH);
     uc_mac_cmd(0x83u << 25);
     uc_mac_cmd(0x3d000002);
     /* vendor: mov_s r0,2; mov lp_count,r0; nop_s; lp 2 × (nop_s, nop_s) — нужна MAC между командами */

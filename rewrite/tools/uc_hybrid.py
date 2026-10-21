@@ -20,7 +20,8 @@ import argparse, atexit, bisect, glob, json, os, re, shutil, struct, subprocess,
 HERE = os.path.dirname(os.path.abspath(__file__))
 REW = os.path.dirname(HERE)
 FW = os.path.dirname(REW)
-TC = os.path.abspath(os.path.join(FW, '../../toolchain/arc_gnu_2021.03_prebuilt_elf32_le_linux_install/bin'))
+TC = (os.environ['ARC_DIR'] + '/bin') if os.environ.get('ARC_DIR') else \
+    os.path.abspath(os.path.join(FW, '../../toolchain/arc_gnu_2021.03_prebuilt_elf32_le_linux_install/bin'))
 OD, LD, OC, NM = (TC + '/arc-elf32-' + x for x in ('objdump', 'ld', 'objcopy', 'nm'))
 VENDOR_FW = FW + '/images/openwrt/fw/wil6210_6.2.0.1000.fw'   # эталон — оригинал
 BLOCKS = FW + '/6.2/src/asm/uc/blocks.json'
@@ -447,7 +448,7 @@ def main():
 
     # libgcc (millicode сохранения регистров и т.п.) — явное место в свободной области;
     # выделяем ДО overflow-функций, иначе крупный набор не собирается вовсе
-    libgcc_at = [alloc(0x280) if chosen else 0, alloc(0x60) if chosen else 0]
+    libgcc_at = [alloc(0x280) if chosen else 0, alloc(0x100) if chosen else 0]
     if None in libgcc_at:
         sys.exit('нет места для libgcc')
 
@@ -515,7 +516,7 @@ def main():
 
     # отведённые интервалы для проверки раскладки
     allowed = {'.libgcc': (libgcc_at[0], libgcc_at[0] + 0x280),
-               '.rodata': (libgcc_at[1], libgcc_at[1] + 0x60)}
+               '.rodata': (libgcc_at[1], libgcc_at[1] + 0x100)}
     for n in chosen:
         c = cand[n]
         sec = '.text.' + n

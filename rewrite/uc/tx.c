@@ -379,6 +379,7 @@ void direct_tx_send_with_seq(u32 a, u32 b, u32 c)
  * 0x26. Не добавлять код между входом и 0x19000001. */
 void tx_send_imm_response(u32 a, u32 b, u32 c)
 {
+    UC_PAD(PAD_IMM_RESP);
     uc_mac_cmd((a << 4) | 0x3e000000);
     uc_mac_cmd(0x37000020);
     uc_stats.tx_start += 1;

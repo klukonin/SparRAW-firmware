@@ -894,6 +894,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
             r13 = 0;
             break;
         }
+        UC_PAD(PAD_TRN_LOOP);
         while ((s32)r13 < 0x20 && !(r19 & (1u << r13))) {
             r13++;
             r14 += 2;

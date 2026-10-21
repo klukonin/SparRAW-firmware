@@ -420,10 +420,7 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
         if ((txrx_state1 & 2) && rs_state[ctx->sta].active != 0)
             b |= ((u32)mtp_queue_byte_by_index(ctx->sta) << 8) | 3;
     }
-#ifdef UC_DBG_TXOP_PAD
-    /* Отладка: стресс запаса по сроку — K лишних инструкций до запроса MTP (UC_DBG=-DUC_DBG_TXOP_PAD=K). */
-    __asm__ volatile(".rept %c0\n\tnop\n\t.endr" :: "i"(UC_DBG_TXOP_PAD));
-#endif
+    UC_PAD(PAD_TXOP);   /* стресс запаса: uc/dbg.h (прежде UC_DBG_TXOP_PAD) */
     uc_mac_cmd(0x1b001111);
     uc_mac_cmd(a | 0x16000000);
     uc_mac_cmd(b | 0x17000000);
@@ -713,6 +710,7 @@ done:
 static inline __attribute__((always_inline)) void
 rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast)
 {
+    UC_PAD(PAD_RESP_CMD);
     mtp_service_dispatch(kind, sta, ctx->resp_ctx8, 0xff);
     while (!(arc_core_rd(43) & 0x80000000u))
         ;
@@ -768,6 +766,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
     u32 local;                                  /* [sp] */
     u32 r16 = 0, r18 = 0;
 
+    UC_PAD(PAD_RESP_ENTRY);
     if (!(arc_core_rd(42) & (1u << 16)))
         uc_wait_event_busy(1u << 16, 0);
     if (rx_buf_toggle_dis == 0) {
@@ -1543,6 +1542,7 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
         uc_mac_cmd(0x4d000000);
         arc_nops(3);
         *(u16 *)sp = (u16)arc_core_rd(55);
+        UC_PAD(PAD_D10_WRITE);
         mac_clk_div165(mac_cfg_sifs_clk_adj + sp[0] + 0xd, (u32)&sp[2]);
         sp[3] = (u8)(mac_cfg_sifs_us_adj + sp[1] + sp[3]);
         *(volatile u32 *)HW_MAC_RX2TX_RESP_START = sp[2] | (sp[3] << 8);
