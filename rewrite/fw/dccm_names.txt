@@ -1,0 +1,708 @@
+# Переменные DCCM fw по фиксированным адресам: «адрес [volatile] тип[N] имя  # смысл».
+# Из этого каталога tools/gen_fw_data.py делает объекты в fw/fw_data.c и объявления fw/dccm.h;
+# tools/dccm_apply.py заменяет в коде *(T *)адрес на имя. volatile — если хоть одно место
+# читает/пишет его как volatile (опрос из прерываний и т.п.).
+0x800000 volatile u32 calib_silent_rssi_forced_rf_mask # [gp,-0x184]: одноразовая маска RF silent RSSI (estimation_alg берёт её в результат оценки вместо проверки температуры RF и обнуляет)
+0x800004 volatile u32 temp_bb_sensor_gain        # [gp,-0x180]: множитель BB-сенсора температуры (0x64f)
+0x800008 volatile u32 pcie_marlon_compat         # [gp,-0x17c]: == 1 — совместимость wPCIeR с Marlon (pcie serdes init)
+0x80000c volatile u32 conn_retry_delay           # [gp,-0x178]: задержка таймера повтора соединения (1000000)
+0x800010 volatile u32 bf_id_update_count         # [gp,-0x174]: счётчик записей BF id в [conn+0x18d]
+0x800014 u32          macq_desc_default_bit0     # [gp,-0x170]: бит 0 w1 дескриптора MACQ по умолчанию (rf_chain, 1)
+0x800018 volatile u32 wmi_evt_ring_enabled       # [gp,-0x16c]: != 0 — события хосту через кольцо fw→host (в образе 1)
+0x80001c volatile u32 dbg_assert_active          # [gp,-0x168]: фатальный ассерт в обработке
+0x800020 volatile u32 temp_period                # [gp,-0x164]: период измерений службы температуры (×16 тиков u_schd)
+0x800024 volatile u32 temp_min_delay             # [gp,-0x160]: минимальная задержка до измерения температуры
+0x800028 volatile u32 temp_rf_meas_flag          # [gp,-0x15c]: флаг измерения RF (в режиме 3 однократный)
+0x80002c volatile u32 temp_rf_meas_mode          # [gp,-0x158]: режим измерения RF (3 — однократный флаг)
+0x800030 u32 rx_drop_all                        # [gp,-0x154]: != 0 — rx_pkt_srvs__dispatch освобождает каждый RX-кадр без разбора
+0x800034 u32          tx_ring_cmpl_type19_count  # [gp,-0x150]: счётчик завершённых TX-дескрипторов типа 0x19
+0x800038 u32          tx_mgmt_cmpl_st5_count     # [gp,-0x14c]: счётчик завершений mgmt со статусом 5 (кадр остаётся в pending)
+0x800050 volatile u32 dbg_ucode_crash            # [gp,-0x134]: 1 — сбой ucode (вектор 6), для fw_sysassert_fatal
+0x800058 u32          boot_publish_id            # [gp,-0x12c]: идентификатор для хоста (0x30201) → [board+0x2c]
+0x80005c u32          fw_ver_build               # [gp,-0x128]: версия fw: build (1000)
+0x800060 u32          fw_ver_major               # [gp,-0x124]: версия fw: major (6)
+0x800064 u32          fw_ver_minor               # [gp,-0x120]: версия fw: minor (2)
+0x800068 u32          fw_ver_sub                 # [gp,-0x11c]: версия fw: sub (0)
+0x80006c volatile u32 vring_pair_mode            # [gp,-0x118]: режим vring_schd (1 — вариант 0x804e64)
+0x800070 volatile u32 vring_switch_idle_th_us    # [gp,-0x114]: порог простоя vring (WMI_VRING_SWITCH_TIMING idle_th_usec)
+0x800074 volatile u32 vring_switch_interval_us   # [gp,-0x110]: интервал переключения vring (WMI_VRING_SWITCH_TIMING interval_usec), период таймера связи pring
+0x800078 u32          vring_slot_opt_delay       # [gp,-0x10c]: задержка таймера slot_optimized pring (100000)
+0x80007c u32          pring_bind_count           # [gp,-0x108]: счётчик привязок vring к pring
+0x800080 u32          pring_stop_count           # [gp,-0x104]: счётчик остановок очереди pring
+0x800084 u32          pring_dma_wptr_sync_count  # [gp,-0x100]: счётчик синхронизаций DMA wptr pring
+0x800088 volatile u32 mlme_assoc_resp_timeout_ms # [gp,-0xfc]: таймаут ожидания после ASSOC_RESPONSE (мс, 3000)
+0x800094 volatile u32 pcie_serdes_bit1_flag      # [gp,-0xf0]: обнуляется при бите 1 0x8825c0 (читателей не найдено)
+0x800098 volatile u32 lm_bf_cfg_param            # [gp,-0xec]: параметр [0] LMAC-команды 0x10 config_lmac_bf_sm (8)
+0x80009c volatile u32 maintain_txss_timeout      # [gp,-0xe8]: таймаут TXSS сопровождения (30000)
+0x8000a0 volatile u32 pcp_mid_timer_flag         # [gp,-0xe4]: флаг PCP по mid (vendor: [0x8000a0 + mid·4], add2 + st.as [r0,-0x39]); пишут 0 pcp_start/stop__cancel_timer и vring_tbl__init, читателей не найдено
+0x8000a4 volatile u32 temp_bb_mdeg               # [gp,-0xe0]: температура BB (м°C, -1 — неизвестна)
+0x8000a8 ext[4] temp_pending_cb                 # [gp,-0xdc]: temp_done_fn — колбэк ожидающего запроса температуры — include/temp_sense.h, fw/lmac.c
+0x8000ac volatile u32 temp_pending_ctx           # [gp,-0xd8]: ctx ожидающего запроса температуры
+0x8000b0 volatile u32 l2mgr_pending_ops          # [gp,-0xd4]: маска ожидающих операций l2mgr (0 скан, 1 connect, 2 disconnect…)
+0x8000b4 volatile u32 tx_flush_cid_mask          # [gp,-0xd0]: маска cid в сбросе TX
+0x8000b8 volatile u32 l2mgr_connect_mid          # [gp,-0xcc]: mid текущего CONNECT
+0x8000bc u32 chsw_cur_channel          # [gp,-0xc8]: текущий канал переключателя каналов
+0x8000c0 volatile u32 chsw_active_channel        # [gp,-0xc4]: активный канал (0xffff в образе); regd/mcs-проверки страны только при 0
+0x8000c4 ext[4] sw_tx_mgmt_ctx                  # [gp,-0xc0]: struct sw_tx_hdr * — контекст кадра SW TX (payload − 0x24), один кадр за раз — include/fwq_tx.h, fw/mlme.c
+0x8000cc volatile u32 wmi_connect_count          # [gp,-0xb8]: счётчик WMI_CONNECT_CMDID
+0x8000d0 volatile u32 wmi_scan_count             # [gp,-0xb4]: счётчик WMI_START_SCAN_CMDID
+0x8000d4 u32          dbg_mbox_inited            # [gp,-0xb0]: debug mbox инициализирован
+0x8000dc volatile u32 conn_false_alarm_timer     # [gp,-0xa8]: таймер проверки частоты ложных тревог (потерь связи)
+0x8000ec volatile u32 info_flow_timer            # [gp,-0x98]: таймер информационного потока
+0x8000f0 volatile u32 pcp_started                # [gp,-0x94]: 1 — PCP запущен (pcp_start/pcp_stop cancel_timer)
+0x8000f4 volatile u32 temp_last_meas_time        # [gp,-0x90]: время последнего измерения температуры (-1 — не было)
+0x8000f8 volatile u32 wbe_link_up_timer          # [gp,-0x8c]: таймер «связь поднята» WBE_DRIVER
+0x8000fc volatile u32 calib_lo_power_fields      # [gp,-0x88]: указатель полей последнего шага LO-power
+0x800100 volatile u32 lt_bf_max_goodput          # [gp,-0x84]: максимум TX goodput (long-term BF)
+0x800104 volatile u32 maintain_paused            # [gp,-0x80]: сопровождение линка на паузе
+0x80010c u32          wmi_op_mbox_inited         # [gp,-0x78]: operational mbox инициализирован
+0x80011c volatile u32 power_source               # [gp,-0x68]: источник питания из WMI_POWER_MGMT_CFG (у vendor — «ps_profile»); бит 0 — в PCP factor
+0x800138 volatile u32 pcie_dbg_rearm_timer       # [gp,-0x4c]: таймер перевзвода отладочных прерываний PCIe (код 0)
+0x80013c volatile u32 conn_link_lost_rm_req      # [gp,-0x48]: заявка radio_mgr на обработку потери связи
+0x800140 volatile u32 temp_radio_req             # [gp,-0x44]: заявка radio_mgr службы температуры
+0x800144 ext[4] radio_mgr_obj                  # [gp,-0x40]: struct radio_mgr * — fw/radio_mgr.c
+0x800150 volatile u32 temp_stopping              # [gp,-0x34]: служба температуры останавливается
+0x800158 u32 calib_engine_sm_name_id           # [gp,-0x2c]: ид строки имени автомата движка калибровки 0x802234 («CALIB_ENGINE»)
+0x80015c u32 maintain_sm_name_id               # [gp,-0x28]: ид строки имени maintain_sm 0x802cc4 («MAINTAIN_SM»)
+0x800160 u32 lm_sm_name_id                     # [gp,-0x24]: ид строки имени lm_sm 0x802da0 («LM_MAIN_SM»)
+0x800164 u32 link_stats_sm_name_id             # [gp,-0x20]: ид строки имени автомата статистики линка 0x802f58 («LINK_STATS_SM»)
+0x800168 u32          tx_ch_switch_paused        # [gp,-0x1c]: TX приостановлен для переключения канала
+0x80016c ext[4] plat_board_info                 # [gp,-0x18]: struct plat_board_info * — описание платы (0x8009b4) — include/sys_cfg.h, fw/platform.c
+0x800170 u32 calib_sys_state           # [gp,-0x14]: системное состояние калибровки (3/4 — ассоц.)
+0x800174 volatile u32 temp_enabled               # [gp,-0x10]: служба температуры разрешена (m_temp_enabled)
+0x800178 volatile u32 rf_kill_stop_stages        # [gp,-0xc]: этапы останова RF kill (б0 TX, б1 скан, б2 PCP)
+0x80017c volatile u32 temp_timer_task            # [gp,-0x8]: задача таймера службы температуры
+0x800180 u32          sched_hw_deadline          # [gp,-0x4]: срок, запрограммированный в аппаратный таймер u_schd
+0x800184 ext[4] sw_tx_mgmt_cb                   # [gp,0]: sw_tx_done_fn — колбэк завершения кадра SW TX (пара к sw_tx_mgmt_ctx), 0 — нет — include/fwq_tx.h, fw/mlme.c
+0x800188 ext[4] pring_done_handler              # [gp,0x4]: pring_done_fn — обработчик завершения остановки pring — include/vring_schd.h, fw/vring.c
+0x80018c u32          pring_done_arg             # [gp,0x8]: аргумент обработчика завершения остановки pring
+0x800190 volatile u32 rf_kill_hw                 # [gp,0xc]: RF kill: аппаратный W_DISABLE
+0x800194 volatile u32 rf_kill_sw                 # [gp,0x10]: RF kill: программный
+0x80019c volatile u32 sched_ready_mask           # [gp,0x18]: маска готовых приоритетов u_schd
+0x8001b8 u32 rf_kill_sm_name_id                # [gp,0x34]: ид строки имени rf_mgmt_sm 0x802338 («RF_KILL_SM»)
+0x8001bc u32 mlme_sm_name_id                   # [gp,0x38]: ид строки имени автомата MLME 0x802458 («MLME_SM»)
+0x8001c0 u32 conn_msm_name_id                  # [gp,0x3c]: ид строки имени conn_main_sm 0x802744 («CONN_MSM»)
+0x8001c4 u32 disconn_sm_name_id                # [gp,0x40]: ид строки имени автомата разрыва 0x8027a0 («DISCONN_SM»)
+0x8001c8 u32 ba_sm_name_id                     # [gp,0x44]: ид строки имени ba_sm 0x80296c («BA_SM»)
+0x8001cc u32 ba_setup_sm_name_id               # [gp,0x48]: ид строки имени ba_setup_sm 0x802b50 («BA_SETUP_SM»)
+0x8001d0 u32 wait_sm_name_id                   # [gp,0x4c]: ид имени wait_sm 0x802ba0 — в образе 0x802c25, не токен строки (так у vendor)
+0x8001d4 u32 channels_switch_sm_name_id        # [gp,0x50]: ид строки имени channels_switch_sm 0x802fb4 («CHANNELS_SWITCH_SM»)
+0x8001d8 u32 swc_psc_sm_name_id                # [gp,0x54]: ид строки имени swc_psc_sm 0x8030e0 («SWC_PSC_SM»)
+0x8001dc u32 find_main_sm_name_id              # [gp,0x58]: ид строки имени find_sm 0x8030f4 («FIND_MAIN_SM»)
+0x8001e0 u32          rm_sm_name_id              # [gp,0x5c]: ид строки имени автомата rm_sm (журнал)
+0x8001e4 u32          rm_chsw_sm_name_id         # [gp,0x60]: ид строки имени автомата rm_ch_switch_sm (журнал)
+0x8001f0 u32          mlme_sm_created            # [gp,0x6c]: автомат 0x802458 (mlme_sm) создан
+0x8001f4 u32          txq_count                  # [gp,0x70]: число TX-очередей (10)
+0x8001f8 u32 u_schd_hw_timer_limit             # [gp,0x74]: предел аппаратного таймера u_schd (0xa50; u_schd_timer_init → RGF 0x880248)
+0x8001fc u16          macq_reg_c70_val           # [gp,0x78]: значение 0x886c70[15:0] (по умолчанию 0xc8)
+0x8001fe u16          macq_reg_c74_val           # [gp,0x7a]: значение 0x886c74[7:0] (по умолчанию 0x40)
+0x800200 volatile u16 macq_desc_mpdu_len         # [gp,0x7c]: поле w0[19:6] дескриптора MACQ (0x5dc / 0x320)
+0x800202 u16          macq_desc_w1_len           # [gp,0x7e]: поле w1[12:0] дескриптора MACQ (0x64 / 0x17)
+0x800204 u16          macq_desc_field0e          # [gp,0x80]: полуслово +0xe дескриптора MACQ
+0x800208 volatile u16 dbg_pll5_unlock_count      # [gp,0x84]: счётчик прерываний PLL5 UNLOCK
+0x80020a volatile u16 find_search_mult           # [gp,0x86]: множитель длительности поиска (тихий режим)
+0x80020c volatile u16 rx_chain_payload_size      # [gp,0x88]: размер payload RX-цепочки
+0x80020e volatile s16 temp_bb_otp_tamb          # [gp,0x8a]: Tamb калибровки BB-сенсора из flash/OTP (flash_cfg__set_bb_sensor_calib, stw.as [gp,0x45]); -1 — нет (TEMPERATURE_SERVICE__consume_bb_sensor_calibration_parameters)
+0x800210 volatile s16 temp_bb_otp_t0            # [gp,0x8c]: начальная температура калибровки BB-сенсора (stw.as [gp,0x46]); -1 — нет
+0x800212 volatile u16 l2mgr_connect_vs_mode      # [gp,0x8e]: параметр CONNECT (reserved1[0] или 1); == 1 — старый Wilocity VS
+0x800214 volatile u16 regd_country_code         # [gp,0x90]: код страны (BE u16: 0x4a50 «JP», 0x5553 «US»; regulatory_domain__set_country_code, regd__is_country_*, mcs__is_restricted — ldw_s [gp,0x90])
+0x800216 u8 unk_800216                          # [gp,0x92]: vendor crt0 (0x8c16f2 stb r0,[gp,0x92]) обнуляет перед конструкторами; других обращений в vendor fw нет (поиск [gp,0x92]/0x800216 по 6.2/src/asm/fw)
+0x800217 volatile u8 calib_lo_power_low_thr     # [gp,0x93]: нижний порог |I| (<< shift+2) LO power/battery; опорная коррекция VGA DC = порог + 2 (образ 8)
+0x800218 u8           chsw_rx_table_index        # [gp,0x94]: принудительный индекс RX-таблицы ABIF
+0x800219 u8           chsw_rx_table_force        # [gp,0x95]: != 0 — принудить индекс RX-таблицы ABIF
+0x80021a u8 chsw_rx_agc_steps_disable # [gp,0x96]: != 0 — запретить AGC-шаги RX в hwm__apply_channel_config
+0x80021b volatile u8 link_bad_first_thr # [gp,0x97]: порог событий первого окна conn__check_bad_link (образ 20)
+0x80021c volatile u8 link_bad_thr # [gp,0x98]: порог событий окна conn__check_bad_link (образ 200)
+0x80021d u8 calib_bb_gain_tbl_skip_mode3        # [gp,0x99]: != 0 при режиме RF 3 — hwf_calib_bb_gain_create_table не строит таблицу (образ 1)
+0x80021e volatile u8 temp_comp_clk_pulses # [gp,0x9a]: число тактов (бит 8 0x880b00) перед чтением компаратора сенсора
+0x80021f u8 calib_all_lo_power_en               # [gp,0x9b]: != 0 — hwf_calib_all выполняет шаг LO power (образ 1)
+0x800220 u8 calib_all_lo_power_reset_done       # [gp,0x9c]: 0 — первый раз сбросить результаты LO power (ставится 1), иначе прогон движка 0x80676c (образ 1)
+0x800221 u8 calib_all_silent_rssi_en            # [gp,0x9d]: == 1 — hwf_calib_all выполняет silent RSSI движка 4 по всем RF (образ 1)
+0x800222 u8 calib_rx_gain_est_mode              # [gp,0x9e]: режим calib_corr__estimate_and_apply_rx_gain: 0 — из сохранённого, 1 — два поиска, 2 — одно измерение (образ 1)
+0x800223 u8 calib_rx_gain_est_offset            # [gp,0x9f]: смещение индекса RX-таблицы при оценке RX-усиления (образ 3)
+0x800224 volatile u8 calib_lo_power_meas_shift  # [gp,0xa0]: сдвиг измерения calib_lo_power_measure (substep / режим 2 оценки; образ 0xa)
+0x800225 u8 calib_if_gain_always_apply          # [gp,0xa1]: == 1 — if_gain применяет AGC-таблицу и при повторной калибровке (образ 0)
+0x800226 u8 calib_if_gain_force_agc_idx         # [gp,0xa2]: при режиме RF 3 и ≥ 1 — if_gain в конце применяет AGC-таблицу с этим индексом (образ 0xf)
+0x800227 volatile u8 rf_if_gain_rssi_ofs # [gp,0xa3]: поправка IF gain в расчёте RSSI (rx_energy__calc_rssi_q4, if_gain)
+0x800228 u8 calib_if_gain_ref                   # [gp,0xa4]: опорный уровень IF gain ([0x8067bc+0x12]) в расчёте поправки if_gain (образ 0x17)
+0x800229 u8 calib_if_gain_settle_delay          # [gp,0xa5]: пауза (×80 nop) после переключения петли CAF в IF_GAIN__GAIN; 0 — без паузы (образ 2)
+0x80022a volatile u8 link_bad_win_enable # [gp,0xa6]: != 0 — взводить окно проверки плохой связи (channels_switch__check)
+0x80022b u8 fw_build_day # [gp,0xa7]: дата сборки fw — день («FW date = %02d/%02d/%d»)
+0x80022c u8 fw_build_hour # [gp,0xa8]: время сборки fw — часы («FW time = %02d:%02d:%02d»)
+0x80022d u8 fw_build_min # [gp,0xa9]: время сборки fw — минуты
+0x80022e u8 fw_build_month # [gp,0xaa]: дата сборки fw — месяц
+0x80022f u8 fw_build_sec # [gp,0xab]: время сборки fw — секунды
+0x800230 u8 fw_build_year # [gp,0xac]: дата сборки fw — год (две цифры)
+0x800231 volatile u8 conn_multi_omni_count # [gp,0xad]: число направленных omni-секторов RX (WMI multi_directed_omnis, ≥ 1)
+0x800232 u8 vring_pring_stop_max_polls # [gp,0xae]: предел перевзводов таймера останова pring (образ 5)
+0x800233 volatile u8 calib_lo_power_level       # [gp,0xaf]: сохранённый уровень LO power (calib_lo_power__save_level; образ 0xc)
+0x800234 volatile u8 rf_fs8_unlock_fatal # [gp,0xb0]: != 0 — «FS8 UNLOCK» (вектор 13, бит 7) → фатал 0x12ee
+0x800235 volatile u8 rf_chain_sector_desc_f4 # [gp,0xb1]: поле 4..7 дескриптора сектора rf_chain; fixed_sched__start = 0
+0x800236 volatile u8 sched_fixed_active # [gp,0xb2]: фиксированное расписание запущено (0 в STA, 1 в AP); режим окна MACQ
+0x800237 u8 chsw_rx_agc_step_c0_lo              # [gp,0xb3]: AGC-шаг → 0x8831c0[5:0] (hwd_phy__rx_agc_steps_disable(0); образ 0x1b)
+0x800238 u8 chsw_rx_agc_step_c0_hi              # [gp,0xb4]: AGC-шаг → 0x8831c0[11:6] (образ 0x1b)
+0x800239 u8 chsw_rx_agc_step_c4_lo              # [gp,0xb5]: AGC-шаг → 0x8831c4[5:0] (образ 0x1d)
+0x80023a u8 chsw_rx_agc_step_c4_hi              # [gp,0xb6]: AGC-шаг → 0x8831c4[11:6] (образ 0x1d)
+0x80023b volatile u8 calib_first_run_delay_en # [gp,0xb7]: первый запуск движка калибровки — с задержкой [0x800388]
+0x80023c u8 qdesc_w3_field_a # [gp,0xb8]: qdesc_cfg — поле слова 3 дескриптора очереди (биты 0..2)
+0x80023d u8 qdesc_w4_field # [gp,0xb9]: qdesc_cfg — поле слова 4 дескриптора очереди (биты 17..20)
+0x80023e u8 qdesc_w3_field_b # [gp,0xba]: qdesc_cfg — второе поле слова 3 дескриптора очереди (биты 14..16)
+0x80023f volatile u8 rf_pll5_unlock_fatal # [gp,0xbb]: != 0 — «PLL5 UNLOCK» (вектор 13, бит 2) → фатал 0x12ec
+0x800240 volatile u8 scan_find_default_channel # [gp,0xbc]: канал find_sm по умолчанию ([find_mngr+0x10], образ 2)
+0x800241 volatile u8 rf_kill_hw_force # [gp,0xbd]: != 0 — W_DISABLE считается RF kill без программного флага
+0x800242 volatile u8 rf_active_mask # [gp,0xbe]: маска активного RF-модуля (младший бит маски RF; RFCA)
+0x800243 volatile u8 rf_connected_mask # [gp,0xbf]: маска подключённых RF-модулей (init_rf_hw; с сенсором температуры)
+0x800244 u8 rf_restore_sets_delay # [gp,0xc0]: пауза rfc__restore_txrx_sets_fw (×32), растёт в powerup_deep
+0x800245 u8 rf_rdac_val                         # [gp,0xc1]: результат калибровки BB RDAC (hwd_rfc_read_calibrate; поле 0x889154[15:12] − 6)
+0x800246 u8 calib_silent_rssi_agc_ofs_mode3     # [gp,0xc2]: s8-поправка начального значения AGC silent RSSI при режиме RF 3 ([0x800508] − 11 + это; образ 6)
+0x800247 volatile u8 bf_last_id # [gp,0xc3]: копия последнего BF id соединения ([conn+0x18d])
+0x800248 volatile u8 rx_chain_cfg_mode # [gp,0xc4]: режим цепочки RX (rx_chain__get_cfg_mode; ×2 — размер окна, образ 0x20)
+0x800249 volatile u8 dbg_sysassert_wmi_lock # [gp,0xc5]: g_sysassert_wmi_lock — после ассерта ждать, пока отладчик не сбросит
+0x80024a volatile u8 dbg_sysassert_hold # [gp,0xc6]: != 0 — после ассерта держать ядро и обслуживать mbox опросом
+0x80024b u8 calib_silent_rssi_target_ofs_mode3  # [gp,0xc7]: s8-поправка цели silent RSSI модуля при режиме RF 3 (+[obj+0xb4]; образ 0)
+0x80024c volatile u8 wmi_notify_req_count # [gp,0xc8]: счётчик WMI_NOTIFY_REQ (0..59, wmi__bump_cmd_counter)
+0x80024d volatile u8 ps_lmac_evt_cid_mask # [gp,0xc9]: байт 3 последнего PS-события LMAC — маска cid
+0x80024e u8 calib_scheme_enabled # [gp,0xca]: калибровка по схеме разрешена (системные события 17/20 → 0, 18/21 → 1)
+0x80024f volatile u8 wmi_sw_tx_cid # [gp,0xcb]: cid соединения кадра SW TX (ждёт link_up_evt)
+0x800250 u8 chsw_configured            # [gp,0xcc]: канал уже настроен
+0x800251 volatile u8 link_first_fbf_max_tries # [gp,0xcd]: число попыток первого FBF до SELF_FBF_FAIL (образ 3)
+0x800252 u8 chsw_pcp_ap_mode           # [gp,0xce]: режим PCP/AP
+0x800253 volatile u8 pcie_link_up_mask # [gp,0xcf]: WBE_DRIVER::link_up_notif — биты пришедших уведомлений (7 — все)
+0x800254 volatile u8 calib_lo_power_gc_ctrl # [gp,0xd0]: LO power calib — GC ctrl (flash_cfg)
+0x800255 volatile u8 calib_lo_power_stg2_bias # [gp,0xd1]: LO power calib — stg2 bias (flash_cfg)
+0x800256 volatile u8 calib_lo_power_xif_gc # [gp,0xd2]: LO power calib — XIF GC (flash_cfg)
+0x800257 volatile u8 tx_mgmt_retry_limit # [gp,0xd3]: предел повторов mgmt-кадров − 1 (WMI set_mgmt_retry_limit)
+0x800259 volatile u8 mid_open_bitmap # [gp,0xd5]: битовая карта открытых mid
+0x80025a volatile u8 pcp_active_count # [gp,0xd6]: число активных PCP
+0x80025b volatile u8 conn_bf_id_win_len # [gp,0xd7]: длина скользящего окна BF id (степень 2) и предел повторов таймера
+0x80025c u8 sched_hw_timer_queue # [gp,0xd8]: очередь u_schd, на которую взведён HW-таймер (2 — нет)
+0x800260 u32 phy_default_rx_swap_iq            # [gp,0xdc]: g_default_rx_swap_iq — [0x883038] == 3 при загрузке (hwd_PHY_STORE_TXRX_SWAP_IQ); режим 2 set_rx_swap_iq (образ 3)
+0x800264 u32 phy_default_tx_swap_iq            # [gp,0xe0]: g_default_tx_swap_iq — [0x884028] == 3 при загрузке; режим 2 set_tx_swap_iq (образ 3)
+0x80026c ext[4] sel_nbr_cfg                    # [gp,0xe8]: конфигурация CMD_SELECTIVE_NEIGHBOR_CFG (пороги, биты разрешений 16..18) — include/link_sm.h, fw/link_sm.c
+0x800270 u8 boot_uc_shared_field28 # [gp,0xec]: значение слова [ucode-конфиг [0x80016c]+0x28] при boot_publish_ids
+0x800278 u8[4] calib_battery_thr                # [gp,0xf4]: пороги battery-детектора по индексу (hwd_abif_battery_config → 0x88afbc), образ {0,3,5,9}
+0x80027c volatile u8 calib_vga_dc_shift         # [gp,0xf8]: сдвиг измерения VGA DC (hwf_vga_dc_calibrate; также shift петли calib__setup_loopback_hw_b; образ 0xd)
+0x80027d volatile u8 calib_vga_dc_thr           # [gp,0xf9]: порог hwf_vga_dc_calibrate (образ 4)
+0x80027e volatile u8 calib_vga_dc_fixed_gain    # [gp,0xfa]: VGA gain на время калибровки VGA DC; < 0 (s8) — вместо усиления аттенюатор (образ 0xff)
+0x800280 u8[3] disc_probe_sa_oui                # [gp,0xfc]: OUI из SA кадра discovery (discovery__init_probe_entry); 04:ce:14 (Wilocity) без VS-элемента — features_ver = 0
+0x800284 volatile u16 sched_ext_b_hi # [gp,0x100]: 13-битное поле [28:16] регистра 0x88c06c (mid__program_88c068)
+0x800288 volatile u16 sched_ext_a_hi # [gp,0x104]: 13-битное поле [28:16] регистра 0x88c068
+0x80028c volatile u16 sched_ext_b_lo # [gp,0x108]: 13-битное поле [12:0] регистра 0x88c06c
+0x800290 volatile u16 sched_ext_a_lo # [gp,0x10c]: 13-битное поле [12:0] регистра 0x88c068
+0x800294 volatile u16 pcie_l1_enter_count # [gp,0x110]: счётчик прерываний LTSSM «вход в L1» (вектор 18)
+0x800296 volatile u16 pcie_l1_exit_count # [gp,0x112]: счётчик прерываний LTSSM «выход из L1» (вектор 18)
+0x800298 volatile u16 dbg_sysassert_mbox_irq_count # [gp,0x114]: счётчик причин mbox, обслуженных в ожидании после ассерта
+0x80029a volatile u16 rf_fs8_unlock_count # [gp,0x116]: счётчик «FS8 UNLOCK» (вектор 13, бит 7)
+0x80029c u16 qdesc_w10_field # [gp,0x118]: qdesc_cfg — поле слова 10 дескриптора очереди (биты 20..29)
+0x8002a0 u32 crt0_bss_clear_en                 # [gp,0x11c]: vendor crt0 (0x8c168c): != 0 — обнулить bss/periph перед fw_main (образ 1; наш start.S обнуляет всегда)
+0x8002a4 u32 tx_api_state_word # [gp,0x120]: только обнуляется tx_api__reset_state_words (vendor не читает)
+0x8002a8 volatile u32 rx_reorder_sw # [gp,0x124]: WMI_CFG_RX_CHAIN reorder_type == 1 (SW reorder) — HW reorder выкл.
+0x8002ac u32 ba_addba_retry_delay # [gp,0x128]: задержка повтора ADDBA Req, мкс (образ 100 мс)
+0x8002b0 u32 ba_addba_resp_timeout # [gp,0x12c]: ожидание ADDBA Resp, мкс (образ 1 с)
+0x8002b8 u32 ba_setup_total_timeout # [gp,0x134]: общий таймер установки BA, мкс (образ ≈32 с)
+0x8002bc volatile u32 link_bad_win_period # [gp,0x138]: период окна conn__check_bad_link, мкс (образ 3 с)
+0x8002c0 volatile u32 link_bad_first_thr_alt # [gp,0x13c]: порог первого окна при бите 3 [0x803c20] (вместо link_bad_first_thr)
+0x8002c4 volatile u32 link_bad_thr_alt # [gp,0x140]: порог окна при бите 3 [0x803c20] (вместо link_bad_thr)
+0x8002c8 volatile u32 temp_sense_disable # [gp,0x144]: != 0 — запрет temp_sense__read_and_check
+0x8002cc volatile s32 temp_bb_calib_ofs         # [gp,0x148]: калибровка BB-сенсора ((T0 − Tamb) / 100) << 13 (consume_bb_sensor_calibration_parameters), прибавляется к отсчёту BB
+0x8002d0 volatile u32 temp_bb_calibrated # [gp,0x14c]: калибровка BB-сенсора из OTP получена
+0x8002d4 volatile u32 pcp_bcon_interval # [gp,0x150]: интервал бикона, TU (beacon_interval/PCP start; образ 100)
+0x8002d8 volatile u32 fw_data_fresh_magic # [gp,0x154]: 0x11111111 из образа → 0x22222222; иначе рестарт без перезагрузки образа
+0x8002dc u32 pring_tx_cnt_base_88 # [gp,0x158]: база счётчика MAC TX [+0x88] (sm_pring_latch_tx_counters)
+0x8002e0 volatile u32 pring_tx_cnt_base_10 # [gp,0x15c]: база счётчика MAC TX [+0x10]
+0x8002e4 volatile u32 mlme_assoc_timeout_ms # [gp,0x160]: таймер ассоциации, мс (образ 3000)
+0x8002e8 volatile u32 link_high_per_check_en # [gp,0x164]: EVT_CONSECUTIVE_HIGH_PER — проверять соединение
+0x8002ec volatile u32 mlme_host_ctrl_timeout_ms # [gp,0x168]: ожидание решения хоста (split MAC), мс (образ 5000)
+0x8002f0 volatile u32 eapol_builder_obj # [gp,0x16c]: объект eapol_frame_builder (= vtable 0x8006f4)
+0x8002f4 volatile u32 conn_assoc_ready_check_en # [gp,0x170]: != 0 — assoc_ready_check_trig работает
+0x8002f8 u32 bf_fail_inject_cnt # [gp,0x174]: счётчик событий BF done для имитации неудач
+0x8002fc u32 chsw_skip_calib_state # [gp,0x178]: != 0 — switch_on не шлёт калибровке системное состояние 1
+0x800300 volatile u32 phy_dbg_clk_delay # [gp,0x17c]: одноразовая пауза ×80 после hwd_phy_dbg_clk_enable
+0x800304 volatile u32 conn_skip_bcon_wait # [gp,0x180]: != 0 — OWN_START_LINK без ожидания бикона пира
+0x800308 u32 power_33khz_clk_detect # [gp,0x184]: результат hwm_power_33kHz_clk_detector (power_mngr_init)
+0x80030c u32 bf_fail_inject_en # [gp,0x188]: != 0 — каждое событие BF done, кроме N-го, — неудача
+0x800310 volatile u32 mac_phy_irq_count # [gp,0x18c]: счётчик прерывания MAC/PHY (вектор 12)
+0x800314 u32 l2mgr_mac_post_bringup_en          # [gp,0x190]: != 0 — в конце l2mgr__mac_bringup доп. регистры MAC (l2mgr_post_bringup)
+0x800318 u32 bf_fail_inject_period # [gp,0x194]: N для bf_fail_inject_en (образ 7)
+0x80031c volatile u32 pcie_dbg_irq_count # [gp,0x198]: счётчик прерывания PCIe debug (вектор 15)
+0x800328 volatile u32 pcie_dbg_fifo_irq_count # [gp,0x1a4]: счётчик wbe_driver__pcie_debug_isr со статусом ≠ 0
+0x80032c u32 gpio19_pulse_count # [gp,0x1a8]: счётчик импульсов GPIO 19 (0x880b60); сброс в debug_mbox__get_or_init
+0x800330 volatile u32 dbg_mbox_draining # [gp,0x1ac]: идёт mbox__drain_debug
+0x800338 ext[4] conn_multi_omni_target         # [gp,0x1b4]: struct scan_peer * — цель connect_multi_omni (результат l2_mgr__connect_next) — include/scan_mngr.h, fw/scan_mngr.c
+0x80033c u32 txrx_dma_irq_count       # [gp,0x1b8] (ld.as [gp,0x6e]): число RX/TX-DMA прерываний (txrx_mgr_handle_dma_irq)
+0x800340 u32 dma_cpl_timeout_val # [gp,0x1bc]: значение таймаута завершения DMA (0x881c88), записанное первым
+0x800344 u32 dpal_cpl_timeout_seen             # [gp,0x1c0]: таймаут завершения DPAL уже зафиксирован (значение в 0x800340), повтор с другим — ассерт
+0x800348 volatile u32 pring_stop_timeout       # [gp,0x1c4]: таймаут остановки pring (420000)
+0x80034c volatile u32 dbg_assert_caller        # [gp,0x1c8]: адрес вызова последнего fw_sysassert_fatal
+0x800350 volatile u32 dbg_assert_code          # [gp,0x1cc]: код последнего fw_sysassert_fatal
+0x800354 volatile u32 dbg_assert_code2         # [gp,0x1d0]: код последнего fw_sysassert_fatal (вторая копия, vendor пишет оба)
+0x800358 u32 sysapi_hw_flows_log_timer         # [gp,0x1d4]: таймер периодического журнала HW flows (UT-команда 38), 0 — не запланирован
+0x800368 u32 tx_fw2fw_test                     # [gp,0x1e4]: g_fw_2_fw_test: следующий кадр данных — тестовый FW2FW (WMI debug TX)
+0x80036c u32 tx_lifetime_shift                 # [gp,0x1e8]: сдвиг единиц lifetime TX-дескриптора (10)
+0x800370 u32 l2_false_alarm_count              # [gp,0x1ec]: счётчик ложных тревог (потерь связи) high false alarm
+0x800374 u32 l2_false_alarm_lock_time          # [gp,0x1f0]: длительность последнего захвата радио при потере связи (мкс×16)
+0x800378 volatile u32 pcie_perst_assert_irq_en # [gp,0x1f4]: разрешить прерывание PERST assert (1)
+0x80037c volatile u32 pcie_perst_cfg_fix_en    # [gp,0x1f8]: правка DBI 0x10/0x14 в pcie_perst_handler_step (1)
+0x800384 u32 rf_rfc_div_restart_count          # [gp,0x200]: счётчик перезапусков делителя RFC
+0x800388 u32 calib_first_run_delay             # [gp,0x204]: задержка первого запуска движка калибровки, мкс (20000)
+0x80038c volatile u32 temp_first_meas_done        # [gp,0x208]: первое измерение температуры выполнено (UT 10/32 — статус)
+0x800390 u32 qdesc_txq_cfg_custom              # [gp,0x20c]: != 0 — поля 0x886c70/c74/+0xe дескриптора из конфигурации, иначе дефолт
+0x800394 u32 qdesc_cfg_override                # [gp,0x210]: override конфигурации дескрипторов очередей/секторов (1)
+0x800398 u32 qdesc_cfg_flag_bit3               # [gp,0x214]: бит 3 слова 0 дескриптора (override-ветка)
+0x80039c u32 qdesc_cfg_flag_bit13              # [gp,0x218]: бит 13 слова 1 дескриптора (override-ветка)
+0x8003a0 u32 qdesc_txq_enable                  # [gp,0x21c]: «TXQ enable» дескриптора (кэш значения или дефолта 1)
+0x8003a4 u32 qdesc_override_bit0               # [gp,0x220]: бит 0 слова 1 секторного дескриптора при override (1)
+0x8003a8 u32 qdesc_sector_field16              # [gp,0x224]: поле 16..20 слова 0 секторного дескриптора, режим 4 (12)
+0x8003ac u32 qdesc_txq_enable_custom           # [gp,0x228]: != 0 — qdesc_txq_enable из конфигурации, иначе 1
+0x8003b0 volatile u32 led_enabled              # [gp,0x22c]: LED-драйвер включён (hw_ch_enable_once)
+0x8003b4 volatile u32 led_rate_thr_high        # [gp,0x230]: порог goodput для LED-схемы 3 (60)
+0x8003b8 volatile u32 led_rate_thr_low         # [gp,0x234]: порог goodput для LED-схемы 2 (иначе 1)
+0x8003bc volatile u32 led_scheme_channel       # [gp,0x238]: LED-канал текущей схемы (2)
+0x8003c0 volatile u32 link_stats_latency_period # [gp,0x23c]: период таймера задержки link_stats_sm (10000)
+0x8003c4 volatile u32 link_det_log_interval    # [gp,0x240]: интервал журнала состояния детекторов (TSF, мкс)
+0x8003c8 u32 lmac_ucode_ready                  # [gp,0x244]: ucode готов (EVENT_UCODE_READY), до этого LMAC-команды — ассерт
+0x8003cc volatile u32 bf_long_term_enable      # [gp,0x248]: разрешён долгосрочный BF-триггер (WMI_BF_CONTROL [7])
+0x8003d0 ext[4] mac_rx_cnt_blk                 # [gp,0x24c]: struct mac_rx_cnt * — блок счётчиков RX MAC (0x8872c4) — include/mac_cnt.h, fw/mac_ext.c
+0x8003d4 ext[4] mac_tx_cnt_blk                 # [gp,0x250]: struct mac_tx_cnt * — блок счётчиков TX MAC (0x887744) — include/mac_cnt.h, fw/mac_ext.c
+0x8003d8 volatile u32 mac_cnt_clear_retry_count # [gp,0x254]: повторы команды очистки счётчиков MAC (cnt_handler_clear_all)
+0x8003dc volatile u32 rx_macq_desc_cfg         # [gp,0x258]: слово конфигурации дескриптора RX MAC-очереди
+0x8003e0 u32 rf_blkwr_last_fail_addr           # [gp,0x25c]: первое слово (адрес) блока последней неудачной блочной записи RF
+0x8003e4 u32 rf_blkwr_fail_count               # [gp,0x260]: число неудачных блочных записей RF
+0x8003e8 u32 rf_blkwr_retry_count              # [gp,0x264]: суммарные повторы блоков записи RF
+0x8003ec u32 pcp_abft_sectors                  # [gp,0x268]: число секторов A-BFT (2..8, BCON_CTRL)
+0x8003f0 u32 lmac_txop_limit                   # [gp,0x26c]: лимит TXOP для LMAC (2000; 0x500 в OOB)
+0x8003f4 volatile u32 rx_mgmt_parsed_count      # [gp,0x270]: счётчик разобранных mgmt-кадров (rx_mgmt_prs__alloc_ei)
+0x8003f8 u32 pcp_parser_rule2_en               # [gp,0x274]: при старте PCP — правило MAC-парсера 2 = 0x3f02
+0x8003fc u32 sta_key_timer_delay               # [gp,0x278]: задержка таймеров установки ключа (10000)
+0x800400 volatile u32 lm_linkup_fail_max       # [gp,0x27c]: неудач SELF_LINKUP подряд до «линк не поднят» (3)
+0x800404 volatile u32 wmi_mbox_drain_active    # [gp,0x280]: идёт выборка mailbox WMI (для ассерта)
+0x800408 ext[4] calib_silent_rssi_tbl          # [gp,0x284]: u8 * — таблица порогов/поправок silent RSSI (0x800c64; calib__start_scheme4 ставит 0x800d04) — fw/calib.c
+0x800414 volatile u32 hwm_33khz_poll_repeats   # [gp,0x290]: повторов «команда 0x63000002 + опрос» при ожидании 33 кГц (2)
+0x800418 volatile u32 hwm_33khz_wait_repeats   # [gp,0x294]: повторов «команда 0x63000001 + выдержка» (2)
+0x80041c u32 tx_cpl_err_count_en               # [gp,0x298]: считать TX-завершения с ошибкой в tx_cpl_err_count
+0x800428 volatile u32 disc_probe_resp_rssi     # [gp,0x2a4]: RSSI последнего probe response (hwd_phy 0x883b80)
+0x80042c volatile u32 boot_force_prod_mode_en  # [gp,0x2a8]: MAIN(): принудительно включить production mode
+0x800440 volatile u32 pcie_code0_isoc_restore_en # [gp,0x2bc]: таймер кода 0: выключить обход ISOC и разрешить биты 9, 0 (1)
+0x800444 volatile u32 pcie_code0_rearm_bit3_en # [gp,0x2c0]: таймер кода 0: снова разрешить бит 3 отладочного блока (1)
+0x800448 volatile u32 pcie_code0_timer_delay   # [gp,0x2c4]: задержка таймера кода 0 прерывания PCIe (30000000)
+0x80044c u32 rf_kill_debounce_delay            # [gp,0x2c8]: задержка задачи RF kill после прерывания (2500)
+0x800450 volatile u32 temp_rf_sensor_mult      # [gp,0x2cc]: множитель RF-сенсора температуры (5100)
+0x800454 volatile u32 temp_rf_calibrated_mask  # [gp,0x2d0]: маска RF с прочитанной калибровкой сенсора
+0x800458 u32 chsw_single_attempt       # [gp,0x2d4]: != 0 — одна попытка переключения канала (иначе 10)
+0x80045c u32 chsw_config_fail_count    # [gp,0x2d8]: счётчик неудач config_channel
+0x800460 u32 rfc_wrv_last_fail_reg             # [gp,0x2dc]: регистр последней неудачной записи RFC с проверкой
+0x800464 u32 rfc_wrv_fail_count                # [gp,0x2e0]: число неудачных записей RFC с проверкой
+0x800468 u32 rfc_wrv_retry_count               # [gp,0x2e4]: суммарные повторы записи RFC с проверкой
+0x80046c u32 maint_initial_txss_timeout        # [gp,0x2e8]: начальный таймаут TXSS maintain_sm до первого BF (10000000; 10000 при бите 6 0x803c20)
+0x800470 u32 rx_short_frame_drop_count          # [gp,0x2ec]: счётчик RX-кадров короче 0x18 Б, отброшенных rx_pkt_srvs__dispatch
+0x800474 volatile u32 mac_parser_mode_en       # [gp,0x2f0]: != 0 — режим MAC-парсера из аргумента, иначе 1
+0x800478 volatile u32 mac_parser_rule_f5_en    # [gp,0x2f4]: != 0 — поле 5 бит правила парсера пира = 0x1f
+0x80047c volatile u32 disc_sw_data_active      # [gp,0x2f8]: 1 при старте, 0 — SW-данные остановлены (disc_sm__sw_data_stopped); не читается
+0x800480 u32 tx_cpl_err_count                  # [gp,0x2fc]: счётчик TX-завершений с ненулевым статусом
+0x800484 volatile u32 scan_alloc_timeout       # [gp,0x300]: таймаут выделения радио для скана (1000000)
+0x800488 volatile u32 scan_timeout             # [gp,0x304]: таймаут скана (= 4·scan_alloc_timeout, конструктор)
+0x80048c volatile u32 scan_validate_skip_state2 # [gp,0x308]: разрешить пропуск проверки «MID в состоянии 2» при скане (1)
+0x8004a0 volatile u32 sched_large_task_thr     # [gp,0x31c]: порог длительности задачи для журнала LARGE TASK (мкс×16, 100000)
+0x8004a4 u8[6] dev_mac_addr                    # 0x8004a4: свой MAC-адрес (boot__save_mac_address из flash; l2mgr, PBSS, WMI_READY), образ 12:34:56:78:9a:bc
+0x8004c0 u32 rf_sparrow_r_detect_en            # [gp,0x33c]: разрешить распознавание Sparrow-R по счётчику RFC 0x428 (1)
+0x8004c4 volatile u8 wmi_rf_sector_get_first   # [gp,0x340]: первый WMI_GET_RF_SECTOR_PARAMS — сбросить объект 0x80483c (1)
+0x8004c5 volatile u8 wmi_rf_sector_set_first   # [gp,0x341]: первый WMI_SET_RF_SECTOR_PARAMS — сбросить объект 0x804848 (1)
+0x8004c6 volatile u16 rf_pwr_on_hold           # [gp,0x342]: выдержка включения RF, TSF (не меньше 0x2328; WMI_RF_PWR_ON_DELAY)
+0x8004c8 volatile u16 rf_pwr_on_extra_delay    # [gp,0x344]: доп. задержка ×80×2 nop после SDP 4 = 1 (WMI_RF_PWR_ON_DELAY)
+0x8004cc u8[8] calib_lo_power_tidx_map         # 0x8004cc: индекс таблицы LO power режима 1 по lo_power_calib_get_table_idx (calib_lo_power_main), образ {0,0,0,4,0,4,4,6}
+0x8004d4 ext[8] disconn_sm_state_names         # имена состояний автомата разрыва (описатель 0x8027a0) — include/link_sm.h, fw/link_sm.c
+0x8004dc ext[8] link_stats_sm_state_names      # имена состояний автомата статистики линка (описатель 0x802f58) — include/link_sm.h, fw/link_sm.c
+0x8004e8 volatile u32 scan_probe_timeout_us # [gp,0x364]: таймаут ответа на probe при скане
+0x8004ec u32 bcon_pool_inited                   # 0x8004ec: пул 0x805a98 дескрипторов бикона инициализирован (лениво в add_bcon)
+0x8004f0 u32 bcon_pool_empty_count     # [gp,0x36c]: «pool is empty» — нет post-send-info для маяка (add_bcon)
+0x8004f4 u32 led_blink_timer                   # [gp,0x370]: таймер LED-схемы (led_scheme_apply)
+0x8004f8 volatile u32 rf_sysapi_rfc_req        # [gp,0x374]: заявка радио hw_sysapi_rfc_read_write_rgf, != 0 — занято
+0x8004fc volatile u8 hw_cfg_sdp_flags          # [gp,0x378]: конфигурация SDP; пишет misc_ext.c, бит 0 (SDP 7 при выходе из deep sleep) больше не читается — сон вырезан
+0x800500 volatile u32[2] rf_pwr_snap_tsf  # [gp,0x37c]: снимок TSF (64 бит) при снятии питания RF (sdp_drive_pin_timed v == 0); 0 — нет снимка
+0x800508 ext[8] calib_zero_db                # строка «0 дБ» RX-таблицы и её уровень (struct calib_zero_db; журнал g_zero_db_row) — include/calib.h, fw/calib.c
+0x800510 u8 calib_agc_win_below                 # [gp,0x38c]: окно поиска AGC: вниз от старта (образ 4)
+0x800511 u8 calib_agc_win_above                # [gp,0x38d]: окно поиска AGC: вверх от старта (0x18)
+0x800512 u8 calib_vga_dc_win_lo                # [gp,0x38e]: окно VGA DC: нижняя граница (max(start − ниже, 1))
+0x800513 u8 calib_vga_dc_win_hi                # [gp,0x38f]: окно VGA DC: верхняя граница (min(start + выше − 1, 0x3f))
+0x800514 u32 calib_vga_dc_fine_force           # [gp,0x390]: разовый запрос G_RX_VGA_RANGE_CONFIG.VGA_DC_FINE_FORCE
+0x800518 u8 calib_sar_idx                      # 0x800518: индекс/сдвиг SAR (calib_sar_step idx; маска петли 1<<idx), образ 0xc
+0x800519 u8 calib_sar_thr                      # 0x800519: порог SAR-шага hwf_calib_sar_alg, образ 1
+0x80051a u8 calib_sar_skip_step2               # 0x80051a: != 0 — без calib_sar_step2 после SAR-итераций, образ 1
+0x80051c u32 calib_if_gain_retry_count         # 0x80051c: число повторных if_gain (a0 = 1); 0 — при полной (a0 = 0)
+0x800520 u32 ps_halt_dma_b27                   # 0x800520: бит 27 RGF DMA 0x881bf0, снятый в power_halt_seq (a = 1); 0 — шаг 7 при halt/wake
+0x800524 volatile u32 phy_rx_stats_clear_time  # 0x800524: время u_schd последнего сброса статистики PHY RX
+0x800528 ext[8] xpm_cfg_presets                # пресеты конфигурации XPM по режиму (0 — 0x801a0c, 1 — нет; xpm__get_cfg_preset) — fw/mac_ext.c
+0x800530 volatile u8[2] abif_rx_stg1_fine_bias_sh # сдвиг 4-битного fine-bias ступени 1 VGA по половине b (запись car.c, чтение abif_ext.c), образ {4,0xc}
+0x800534 u8[8] abif_rx_vga_atten_sh           # бит аттенюатора VGA, индекс (4 − col) + 4·sel (hwd_abif_rx_table_config_vga_atten)
+0x80053c volatile u8[8] abif_rx_vga_atten_rd_sh # то же для чтения (hwd_abif_rx_table_read_vga_atten; копия таблицы)
+0x800544 u8[8] abif_rx_vga_gain_word          # слово строки RX-таблицы поля VGA gain, индекс (4 − col) + 4·sel (запись)
+0x80054c u8[8] abif_rx_vga_gain_sh            # сдвиг 3-битного поля VGA gain (запись)
+0x800554 u8[8] abif_rx_vga_dc_word            # слово строки RX-таблицы поля VGA DC (запись)
+0x80055c u8[8] abif_rx_vga_dc_sh              # сдвиг 5-битного поля VGA DC (запись)
+0x800564 u8[5] abif_rx_vga_bias_sh            # сдвиг 4-битного VGA bias ступени 1..5 (hwd_abif_rx_table_config_vga_bias)
+0x80056c volatile u8[5] abif_rx_vga_bias_rd_sh # то же для чтения (hwd_abif_rx_table_read_vga_bias; копия таблицы)
+0x800574 u8[8] abif_rx_vga_gain_rd_word       # слово поля VGA gain для чтения (hwd_abif_rx_table_read_vga_gain; копия)
+0x80057c u8[8] abif_rx_vga_gain_rd_sh         # сдвиг поля VGA gain для чтения
+0x800584 u8[8] abif_rx_vga_dc_rd_word         # слово поля VGA DC для чтения (hwd_abif_rx_table_read_vga_dc; копия)
+0x80058c u8[8] abif_rx_vga_dc_rd_sh           # сдвиг поля VGA DC для чтения
+0x800598 u32[5] unk_800598                     # 0x800598: образ {1,0,0,0,1}; обращений vendor не найдено (код, указатели fw_data)
+0x8005c0 u8 unk_8005c0                         # 0x8005c0: образ 1; поле +8 объекта 0x8005b8 (пустой конструктор 0x8c191c), обращений vendor не найдено
+0x8005c1 u8 boot_halt_on_reset                 # 0x8005c1: == 1 — останов ядра (flag 1) при сбросе (vendor 0x8ed0d8 из cpu_reset_init; наш start.S не проверяет), образ 0
+0x8005c4 ext[32] brd_if_base_vtbl        # базовая таблица методов интерфейса board-файла — include/brd_if.h, fw/brd_if.c
+0x8005e4 ext[32] brd_if_vtbl             # таблица методов brd_if_multi_array — include/brd_if.h, fw/brd_if.c
+0x800604 ext[48] calib_if_gain_vtbl         # таблица методов класса IF gain — include/calib_engine.h, fw/calib_engine.c
+0x800634 ext[48] calib_silent_rssi_vtbl     # таблица методов класса silent RSSI — include/calib_engine.h, fw/calib_engine.c
+0x800664 ext[48] calib_vga_vtbl             # таблица методов класса VGA (bb_gain_dc) — include/calib_engine.h, fw/calib_engine.c
+0x800694 ext[48] calib_lo_power_vtbl        # таблица методов класса LO power — include/calib_engine.h, fw/calib_engine.c
+0x8006c4 ext[48] calib_sar_vtbl             # таблица методов класса SAR — include/calib_engine.h, fw/calib_engine.c
+0x8006f4 ext[8] eapol_builder_vtbl             # таблица методов eapol_frame_builder (объект — eapol_builder_obj) — include/ieee80211.h, fw/vt_misc.c
+0x8006fc ext[16] debug_mbox_vtbl         # таблица методов отладочного ящика — include/mbox.h, fw/wmi_cmd.c
+0x80070c ext[8] mid_disc_vtbl            # таблица методов объекта discovery записи mid (struct mid_disc_vt) — fw/mid.c
+0x800714 ext[8] rx_ring_vtbl             # таблица методов RX-кольца — include/rx_ring.h, fw/rx.c
+0x80071c ext[16] fwq_tx_vtbl             # таблица методов fwq_tx — fw/fwq_tx.c
+0x80072c ext[48] calib_lo_leakage_vtbl      # таблица методов класса LO leakage — include/calib_engine.h, fw/calib_engine.c
+0x80075c ext[20] ll_ka_det_vtbl          # таблица методов детектора keep-alive (struct psvc_vt) — include/link_loss.h, fw/link_loss.c
+0x800770 ext[8] lmac_mbox_vtbl           # таблица методов ящика ucode — include/mbox.h, fw/lmac.c
+0x800778 ext[24] tx_retry_vtbl           # таблица методов объекта повторов — fw/fwq_tx.c
+0x800790 ext[16] operational_mbox_vtbl   # таблица методов операционного ящика — include/mbox.h, fw/wmi_cmd.c
+0x8007a0 ext[24] phy_monitor_vtbl        # таблица методов монитора PHY (struct phy_monitor_vt) — include/phy_monitor.h, fw/phy_monitor.c
+0x800848 ext[44] radio_mgr_vtbl          # таблица методов radio_mgr — fw/radio_mgr.c
+0x800874 ext[12] rx_pkt_srvs_vtbl              # таблица методов первой базы объекта RX-служб — include/ieee80211.h, fw/rx.c
+0x800880 ext[8] rx_pkt_srvs_vtbl2              # таблица методов второй базы объекта RX-служб — include/ieee80211.h, fw/rx.c
+0x800888 ext[36] stream_ctx_vtbl         # таблица методов контекста стрима (sw_vring::*) — include/stream.h, fw/ba.c
+0x8008ac ext[24] tx_ring_vtbl            # таблица методов кольца TX — fw/fwq_tx.c
+0x8008c4 ext[20] ll_ageing_det_vtbl      # таблица методов детектора старения TX PPDU (struct psvc_vt) — include/link_loss.h, fw/link_loss.c
+0x8008d8 ext[8] u_schd_tq_local_vtbl    # таблица методов очереди таймеров (время u_schd) — include/sched.h, fw/sched.c
+0x8008e0 ext[8] u_schd_tq_tsf_vtbl      # таблица методов очереди таймеров (база TSF/16) — include/sched.h, fw/sched.c
+0x8008e8 ext[48] vring_schd_vtbl         # таблица методов vring_schd — fw/vring.c
+0x800918 ext[48] vring_schd_alt_vtbl     # таблица методов варианта vring_schd — fw/vring.c
+0x800948 ext[32] arc_timer_cfg          # описатели таймеров ARC 0/1 (aux-регистры, режим; timer__start) — include/sched.h, fw/sched.c
+0x800968 u32 fw_log_ring_en                    # 0x800968: 0 — ассерт 0xf8 при инициализации кольца журнала (в образе 1)
+0x80096c u32[15] fw_log_module_names           # 0x80096c: имена модулей журнала fw («DRIVERS», «MAC_MON» … «WBE_MGR»); обращений vendor не найдено
+0x8009a8 ext[12] ctor_reg_u_schd_timer_vtables # регистрация статического конструктора (struct ctor_reg) — include/ctor_reg.h, fw/ctors.c
+0x8009b4 ext[48] plat_board                     # описание платы (struct plat_board_info, в образе нули) — include/sys_cfg.h, fw/platform.c
+0x800a28 u32[3] calib_lo_power_rfc_packed       # 0x800a28: RGF 484/488/492 RF с тетрадами 0xc (rfc__pack_field_value из calib_lo_power_rfc_saved)
+0x800a34 u32[3] calib_lo_power_rfc_saved        # 0x800a34: исходные RGF 484/488/492 RF-модуля (rfc__read_field_484 в calib_obj__reset_results)
+0x800bc4 ext[12] ctor_reg_operational_mbox_vtable # регистрация статического конструктора — include/ctor_reg.h, fw/ctors.c
+0x800bd0 ext[12] ctor_reg_debug_mbox_vtable    # регистрация статического конструктора — include/ctor_reg.h, fw/ctors.c
+0x800bdc ext[36] phy_ina_det_cfg               # конфигурация PHY INA-детектора (LMAC 0x20 при lmac_ready; sniffer) — fw/lmac.c
+0x800c00 ext[12] lmac_edca_mode_cw             # CW AC по режиму EDCA 0..2 (edca__fill_ac_table_by_mode) — fw/lmac.c
+0x800c0c u32 lmac_edca_cur_mode                # 0x800c0c: последний режим EDCA-таблицы, посланный LMAC (команда 0x04); = — не слать
+0x800c10 ext[12] creg_ctor_obj_80426c_vtable  # регистрация конструктора ctor_obj_80426c_vtable (prio 0x0) — fw/ctors.c
+0x800c1c ext[12] creg_ctor_obj_8042c8  # регистрация конструктора ctor_obj_8042c8 (prio 0x0) — fw/ctors.c
+0x800c28 ext[12] creg_ctor_pairs_804914  # регистрация конструктора ctor_pairs_804914 (prio 0x0) — fw/ctors.c
+0x800c34 ext[36] sdp_port_cfg           # слова конфигурации SDP-портов 0..8 (u32[9]: пин, функция GPIO, выход, начальное значение, прерывание, персональность) — include/sys_cfg.h, fw/hw_init.c
+0x800c58 ext[12] creg_ctor_calib_engines  # регистрация конструктора ctor_calib_engines (prio 0x0) — fw/ctors.c
+0x800c64 ext[320] calib_srssi_temp_tbl  # таблицы температурных классов silent RSSI 0/1 (2 × 0xa0; текущая — [0x800408]) — include/calib.h, fw/calib.c
+0x800da4 ext[24] calib_engine_objs          # объекты классов калибровки движков 0..5 — include/calib_engine.h, fw/calib_engine.c
+0x800dbc ext[12] creg_ctor_calib_classes  # регистрация конструктора ctor_calib_classes (prio 0x0) — fw/ctors.c
+0x800dc8 u32[6] calib_engine_names                # 0x800dc8: строки имён движков (журнал «Engine of %s is already active»)
+0x800de0 ext[16] calib_eng_sm_state_names  # имена состояний автомата движка калибровки (описатель 0x802234) — fw/calib_engine.c
+0x800df0 ext[24] calib_eng_sm_event_names  # имена событий автомата движка калибровки (описатель 0x802234) — fw/calib_engine.c
+0x800e08 u32[6] calib_engine_corr_count           # 0x800e08: число шагов коррекции (READY_FOR_CORRECTION) движка
+0x800e20 ext[12] creg_ctor_sm_802234_id  # регистрация конструктора ctor_sm_802234_id (prio 0x0) — fw/ctors.c
+0x800e2c ext[380] calib_schemes             # схемы калибровки (5 × 0x4c) — include/calib_engine.h, fw/calib_engine.c
+0x800fa8 ext[40] calib_scheme_idx           # номер схемы [pcp_ap][системное состояние] (2 × 5) — fw/calib_engine.c
+0x800fd0 ext[16] calib_lo_power_bb_thr      # пороги температурных состояний LO power, BB — fw/calib_engine.c
+0x800fe0 ext[16] calib_lo_power_rf_thr      # пороги температурных состояний LO power, RF — fw/calib_engine.c
+0x800ff0 ext[12] rf_kill_sm_state_names  # имена состояний автомата RF kill (описатель 0x802338) — fw/rf_kill.c
+0x800ffc ext[16] rf_kill_sm_event_names  # имена событий автомата RF kill (описатель 0x802338) — fw/rf_kill.c
+0x80100c ext[12] creg_ctor_sm_802338_id  # регистрация конструктора ctor_sm_802338_id (prio 0x0) — fw/ctors.c
+0x801018 ext[12] creg_ctor_obj_804dbc_vtables  # регистрация конструктора ctor_obj_804dbc_vtables (prio 0x0) — fw/ctors.c
+0x801024 ext[12] creg_ctor_array_854dd4  # регистрация конструктора ctor_array_854dd4 (prio 0x0) — fw/ctors.c
+0x801030 ext[12] creg_ctor_obj_804e90_vtable  # регистрация конструктора ctor_obj_804e90_vtable (prio 0x0) — fw/ctors.c
+0x80103c ext[16] bf_thr_abft_direct  # пороги BF id итога ABFT st 0 (s32[4]) — fw/bf_result.c
+0x80104c ext[16] bf_thr_abft_win  # пороги BF id итога ABFT st 1 (s32[4]) — fw/bf_result.c
+0x80105c ext[16] bf_thr_rs_mcs  # пороги BF id по MCS RS done (s32[4]) — fw/bf_result.c
+0x80106c ext[12] creg_ctor_array_847b48  # регистрация конструктора ctor_array_847b48 (prio 0x0) — fw/ctors.c
+0x801078 ext[12] mlme_sm_state_names  # имена состояний автомата MLME (описатель 0x802458) — fw/mlme.c
+0x801084 ext[56] mlme_sm_event_names  # имена событий автомата MLME (описатель 0x802458) — fw/mlme.c
+0x8010bc ext[12] creg_ctor_sm_802458_id  # регистрация конструктора ctor_sm_802458_id (prio 0x0) — fw/ctors.c
+0x8010c8 ext[36] conn_main_sm_state_names  # имена состояний conn_main_sm (описатель 0x802744) — fw/conn.c
+0x8010ec ext[44] conn_main_sm_event_names  # имена событий conn_main_sm (описатель 0x802744) — fw/conn.c
+0x801118 ext[12] creg_ctor_sm_802754_id  # регистрация конструктора ctor_sm_802754_id (prio 0x0) — fw/ctors.c
+0x801124 ext[28] disc_flush_sm_event_names  # имена событий автомата разрыва sm_8027a0 (описатель 0x8027a0; имена состояний — 0x8004d4) — fw/link_sm.c
+0x801140 ext[12] creg_ctor_sm_802758_id  # регистрация конструктора ctor_sm_802758_id (prio 0x0) — fw/ctors.c
+0x80114c volatile u32[9] temp_first_meas         # первое измерение: [0] BB, [1 + i] RF i, м°C (perform_first_measurement_operations; UT 10/32)
+0x801170 ext[192] rssi_snr_lut_keys  # LUT RSSI → SNR: ключи (s32[48]) — fw/sysapi_stats.c
+0x801230 ext[192] rssi_snr_lut_vals  # LUT RSSI → SNR: значения SNR (s32[48]) — fw/sysapi_stats.c
+0x8012f0 ext[26] mcs_phy_rate_mbps  # PHY-скорость MCS 0..12, Мбит/с (u16[13]) — fw/sysapi_stats.c
+0x80130c ext[12] creg_ctor_obj_805170  # регистрация конструктора ctor_obj_805170 (prio 0x0) — fw/ctors.c
+0x801318 ext[20] ba_sm_state_names  # имена состояний ba_sm (описатель 0x80296c) — fw/ba.c
+0x80132c ext[48] ba_sm_event_names  # имена событий ba_sm (описатель 0x80296c) — fw/ba.c
+0x80135c ext[12] creg_ctor_sm_802940_id  # регистрация конструктора ctor_sm_802940_id (prio 0x0) — fw/ctors.c
+0x801368 ext[28] ba_setup_sm_state_names  # имена состояний ba_setup_sm (описатель 0x802b50) — fw/ba.c
+0x801384 ext[52] ba_setup_sm_event_names  # имена событий ba_setup_sm (описатель 0x802b50) — fw/ba.c
+0x8013b8 ext[12] creg_ctor_sm_802b08_id  # регистрация конструктора ctor_sm_802b08_id (prio 0x0) — fw/ctors.c
+0x8013c4 ext[12] ba_wait_sm_state_names  # имена состояний wait_sm (описатель 0x802ba0) — адреса строк в DCCM (0x802bb4..) — fw/ba.c
+0x8013d0 ext[16] ba_wait_sm_event_names  # имена событий wait_sm (описатель 0x802ba0) — адреса строк в DCCM — fw/ba.c
+0x8013e0 ext[12] creg_ctor_sm_802b64_id  # регистрация конструктора ctor_sm_802b64_id (prio 0x0) — fw/ctors.c
+0x8013ec ext[12] creg_ctor_obj_842840_vtables  # регистрация конструктора ctor_obj_842840_vtables (prio 0x0) — fw/ctors.c
+0x8013f8 ext[12] creg_ctor_g8002f0_vtable  # регистрация конструктора ctor_g8002f0_vtable (prio 0x0) — fw/ctors.c
+0x801404 ext[12] creg_ctor_obj_805234  # регистрация конструктора ctor_obj_805234 (prio 0x0) — fw/ctors.c
+0x801410 ext[16] maintain_sm_state_names  # имена состояний maintain_sm (описатель 0x802cc4) — fw/link_sm.c
+0x801420 ext[40] maintain_sm_event_names  # имена событий maintain_sm (описатель 0x802cc4) — fw/link_sm.c
+0x801448 ext[52] maintain_lt_period  # период долгосрочного BF по MCS 0..12 (u32[13]) — include/link_sm.h, fw/link_sm.c
+0x80147c ext[34] maintain_rs_cfg  # шаблон LMAC 0x13 (первые 0x22 Б struct wmi_rs_cfg; mcs_en_vec — следующие 2) — fw/link_sm.c
+0x80149e volatile u16 link_mcs_en_vec_lo       # 0x80149e: разрешённые MCS, младшие 16 бит (0x1dde / 0x1de / 0x10)
+0x8014a0 volatile u16 link_mcs_en_vec_hi       # 0x8014a0: разрешённые MCS, старшие 16 бит
+0x8014a4 ext[12] creg_ctor_sm_802cc4_id  # регистрация конструктора ctor_sm_802cc4_id (prio 0x0) — fw/ctors.c
+0x8014b0 ext[16] lmac_bf_ctrl_tpl        # шаблон LMAC 0x10 (struct lmac_cmd_bf_ctrl) — include/lmac_cmd.h, fw/conn.c
+0x8014c0 ext[28] lm_sm_state_names  # имена состояний lm_sm (описатель 0x802da0) — fw/link_sm.c
+0x8014dc ext[48] lm_sm_event_names  # имена событий lm_sm (описатель 0x802da0) — fw/link_sm.c
+0x80150c ext[12] creg_ctor_sm_802da0_id  # регистрация конструктора ctor_sm_802da0_id (prio 0x0) — fw/ctors.c
+0x801518 ext[144] ll_cfg_presets  # наборы параметров поддержания линка 0..3 (struct ll_cid_cfg) — include/link_loss.h, fw/l2mgr.c
+0x8015cc ext[24] link_stats_sm_event_names  # имена событий автомата статистики линка sm_802f58 (описатель 0x802f58; имена состояний — 0x8004dc) — fw/link_sm.c
+0x8015e4 ext[12] creg_ctor_sm_802f58_id  # регистрация конструктора ctor_sm_802f58_id (prio 0x0) — fw/ctors.c
+0x8015f0 ext[12] creg_ctor_obj_8052e4  # регистрация конструктора ctor_obj_8052e4 (prio 0x0) — fw/ctors.c
+0x8015fc ext[12] creg_ctor_swc_psc_sm  # регистрация конструктора ctor_swc_psc_sm (prio 0x0) — fw/ctors.c
+0x801608 ext[28] chsw_sm_state_names  # имена состояний channels_switch_sm (описатель 0x802fb4) — fw/scan.c
+0x801624 ext[32] chsw_sm_event_names  # имена событий channels_switch_sm (описатель 0x802fb4) — fw/scan.c
+0x801644 ext[12] creg_ctor_scan_timeout_and_sm_802fb4  # регистрация конструктора ctor_scan_timeout_and_sm_802fb4 (prio 0x0) — fw/ctors.c
+0x801650 ext[60] swc_psc_sm_trans  # переходы swc_psc_sm [4][3] (описатель 0x8030e0) — fw/scan.c
+0x80168c ext[12] swc_psc_sm_state_names  # имена состояний swc_psc_sm (описатель 0x8030e0) — fw/scan.c
+0x801698 ext[16] swc_psc_sm_event_names  # имена событий swc_psc_sm (описатель 0x8030e0) — fw/scan.c
+0x8016a8 ext[12] creg_ctor_sm_8030e0_id  # регистрация конструктора ctor_sm_8030e0_id (prio 0x0) — fw/ctors.c
+0x8016b4 ext[20] find_sm_state_names  # имена состояний find_sm (описатель 0x8030f4) — fw/link_sm.c
+0x8016c8 ext[28] find_sm_event_names  # имена событий find_sm (описатель 0x8030f4) — fw/link_sm.c
+0x8016e4 ext[12] creg_ctor_sm_8030f4_id  # регистрация конструктора ctor_sm_8030f4_id (prio 0x0) — fw/ctors.c
+0x8016f0 ext[12] creg_ctor_fwq_tx_vtables  # регистрация конструктора ctor_fwq_tx_vtables (prio 0x0) — fw/ctors.c
+0x8016fc ext[12] creg_ctor_obj_805fe4_vtable  # регистрация конструктора ctor_obj_805fe4_vtable (prio 0x0) — fw/ctors.c
+0x801708 ext[12] creg_radio_mgr_install_vtable  # регистрация конструктора radio_mgr_install_vtable (prio 0x0) — fw/ctors.c
+0x801714 ext[24] rm_sm_state_names  # имена состояний rm_sm (описатель 0x803210) — fw/radio_mgr.c
+0x80172c ext[48] rm_sm_event_names  # имена событий rm_sm (описатель 0x803210) — fw/radio_mgr.c
+0x80175c ext[12] creg_rm_sm_desc_set_id  # регистрация конструктора rm_sm_desc_set_id (prio 0x0) — fw/ctors.c
+0x801768 ext[12] rm_ch_switch_sm_state_names  # имена состояний rm_ch_switch_sm (описатель 0x80338c) — fw/radio_mgr.c
+0x801774 ext[28] rm_ch_switch_sm_event_names  # имена событий rm_ch_switch_sm (описатель 0x80338c) — fw/radio_mgr.c
+0x801790 ext[12] creg_rm_ch_switch_sm_desc_set_id  # регистрация конструктора rm_ch_switch_sm_desc_set_id (prio 0x0) — fw/ctors.c
+0x80179c ext[12] creg_ctor_obj_84e7e0_vtable  # регистрация конструктора ctor_obj_84e7e0_vtable (prio 0x0) — fw/ctors.c
+0x8017d8 ext[12] creg_ctor_sm_803424_id  # регистрация конструктора ctor_sm_803424_id (prio 0x0) — fw/ctors.c
+0x801818 ext[12] creg_ctor_g800360_and_sm_8034c0  # регистрация конструктора ctor_g800360_and_sm_8034c0 (prio 0x0) — fw/ctors.c
+0x801824 ext[256] if_gain_log2_frac  # дробная часть log2 (u16[128], if_gain_scale_value) — fw/calib.c
+0x801924 ext[12] creg_ctor_obj_80676c_vtable  # регистрация конструктора ctor_obj_80676c_vtable (prio 0x0) — fw/ctors.c
+0x801930 ext[36] calib_vga_cfg                # таблица VGA-калибровки (calib_vga_cfg_t: лимиты строк + коды усиления 4 столбцов) — include/calib.h, fw/calib.c
+0x801954 u8[19] calib_if_predist_atten_tbl    # аттенюатор предыскажения TX по индексу (IF_GAIN::GAIN out[2] < 0x13)
+0x801968 u8[18] calib_if_dac_fssel_tbl        # DAC fssel TX по индексу (IF_GAIN::GAIN out[4] < 0x12)
+0x80197c ext[48] calib_if_ctrl_tbl            # коды IF ctrl (поля 1..3 iftx/ifrx) по индексу усиления g (16 × 3 Б) — fw/calib.c
+0x8019ac ext[16] ut_hwm_ps_ctx  # PS-контекст юнит-теста UT_HW_MODES (struct ps_ctx) — fw/ut_hw_modes.c
+0x8019bc volatile u32[3] led_ch_used             # флаг «канал LED ch уже включался» (led__set, ch < 3)
+0x8019cc volatile u32[8] rfc_cmd_count           # счётчик команд RFC по модулю RF 0..7 (rfc write, add2; rfc__probe_modules обнуляет, rfc__collect_rx_crc_stats читает)
+0x8019ec volatile u32[8] temp_rf_sensor_ofs      # поправка RF-сенсора температуры по индексу RF ((T0 − Tamb)·10)
+0x801a0c ext[128] xpm_cfg_preset0  # пресет конфигурации XPM 0 (struct xpm_cfg; указатель — 0x800528) — fw/mac_ext.c
+0x801a8c u32[10] rf_rdac_fail_cnt               # счётчики сбоев свипа RDAC по ступени 0..9 (hwd_rfc_read_calibrate, -1 — ступень пропущена; get_min_failures_mid_biggest_range_index)
+0x801ab4 volatile u8[32] abif_rx_sar_dc_word  # слово строки (8 слов) таблицы SAR DC 0x88a608, индекс (7 − idx) + 8·(c + 2b)
+0x801ad4 volatile u8[32] abif_rx_sar_dc_sh    # сдвиг 5-битного поля SAR DC
+0x801af4 u32[5] abif_rx_vga_bias_word         # слово строки поля VGA bias ступени 1..5 (запись)
+0x801b08 volatile u32[5] abif_rx_vga_bias_rd_word # то же для чтения (копия)
+0x801b2c ext[12] creg_ctor_empty_8005b8  # регистрация конструктора ctor_empty_8005b8 (prio 0x80) — fw/ctors.c
+0x801b38 u32[13] unk_801b38                     # образ {8,0x10,…,0x2000,0x7d00,-1}: степени двойки 8..8192, 32000, маркер -1. Обращений в vendor fw нет: ни литерала/limm 0x801b38..0x801b6b в коде (tools: поиск LE и middle-endian limm по .fw, 6.2/src/asm/fw), ни указателя в fw_data (RELOCS-NUM-fw: «середина линейного кода» — числа таблицы)
+0x801b6c ext[21] vendor_jt_stats_read_counter_by_id  # таблица переходов switch vendor stats__read_counter_by_id (0x8dd7c8) (не используется) — fw/misc_ext_sysapi.c
+0x801b84 s8[32] unk_801b84                      # образ {-29 ×8, -21 ×22, 0, -21}: s8-таблица (вероятно пороги дБм по индексу). Обращений в vendor fw нет: ни литерала/limm 0x801b84..0x801ba3 в коде (поиск LE и middle-endian limm по .fw, 6.2/src/asm/fw), ни указателя в fw_data
+0x801ba4 ext[4] fw_caps_list  # список возможностей FW (u32[1], 0x305f) — fw/wmi_h_sta.c
+0x801ba8 ext[9] boot_default_password  # пароль по умолчанию «12345678» — fw/subsys.c
+0x801be4 ext[5] vendor_jt_pcie_device_power_if_pcie_interrupt  # таблица переходов switch vendor pcie_device_power_if__pcie_interrupt (0x8e048e) (не используется) — fw/vectors.c
+0x801f1c ext[16] lmac_if_bf_done_evt_jt         # таблица переходов switch vendor (наш код не читает) — fw/lmac_evt.c
+0x801f2c ext[17] return_field_type_jt           # таблица переходов switch vendor (наш код не читает) — fw/lmac_evt.c
+0x801f40 ext[98] lmac_if_ucode_event_dispatch_jt # таблица переходов switch vendor (наш код не читает) — fw/lmac.c
+0x801fa4 ext[4] rf_sets_sec_start_tpl          # u16 пара начальных секторов handle_rf_sets_info (нули) — fw/brd_if.c
+0x801fa8 ext[2] rf_sets_sec_lim_tpl            # байты пределов секторов handle_rf_sets_info {0x80, 0x20} — fw/brd_if.c
+0x801fac ext[64] rf_role_power_tpl             # начальный кадр rf_configure_role_power (struct rf_role_power_frame) — fw/rf.c
+0x801fec u32[6] rf_auto_fill_pat0              # шаблон 6 слов auto_fill по умолчанию (нули; rf_utils__fill_default_patterns)
+0x802004 ext[16] rf_auto_fill_dflt_tpl        # дескриптор auto_fill по умолчанию (struct rf_auto_fill) — include/rf_obj.h, fw/rf.c
+0x802014 ext[48] rf_omni_pairs_tpl             # 6 пар (адрес, слово) handle_omni_sector_info (struct rf_reg_pair) — fw/rf.c
+0x802044 ext[32] rf_channel_bounds_tpl         # начальный кадр границ секции config_channel (struct rf_channel_bounds_frame) — fw/rf.c
+0x802064 ext[46] wmi_host_cmd_dispatch_jt_802064 # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x802094 ext[68] wmi_host_cmd_dispatch_jt_802094 # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x8020d8 ext[82] wmi_host_cmd_dispatch_jt_8020d8 # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x80212c ext[16] wmi_host_cmd_dispatch_jt_80212c # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x80213c ext[36] wmi_host_cmd_dispatch_jt_80213c # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x802160 ext[34] wmi_host_cmd_dispatch_jt_802160 # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x802184 ext[12] wmi_host_cmd_dispatch_jt_802184 # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x802190 ext[10] wmi_host_cmd_dispatch_jt_802190 # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x80219c ext[20] wmi_host_cmd_dispatch_jt_80219c # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x8021b0 ext[24] rf_sector_params_tpl          # 6 слов сектора get_rf_sector_params (нули) — fw/wmi_h_bf.c
+0x8021c8 ext[16] rf_auto_fill_brp_tpl         # дескриптор auto_fill BRP-блока (struct rf_auto_fill) — include/rf_obj.h, fw/rf.c
+0x8021d8 ext[6] macq_desc_read_typed_jt        # таблица переходов switch vendor (наш код не читает) — fw/tx_helpers.c
+0x8021e0 ext[7] wmi_ut_handler_jt              # таблица переходов switch vendor (наш код не читает) — fw/wmi.c
+0x8021e8 ext[34] calib_mngr_set_state_jt        # таблица переходов switch vendor (наш код не читает) — fw/radio_mgr.c
+0x80220c ext[23] calib_mngr_system_state_evt_handler_jt # таблица переходов switch vendor (наш код не читает) — fw/radio_mgr.c
+0x802224 ext[8] calib_srssi_target_ofs        # поправка цели silent RSSI по числу RF − 1 (режимы наборов 1/2; calib_row8_t) — fw/calib.c
+0x80222c ext[8] calib_srssi_module_list0      # начальный список модулей (0xff, 0…) для bitmap_expand_byte4_to_list (calib_row8_t) — fw/calib.c
+0x802234 ext[20] calib_engine_sm_desc       # описатель автомата движка калибровки — include/calib_engine.h, fw/calib_engine.c
+0x802248 ext[120] calib_engine_sm_table     # таблица переходов движка калибровки [6][4] — fw/calib_engine.c
+0x8022c0 ext[120] brd_section_map        # таблица секций board-файла (10 × 12 Б) — include/brd_if.h, fw/brd_if.c
+0x802338 ext[20] rf_mgmt_sm_desc            # описатель автомата RF kill rf_mgmt_sm — include/rf_kill.h, fw/rf_kill.c
+0x80234c ext[60] rf_mgmt_sm_table           # таблица переходов rf_mgmt_sm [4][3] — fw/rf_kill.c
+0x802388 ext[46] conn_mgr_system_state_evt_handler_jt # таблица переходов switch vendor (наш код не читает) — fw/l2mgr.c
+0x8023b8 ext[5] mid_set_app_ie_block_jt        # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x8023c0 ext[5] remove_app_ie_jt               # таблица переходов switch vendor (порт читает номер случая) — fw/stubs.c
+0x8023c8 ext[9] mid_get_bcon_additional_ies_jt # таблица переходов switch vendor (наш код не читает) — fw/mgmt_tx.c
+0x8023d4 ext[5] sm_pring_bind_vring_jt         # таблица переходов switch vendor (наш код не читает) — fw/vring.c
+0x8023dc ext[5] sm_pring_state_step_jt         # таблица переходов switch vendor (наш код не читает) — fw/vring.c
+0x8023e4 ext[5] rm_main_sm_enter_primary_non_locked_jt # таблица переходов switch vendor (наш код не читает) — fw/radio_mgr.c
+0x8023ec ext[5] sm_pring_timeout_jt            # таблица переходов switch vendor (наш код не читает) — fw/vring.c
+0x8023fc ext[9] l2mgr_send_disconnect_evt_jt   # таблица переходов switch vendor (наш код не читает) — fw/wmi_cmd.c
+0x802424 ext[6] info_resp_dflt_subject         # Subject по умолчанию DMG Information Response (ff×6) — fw/action.c
+0x80242c ext[12] stream_mgr_action_jt_80242c    # таблица переходов switch vendor (наш код не читает) — fw/action.c
+0x802438 ext[5] stream_mgr_action_jt_802438    # таблица переходов switch vendor (наш код не читает) — fw/action.c
+0x802440 ext[8] stream_mgr_action_jt_802440    # таблица переходов switch vendor (наш код не читает) — fw/action.c
+0x802448 ext[7] ba_sm_evt_type_jt              # таблица переходов switch vendor (наш код не читает) — fw/tx_helpers.c
+0x802450 ext[6] vring_bcast_addr               # адреса MACQ bcast-vring (в образе нули) — fw/stream_mgr.c
+0x802458 ext[20] mlme_sm_desc               # описатель автомата MLME — include/conn.h, fw/mlme.c
+0x80246c ext[210] mlme_sm_table             # таблица переходов mlme_sm [14][3] — fw/mlme.c
+0x802540 ext[11] rx_pkt_handler_jt              # таблица переходов switch vendor (наш код не читает) — fw/mlme.c
+0x80254c ext[5] mlme_notify_jt                 # таблица переходов switch vendor (наш код не читает) — fw/mlme.c
+0x802554 ext[495] conn_msm_table            # таблица переходов conn_main_sm [11][9] — fw/conn.c
+0x802744 ext[20] conn_msm_desc              # описатель автомата соединения conn_main_sm — include/conn.h, fw/conn.c
+0x802758 ext[70] conn_disc_sm_table         # таблица переходов автомата разрыва [7][2] — fw/link_sm.c
+0x8027a0 ext[20] conn_disc_sm_desc          # описатель автомата разрыва conn_disc_sm — include/conn.h, fw/link_sm.c
+0x8027b4 ext[23] temp_sense_on_system_state_jt  # таблица переходов switch vendor (наш код не читает) — fw/l2mgr.c
+0x8027dc ext[22] rf_chain_program_sector_desc_jt # таблица переходов switch vendor (наш код не читает) — fw/mac_bringup.c
+0x8027f4 ext[14] tx_queue_config_by_mode_jt     # таблица переходов switch vendor (наш код не читает) — fw/mac_bringup.c
+0x802804 ext[11] qdesc_build_by_type_jt         # таблица переходов switch vendor (наш код не читает) — fw/mac_bringup.c
+0x802810 ext[5] ese_set_alloc_type_jt          # таблица переходов switch vendor (наш код не читает) — fw/rx_chain.c
+0x802818 ext[6] rx_chain_build_desc_jt         # таблица переходов switch vendor (наш код не читает) — fw/rx_chain.c
+0x802820 ext[6] rx_chain_build_desc_b_jt       # таблица переходов switch vendor (наш код не читает) — fw/rx_chain.c
+0x802838 ext[8] vendor_unref_802838                # не используется (держит образ fw_data)
+0x802840 ext[300] stream_sm_trans                    # таблица переходов stream_sm [12][5] (struct sm_trans) — fw/ba.c
+0x80296c ext[20] stream_sm_desc                     # описатель автомата stream_sm (struct sm_desc; ид пишет конструктор) — fw/ba.c
+0x802980 ext[5] stream_sm_act_dis_status_jt        # таблица переходов vendor ba_sm__action_8ea780 (у нас switch; не читается)
+0x802988 ext[455] ba_setup_sm_trans                  # таблица переходов ba_setup_sm [13][7] (struct sm_trans) — fw/ba.c
+0x802b50 ext[20] ba_setup_sm_desc                   # описатель автомата ba_setup_sm (struct sm_desc; ид пишет конструктор) — fw/ba.c
+0x802b64 ext[60] wait_sm_trans                      # таблица переходов wait_sm [4][3] (struct sm_trans) — fw/ba.c
+0x802ba0 ext[20] wait_sm_desc                       # описатель автомата wait_sm (struct sm_desc; ид пишет конструктор) — fw/ba.c
+0x802bb4 ext[125] wait_sm_strs                       # строки имён состояний/событий wait_sm (fw/ba.c)
+0x802c34 ext[36] dma_ring_cfg                       # конфигурация DMA-колец [9][4] (dma_mgr_configure_ring, fw/dma_ring.c)
+0x802c58 ext[15] rx_mgmt_srvs_distribute_jt         # таблица переходов vendor rx_mgmt_srvs__distribute (у нас switch; не читается)
+0x802c68 ext[11] rx_mgmt_prs_parse_jt               # таблица переходов vendor rx_mgmt_prs__parse (у нас switch; не читается)
+0x802c74 ext[56] set_parse_ei_jt0                   # таблица переходов vendor set_parse_ei (у нас switch; не читается)
+0x802cac ext[9] set_parse_ei_jt1                   # таблица переходов vendor set_parse_ei (у нас switch; не читается)
+0x802cb8 ext[9] set_parse_ei_jt2                   # таблица переходов vendor set_parse_ei (у нас switch; не читается)
+0x802cc4 ext[20] maintain_sm_desc                   # описатель автомата maintain_sm (struct sm_desc; ид пишет конструктор) — fw/link_sm.c
+0x802cd8 ext[200] maintain_sm_trans                  # таблица переходов maintain_sm [10][4] (struct sm_trans) — fw/link_sm.c
+0x802da0 ext[20] lm_sm_desc                         # описатель автомата lm_sm (struct sm_desc; ид пишет конструктор) — fw/link_sm.c
+0x802db4 ext[420] lm_sm_trans                        # таблица переходов lm_sm [12][7] (struct sm_trans) — fw/link_sm.c
+0x802f58 ext[20] link_stats_sm_desc                 # описатель автомата link_stats_sm (struct sm_desc; ид пишет конструктор) — fw/link_sm.c
+0x802f6c ext[60] link_stats_sm_trans                # таблица переходов link_stats_sm [6][2] (struct sm_trans) — fw/link_sm.c
+0x802fa8 ext[12] link_stats_mcs_to_rate_mbps_jt     # таблица переходов vendor link_stats__mcs_to_rate_mbps (у нас switch; не читается)
+0x802fb4 ext[20] channels_switch_sm_desc            # описатель автомата channels_switch_sm (struct sm_desc; ид пишет конструктор) — fw/scan.c
+0x802fc8 ext[280] channels_switch_sm_trans           # таблица переходов channels_switch_sm [8][7] (struct sm_trans) — fw/scan.c
+0x8030e0 ext[20] swc_psc_sm_desc                    # описатель автомата swc_psc_sm (struct sm_desc; ид пишет конструктор) — fw/scan.c
+0x8030f4 ext[20] find_sm_desc                       # описатель автомата find_sm (struct sm_desc; ид пишет конструктор) — fw/link_sm.c
+0x803108 ext[175] find_sm_trans                      # таблица переходов find_sm [7][5] (struct sm_trans) — fw/link_sm.c
+0x8031b8 ext[5] TX_API_handle_completed_packets_jt # таблица переходов vendor TX_API__handle_completed_packets (у нас switch; не читается)
+0x8031c0 ext[5] tx_api_send_packet_jt              # таблица переходов vendor TX_API__send_packet (у нас switch; не читается)
+0x8031c8 ext[64] txq_dma_mode_tbl       # режимы TX-очередей DMA по MACQ (struct txq_dma_mode [32], только чтение) — include/fwq_tx.h, fw/fwq_tx.c
+0x803208 ext[6] rx_macq_bind_all_queues_jt         # таблица переходов vendor rx_macq__bind_all_queues (у нас switch; не читается)
+0x803210 ext[20] rm_main_sm_desc                    # описатель автомата rm_main_sm (struct sm_desc; ид пишет конструктор) — fw/radio_mgr.c
+0x803224 ext[360] rm_main_sm_trans                   # таблица переходов rm_main_sm [12][6] (struct sm_trans) — fw/radio_mgr.c
+0x80338c ext[20] rm_ch_switch_sm_desc               # описатель автомата rm_ch_switch_sm (struct sm_desc; ид пишет конструктор) — fw/radio_mgr.c
+0x8033a0 ext[105] rm_ch_switch_sm_trans              # таблица переходов rm_ch_switch_sm [7][3] (struct sm_trans) — fw/radio_mgr.c
+0x80340c ext[23] phy_monitor_on_system_state_jt     # таблица переходов vendor phy_monitor__on_system_state (у нас switch; не читается)
+0x80359c ext[8] sysapi_tmpl_rx_energy              # шаблон фильтра hw_sysapi_get_rx_packet_energy_statistics (struct sysapi_filter_tmpl, нули) — fw/phy_ext.c
+0x8035ac ext[8] sysapi_tmpl_rx_pkt_phy             # шаблон фильтра fw_sysapi__start_rx_pkt_phy_data — fw/phy_ext.c
+0x8035b4 ext[8] sysapi_tmpl_phy_rx_stats           # шаблон фильтра fw_sysapi__start_phy_rx_stats — fw/phy_ext.c
+0x8035f0 ext[8] sysapi_tmpl_ch_est                 # шаблон фильтра hw_sysapi_channel_estimation — fw/phy_ext.c
+0x803600 ext[146] ut_module_hw_flows_sysapi_cmd_handler_jt # таблица переходов vendor UT_MODULE_HW_FLOWS_SYSAPI_cmd_handler (у нас switch; не читается)
+0x803694 u32[3] calib_lo_power_cur_init         # исходные поля RFC 0x484 (нули образа) — копия в hwf_calib_lo_power_flow перед rfc_read_field_484
+0x8036a0 u32[3] calib_lo_power_packed_init      # исходные упакованные поля (нули образа) — hwf_calib_lo_power_flow → rfc_pack_field_value
+0x8036b0 ext[12] ut_hw_flows_operational_cmd_handler_jt0 # таблица переходов vendor UT_HW_FLOWS_OPERATIONAL_cmd_handler (у нас switch; не читается)
+0x8036bc ext[14] ut_hw_flows_operational_cmd_handler_jt1 # таблица переходов vendor UT_HW_FLOWS_OPERATIONAL_cmd_handler (у нас switch; не читается)
+0x8036cc ext[16] hwf_calib_acquire_hw_jt            # таблица переходов vendor hwf_calib__acquire_hw (у нас switch; не читается)
+0x8036dc ext[16] hwf_calib_release_hw_jt            # таблица переходов vendor hwf_calib__release_hw (у нас switch; не читается)
+0x8036ec ext[256] if_gain_db_to_lin                  # дБ → линейная, round(10^(i/10)) [64] (if_gain_get_scaled, fw/calib.c)
+0x8037ec u32 calib_lo_leak_start_x             # 0x8037ec: стартовая x поиска минимума LO-утечки (образ 0x40)
+0x8037f0 u32 calib_lo_leak_start_y             # 0x8037f0: стартовая y поиска минимума LO-утечки (образ 0x40)
+0x8037f4 u32 calib_lo_leak_init_dc             # 0x8037f4: исходные DC четырёх колонок (4 байта) для поиска LO-утечки
+0x803810 s8 calib_sar_dc_init_max0             # 0x803810: начальный max запаса SAR DC, половина 0 (-31; vendor читает ldw парой)
+0x803811 s8 calib_sar_dc_init_max1             # 0x803811: начальный max запаса SAR DC, половина 1 (-31)
+0x803812 s8 calib_sar_dc_init_min0             # 0x803812: начальный min запаса SAR DC, половина 0 (31)
+0x803813 s8 calib_sar_dc_init_min1             # 0x803813: начальный min запаса SAR DC, половина 1 (31)
+0x803814 ext[4] calib_vga_next_col                 # следующий столбец VGA-поиска {4,2,3} (calib_vga_coarse_limit, fw/calib.c)
+0x803818 ext[4] calib_vga_start_idx                # стартовые индексы строк VGA-поиска {4,3,3,3} (fw/calib.c)
+0x80381c ext[5] hw_modes_apply_power_mode_jt       # таблица переходов vendor hw_modes__apply_power_mode (у нас switch; не читается)
+0x803824 ext[9] ut_hw_modes_cmd_handler_jt         # таблица переходов vendor UT_HW_MODES_cmd_handler (у нас switch; не читается)
+0x803830 ext[5] hwd_dma_set_power_mode_map_jt      # таблица переходов vendor hwd_dma__set_power_mode_map (у нас switch; не читается)
+0x803838 ext[168] phy_tx_filter_coef                 # коэффициенты TX-фильтра PHY u16[84] (phy_load_88416c_table, fw/phy.c)
+0x8038e0 ext[4] phy_program_channel_regs_jt        # таблица переходов vendor phy__program_channel_regs (у нас switch; не читается)
+0x8038e4 ext[6] hwd_phy_set_rx_swap_iq_jt          # таблица переходов vendor hwd_phy__set_rx_swap_iq (у нас switch; не читается)
+0x8038ec ext[5] hwd_phy_uses_rgf_880c00_8d1d34_jt  # таблица переходов vendor hwd_phy__uses_rgf_880c00_8d1d34 (у нас switch; не читается)
+0x8038f4 ext[5] hwd_pcie_set_mode_map_jt           # таблица переходов vendor hwd_pcie__set_mode_map (у нас switch; не читается)
+0x8038fc ext[10] pcie_irq_extract_bit_by_code_jt    # таблица переходов vendor pcie_irq__extract_bit_by_code_fw (у нас switch; не читается)
+0x803908 ext[13] rfc_tx_power_tbl_init              # исходная таблица TX-мощности RFC u8[13] (fw/rf.c)
+0x803918 volatile u32 rfc_core_c_cmd_tmpl      # 0x803918: шаблон слова команды 0xc RFC-ядру (старшие 16 бит; прожиг OTP-бита)
+0x80391d ext[7] rfc_unref_80391d                   # не используется (держит образ fw_data)
+0x803934 ext[16] hwd_abif_uses_rgf_88af80_8ce614_jt # таблица переходов vendor hwd_abif__uses_rgf_88af80_8ce614 (у нас switch; не читается)
+0x803944 ext[6] hwd_abif_rx_table_config_vga_gain_jt # таблица переходов vendor hwd_abif_rx_table_config_vga_gain (у нас switch; не читается)
+0x80394c ext[7] hwd_abif_rx_table_read_vga_gain_jt # таблица переходов vendor hwd_abif_rx_table_read_vga_gain (у нас switch; не читается)
+0x803954 ext[4] channel_check_range_jt             # таблица переходов vendor channel__check_range (у нас switch; не читается)
+0x803958 ext[5] mac_set_880bf0_mode_fw_jt          # таблица переходов vendor mac__set_880bf0_mode_fw (у нас switch; не читается)
+0x803966 ext[9] vendor_unref_803966                # не используется (держит образ fw_data)
+0x803970 ext[16] mac_parser_step_a_rules            # правила mac_parser_step_a u32[4] (fw/mac_parser.c)
+0x803980 ext[15] hwd_mac_parser_set_rx_filter_jt0   # таблица переходов vendor hwd_mac_parser__set_rx_filter (у нас switch; не читается)
+0x803990 ext[11] hwd_mac_parser_set_rx_filter_jt1   # таблица переходов vendor hwd_mac_parser__set_rx_filter (у нас switch; не читается)
+0x8039f4 ext[88] ut_hw_drivers_cmd_handler_jt0      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803a4c ext[72] ut_hw_drivers_cmd_handler_jt1      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803a94 ext[32] ut_hw_drivers_cmd_handler_jt2      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803ab4 ext[10] ut_hw_drivers_cmd_handler_jt3      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803ac0 ext[88] ut_hw_drivers_cmd_handler_jt4      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803b18 ext[18] ut_hw_drivers_cmd_handler_jt5      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803b2c ext[20] ut_hw_drivers_cmd_handler_jt6      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803b40 ext[20] ut_hw_drivers_cmd_handler_jt7      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803b54 ext[10] ut_hw_drivers_cmd_handler_jt8      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
+0x803b60 ext[5] hwd_mac_set_power_mode_map_jt      # таблица переходов vendor hwd_mac__set_power_mode_map (у нас switch; не читается)
+0x803b68 ext[8] memset0_words_jt                   # таблица переходов vendor memset0_words (у нас switch; не читается)
+0x803b70 ext[16] boot_diag              # блок диагностики для хоста (struct boot_diag; адрес — в [0x880a84]) — include/sys_cfg.h, fw/stubs.c
+0x803b80 ext[212] dashboard             # настройки PCP/BSS по умолчанию + конфигурация системы 0x803c00 (struct dashboard / sys_cfg: OOB-режимы, флаги особой конфигурации, ap_sme_offload_mode, LED-схемы) — include/sys_cfg.h, fw/subsys.c
+0x803c54 ext[104] u_schd                # планировщик (struct u_schd: очереди таймеров, ready-очереди, пул задач 0x803c80) — include/sched.h, fw/sched.c
+0x803cbc ext[20] sm_defer_pool          # пул отложенных событий автоматов (struct mem_pool) — fw/pool.c
+0x803cd0 ext[64] sm_defer_nodes         # элементы sm_defer_pool (4 × struct sm_defer_node) — include/basic_sm.h, fw/pool.c
+0x8041f0 ext[124] operational_mbox      # операционный ящик хоста (struct operational_mbox, 0x7c Б) — include/mbox.h, fw/mbox.c
+0x80426c ext[20] cca_pct_stats          # накопитель долей занятости эфира по BI (struct cca_pct_stats) — include/sysapi_mgr.h, fw/lmac_evt.c
+0x804280 ext[72] lmac_mbox              # ящик ucode (struct lmac_mbox, 0x48 Б) — include/mbox.h, fw/mbox.c
+0x8042c8 ext[1396] rf_obj                 # объект RF marlon_r_if_class (0x574 Б) — include/rf_obj.h, fw/rf.c
+0x80483c ext[12] wmi_rf_sector_get      # запрос WMI_GET_RF_SECTOR_PARAMS, ждущий радио (struct wmi_rf_sector_get_req) — include/wmi.h, fw/wmi_h_bf.c
+0x804848 ext[204] wmi_rf_sector_set     # запрос WMI_SET_RF_SECTOR_PARAMS, ждущий радио (struct wmi_rf_sector_set_req) — include/wmi.h, fw/wmi_h_bf.c
+0x804914 ext[16] rf_sector_sel          # запросы GET/SET_SELECTED_RF_SECTOR_INDEX (2 × 8 Б) — include/mbox.h, fw/wmi_h_bf.c
+0x804924 ext[440] calib_mngr                # CALIB_MNGR: флаги и таймеры схем, автоматы движков (struct calib_mngr) — include/calib_engine.h, fw/calib_engine.c
+0x804adc ext[128] calib_rf_gain_tbl         # копия таблицы усилений RF со сдвигом (update_rf_xx_gains_tables, 16 × 8 Б) — fw/calib.c
+0x804b5c ext[216] calib_silent_rssi_obj     # объект класса silent RSSI (struct calib_silent_rssi, движок 4) — include/calib_engine.h, fw/calib_engine.c
+0x804c34 ext[8] rf_mgmt_sm                # объект автомата RF kill (struct basic_sm; описатель 0x802338) — include/rf_kill.h, fw/l2mgr.c
+0x804c3c ext[4] operational_mbox_ref            # struct operational_mbox * — ящик событий хосту (sched__step: = operational_if__mbox_init) — include/mbox.h, fw/stubs.c
+0x804c40 ext[360] vring_recs            # записи vring (9 × 0x28, пул 0x804da8) — fw/vring.c
+0x804da8 ext[20] vring_rec_pool         # пул записей vring (struct mem_pool, элементы vring_recs) — fw/vring.c
+0x804dbc ext[168] vring_schd            # планировщик vring_schd — fw/vring.c
+0x804e64 ext[12] vring_schd_alt         # вариант vring_schd (режим пар) — fw/vring.c
+0x804e70 ext[12] mid_list               # список открытых записей mid (struct llist) — include/mid.h, fw/mid.c
+0x804e7c ext[20] mid_pool               # пул записей mid (struct mem_pool, 1 × 0x2b0) — fw/mid.c
+0x804e90 ext[688] mid_recs              # записи mid (struct mid [1], 0x2b0 Б) — include/mid.h, fw/mid.c
+0x805140 u8[32] pring_bind_vr_count             # счётчик привязок по номеру vring (sm_pring__bind_vring, vr < 0x1f; на 10 — чтение диагностики DMA/MAC и сброс)
+0x805160 ext[16] connect_req                    # адрес назначения CONNECT и параметры RADIO_MGR::set_primary_channel (struct connect_req) — fw/wmi_cmd.c
+0x805170 ext[188] fw_sysapi_mgr            # менеджер запросов sysapi (struct fw_sysapi_mgr, 0xbc Б) — fw/sysapi_stats.c
+0x80522c ext[8] otp_info                       # 8 Б OTP активного RF (otp__read_rf, журнал otp_init) — fw/otp.c
+0x805234 ext[44] sched_scheme            # схема расписания записи mid (struct sched_scheme, schedule_scheme_builder) — include/sched_scheme.h, fw/rx.c
+0x805260 ext[132] link_stats_ts_ring            # кольцо 32 отметок TX link_stats + заголовок {число, голова, хвост} (struct link_stats_ts_ring) — fw/link_sm.c
+0x8052e4 ext[8] ese_sched                # курсор слотов ESE (struct ese_sched → ese_slot_tbl 0x857264) — include/sched_scheme.h, fw/rx.c
+0x8052ec ext[552] scan_mngrs            # объект scan_mngr записи mid 0 (struct scan_mngr [1], 0x228 Б; swc_psc_sm — +0x1d0) — include/scan_mngr.h, fw/scan.c
+0x805514 ext[14] scan_stats             # счётчики скана (struct scan_stats, 7 полуслов) — include/scan_mngr.h, fw/scan.c
+0x805524 ext[20] dband_info_pool        # пул dband-инфо (struct mem_pool, 0x10 × 0x4c) — fw/mid.c
+0x805538 ext[1216] dband_info_mem       # память пула dband-инфо (0x10 × 0x4c Б) — fw/mid.c
+0x8059f8 ext[160] bcon_info_mem          # память bcon_info_pool (struct bcon_post_info [8]) — include/mem_pool.h, fw/pool.c
+0x805a98 ext[20] bcon_info_pool         # пул post-send-info бикона (8 × 0x14 с 0x8059f8) — fw/pool.c
+0x805aac ext[20] bcon_info_static       # post-send-info бикона при пустом bcon_info_pool — fw/pool.c
+0x805ac0 ext[1316] tx_err_buf           # буфер ошибки TX (struct tx_pkt, 0x524 Б; статус 0xfd) — include/fwq_tx.h, fw/fwq_tx.c
+0x805fe4 ext[48] rx_ring                # RX-кольцо DMA с пулом буферов (struct rx_ring, 0x30 Б) — include/rx_ring.h, fw/rx.c
+0x806014 ext[512] vring_tbl             # таблица vring_tbl (32 × 16 Б) — fw/tx_helpers.c
+0x806214 ext[196] radio_mgr              # объект radio_mgr (struct radio_mgr) — fw/radio_mgr.c
+0x8062d8 ext[576] rm_req_pool            # пул запросов radio_mgr (struct rm_req [0x10]) — fw/radio_mgr.c
+0x806690 volatile u32[3] sysapi_freq_ratio_args  # аргументы hw_sysapi__set_freq_ratio {канал, v1, v2} для колбэка радио (0x8ce458)
+0x80669c ext[208] rfc_rgf_req               # запрос доступа к RGF RFC UT 10/11-12 (struct rfc_rgf_req) — include/ut.h, fw/sysapi_stats.c
+0x80676c ext[80] calib_all_lo_power_obj     # объект LO power полной калибровки hwf_calib_all (struct calib_lo_power) — fw/calib_engine.c
+0x8067bc ext[24] if_gain_state                # состояние калибровки IF gain (struct if_gain_state) — include/calib.h, fw/calib.c
+0x8067dc ext[320] phy_init_regs                      # начальная запись регистров PHY {адрес, значение}[40] до маркера 0xe0d0e0d (hwd_phy_init, fw/phy.c)
+0x806a0c volatile u32 dbg_trap_caller          # 0x806a0c (DBG_TRAP_CALLER): fw_vendor_ptr_trap — первое место вызова (blink)
+0x806a10 volatile u32 dbg_trap_count           # 0x806a10 (DBG_TRAP_COUNT): fw_vendor_ptr_trap — число вызовов
+0x806a60 volatile u32 dbg_trap_arg0            # 0x806a60 (DBG_TRAP_ARGS+0): r0 первого вызова ловушки
+0x806a64 volatile u32 dbg_trap_arg1            # 0x806a64 (DBG_TRAP_ARGS+4): r1
+0x806a68 volatile u32 dbg_trap_arg2            # 0x806a68 (DBG_TRAP_ARGS+8): r2
+0x806a6c volatile u32 dbg_trap_arg3            # 0x806a6c (DBG_TRAP_ARGS+0xc): r3

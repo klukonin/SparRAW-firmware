@@ -17,5 +17,6 @@ __pycache__/
 # тулчейн ARC — tools/get-toolchain.sh или ссылка на готовый
 /toolchain
 build/
+rewrite/snap/
 .pc/
 6.4/patches/series-*
