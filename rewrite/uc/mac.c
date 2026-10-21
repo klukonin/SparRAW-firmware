@@ -6,6 +6,11 @@
 
 
 
+/* СРОК: r40 читается не раньше 3 тактов после 0x1d (аппаратный, задержка локального чтения):
+ * 5 инструкций (st.ab, bclr, 3×nop), vendor 0x9356cc так же; запас — единицы инструкций; то же
+ * правило у всех «0x1d … arc_nops(3); r40/r41/r47». TSF_LOW и TSF_HIGH — разные выборки (~12
+ * инструкций между чтениями): при переносе через 2^32 мкс между ними результат ошибочен на 2^32,
+ * если MAC не защёлкивает TSF_HIGH при выборке TSF_LOW (не проверено). */
 /* Чтение 64-битного TSF (0x9356cc) — через aux-регистр r40 (MAC TSF). */
 void mac_read_tsf64_uc(u32 *out)
 {
@@ -55,6 +60,9 @@ void mac_set_rf_chain_state_with_sta_sector(void)
     mac_set_rf_chain_state(1, rf_chain_word);
 }
 
+/* СРОК: выход по r42.16 (ppdu_report_event) или r40.24 (cca_ppdu_comp) в приёмном потоке (rx.c) —
+ * опрос 6 инструкций на проход (vendor 0x93675c: 5), без ограничения; задержка реакции — единицы
+ * инструкций. Срыв: зависание приёмного потока, если не придёт ни одно событие. */
 void mac_wait_event_r42_or_r40(u32 a, u32 b)
 {
     /* 0x93675c: tst r42,r0 / tst r40,r1 — core-регистры MAC, не aux. */
@@ -225,6 +233,8 @@ void macq_hw_set_ctrl_bit(u32 q)
     u32 val = MMIO32(addr);
     MMIO32(addr) = (val & ~mask) | mask;
 }
+/* СРОК: при wait ≠ 0 — ожидание 0x886eb4.31 (готовность снимка начала BI) без ограничения
+ * (аппаратный); vendor 0x9374e8 так же. Срыв — зависание uc. */
 void mac_read_bi_start_tsf64_uc(u32 a, u32 *out, u32 wait)
 {
     /* 0x9374e8: ждать готовности (0x886eb4 bit31), затем 64-бит 0x886fc4/0x886fc8
@@ -268,6 +278,11 @@ void mac_set_chain_mask_924f00(void)
     mac_rf_switch_cmd1f(1);
 }
 
+/* СРОК: 0x27007e00 → 0x02004002 → 3 nop → ждать r42 (slot_event | busy2_event) без тайм-аута; MAC
+ * должен применить маску до первого опроса (аппаратный, ~3 такта): между mov r32 и опросом 5
+ * инструкций + переход в uc_wait_event_busy (vendor 0x936870 так же); запас — единицы инструкций.
+ * После выхода по slot_event вызывающий (tx.c, tail.c) запускает TX в слоте; задержка реакции опроса
+ * 3 инструкции. Срыв: устаревший бит — преждевременный выход; молчание MAC — зависание. */
 void mac_select_all_sectors_and_wait(void)
 {
     u32 r1 = mac_evt_en_shadow | 0x27007e00u;
@@ -294,6 +309,10 @@ void macq_hw_sync_dma_wptr(u32 a, u32 q, u32 dma)
 }
 
 
+/* СРОК: 0x27 (разрешение события) → 0x02004000 → 3 nop → ждать r42.14 (busy2_event — подтверждение)
+ * без ограничения; MAC должен обновить r42.14 до первого опроса (аппаратный, ~3 такта): между mov r32
+ * и опросом 5 инструкций + переход (vendor 0x9361bc/0x936544 так же); запас — единицы инструкций.
+ * Срыв: устаревший бит 14 — выход до применения маски; молчание MAC — зависание. То же в _b. */
 void mac_evt_enable_bit_sync(u32 a)
 {
     u32 mask = (1u << a) << 8;
@@ -354,6 +373,9 @@ void mac_program_tx_with_qid(u32 qid)
     arc_nops(3);
 }
 
+/* СРОК: при r40[2:0] = 5 MAC должен подтвердить смену режима (r42.14) за тайм-аут 0xa GP-таймера
+ * (uc_wait_two_events → uc_wait_event_busy, 0x23010000|0xa) — иначе assert 0x3f (аппаратный).
+ * Паузы выборки r40 (5 инструкций) и после ожидания (3 nop) — как vendor 0x93e0dc; запас не оценён. */
 void mac_set_mode_0000(void)
 {
     /* 0x93e0dc: при состоянии r40&7 == 5 дождаться событий и проверить r42 bit14. */
@@ -368,6 +390,10 @@ void mac_set_mode_0000(void)
     if (!(arc_core_rd(42) & (1u << 14)))
         uc_assert((u32)__builtin_return_address(0), 0x3f);
 }
+/* СРОК: 0x49000040 квитирует r54.6 (gp0_end_ind), и уже через ~8 инструкций (вызов
+ * uc_wait_event1_or_event4) r54.6 опрашивается снова — без паузы, как vendor 0x93e084; запас —
+ * единицы инструкций (аппаратная задержка квитирования не измерена). Срыв: устаревший r54.6 —
+ * ложный возврат 0 (тайм-аут вместо busy2). */
 u32 mac_arm_events_0xc00(void)
 {
     /* 0x93e084: 1 — событие r42 bit14, 0 — r54 bit6. */
@@ -447,6 +473,9 @@ void macq_hw_disable_queue(u32 q)
     MMIO32((raw >> 3) & ~3u) &= ~(1u << (raw & 0x1f));
     arc_sync();
 }
+/* СРОК: запрос MTP 0x1b/0x16/0x17 → 3 инструкции (2×nop + mov 0,0, vendor 0x92dafc) → ждать r45.31
+ * без ограничения (аппаратный: до обработки запроса r45 держит прошлый ответ с valid = 1). Запас —
+ * единицы инструкций. Срыв: «пустота» очереди по прошлому запросу или зависание uc. */
 u32 macq_probe_empty(u32 q)
 {
     /* 0x92dab8: r45.1 = 1 — очередь пуста (vendor mtp_queue__release_mgmt пишет
@@ -491,6 +520,12 @@ void mac_mode_send_direct_frame(u32 a)
     direct_tx_issue_cmd_33();
 }
 
+/* СРОК: RX-сектор/AWV пира (0x3a/0x3b/слово с б30) должен встать до приёма ответа Ack/BA/CTS через
+ * SIFS = 3 мкс (802.11-2020 10.3.2.3.3, Table 20-30) после конца своей передачи (r42.15 в
+ * tx_send_and_await_rx_frame, brp.c). Путь: выход из uc_spin_until_event ~3 + вызов + 7 команд ≈
+ * 30 инструкций (vendor 0x92f42c ≈ 38 с millicode-прологом); запас по коду — сотни тактов из 495,
+ * время исполнения 0x3b/0x40 в RFC не известно. Срыв: ответ принимается прежним сектором — потеря
+ * Ack/CTS, повтор. */
 void mac_set_rf_chain_state(u32 a, u32 b)
 {
     uc_mac_cmd(0x1f003000);
@@ -538,6 +573,13 @@ void mac_program_qset_slots(void)
     uc_mac_cmd((mac_chain_mask & rx_nav.ev_mask) | 0x80000aa);
 }
 
+/* СРОК: переход RX→TX после принятого PPDU (ждать r40.24 cca_ppdu_comp и снятия r40.3 phy_rx_frame,
+ * 0x3d000004, снимок r49, 0x02093800) на пути ответа: DMG CTS на RTS через SIFS (mac_mode_switch_after_ppdu,
+ * 802.11-2020 10.3.2.9, 10.3.2.3.3: 3 мкс −0/+0,49), SSW-Feedback/SSW-Ack через MBIFS
+ * (mac_mode_switch_core_and_rf, 10.3.2.3.10, 10.42.2.4/10.42.2.5: 9 мкс −0/+0,49); также
+ * rx_switch_to_rx_mode. Быстрая ветка ~80 инструкций без ожиданий (vendor 0x92a754 ~80, тот же
+ * порядок и nop); запас по коду — сотни тактов, остальное съедает ожидание конца приёма в железе.
+ * Срыв: ответ позже SIFS/MBIFS — партнёр не принимает CTS/SSW-FB, повтор. */
 UC_HOT
 u32 mac_set_mode_a000(u32 a)
 {
@@ -610,6 +652,11 @@ u32 mac_set_mode_a000(u32 a)
 #undef NOP2M
 }
 
+/* СРОК: RX→TX для SSW-Feedback/SSW-Ack через MBIFS = 9 мкс −0/+0,49 (802.11-2020 10.3.2.3.10,
+ * 10.42.2.4, 10.42.2.5) после последнего SSW (r39.15 CDOWN = 0; txss.c, tail.c). Путь:
+ * mac_set_mode_a000 (~80) + mac_rf_switch_cmd1f (ожидание idle_detect = 5 без ограничения) + 7 команд
+ * (~28); vendor 0x92e0e4 — тот же состав; запас по коду — около тысячи тактов из 1485, ожидания
+ * железа не ограничены. Срыв: SSW-FB/SSW-Ack позже MBIFS — SLS не завершается, повтор. */
 void mac_mode_switch_core_and_rf(u32 a)
 {
     mac_set_mode_a000(a);
@@ -640,6 +687,11 @@ void mac_set_chain_modes(u32 a)
     uc_mac_cmd((mac_chain_mask & rx_nav.ev_mask) | mask);
 }
 
+/* СРОК: DMG CTS на RTS через SIFS = 3 мкс −0/+0,49 (802.11-2020 10.3.2.9, 10.3.2.3.3) от конца RTS
+ * (r37.0 в rx_funcs_handle_ppdu_report). Путь: ~19 инструкций + lp 2 × 2 nop (пауза между 0x3d000002
+ * и 0x3d000100 — аппаратная, «N nop») + mac_set_mode_a000 (~80) + 6 команд (~28) ≈ 135 инструкций,
+ * затем rx_send_response_frame; vendor 0x92f340 — то же. Запас: ~360 тактов из 495 на ожидание конца
+ * приёма и rx_send_response_frame (не оценено). Срыв: CTS позже SIFS — RTS считается неудачным. */
 void mac_mode_switch_after_ppdu(u32 a)
 {
     uc_mac_cmd(0x83u << 25);
@@ -681,6 +733,9 @@ void mac_mode_enter_idle_seq(u32 a)
     }
 }
 
+/* СРОК: выход по r42 (обычно б15 tx_end_event) — дальше на пути ответа через SIFS переключение на RX
+ * (mac_set_rf_chain_state). Опрос 3 инструкции на проход (vendor 0x9366dc: 3), без ограничения;
+ * задержка реакции — единицы тактов. Срыв: зависание при молчании MAC. */
 u32 uc_spin_until_event(u32 mask)
 {
     u32 v;

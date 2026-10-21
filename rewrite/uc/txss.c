@@ -94,6 +94,11 @@ void rf_set_normal_mode(u32 a)
     }
 }
 
+/* СРОК: выбор селектора r47 (команда 0x1d03…) → чтение r47.17 не раньше чем через 3 такта
+ * (аппаратный: «через 3 такта результат в r40/r41/r47», MAC-COMMANDS §7.3). Путь: хвост
+ * uc_mac_cmd (st.ab + bclr) + 2×nop — ровно как vendor; запас: нет/единицы тактов. Короче —
+ * опрос читает старое r47, проходит мимо «mailbox занят», и команда 0x41 (сектор/AWV) теряется.
+ * То же в rf_write_sector_awv, rfc_issue_cmd_10, rfc_issue_cmd_20_uc (и brp_write_reg_pair). */
 void rf_select_sector_cmd41(u32 a, u32 b)
 {
     /* 6.2 asm 0x92f934: выбор RF-сектора — две mailbox-последовательности
@@ -456,6 +461,19 @@ void txss_store_sector_ranking(u32 a, u32 b)
     }
 }
 
+/* СРОК (b = 1, RSS ответчика): первый кадр SSW RSS — через MBIFS (9 мкс, допуск −0/+0,49 мкс)
+ * после конца ISS (802.11-2020 10.42.2.2, 10.3.2.3.10). Событие — r54.txss_end_ind или флаг
+ * 0x8021e0 б1 (sls_rx_ssw_frame, последний кадр ISS) в txss_resp_wait_iss_end; действие —
+ * команда 0x19…/0x18… ниже и 0x2d… в bcon_txss_sweep_step. Путь: ~150 инструкций приёма
+ * последнего кадра + ~30 ожидания + здесь ~250 (txss_sweep_timing, txss_set_sweep_param с
+ * копией 64 Б порядка секторов, ss_plan_next_sector — всё до пуска TX) + ожидания r42.14/r45.31;
+ * итого ~500–600 инструкций ≈ 4–5 мкс (vendor ~то же, порт 1:1); запас: десятки–сотни
+ * инструкций до 9 мкс, без учёта задержки PHY RX-end → отчёт PPDU. Срыв: RSS позже MBIFS
+ * (нарушение допуска), а при опоздании > ~15–20 мкс — инициатор не укладывает RSS в окно GP0
+ * (BF-ENGINE §8.2) → NO_SS_RESP_FAILURE и повтор SLS.
+ * СРОК (b = 5, ISS инициатора): проба CCA (0x29000001, mac_cca_ok) → пуск ISS; между ними
+ * выбор сектора/таймингов уже сделан, CCA повторно проверяет bcon_txss_sweep_step перед TX —
+ * запас большой. Опросы r45.31 здесь без ограничения времени. */
 u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
 {
     /* 6.2 asm 0x93c2f8. */
@@ -620,6 +638,10 @@ u32 sls_rx_ssw_frame(void)
             phy_params_snapshot((u32)&sp.sector, (u32)&sp.antenna);
             if (!(arc_core_rd(39) & (1u << 15)))
                 return 1;
+            /* СРОК: последний кадр ISS (r39.zero_cdown) → начало RSS через MBIFS (802.11-2020
+             * 10.42.2.2). Здесь ~60 инструкций (rx_mac_prepare, mac_mode_switch_core_and_rf с
+             * ожиданием PHY в mac_set_mode_a000) из ~500–600 всего пути — подробно у
+             * txss_program_tx_frame. Запас: десятки–сотни инструкций. */
             rx_mac_prepare();
             mac_mode_switch_core_and_rf(sta_mode_word[VOL(rxf.sta)]);   /* [0x802288] перечитывается */
             sls_rx.flags |= 2;
@@ -628,6 +650,12 @@ u32 sls_rx_ssw_frame(void)
         } else if (arc_core_rd(37) & (1u << 25)) {
             u32 r0;
             if (sls_rank_valid_mask & (1u << (idx & 31))) {
+                /* СРОК: SSW-Feedback → SSW-Ack прямо из обработчика приёма, через MBIFS (9 мкс,
+                 * 802.11-2020 10.42.2.2/10.42.2.5). До sls_send_ssw_ack ~130 инструкций (разбор,
+                 * sta_set_tx_sector); при ≥ 2 RF-модулях и rf_modules.x4 = 0
+                 * rf_update_active_antenna делает два программных деления (uc_divmod_unsigned,
+                 * до ~200 тактов каждое). Vendor так же; запас: сотни инструкций (одномодульный
+                 * RF), с делениями — десятки. Срыв — см. sls_send_ssw_ack. */
                 rx_parse_ssw_field((u32)&sp.sector, (u32)&sp.antenna, (u32)&sp.snr);
                 rx_funcs_record_level_8020f8_8020fc((s8)sp.snr);   /* ldb.x */
                 sta_set_tx_sector(VOL(rxf.sta), sp.sector, sp.antenna, 1);
@@ -657,6 +685,18 @@ u32 sls_rx_ssw_frame(void)
     }
 }
 
+/* СРОК: SSW-Ack ответчика — через MBIFS (9 мкс, допуск −0/+0,49 мкс) после конца принятого
+ * SSW-Feedback (802.11-2020 10.42.2.2 «responder shall begin an SSW ack procedure an MBIFS
+ * following the reception of an SSW-Feedback frame», 10.3.2.3.10). Событие — r42 (приём
+ * SSW-Feedback, r37.25); действие — 0x19…/0x18… и выдача кадра в FIFO
+ * (rx_funcs_send_direct_frame → 0x33). Здесь ~300 инструкций до конца выдачи кадра (5 команд
+ * TX-сектора/RF, сборка кадра, cmd34, tx_common, опрос r45.31 без ограничения), плюс путь приёма:
+ * из txss_resp_flow — rx_flow_run + txss_resp_wait_fdbk, из sls_rx_ssw_frame — ~130 инструкций;
+ * итого ≈ 450–600 ≈ 3,5–5 мкс (vendor ~то же, 107 инструкций у него против наших 103). Запас:
+ * сотни инструкций до 9 мкс (задержка PHY RX-end → r42.16 не учтена). Срыв: Ack позже MBIFS;
+ * инициатор ждёт GP1 = 0x2087 тактов ≈ 50 мкс и повторяет SSW-Feedback (до 3 раз), затем
+ * провал SLS. После TX: r42.15 → RF на приём ~15 инструкций (BRP после SLS — не раньше SIFS):
+ * запас большой. */
 void sls_send_ssw_ack(u32 a, u32 b)
 {
     /* 6.2 asm 0x934424. */
@@ -893,6 +933,12 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     /* 6.2 asm 0x9399a4. a (r0) не используется; b (r1) — буфер sp+4 вызывающего,
      * заполненный mtp_queue_release_mgmt: [b] = mcs, [b+8] = rx-конфиг. */
     (void)a;
+    /* СРОК: проба CCA (0x29000001 + mac_cca_ok) → пуск TX (0x19000001 … итоговая 0x18…|б27|б28)
+     * должен уложиться в окно, где проба ещё верна (aCCATime/aSlotTime = 5 мкс, 802.11-2020
+     * 10.3.2.3, Table 20-30). Путь ~40 инструкций (mac_program_rx_window, 2 команды, чтение r43),
+     * при dti_qset_mode ≠ 0 ещё fsched_slot_f3_positive и декремент счётчика RD — между 0x19 и
+     * 0x18 (vendor так же); запас: десятки–сотни. Срыв: TX в уже занятую среду (коллизия
+     * RTS/CTS-обмена TXOP). */
     u32 r0 = mac_sel_shadow & 0xffff0fff;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
     uc_mac_cmd(r0 | 0x1d00a000);
@@ -1137,6 +1183,11 @@ u8 txq_fifo_ptp_idle_snapshot(void)
     return res;
 }
 
+/* СРОК (минимальная выдержка, аппаратный): сброс RFC (HW_RFC_RESET_CTRL б4 = 0) держится
+ * выдержкой, откалиброванной скоростью цикла: lp × 2×nop_s, n = rfc_txrx_set·80 → 2n+4 такта
+ * (≈ 1 мкс на единицу rfc_txrx_set при 165 МГц), как vendor L_92a03c..L_92a054; при n = 0 ARC600
+ * исполняет тело один раз — импульс ~6 тактов. Запас: не установлен (минимум RFC не известен).
+ * Ускорение ядра или замена lp на C-цикл меняет длительность импульса. */
 void rfc_restore_txrx_sets(void)
 {
     u32 sp0, sp1;

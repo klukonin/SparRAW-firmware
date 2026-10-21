@@ -74,6 +74,9 @@ void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 arg1, u32 arg2, const struct
     dst->bf_ctl0 = (u8)(1u | ((arg1 & 1) << 1) | ((arg2 & 1) << 2));
 }
 
+/* СРОК: импульс сброса указателей TXQ (|=3, sync, &=~3, sync — ~6 инструкций, vendor 0x925a48 так
+ * же; аппаратная минимальная ширина не известна), затем два запроса MTP с ожиданием r43.31/r45.31
+ * без ограничения. Срыв: при молчании MAC — зависание uc. */
 /* macq_kick_queue_tx (0x925a48). */
 void macq_kick_queue_tx(u32 q, u32 b, u32 c)
 {
@@ -138,6 +141,11 @@ void dump_mac_buffer_bases(u32 a, u32 b)
     if (buf.buf_base != 0x2000)
         uc_assert((u32)__builtin_return_address(0), 0x1583);
 }
+/* СРОК: окно наблюдения «труба TX пуста» задаётся скоростью цикла (аппаратный: DMA/MAC должны
+ * успеть показать незавершённый перенос): на проход — lp 0x28 × 2 nop (~80 тактов) + тело (~9 вызовов
+ * чтения MMIO, ~100–150 инструкций), c проходов (c = 10/15 у вызывающих) ≈ 1,5–2 мкс × c. vendor
+ * 0x926184 — та же петля и те же вызовы; запас не оценён. Ускорение тела сокращает окно — ложное
+ * «idle» и отключение vring при недокачанном кадре. */
 u32 dma_is_tx_pipe_idle(u32 a, u32 b, u32 c)
 {
     /* 0x926184: c итераций опроса; 1 если все условия «idle» на каждой. */
@@ -205,6 +213,9 @@ void peer_masks_update_sta_bit(struct fsched_peer_ctx *p, u32 sta, u32 set)
         uc_evt_send_2e(sta, 0, qh_build_descriptor_b(sta));
     }
 }
+/* СРОК: пауза между импульсом FS_CTRL.3 и пуском делителя RFC — lp 0x50 × 2 nop ≈ 160 тактов
+ * ≈ 1 мкс (аппаратный минимум, «N nop»; не зависит от остального кода); vendor 0x928c78 — тот же lp.
+ * Запас не известен. Сокращение может оставить делитель RF-такта в неопределённом состоянии. */
 void hwd_abif_rfc_divider_restart_uc(void)
 {
     MMIO32(HW_RFC_DIVIDER_CTRL) &= ~1u;          /* ld.as [r6,0xe5] = 0x889000+0xe5*4 */

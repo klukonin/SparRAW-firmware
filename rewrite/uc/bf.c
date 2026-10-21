@@ -118,6 +118,12 @@ void txss_init_flow(u32 a)
         txrx_state2 = 0x200000;
         u32 rss = rss_wait_get(r13);
         r = txss_init_wait_rss(r13, rss);          /* mov_s r1,r0 (rss_wait_get) */
+        /* СРОК: конец RSS → SSW-Feedback инициатора через MBIFS (9 мкс, 802.11-2020 10.42.2.2,
+         * 10.3.2.3.10). Событие — r54.txss_end_ind / флаг 0x8021e0 б1 в txss_init_wait_rss (там же
+         * RF уже переведён на TX); здесь ~6 инструкций до txss_init_send_fdbk_wait_ack, основной
+         * путь — txss_init_send_ssw_fdbk (tail.c, задержка MAC 0x15 = 0x8015a0 + SIFS). Запас
+         * здесь большой. Срыв: SSW-Feedback позже MBIFS; ответчик ждёт его GP0 (txss_resp_wait_fdbk)
+         * → подсостояние 0xa. */
         if (r == 1) {
             bti_cnt.last_ant = sls.best.antenna;
             bti_cnt.last_sector = sls.best.sector;        /* stw [r1,0x22] */
@@ -163,6 +169,10 @@ void txss_resp_flow(u32 a)
     u32 r = txss_resp_wait_iss_end(r13, rss);
     if (r == 1) {
         r = txss_resp_wait_fdbk(r13);
+        /* СРОК: SSW-Feedback → SSW-Ack через MBIFS (802.11-2020 10.42.2.2); здесь ~3 инструкции,
+         * путь и запас — у sls_send_ssw_ack. Внимание: txss_resp_wait_fdbk до разбора кадра уже
+         * вернул в 0x886d00 SIFS вместо MBIFS — если MAC отсчитывает ответ по этому регистру,
+         * Ack уходит не по MBIFS (vendor так же). */
         if (r == 1) {
             sls_send_ssw_ack(r13, 0);
             bf_store_flow_status(r13, 9);
@@ -1088,6 +1098,12 @@ void bf_reset_sta_slot(u32 a0)
     bf_reset_sta_cnt += 1;
 }
 
+/* СРОК (расчёт времени): GP2 = длина A-BFT (поле маяка × таблица C) + 0x5cd (1485 тактов =
+ * 9 мкс = MBIFS между BTI и A-BFT, 802.11-2020 10.3.2.3.10, 10.42.5) − a0 — отсчёт от момента
+ * команды 0x5400070e, а не от конца маяка. Вызывающий (bti.c) компенсирует задержку «конец
+ * маяка → эта команда» фиксированными 4 мкс (a0 = (4 − Duration)·0xa5, GP0 = (Duration − 4)·0xa5).
+ * Здесь ~25 инструкций (mul64, без деления); весь путь от r42.12 — в bti.c. Запас: не оценён;
+ * отклонение нашего пути от vendor-ских ~4 мкс сдвигает границы A-BFT станции на ту же величину. */
 void bf_gpc_program_mac_by_mode_b(u32 a0)
 {
     u32 mode = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;

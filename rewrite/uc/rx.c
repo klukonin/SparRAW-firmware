@@ -89,6 +89,12 @@ void rx_arm_window(void)
     uc_mac_cmd(0x2011000);
 }
 
+/* СРОК: вызывается из rx_flow_handle_frame до запроса ответа в MTP (RTS / CF-End с Duration /
+ * бит r40.sifs_resp) — входит в путь до ответа через SIFS 3 мкс (802.11-2020 10.3.2.3.3, Table 20-30).
+ * Путь ~25 инструкций + mac_set_mode_a000 (vendor 0x924fc4 — так же); запас общий с
+ * rx_frame_tx_resp_seq: единицы. Порог SIFS_CNT > 0x500 (5 мкс) или = 0 — сторож vendor:
+ * команда 0x1f000601 и счётчик rx_mode_bad_r55_cnt (полезен на стенде как счётчик опозданий;
+ * см. docs/UC-REGISTERS.md §2.16 — отсчёт SIFS_CNT со сроком ответа не совпадает). */
 UC_HOT
 void rx_switch_to_rx_mode(void)
 {
@@ -245,6 +251,13 @@ void rx_flow_accumulate_busy_time(u32 a)
 }
 
 
+/* СРОК: ответный CF-End (fc 0x00e4) должен уйти через SIFS 3 мкс после принятого CF-End с Duration ≠ 0
+ * (802.11-2020 10.39.8.1; 10.3.2.3.3). Медленный путь (switch в хвосте rx_flow_handle_frame, случай 8):
+ * от входа rx_flow_handle_frame — rx_get_required_response + ~30 инструкций до вызова, здесь
+ * tx_send_imm_response (~60, команда 0x37000020 и ожидание r45) — как у vendor 0x93626c; запас не
+ * замерен, по аналогии с ACK/BA — единицы–десятки. Кадр (fc через r33 и 0x33…) пишется уже после
+ * 0x37000020: заполнение должно успеть до того, как MAC начнёт передавать MPDU (аппаратный, не
+ * установлен). Срыв — поздняя команда (MAC_HW_ICR б4/б5, assert 0x26, см. rx_frame_tx_resp_seq). */
 void rx_flow_send_imm_response(void)
 {
     /* 6.2 asm 0x93626c. */
@@ -259,6 +272,13 @@ void rx_flow_send_imm_response(void)
 
 /* phy_stats_accumulate_to_shared — в tail.c; tx_send_imm_response — в tx.c. */
 
+/* СРОК: DMG DTS (fc 0x0664) в ответ на RTS при занятом NAV — через SIFS 3 мкс (802.11-2020
+ * 10.39.6.6.2, 10.3.2.9, 10.3.2.3.3). Медленный путь: rx_get_required_response (ветка RTS: два
+ * чтения TSF + grant_detect_step) → switch случай 7 → здесь bi_remaining_time_us (~16) до
+ * tx_send_imm_response (~60). Из rx_funcs_handle_ppdu_report — ещё дольше (поиск станции,
+ * mac_mode_switch_after_ppdu ~55). Как у vendor 0x936200; запас не замерен (единицы–десятки).
+ * Тело (r33, 0x33000063, NAV-адрес из rx_nav.nav_ta) пишется после 0x37000020 — должно успеть до
+ * передачи MPDU (аппаратный, не установлен). Срыв — поздняя команда, assert 0x26. */
 void rx_send_response_frame(void)
 {
     /* 6.2 asm 0x936200. */
@@ -274,6 +294,12 @@ void rx_send_response_frame(void)
 }
 
 
+/* По формату это Grant Ack, а не DMG CTS: fc 0x0764 (расширение управления 7) и 7 Б тела
+ * (Reserved + BF Control, 9.3.1.18); вызывается на принятый Grant (r37.10, случай 9).
+ * СРОК: Grant Ack — через SIFS 3 мкс после Grant (802.11-2020 10.39.4, 10.3.2.3.3). Медленный путь
+ * через switch rx_flow_handle_frame; здесь до 0x37000020 — расчёт длительности,
+ * direct_tx_init_rx_desc (~15) и tx_send_imm_response (~60); тело (7 Б) пишется после 0x37000020.
+ * Как у vendor 0x936320; запас не замерен (единицы–десятки). Срыв — поздняя команда, assert 0x26. */
 void rx_send_dmg_cts(void)
 {
     /* 6.2 asm 0x936320. */
@@ -367,7 +393,11 @@ u32 rx_flow_substep_uc(struct tx_ctx_s *a)
  * rx_frame_tx_resp_seq. Гибрид «наш rx_flow_run + vendor rx_flow_handle_frame» с +4 выдерживал
  * (2 из 2), с нашим обработчиком — нет (2 из 2). Поэтому обработчик зовёт эту функцию сам, сразу
  * по решению (см. хвост rx_flow_handle_frame): без его эпилога и проверок rx_flow_run после
- * возврата. Порядок команд MAC тот же, между возвратом и 0x1b001111 vendor их не шлёт. */
+ * возврата. Порядок команд MAC тот же, между возвратом и 0x1b001111 vendor их не шлёт.
+ * Стандарт: первая PPDU ответа RD-ответчика — через SIFS после RDG PPDU (802.11-2020 10.29.4);
+ * следующий кадр TXOP держателя — через SIFS после Ack/BlockAck (10.23.2.8); aSIFSTime 3 мкс
+ * (Table 20-30), допуск DMG −0 %/+10 %×(aSlotTime − aAirPropagationTime) ≈ +0,49 мкс ≈ 80 тактов
+ * (10.3.2.3.3). Сюда ведут и rx_flow_step (держатель TXOP принял Ack/BA), и RD-ветка обработчика. */
 static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx_s *ctx)
 {
     u32 a, b;
@@ -416,6 +446,17 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
     ctx->flags = (ctx->flags & ~(1u << 12)) | (1u << 5);
 }
 
+/* СРОК: весь путь от конца принятого кадра до вызова rx_flow_handle_frame / rx_flow_step входит
+ * в срок ответа через SIFS 3 мкс (802.11-2020 10.3.2.3.3; Ack 10.3.2.11, BlockAck 10.25.3,
+ * DMG CTS 10.3.2.9, RD 10.29.4). Вход при состоянии 2/3/5: от выхода из цикла ожидания
+ * r42.14/r49.13 (ХРУПКО ниже) до bl rx_flow_handle_frame ~32 инструкции + латч PHY (~4)
+ * (vendor 0x9311e4…0x93146c ~38); вход при состоянии 0 (кадр уже кончился): весь пролог
+ * ~50 инструкций + sls_clear_rx_state (6) + 3 команды 0x1d/0x4d с nop — как у vendor. Ветка
+ * txrx_state2 б2 добавляет rx_mode_configure (~190 инструкций, 12 вызовов) и mac_load_tx_key — так
+ * же у vendor (0x9313d8). Запас общий с rx_frame_tx_resp_seq: единицы. Не добавлять код на этом
+ * пути (трассу 0xeeee.. тоже) без замера tools/arcemu/resp_lat.py. Порог SIFS_CNT ≥ 0x120
+ * (1 мкс + 32 такта) при состоянии 5 — сторож vendor: опоздавший вход не шлёт 0x1f006000…
+ * 0x6000101 (rx_not_ready). */
 UC_HOT
 u32 rx_flow_run(void)
 {
@@ -527,7 +568,9 @@ u32 rx_flow_run(void)
         uc_mac_cmd(0x2004000);
         uc_nop3();
         {   /* ХРУПКО: тайминг без запаса. Как vendor: 4 инструкции на проход;
-             * -Os уводил проверку r49 за дальний переход (6a30636f). */
+             * -Os уводил проверку r49 за дальний переход (6a30636f).
+             * Отсюда (конец кадра: r42.14 / BRP-стадия r49.13) отсчитывается SIFS до ответа
+             * (802.11-2020 10.3.2.3.3); задержка выхода — до одного прохода (4 инструкции). */
             u32 t;
             __asm__ volatile("1:\tmov\t%0,r42\n\tbbit1\t%0,14,2f\n"
                              "\tmov\t%0,r49\n\tbbit0\t%0,13,1b\n2:" : "=&r"(t) :: "memory");
@@ -661,7 +704,12 @@ done:
  * всё равно ждёт r45). Эмулятор (80 сидов): до 0x37000020 на 17..25 инструкций (медиана
  * 20) меньше vendor, до 0x19000001 — на 20..28; железо: гибрид 3 из 3 nolost (iperf 240 с),
  * прежняя -Os версия — ошибка в каждой загрузке. Не добавлять код между входом
- * rx_flow_handle_frame и командой 0x19000001 без замера (tools/arcemu/resp_lat.py). */
+ * rx_flow_handle_frame и командой 0x19000001 без замера (tools/arcemu/resp_lat.py).
+ * Стандарт: Ack (802.11-2020 10.3.2.11), BlockAck на A-MPDU/BAR (10.25.3, 10.25.6), DMG CTS на RTS
+ * (10.3.2.9) — через SIFS; aSIFSTime 3 мкс (Table 20-30), допуск DMG −0 %/+10 %×(aSlotTime −
+ * aAirPropagationTime) ≈ +0,49 мкс (10.3.2.3.3). Момент запуска ответа, по гипотезе
+ * docs/LMAC-PROTOCOL.md, держит сам MAC (0x886d10, см. rx_flow_step); от uc нужно, чтобы команды
+ * успели раньше этого момента — опоздание MAC отмечает битами MAC_HW_ICR (см. выше). */
 static inline __attribute__((always_inline)) void
 rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast)
 {
@@ -929,6 +977,10 @@ chk:                                            /* 0x93215c */
         u8 sta0 = *(u8 *)ctx;
         u32 r15 = 0;
         if ((arc_core_rd(36) & (1u << 9)) && (arc_core_rd(38) & (1u << 12))) {
+            /* СРОК: ожидание r53.bap_tx_update_ind (таймаут — GP-таймер 0x23010003, единица не
+             * установлена; при таймауте assert 0x3b) стоит до запроса ответа в MTP — каждый такт
+             * ожидания идёт в срок SIFS 3 мкс (802.11-2020 10.3.2.3.3). Как у vendor 0x932726;
+             * запас определяет BAP, не код. */
             if (mac_cmd31_mode != 0) {
                 if (!(arc_core_rd(53) & 1)) {
                     uc_mac_cmd(0x23010003);
@@ -1045,6 +1097,11 @@ chk:                                            /* 0x93215c */
             return 1;
         }
         ctx->flags &= ~1u;
+        /* СРОК: медленный путь ответа — тот же срок SIFS 3 мкс (802.11-2020 10.3.2.3.3), но без
+         * переноса записей. Случаи 1..3 уходят быстрым путём выше (при r16 ≠ 0 — в продолжение
+         * TXOP), сюда по коду не доходят; 7 (DMG DTS), 8 (CF-End), 9 (Grant Ack) — всегда здесь.
+         * Путь длиннее быстрого на ~10 инструкций до switch + вызов; запас не замерен. См. rx_send_response_frame / rx_flow_send_imm_response /
+         * rx_send_dmg_cts. */
         switch (r5) {
         case 0:
             break;
@@ -1333,6 +1390,12 @@ u32 rx_funcs_rx_flow(void)
     return ret;
 }
 
+/* СРОК: путь держателя TXOP от принятого Ack/BlockAck (или ответа RD) до продолжения TXOP
+ * (rx_txop_continue в rx_flow_run) — следующий кадр через SIFS 3 мкс (802.11-2020 10.23.2.8,
+ * 10.29.3, 10.3.2.3.3). Вся функция на этом пути: ~330 инструкций кода (998 Б против 1080 Б у
+ * vendor 0x931acc), основной проход оценочно 100–150 + rx_dispatch_by_g_8005f8 (с возможным
+ * ожиданием BAP) + rx_switch_to_rx_mode; запас общий с rx_txop_continue (ХРУПКО: +4 nop там
+ * уже ломают RD-ветку) — единицы. */
 void rx_flow_step(struct tx_ctx_s *a, u32 b)
 {
     /* 6.2 asm 0x931acc. */
@@ -1468,6 +1531,13 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
     rxf.flags = r5 | (rxf.flags & ~2u);
     r15->flags = (r13 & 1) | (r15->flags & ~1u);
 
+    /* СРОК: 0x886d10 (момент запуска ответа RX→TX) = SIFS_CNT на момент чтения r55 + поправка
+     * {[0x802588] + 13 тактов, [0x802589] мкс} (docs/LMAC-PROTOCOL.md). Поправка постоянная, значит
+     * путь r55 → st [0x886d10] должен быть таким же, как у vendor: у нас 18 инструкций + цикл
+     * mac_clk_div165 (vendor 0x931e72…0x931ea0 — 16 + такой же цикл), запас: нет (калибровка, а не
+     * окно; +2 инструкции ≈ +2..4 такта при поправке 13 тактов). Лишние инструкции сдвигают запуск ответа на их длительность (аппаратный; смысл формулы —
+     * гипотеза docs). Следом 0x14000206 и выбор TX 0x37000005/0x37000002/0x3f — до продолжения TXOP
+     * через SIFS (802.11-2020 10.23.2.8). */
     if (r13 == 1) {
         u8 sp[4];
         uc_mac_cmd(0x4d000000);
@@ -1483,6 +1553,12 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
     }
 }
 
+/* СРОК: вызывается из rx_flow_handle_frame до запроса ответа в MTP — вся функция в сроке SIFS
+ * 3 мкс (802.11-2020 10.3.2.3.3): QoS Data/BAR → Ack/BlockAck (10.3.2.11, 10.25.3), RTS → DMG CTS /
+ * DMG DTS (10.3.2.9, 10.39.6.6.2), CF-End (10.39.8.1), Grant → Grant Ack (10.39.4). Размер 1220 Б
+ * против 1468 Б у vendor 0x932e40; ветка RTS — два чтения TSF (здесь и в grant_detect_step,
+ * по ~9 инструкций с командой 0x4d и nop); ветка данных — ожидание r53.3 без ограничения (ниже).
+ * Запас общий с rx_frame_tx_resp_seq: единицы. Логи uc_log_emit* — только на ветках без ответа. */
 UC_HOT
 u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out)
 {
@@ -1538,6 +1614,9 @@ bap_rx_check:   /* L_932fd0 */
     r17 = (((arc_core_rd(39) >> 8) & 0x3f) == 8) ? 1 : 0;
     r16 = arc_core_rd(36);
     if (!(r17 || (r16 & (1u << 17)))) {
+        /* СРОК: ожидание r53.3 (BAP: приём учтён) без таймаута — на пути до Ack/BlockAck через SIFS
+         * (802.11-2020 10.3.2.3.3). Как у vendor 0x933004 (тоже без ограничения); запас задаёт BAP.
+         * Если BAP не ответит — uc висит здесь (метка 0xff31 в uc_wait_marker). */
         VOL(uc_wait_marker) = 0xff31;     /* метка ожидания: gcc выкидывал запись как мёртвую */
         while (!(arc_core_rd(53) & (1u << 3)))
             ;
@@ -1648,6 +1727,16 @@ not_grant:   /* L_93339c */
     return 0;
 }
 
+/* СРОК: разбор отчёта в фазах SLS/RTS — несколько ответов со сроком:
+ *  - RTS (r37.0) → DMG DTS через SIFS 3 мкс (802.11-2020 10.39.6.6.2, 10.3.2.3.3): до
+ *    rx_send_response_frame — uc_wait_event_busy, поиск станции (sta_tbl_find_by_mac ~23),
+ *    mac_mode_switch_after_ppdu (~55); запас не замерен (единицы–десятки), как у vendor 0x9316cc;
+ *  - фаза 0x100000/0x200000: SSW с CDOWN = 0 (r39.15) → команды 0x37000005/0x37000002/0x3f для
+ *    SSW-Feedback через MBIFS 9 мкс (10.42.2.4, 10.42.6.2, 10.3.2.3.10); до них — запись IFS = MBIFS
+ *    (HW_MAC_IFS_SIFS), phy_params_snapshot (~90), sta_set_tx_sector (~38). Путь — сотни
+ *    инструкций при сроке ~1485 тактов; запас оценочно десятки–сотни;
+ *  - фаза 0x800000: SSW-Feedback → SSW-Ack через MBIFS (10.42.2.5) — rx_switch_to_rx_mode и
+ *    sta_set_tx_sector. Срыв — инициатор не получает FB/ACK, повтор SLS. */
 void rx_funcs_handle_ppdu_report(void)
 {
     /* 6.2 asm 0x9316cc. */
@@ -1806,6 +1895,10 @@ out:
 }
 
 
+/* СРОК: вызывается из rx_flow_step — на пути держателя TXOP от Ack/BlockAck до следующего кадра
+ * через SIFS 3 мкс (802.11-2020 10.23.2.8, 10.3.2.3.3). Режимы 1/2 при mac_cmd31_mode ждут
+ * r53.bap_tx_update_ind с таймаутом GP 0x23010003 (assert 0x3b) — время ожидания задаёт BAP;
+ * код вокруг как у vendor 0x9333fc. Запас общий с rx_txop_continue: единицы. */
 u32 rx_dispatch_by_g_8005f8(void)
 {
     /* 6.2 asm 0x9333fc. */
@@ -1911,6 +2004,13 @@ u32 rx_dispatch_by_g_8005f8(void)
 }
 
 
+/* СРОК: после ответа (Ack/BA/CTS/DTS…) РЧ надо вернуть в приём до преамбулы следующего кадра
+ * партнёра, который идёт через SIFS 3 мкс после конца нашего (802.11-2020 10.3.2.3.3; после DMG CTS —
+ * данные, 10.3.2.9). От tx_end_event (r42.15, uc_spin_until_event) до записи HW_ABIF_DVS_RF_CTRL =
+ * rf_set_rx: mac_evt_enable_bit_sync_b (~16 инструкций + ожидание r42.14 — подтверждение команды
+ * MAC) + ~10 — как у vendor 0x9336d8. Запас оценочно сотни тактов (не замерен; время подтверждения
+ * 0x27… не известно). Срыв — пропуск начала кадра партнёра (нет BA/повторы). Всё до ожидания
+ * r42.15 (трасса 0xcac0xx, rx_mode_configure при b == 5) выполняется во время передачи ответа. */
 void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c)
 {
     /* 6.2 asm 0x9336d8. */
@@ -2032,7 +2132,15 @@ prep:                                           /* 0x9346d0: биты 0..4 уж�
     mac_prepare_txrx_window(r0, 2);
 }
 
-/* 0x938b90: всегда возвращает 1. gp+204 = 0x8005f4, gp+208 = 0x8005f8. */
+/* 0x938b90: всегда возвращает 1. gp+204 = 0x8005f4, gp+208 = 0x8005f8.
+ * СРОК: (1) запрос в MTP → r43 → 0x3e/0x37000020 — та же последовательность, что rx_txop_continue;
+ * когда вызов продолжает TXOP после Ack/BA (rx_handle_status_flags), следующий кадр — через SIFS
+ * 3 мкс (802.11-2020 10.23.2.8). Если rx_txop_continue уже отправил (flags б5), часть пропускается.
+ * Путь до 0x37000020 ~40 инструкций + ожидание r43, как у vendor; запас не замерен.
+ * (2) после r42.15 (конец передачи) — mac_q_tx_ppdu (при б3) и uc_wait_one_event(6) стоят ДО
+ * записи rf_set_rx (как у vendor): РЧ должна вернуться в приём до Ack/BlockAck партнёра на наш
+ * кадр, который идёт через SIFS (10.3.2.11, 10.3.2.3.3) — запас зависит от этих ожиданий, не
+ * замерен; если РЧ всё ещё в TX — Ack не принят, повтор. */
 u32 rx_program_mac_and_wait(struct tx_ctx_s *a)
 {
     struct tx_ctx_s *r14 = a;
@@ -2322,7 +2430,10 @@ void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp)
 /* ХРУПКО: число отсчётов зависит от скорости цикла, запаса нет (6a30636f).
  * O2: 0x883830 — живой SNR текущего кадра, число отсчётов до конца кадра идёт
  * в выбор MCS (0x802208/0x800560). -Os не разворачивал 8 чтений (7 инструкций
- * между чтениями против 1–2 у vendor) — отсчётов было в ~3.4 раза меньше. */
+ * между чтениями против 1–2 у vendor) — отсчётов было в ~3.4 раза меньше.
+ * Выход по r42.14/r49.13 проверяется раз в 8 отсчётов: после конца кадра — до одного прохода
+ * (~40 инструкций, 8 чтений PHY) + хвост ~30 до возврата; это время входит в путь rx_flow_run до
+ * ответа через SIFS 3 мкс (802.11-2020 10.3.2.3.3). У vendor так же (8 чтений на проход). */
 __attribute__((optimize("O2")))
 void rx_flow_measure_snr_select_best(void)
 {

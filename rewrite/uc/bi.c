@@ -138,7 +138,10 @@ void bi_after_enter_dti(struct bi_ctx_s *c)
 }
 
 /* bi__remaining_time_us (6.2 asm 0x92dc44): остаток NAV, max(·, 0) и знаковый min с max_us —
- * как у vendor (max/min); стоит на пути ответа (rx_send_response_frame). */
+ * как у vendor (max/min); стоит на пути ответа (rx_send_response_frame).
+ * СРОК: на медленном пути DMG DTS — через SIFS 3 мкс (802.11-2020 10.39.6.6.2), см.
+ * rx_send_response_frame (rx.c): ~16 инструкций, из них чтение TSF (0x4d000005 + 3 nop); запас:
+ * единицы–десятки (не замерен). Удлинять нельзя — опоздание ответа. */
 u32 bi_remaining_time_us(void)
 {
     if (!(rx_nav.flags & 1u))
@@ -552,6 +555,11 @@ void bi_rx_slot_handler(struct aw_win_s *w)
         internal_tx_clear_pending_bit(0);
         return;
     }
+    /* СРОК (выдержка): пауза перед первым ATIM AP в окне — 0x960 проходов × 2 nop_s (ZOL) ≈ 4800 тактов
+     * ≈ 29 мкс при 165 МГц; задаётся скоростью цикла, а не таймером (vendor L_92b51e — тот же цикл).
+     * Смысл паузы (готовность станций к приёму в ATI, 802.11-2020 10.39.3) не установлен; запас не
+     * оценён. Тело/счёт цикла и тактовую без замера не менять: короче — ATIM раньше готовности партнёра,
+     * длиннее — меньше времени окна (порог остатка в bi_rx_start_rx_window). */
     if (uc_role_ap != 0 && w->atim_armed == 0) {   /* breq.d r10,0 → пропуск */
         /* vendor L_92b51e..L_92b52e: mov_s r2,0x4b; asl r2,r2,5; mov lp_count,r2; lp 0x960 × 2×nop_s */
         arc_zol_nops2_shl(0x4b, 5);

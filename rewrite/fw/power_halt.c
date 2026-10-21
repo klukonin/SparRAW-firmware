@@ -104,6 +104,12 @@ __attribute__((section(".textlate"))) void hw_modes_enable_pll(void)
     abif_power_up_analog(0);
 }
 
+/* СРОК: при reload — загрузка прочитанного TSF обратно (0x0d000006 в mac_reload_tsf64) должна
+ * последовать за чтением 0x886eb8 как можно быстрее: всё время между ними TSF теряет
+ * (аппаратный срок — 1 мкс, шаг TSF). Путь ~15 инструкций (vendor 0x8e99dc ~15) — потеря
+ * < 1 мкс; прерывания НЕ запрещены — ISR между чтением и загрузкой отнимет у TSF всё своё
+ * время (десятки мкс): у AP сдвиг TBTT, у STA — до следующего бикона. Достижим только через
+ * power_halt_seq с флагами 6 и 10 (UT 0x309), штатные пути его не зовут. */
 __attribute__((section(".textlate"))) void mac_set_usec_clk_div(u32 div, u32 reload)
 {
     u32 v = (((div >> 1) + 1u) << 16) | div;

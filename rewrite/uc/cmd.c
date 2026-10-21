@@ -60,6 +60,12 @@ u32 rs_start(u32 a, u32 b)              /* 6.2 asm 0x9300ec */
     }
     return 1;
 }
+/* СРОК: r40 (BACKOFF_IFS_STATUS) читается не раньше 3 тактов после 0x1d (аппаратный: задержка
+ * локального чтения MAC); idle_detect == 5 ждётся без ограничения. От mov r32 до первого чтения r40
+ * 9 инструкций (vendor 0x92c5e4: 9), опрос 7 инструкций на проход (vendor 6); запас по задержке
+ * чтения — единицы инструкций. Срыв: раннее чтение даёт значение прежнего селектора (ложный выход
+ * при совпадении с 5); если MAC не придёт в 5 — uc висит до сторожевого L2 (в ucode_cmd_0x01_handler
+ * — с запрещёнными прерываниями). Вызывается на пути RX→TX ответа (mac_mode_switch_core_and_rf). */
 void mac_rf_switch_cmd1f(u32 a)          /* 6.2 asm 0x92c5e4 */
 {
     uc_mac_cmd(0x1f000601);
@@ -490,6 +496,9 @@ static void ucode_cmd_snap_r40(struct rx_meas_ctx *m, u32 b, u32 mode);
 void ucode_cmd_0x38_handler(struct rx_meas_ctx *m, u32 b) { ucode_cmd_snap_r40(m, b, RX_MEAS_PHYSTAT); }
 /* Обработчики 0x29/0x2b/0x2f/0x38/0x3d (vendor 0x936014 и т. д.): для режима mode и
  * состояния 2 — снимок r40 в группах 0x5000/0x6000 → a+0x18/0x1c, [a+0xc] = b. */
+/* СРОК: st r40 не раньше 3 тактов после 0x1d (аппаратный): между mov r32 и чтением 5 инструкций
+ * (st.ab, bclr, 3×nop — как vendor 0x936014); запас — единицы инструкций. TSF_LOW и TSF_HIGH —
+ * разные выборки (~12 инструкций между чтениями), см. mac_read_tsf64_uc. */
 static void ucode_cmd_snap_r40(struct rx_meas_ctx *m, u32 b, u32 mode)
 {
     if (!(m->kind == mode && m->state == 2))
@@ -843,6 +852,10 @@ void ucode_cmd_0x01_handler(const struct lmac_cmd_rx_on *c)
         else
             r1c = tx_ctx_pool.cur->rf_word;
         mac_set_rf_chain_state(1, r1c);
+        /* СРОК: прерывания запрещены на время двух MAC-команд и mac_rf_switch_cmd1f — ожидания
+         * idle_detect == 5 без ограничения (как vendor 0x93ab0c…0x93ab50). Реакция L1/L2
+         * (TBTT, GP-таймеры) задерживается на всё ожидание (аппаратный срок реакции не установлен);
+         * запас не оценён. Срыв: опоздание BTI/окон BI на время ожидания. */
         u32 saved = arc_lr(ARC_STATUS32);
         arc_flag(saved & ~2u);
         u32 r0d = (rx_nav.ev_mask & mac_chain_mask) | (1u << 27);
@@ -947,6 +960,8 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
     u32 r0 = c->op;
     u32 r13 = 0;
 
+    /* СРОК: та же последовательность MTP/BAP с ожиданиями без ограничения и паузой выборки r47,
+     * что в ucode_cmd_rf_program (см. там), с qid из команды. */
     if (r0 == 4) {
         u8 r13b = c->qid;
         u8 r16 = *(u8 *)cidp;
@@ -1087,6 +1102,11 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
         txop_dma_bit1_pending = 1;
 }
 
+/* СРОК: порядок и паузы MTP/BAP (аппаратный): 0x1c000006 → 0x46… → ждать r53.2 (bap_rel_done_ind)
+ * → селектор r47[1] → 3 nop → ждать r47.0 = 0 (counter_interface_busy) → 0x44/0x45/0x46 → запрос MTP
+ * (0x1b/0x16/0x17 + 3 nop) → r43.31 → r51 → r45.31. Все ожидания без ограничения; выборка r47 —
+ * 5 инструкций после mov r32 (vendor 0x937e38… так же); запас — единицы инструкций. Срыв: чтение
+ * r47 прежней группы, ответ MTP прошлого запроса; при молчании MAC — зависание uc. */
 /* Общая RF-последовательность программирования (sub-cmd 1/2 в 0x0b). */
 static void ucode_cmd_rf_program(void)
 {

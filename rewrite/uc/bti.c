@@ -114,6 +114,7 @@ void aw_fold_peer_masks(u32 a, u32 b, u32 c)
     }
 }
 
+/* СРОК: на пути между соседними SSW ответчика (SBIFS) — см. abft_responder_tx_ssw. */
 void abft_send_ssw_feedback(u32 a)
 {
     (void)a;
@@ -301,6 +302,12 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
         if (bti_bi2_event_step(c) == 0)
             return;
     }
+    /* СРОК: GP0 = Duration принятого маяка − 4 мкс считается от команды 0x4f, а BTI кончается через
+     * Duration от конца этого маяка (802.11-2020 10.42.5.1). 4 мкс vendor списывает на путь
+     * rx_frame_event (r42.12) → 0x4f: bti_bi2_event_step + bti_worker_bi2_step (ожидание ppdu_report
+     * r42.16, сверка BSSID, копия BI Control, метрика r40, mac_mon) ~250 инструкций (vendor ~ так же);
+     * запас: сотни тактов (~2 мкс из 4); съедают ветка rx_meas (захват кадра) и вытеснение L2.
+     * Путь длиннее 4 мкс — GP0 после конца BTI, сетка A-BFT станции (bti_arm_period_gp0) позже AP. */
     u32 n = rx_buf_duration;
     u32 r1 = (n < 4) ? 4 : (n - 4);             /* cmp 4; mov.cs 4; sub.cc 4 */
     u32 mlo = r1 * 0xa5;
@@ -380,6 +387,9 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
     }
     bti_measure_frame_duration((u32)sp);
     bi_ctrl_program_mac_bcon();
+    /* СРОК: конец пути «bi1_event (до TBTT) → маяк» — см. l1_task_main_step: всё от входа до этого
+     * ожидания slot_event (bti_measure_frame_duration с тремя спинами MTP, bi_ctrl_program_mac_bcon)
+     * должно уложиться в упреждение bi1_event. */
     uc_wait_event_busy(0x2u | (1u << 14), 0);   /* 0x4002 */
     if (arc_core_rd(42) & (1u << 14)) {           /* bbit0 r4,0xe → L_923ea4 */
         bti_busy_cancel_cnt += 1;               /* L_923e8a */
@@ -414,6 +424,12 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
         uc_mac_cmd(0x14000400);
         if (arc_core_rd(42) & (1u << 7))          /* btst r3,0x7; bne → L_9241c8 */
             uc_assert((u32)__builtin_return_address(0), 0x75);
+        /* СРОК: GP0/GP1/GP2 (сетка A-BFT AP: конец A-BFT, границы SSW-слотов) отсчитываются от команд
+         * 0x4f/0x50, а не от события: A-BFT — через MBIFS после BTI, допуск −0/+10 %×(aSlotTime −
+         * aAirPropagationTime) ≈ +0,49 мкс (802.11-2020 10.3.2.3.10, 10.42.5.1). От txop_event (r42.7)
+         * до 0x4f ~21 инструкция, до 0x50 ~43 (vendor 0x923fd4 — та же последовательность); запас:
+         * десятки. Код между спином и командами или вытеснение L2 сдвигают сетку слотов AP позже сетки
+         * станции (она строит её по Duration маяка) — SSW станций ложатся на край слота. */
         while (!(arc_core_rd(42) & (1u << 7)))    /* L_923fd4: bbit0 → spin */
             ;
         uc_mac_cmd(0x14000000);
@@ -535,6 +551,12 @@ void aw_worker_collect_awake_peers(struct aw_win_s *w)
     FWSH(fwq_tx_avail, aw_info) = w4;
 }
 
+/* СРОК: SSW ответчика начинается в начале своего SSW-слота (802.11-2020 10.42.5.2, 10.42.2.3.2).
+ * От gp1_end (r54.7, граница слота) через uc_spin_until_event4 → 0x49000080 → abft_arm_response_window
+ * → tx_ctx_alloc_next → вход abft_responder_tx_ssw до чтения SIFS_CNT ~95 инструкций (vendor ~85; пролог
+ * tx_ssw у нас через __st_r13_to_r24); запас: десятки–сотня тактов до порога SIFS_CNT 0x160 (1 мкс +
+ * 96 тактов), если SIFS_CNT идёт от границы слота (не установлено). Срыв — tx_ssw возвращает 0, слот
+ * пропущен, новый случайный слот или следующий BI (A-BFT не пройден). */
 void abft_responder_respond_flow(struct sls_peer_rec *r)
 {
     /* 6.2 asm 0x930370 (632 Б). Ответ в A-BFT: ждать слот (r14 слотов, r47 — случайное),
@@ -623,6 +645,8 @@ u32 abft_responder_tx_ssw(u32 a)
     __asm__ volatile("norm %0, %1" : "=r"(n) : "r"(r11));
     u32 r13 = (u8)(n + 1);
     u32 r16 = r11 & ~(1u << (0x1f - r13));
+    /* СРОК: аппаратная отсечка опоздания — SIFS_CNT ≥ 0x160 (1 мкс + 96 тактов) или 0 → SSW в этом
+     * слоте не передаётся (как vendor 0x93095a); путь до чтения — см. abft_responder_respond_flow. */
     uc_mac_cmd(0x4d000000);
     arc_nops(3);
     u32 aux55 = arc_core_rd(55);
@@ -658,6 +682,14 @@ u32 abft_responder_tx_ssw(u32 a)
     ssw_tpl_ra[1] = r18->bssid[1];
     ssw_tpl_ra[2] = r18->bssid[2];
     u32 r17 = 1;
+    /* СРОК: соседние SSW ответчика — через SBIFS = 1 мкс, допуск aSBIFSAccuracy 0,03 мкс (802.11-2020
+     * 10.3.2.3.8, 10.42.2.3.2); FSS кадров должны уложиться в aSSDuration (10.42.5.2). Путь между
+     * кадрами (от tx_end r42.15 до запроса 0x19 и спина r45: шаблон, mac_evt_enable_bit_sync, 0x2d,
+     * abft_send_ssw_feedback — 10 Б в FIFO и ожидание direct TX, mac_program_tx_common, спин MTP r43)
+     * ~230 инструкций ≈ 1,5–2 мкс + задержки MTP (vendor ~ так же); запас: нет — SBIFS программно не
+     * выдерживается ни у нас, ни у vendor. Хвост пачки уходит за aSSDuration и может наехать на
+     * SSW-Feedback AP (через MBIFS после aSSDuration): AP 6.2 держит слот на 20 мкс дольше (таблица 3,
+     * STANDARD-MAPPING.md), AP по стандарту (6.4, чужие) — нет. Удлинение пути — меньше SSW в слоте. */
     do {
         uc_mac_cmd((*(u8 *)&rf_chain_cfg << 16) |
                            ((r14 << 1) | 0x2d000001 | (r13 << 10)));   /* asl r11,r14 = r14<<1 */
@@ -1026,6 +1058,11 @@ void bti_arm_period_gp0(void)
 
     u32 r14 = period_tab[r5 - 4];   /* ldw.as [r2,r5] */
 
+    /* СРОК: остаток до следующей границы SSW-слота считается по GP_CLK2_TIMER (r55, 0x4d00000a) и
+     * пишется в GP1 (0x50) от момента команды; слоты смежны (802.11-2020 10.42.5.2), сетка станции
+     * должна совпадать с сеткой AP с точностью ~aAirPropagationTime (0,1 мкс). От чтения r55 до 0x50
+     * ~11 инструкций + 4 на каждый уже прошедший слот в цикле вычитания (vendor 0x930838 — тот же
+     * цикл); запас: десятки. Каждый такт здесь сдвигает границы слотов станции позже AP. */
     if (arc_core_rd(54) & 0x80u) {                /* btst r1,0x7 */
         u32 r4 = (((u32)bcn_rx.bi_ctrl[0] | ((u32)bcn_rx.bi_ctrl[1] << 8)) >> 7) & 7;
         r4 += 1;

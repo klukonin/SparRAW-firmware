@@ -317,7 +317,10 @@ void l1_task_dispatch(u32 a, u32 b)
     }
 }
 
-/* Точка входа L1-таска (0x92c974). */
+/* Точка входа L1-таска (0x92c974).
+ * СРОК (задержка L1): режим 0 (вектор 8) разбирает всё кольцо команд fw внутри прерывания уровня 1 —
+ * bi1_event (вектор 9) и GP-события r54 того же уровня ждут конца разбора; длина ограничена только
+ * числом команд в кольце (vendor — так же). Добавляется к пути TBTT → маяк (l1_task_main_step). */
 void l1_task_entry(u32 mode)
 {
     if (mode == 0) {
@@ -383,7 +386,16 @@ void l1_task_entry(u32 mode)
     }
 }
 
-/* Главный шаг L1 (0x92caf4) — портировано. */
+/* Главный шаг L1 (0x92caf4) — портировано.
+ * СРОК: путь TBTT → маяк. bi1_event (r42.4) — пробуждение до TBTT (упреждение по перезарядке 0x886d18
+ * ≈ 8 мкс — гипотеза, HARDWARE-BLOCKS.md); BTI начинается в TBTT (802.11-2020 10.39.2). От bi1_event до
+ * ожидания slot_event (uc_wait_event_busy(0x4002) в bti_worker_bti_transmitter_beacon_sweep_flow):
+ * 3 трассировочные команды здесь, l1_task_dispatch(0) → bi_timing_snapshot_b (2× TSF64) → автомат BI →
+ * bti_prepare_sweep_set (aw_set_new_tbtt) → развёртка (tx_ctx_alloc_next, bti_measure_frame_duration
+ * с тремя спинами MTP r43/r45/r47, bi_ctrl_program_mac_bcon) ~600 инструкций + задержки MTP (vendor
+ * ~ так же; aw_set_new_tbtt у нас короче — PS вырезан); запас: не установлен (единицы мкс, если
+ * упреждение 8 мкс). busy_event (r42.19) проверяется раньше bi1_event: rx_flow в той же итерации
+ * откладывает TBTT. Срыв — маяк позже TBTT (сдвиг BTI и A-BFT), при busy2 — маяк в этом BI пропущен. */
 void l1_task_main_step(void)
 {
     /* 6.2 asm 0x92caf4. */

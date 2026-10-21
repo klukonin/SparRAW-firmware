@@ -282,6 +282,16 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
 }
 
 
+/* СРОК: запуск передачи (tx_submit_frame: 0x1b/0x16/0x17 → r43 → r45 → 0x18008000) после
+ * события слота CBAP (r42.slot_event, ожидание в mac_select_all_sectors_and_wait) и проверки
+ * CCA (r40[a].cca_ppdu_comp, !r42.busy2) — пока не кончился слот отсрочки (aSlotTime 5 мкс,
+ * 802.11-2020 10.23.2.2, 10.39.5), иначе проверка CCA устаревает и растёт риск коллизии.
+ * Аппаратный срок MAC (что считает «поздно» после 0x29000001) не установлен.
+ * Путь ~160 инструкций + ответ MTP (vendor ~ так же, тот же порядок команд); запас: сотни
+ * тактов до конца слота. Тот же участок «слот → CCA → mac_program_rx_window(5) → 0x19000001»
+ * есть в internal_tx_flow_sm2 (~78 инструкций), direct_tx_send_from_desc (~86), tx_bcast_flow,
+ * bcon_txss_sweep_step (b == 5), txop_await_cts_ppdu (txss.c). Срыв: поздний старт после
+ * слота — коллизия с соседом, отсчитавшим отсрочку; кадр/TXOP теряется, растёт CW. */
 void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 {
     u32 r0 = mac_sel_shadow & 0xffff0fff;
@@ -357,6 +367,16 @@ void direct_tx_send_with_seq(u32 a, u32 b, u32 c)
     direct_tx_issue_cmd_33();
 }
 
+/* СРОК: команда передачи ответа 0x19000001 (а за ней кадр в FIFO у вызывающего) до SIFS
+ * (3 мкс, допуск −0/+0.49 мкс) от конца принятого кадра — DMG CTS на RTS, DMG DTS, немедленный
+ * ответ (802.11-2020 10.3.2.3.3, 10.3.2.9). Зовут rx_send_dmg_cts / rx_send_response_frame /
+ * rx_flow_send_imm_response (rx.c) из ветки rx_flow_handle_frame — путь до входа сюда и
+ * подача кадра после 0x19 (MCS ctrl_frame_mcs = 1, SC) — там же.
+ * Здесь: вход → 0x19000001 ~79 инструкций (vendor 0x9385d8 ~93, с __st_r15_to_r13); запас:
+ * не измерен, по аналогии с rx_frame_tx_resp_seq (ХРУПКО, rx.c) — единицы-десятки
+ * инструкций. Срыв: ответ позже SIFS — инициатор RTS не получает CTS (CTSTimeout, повтор
+ * с отсрочкой); если MAC поднимает MAC_HW_ICR б5 на позднюю команду, как у ACK/BA, — assert
+ * 0x26. Не добавлять код между входом и 0x19000001. */
 void tx_send_imm_response(u32 a, u32 b, u32 c)
 {
     uc_mac_cmd((a << 4) | 0x3e000000);
@@ -521,7 +541,17 @@ void tx_slot_dispatch(u32 a)   /* 6.2 asm 0x938e34 */
 }
 
 /* 0x93869c. r0 = desc, r1 = sta, r2/r3 — сектор из [gp,-12] | 0x30 | r3<<8 (если r2 != 0),
- * r4 — источник RF-цепей (0x801024 при r4 != 0), r5 — rate, r6 — длина. */
+ * r4 — источник RF-цепей (0x801024 при r4 != 0), r5 — rate, r6 — длина.
+ * СРОК (1): слот CBAP → 0x19000001 — см. tx_cca_check_and_send; здесь ~86 инструкций.
+ * СРОК (2): после 0x19000001/r45 кадр дописывается в FIFO во время передачи: RA (r34 ×3),
+ * ожидание события 6, проверка r47 (RFC_SWITCH2TX), mac_set_rf_chain_state, 0x33000443,
+ * хвост 7 Б, 0x33000002 — до того, как PHY дойдёт до этих байт PSDU (аппаратный срок).
+ * Кадр Grant (fsched_tx_ctrl_frame) идёт с ctrl_frame_mcs = 1 (SC): преамбула+заголовок
+ * ~2.2 мкс (~360 тактов), байты с 10-го нужны через ~2.4 мкс после начала передачи.
+ * Путь r45 → 0x33000002 ~167 инструкций + ожидание события 6 (vendor ~172); запас: десятки
+ * тактов (не измерен; зависит от того, когда PHY реально стартует после r45). Срыв: опустошение
+ * TX FIFO — испорченный кадр в эфире / ошибка MAC. Не вставлять код между 0x19000001 и
+ * direct_tx_issue_cmd_33. */
 u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_cfg, u32 rate, u32 len)
 {
     const struct dtx_ctrl_frame *fd = (const void *)desc;   /* FC/Duration — общие для кадров direct TX */
@@ -893,6 +923,17 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
     return 0;
 }
 
+/* Keep-alive: RTS → CTS → кадр из очереди станции → ACK (6.2 asm 0x939100).
+ * СРОК: команда передачи данных 0x19000001 до SIFS (3 мкс, допуск −0/+0.49 мкс) от конца
+ * принятого CTS (802.11-2020 10.3.2.9, 10.23.2.8). Путь: выход из ожидания r42.rx_frame
+ * (itx_wait_cts_b) → rx_ppdu_is_cts_b (ждёт r42.ppdu_report, 0x32, 0x2011000, r37) →
+ * mac_program_rx_window(1) → tx_submit_frame (0x1b/0x16/0x17, r43, r45) → 0x20000400 →
+ * gp0_arm_usec_b(0xc) → 0x2008000 → 0x19000001: ~208 инструкций + задержки ppdu_report и MTP
+ * (vendor ~218). Запас: десятки инструкций (не измерен; ~300 тактов пути из 495). Срыв: данные
+ * позже SIFS — сосед может занять среду; NAV из Duration RTS (0x15000028 = 40 мкс, фиксирован)
+ * может кончиться до ACK — keep-alive считается неудачным (ka_noack, рост CW).
+ * Участок слот → CCA → RTS (0x19000001) ~78 инструкций — см. tx_cca_check_and_send.
+ * Переход TX→RX после RTS/данных (событие 5 → rf_set_rx, ~12 инструкций) — запас большой. */
 void internal_tx_flow_sm2(u32 a)
 {
     (void)a;

@@ -13,7 +13,12 @@
  *   3 → 0x92163c  mac_mode_switch_sequence(1) (assert 0x1318, если 0x886dd0 бит 0)
  *   4 → 0x921664  mac_mode_switch_sequence(0) (assert 0x1319, если 0x886dd0 бит 1)
  *   5 → 0x921624  l1_task_kick_and_dispatch_uc
- * Каждому предшествует bf_pending_clear_bit(n). Иначе — assert 0x31. */
+ * Каждому предшествует bf_pending_clear_bit(n). Иначе — assert 0x31.
+ * СРОК (задержка L1): фоновые задачи и background_bi_step идут со снятым E1 (STATUS32 бит 1) —
+ * прерывания L1 (ilink1: bi1_event/TBTT, GP-события r54 A-BFT и AW→DTI) ждут конца задачи (vendor
+ * 0x9215d2 — так же). Длина задачи (l1_task_kick_and_dispatch_uc — всё кольцо команд fw,
+ * mac_mode_switch_sequence, bf_sm_process_request_fifo) прямо добавляется к пути TBTT → маяк
+ * (l1_task_main_step); запас не оценён. Удлинять участки под снятым E1 нельзя. */
 void background_task_dispatch(void)
 {
     volatile u32 *tasks = &bg_task_pending;

@@ -22,7 +22,18 @@ __attribute__((section(".textlate"))) u32 bits_set32_s16_w4(u32 w, u32 v) { retu
 __attribute__((section(".textlate"))) u32 bits_set32_s24_w7(u32 w, u32 v) { return bf_insert_field(w, v, 24, 7); }
 __attribute__((section(".textlate"))) u32 bits_set32_s0_w12(u32 w, u32 v) { return bf_insert_field(w, v, 0, 12); }
 
-/* Ждать освобождения окна: poll 0x886608 бит 0x1f. */
+/* Ждать освобождения окна: poll 0x886608 бит 0x1f.
+ * СРОК: окно дескрипторов MACQ 0x886600..0x886618 общее с ucode (uc/txss.c
+ * qh_wait_desc_window_ready ждёт тот же бит 31 без предела, в т. ч. на пути TX uc —
+ * tx_bcast_flow, tail.c). Пока fw держит окно (от записи CTRL 0xc0000000 до
+ * macq_desc_release_window: n × (4 записи + ожидание бита 29), без запрета прерываний —
+ * TIMER0 каждые 0xce4 тактов и прочие ISR удлиняют удержание), uc стоит; срок uc
+ * (SIFS 3 мкс, 802.11-2020 10.3.2.3.3, если ожидание на пути ответа) — аппаратный.
+ * Путь удержания ~30–60 инструкций на дескриптор (vendor ~ так же); запас: зависит от того,
+ * где uc ждёт окно (открытый вопрос). Кроме того, «проверить бит 31 → писать CMD/ADDR/DATA →
+ * взвести бит 31» не атомарно (~10 инструкций у fw): uc, занявший окно в этом промежутке,
+ * получит смешанные CMD/ADDR — у vendor так же. При sched_fixed_active (AP) fw окно не
+ * удерживает (0x40000000) — только STA. */
 __attribute__((section(".textlate"))) void macq_desc_wait_window_free(void)
 {
     if (macq_flag() == 0) {
