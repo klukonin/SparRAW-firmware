@@ -7,6 +7,7 @@
 #ifdef ABFT_STA_STD
 static u32 abft_sta_arm_gp0(void);
 #endif
+static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk);
 
 
 
@@ -323,14 +324,20 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
          * следующего принятого кадра и следующий маяк BTI ловится в bti_bi2_event_step, как при входе по
          * TBTT (kind 0). Последовательность GP2 — как в bti_reset_sweep_state. Только если за этим маяком
          * развёртка продолжается (CDOWN > 0): иначе ждать в bti_bi2_event_step было бы нечего до конца BI
-         * (r42.5), и uc не обслуживал бы приём — тогда как vendor. */
+         * (r42.5), и uc не обслуживал бы приём — тогда как vendor.
+         * Без проверок окна BI и синхронизации BI (uc_bi_counter_in_window, uc_read_bi_sync): они нужны
+         * входу по TBTT (kind 0 — убедиться, что сейчас начало BI по счётчику MAC), а здесь BTI доказан
+         * принятым маяком. До синхронизации счётчика BI с AP (сканирование, ассоциация — как раз когда
+         * станция отвечает в A-BFT) проверка окна почти всегда ложна: стенд std4 — 63 входа подряд кончались
+         * в err без ожидания маяка (bi_win.dti_to_bti +63, bi2_cnt 0, abft_try 64), и только на CDOWN 0 —
+         * взвод по уже разобранному маяку и отказ (x1c). */
         if (((rx_buf_bcn_ssw >> 1) & 0x1ff) != 0) {
             uc_mac_cmd(0x54000000);
             uc_mac_cmd(0x54000000);
             uc_mac_cmd(0x49000100);
             uc_mac_cmd(ABFT_STA_GP2_RXEND_CLK | 0x51000000);
             uc_mac_cmd(0x54000508);
-            if (bti_bi2_event_step(c) == 0)
+            if (bti_bi2_event_step_chk(c, 0) == 0)
                 return;
         }
     } else if (bti_bi2_event_step(c) == 0) {
@@ -884,17 +891,20 @@ static u32 abft_sta_arm_gp0(void)
 }
 #endif
 
-u32 bti_bi2_event_step(struct bi_ctx_s *c)
+/* chk = 0 — без проверок окна BI и синхронизации BI (вход в BTI с пути приёма, см. bti_transmitter_bi2_flow). */
+static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk)
 {
     /* 6.2 asm 0x936e40. */
     u32 r16 = 0, r17 = 0, r5 = 0, metric = 0;
 
     uc_mac_cmd(0x2051030);
     bti_cnt.bi2_tsf = uc_read_tsf_lo();
-    if (!uc_bi_counter_in_window((u32)c))
-        goto err;
-    if (!uc_read_bi_sync())
-        goto err;
+    if (chk != 0) {
+        if (!uc_bi_counter_in_window((u32)c))
+            goto err;
+        if (!uc_read_bi_sync())
+            goto err;
+    }
 
 #ifdef ABFT_STA_STD
     u32 t_bcn = 0;
@@ -1086,6 +1096,11 @@ err:                                                   /* L_937328 */
     uc_log_emit_snapshot(0x20, 0x1001d68);
     c->status = 0;
     return 0;
+}
+
+u32 bti_bi2_event_step(struct bi_ctx_s *c)
+{
+    return bti_bi2_event_step_chk(c, 1);
 }
 
 void bti_bi2_track_best_metric(struct bi_ctx_s *c)
