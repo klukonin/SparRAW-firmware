@@ -170,17 +170,18 @@ u32 fsched_time_left_class(u32 a)
     return (t > 0x64) ? 1 : 2;
 }
 
-/* 0x938a18: слот TX дважды с паузой 400 итераций (lp).
- * СРОК (выдержка): пауза между двумя TX-слотами — 400 × 2 nop_s (ZOL) ≈ 800 тактов ≈ 4,8 мкс при 165 МГц,
- * задаётся скоростью цикла (vendor 0x938a3c — тот же цикл); назначение не установлено (не короче
- * SIFS/MBIFS между кадрами?), запас не оценён. Тело/счёт цикла и тактовую без замера не менять. */
+/* 0x938a18: слот TX дважды с паузой 800 тактов.
+ * СРОК (выдержка): пауза между двумя TX-слотами фиксированного расписания (не 802.11: собственная
+ * схема опроса vendor) — 800 тактов ≈ 4,85 мкс, как vendor 0x938a3c (lp 400 × 2×nop_s); что она
+ * ждёт, не установлено (IFS стандарта ей не соответствует), поэтому длительность прежняя, но по
+ * часам ядра (uc_delay_clk), а не по скорости цикла. */
 void fsched_run_tx_slot_twice(void)
 {
     fsched_get_cur_idx(&fsched_peers);
     mac_set_sector_arg_and_select_all(mac_read_usec_to_tbtt_uc(0));
     fsched_slot_clear_f3(&fsched_peers);
     fixed_sched_run_tx_slot();
-    arc_zol_nops2(400);            /* vendor 0x938a3c: mov r0,0x190; mov lp_count; nop_s; lp × 2×nop_s */
+    uc_delay_clk(400 * 2);         /* vendor 0x938a3c: lp 0x190 × 2×nop_s */
     fixed_sched_run_tx_slot();
     fsched_ctx.state = 4;
 }

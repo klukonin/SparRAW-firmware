@@ -671,6 +671,9 @@ u8 uc_ap_read_triggered_mask(void);                             /* uutil.c */
 void uc_assert(u32 caller, u32 code);                           /* misc.c */
 u32 uc_bi_counter_in_window(u32 a);                             /* uutil.c */
 void uc_check_g8004f4_0_1_2(void);                              /* uutil.c */
+u32 uc_clk_now(void);                                           /* util.c */
+u32 uc_clk_since(u32 *last);                                    /* util.c */
+void uc_delay_clk(u32 clk);                                     /* util.c */
 u64 uc_divmod_signed_qr(s32 a, s32 b);                          /* mem.c */
 u32 uc_divmod_unsigned(u32 n, u32 d);                           /* mem.c */
 u64 uc_divmod_unsigned_qr(u32 n, u32 d);                        /* mem.c */

@@ -1183,19 +1183,17 @@ u8 txq_fifo_ptp_idle_snapshot(void)
     return res;
 }
 
-/* СРОК (минимальная выдержка, аппаратный): сброс RFC (HW_RFC_RESET_CTRL б4 = 0) держится
- * выдержкой, откалиброванной скоростью цикла: lp × 2×nop_s, n = rfc_txrx_set·80 → 2n+4 такта
- * (≈ 1 мкс на единицу rfc_txrx_set при 165 МГц), как vendor L_92a03c..L_92a054; при n = 0 ARC600
- * исполняет тело один раз — импульс ~6 тактов. Запас: не установлен (минимум RFC не известен).
- * Ускорение ядра или замена lp на C-цикл меняет длительность импульса. */
+/* СРОК (минимальная выдержка, аппаратный): импульс сброса RFC (HW_RFC_RESET_CTRL б4 = 0) —
+ * rfc_txrx_set·160 тактов (≈ 0,97 мкс на единицу rfc_txrx_set), как vendor L_92a03c..L_92a054
+ * (lp n × 2×nop_s, n = rfc_txrx_set·80; при n = 0 ARC600 исполняет тело один раз — 2 такта).
+ * Минимум RFC не известен, поэтому длительность прежняя, но по часам ядра (uc_delay_clk). */
 void rfc_restore_txrx_sets(void)
 {
     u32 sp0, sp1;
     rf_set_txrx_sets_save(0xf, 0xff, &sp0, &sp1);
     MMIO32(HW_RFC_RESET_CTRL) &= ~(1u << 4);
-    u32 n = (rfc_txrx_set << 4);
-    n += n << 2;                         /* add2 r5,r5,r5 = ×5 */
-    arc_zol_nops2(n);          /* vendor L_92a03c..L_92a054: ldb; asl 4; add2; mov lp_count,r5; lp n × 2×nop_s (n == 0 не проверяется) */
+    u32 n = (u32)rfc_txrx_set * 80;      /* vendor: ldb; asl 4; add2 (×5) */
+    uc_delay_clk(n != 0 ? 2 * n : 2);    /* lp n × 2×nop_s; при n = 0 тело lp исполняется один раз */
     MMIO32(HW_RFC_RESET_CTRL) |= (1u << 4);
     MMIO32(HW_ABIF_DVS_RF_CTRL) = sp0;
     MMIO32(HW_RFC_RFCA_CFG) = sp1;

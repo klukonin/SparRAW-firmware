@@ -213,15 +213,16 @@ void peer_masks_update_sta_bit(struct fsched_peer_ctx *p, u32 sta, u32 set)
         uc_evt_send_2e(sta, 0, qh_build_descriptor_b(sta));
     }
 }
-/* СРОК: пауза между импульсом FS_CTRL.3 и пуском делителя RFC — lp 0x50 × 2 nop ≈ 160 тактов
- * ≈ 1 мкс (аппаратный минимум, «N nop»; не зависит от остального кода); vendor 0x928c78 — тот же lp.
- * Запас не известен. Сокращение может оставить делитель RF-такта в неопределённом состоянии. */
+/* СРОК: пауза между импульсом FS_CTRL.3 и пуском делителя RFC — 160 тактов ≈ 0,97 мкс, как vendor
+ * 0x928c78 (lp 0x50 × 2×nop_s). Это время установления железа с неизвестным минимумом, поэтому
+ * длительность прежняя, но по часам ядра (uc_delay_clk): прерывание её не удлиняет, ускорение кода
+ * не укорачивает. Сокращение может оставить делитель RF-такта в неопределённом состоянии. */
 void hwd_abif_rfc_divider_restart_uc(void)
 {
     MMIO32(HW_RFC_DIVIDER_CTRL) &= ~1u;          /* ld.as [r6,0xe5] = 0x889000+0xe5*4 */
     MMIO32(HW_ABIF_FS_CTRL) |= 1u << 3;          /* ld.as [r5,-0xf9] = 0x889800-0xf9*4 */
     MMIO32(HW_ABIF_FS_CTRL) &= ~(1u << 3);       /* vendor перечитывает регистр */
-    arc_zol_nops2(0x50);           /* vendor L_928cb0..L_928cbc: lp 0x50 × 2×nop_s (r7 = 0x50 загружен в L_928c9e) */
+    uc_delay_clk(0x50 * 2);        /* vendor L_928cb0..L_928cbc: lp 0x50 × 2×nop_s */
     MMIO32(HW_RFC_DIVIDER_CTRL) |= 1;
 }
 /* dma_is_idle_uc — ниже. */
