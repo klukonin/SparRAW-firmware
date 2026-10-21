@@ -16,6 +16,10 @@ case "$FW" in *wil6210_6.2.0.1000.fw) ;; *)
 H=root@192.168.1.12
 SSH="ssh -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o LogLevel=ERROR"
 TAPO=$(dirname "$0")/../../../SparRAW-tools/host/tapo_plug.py
+# из git worktree вне дерева SparRAW: искать SparRAW-tools рядом с основной копией репозитория
+[ -f "$TAPO" ] || TAPO=$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)/../../SparRAW-tools/host/tapo_plug.py
+# ENC=psk2|sae KEY=<пароль>: шифрование на .12 (uci без commit; после power-cycle прежние правки теряются)
+ENCSET=""; [ -n "$ENC" ] && ENCSET="uci set wireless.default_radio0.encryption=$ENC; uci set wireless.default_radio0.key='${KEY:-SparRAW60test}';"
 cat "$FW" | $SSH $H 'cat >/lib/firmware/wil6210.fw; sync; md5sum /lib/firmware/wil6210.fw | cut -c1-12' || exit 2
 # AP .11 может держать «зависшую» запись .12 часами и не принимать новую ассоциацию
 $SSH root@192.168.1.11 'iw dev phy0-ap0 station del 24:18:1d:26:d4:7b' >/dev/null 2>&1
@@ -28,7 +32,7 @@ for i in $(seq 60); do $SSH $H true 2>/dev/null && break; sleep 3; done
   (end=0; nx=0; while :; do read u _ </proc/uptime; cs=\${u%.*}\${u#*.}; [ \$end = 0 ] && end=\$((cs+${RECS:-40}00));
    [ \$cs -ge \$end ] && break; [ \$cs -ge \$nx ] && { for b in ${RECBLOB:-uc_data}; do cat \$B/blob_\$b >/tmp/rec/\$cs.\$b.bin 2>/dev/null; done; nx=\$((cs+${RECSTEP:-20})); }; done; touch /tmp/rec/done) </dev/null >/dev/null 2>&1 &"
 [ -n "$NORECOV" ] && $SSH $H 'echo Y > /sys/module/wil6210/parameters/no_fw_recovery'
-$SSH $H "uci set wireless.radio0.disabled=0; uci set wireless.default_radio0.disabled=0; wifi up radio0 >/dev/null 2>&1;
+$SSH $H "$ENCSET uci set wireless.radio0.disabled=0; uci set wireless.default_radio0.disabled=0; wifi up radio0 >/dev/null 2>&1;
   r=noready; for i in \$(seq $((T/3))); do sleep 3;
     dmesg | grep -q 'FW ready after' && r=ready;
     iw dev phy0-sta0 link 2>/dev/null | grep -q Connected && { r=assoc; break; }; done;

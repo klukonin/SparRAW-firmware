@@ -13,6 +13,10 @@ FW=${1:?fw}; T=${2:-90}
 SSH="ssh -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o LogLevel=ERROR"
 AP=root@192.168.1.12; ST=root@192.168.1.11
 TAPO=$(dirname "$0")/../../../SparRAW-tools/host/tapo_plug.py
+# из git worktree вне дерева SparRAW: искать SparRAW-tools рядом с основной копией репозитория
+[ -f "$TAPO" ] || TAPO=$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)/../../SparRAW-tools/host/tapo_plug.py
+# ENC=psk2|sae KEY=<пароль>: шифрование на .12 (uci без commit; после power-cycle прежние правки теряются)
+ENCSET=""; [ -n "$ENC" ] && ENCSET="uci set wireless.default_radio0.encryption=$ENC; uci set wireless.default_radio0.key='${KEY:-SparRAW60test}';"
 restore() {
   [ -n "$KEEP" ] && return
   # адрес phy0-sta0 переживает смену режима (тот же netdev станет phy0-ap0 — порт br-lan) — снять
@@ -34,7 +38,7 @@ dump() {  # NORECOV=1 REC=<dir>: при FWERR — blob'ы .12 и dmesg в <dir>
   $SSH $AP 'D=/sys/kernel/debug/ieee80211/phy0/wil6210; rm -rf /tmp/rec; mkdir -p /tmp/rec; dmesg >/tmp/rec/dmesg.txt
     dmesg | grep -q "error detected" && for b in rgf fw_peri fw_data uc_data mac_rgf_ext rgf_ext; do cat $D/blob_$b >/tmp/rec/$b.bin 2>/dev/null; done
     cd /tmp/rec && tar cf - .' | tar xf - -C "$REC"; }
-$SSH $AP "uci set wireless.radio0.disabled=0; uci set wireless.default_radio0.disabled=0; uci set wireless.default_radio0.mode=ap;
+$SSH $AP "$ENCSET uci set wireless.radio0.disabled=0; uci set wireless.default_radio0.disabled=0; uci set wireless.default_radio0.mode=ap;
   uci set wireless.default_radio0.ssid=WL60RW; wifi up radio0 >/dev/null 2>&1;
   r=noready; for i in \$(seq $((T/3))); do sleep 3;
     dmesg | grep -q 'FW ready after' && r=ready;
