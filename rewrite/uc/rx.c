@@ -836,6 +836,8 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
                 else if (r7 == 1 && !((ss->bi_ctrl[0] | (ss->bi_ctrl[1] << 8)) & 2))
                     cnt38 = 1;
             }
+            if (!cnt36 && !cnt38 && (ss->bi_ctrl[0] & 2u) && !abft_discovery_ok_call())
+                cnt38 = 1;                      /* 10.42.5.1: условия Discovery Mode не выполнены (вызов — вне пути ответа) */
             if (cnt36) {
                 ss->abft_skip_mode += 1;
                 ss->abft_go = 0;
@@ -844,7 +846,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
                 ss->abft_go = 0;
             } else {
                 u16 c = abft_cfg.relax_cnt;
-                if ((s32)c >= 1) {
+                if ((s32)c >= 1 && !((ss->bi_ctrl[0] & 3u) == 3u && abft_discovery_addressed_call())) {   /* 10.42.5.2 */
                     abft_cfg.relax_cnt = c - 1;
                     ss->abft_skip_relax += 1;
                     ss->abft_go = 0;

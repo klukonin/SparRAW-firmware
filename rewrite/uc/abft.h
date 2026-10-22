@@ -209,4 +209,45 @@ static inline __attribute__((always_inline)) u32 abft_gp_clk2(void)
     return arc_core_rd(55) & 0xffffffu;
 }
 
+/* ---- Discovery Mode в A-BFT (802.11-2020 10.42.5.1, 9.3.4.2 рис. 9-77/9-79, 9.4.1.46 табл. 9-69) ----
+ * Маяк: BI Control (кадр +23, bcn_rx.bi_ctrl[0]): б0 CC Present, б1 Discovery Mode; DMG Parameters (+29) &3 — BSS
+ * Type (bcn_rx.bss_type); при CC Present = 1 и Discovery Mode = 1 Clustering Control (+30..+37) = A-BFT Responder
+ * Address (6 Б) + резерв. При Discovery Mode = 1 станция передаёт в A-BFT, только если: CC Present = 0; или адрес —
+ * индивидуальный и равен нашему; или адрес групповой, мы в группе и наша роль совпадает с BSS Type (табл. 9-69:
+ * 3 — AP, 2 — PCP, 1 — не-AP STA, 0 — любая). Членство в группах uc не знает, кроме широковещательной (в ней все):
+ * прочие групповые адреса — консервативно «не в группе», не передавать. Буфер приёма rx_buf (0x804010) держит
+ * не меньше +0x26 Б кадра (+0x24 читает BRP), +30..+35 в нём. */
+#define ABFT_BCN_RA_OFF  30u
+#define ABFT_MAX_ACCESS_PERIOD 2u        /* aMaxABFTAccessPeriod (802.11-2020 Table 11-22, DMG MAC sublayer attribute values: 2) */
+static inline __attribute__((always_inline)) u32 abft_bcn_ra_is_own(const u8 *a)
+{
+    u32 lo = (u32)a[0] | ((u32)a[1] << 8) | ((u32)a[2] << 16) | ((u32)a[3] << 24);
+    u32 hi = (u32)a[4] | ((u32)a[5] << 8);
+    return lo == MMIO32(HW_MAC_OWN_ADDR_LO) && hi == (MMIO32(HW_MAC_OWN_ADDR_HI) & 0xffffu);
+}
+/* Маяк этого BTI — с Discovery Mode = 1, CC Present = 1 и A-BFT Responder Address = наш MAC (обход aMaxABFTAccessPeriod). */
+static inline __attribute__((always_inline)) u32 abft_bcn_addressed_to_us(void)
+{
+    return (bcn_rx.bi_ctrl[0] & 3u) == 3u && abft_bcn_ra_is_own(rx_buf + ABFT_BCN_RA_OFF);
+}
+/* 1 — передача в A-BFT разрешена условиями Discovery Mode (10.42.5.1). */
+static inline __attribute__((always_inline)) u32 abft_discovery_ok(void)
+{
+    u32 bic0 = bcn_rx.bi_ctrl[0];
+    if (!(bic0 & 2u))
+        return 1;                                   /* Discovery Mode = 0 — условия не действуют */
+    if (!(bic0 & 1u))
+        return 1;                                   /* CC Present = 0 */
+    const u8 *a = rx_buf + ABFT_BCN_RA_OFF;
+    if (!(a[0] & 1u))
+        return abft_bcn_ra_is_own(a);               /* индивидуальный адрес */
+    if ((a[0] & a[1] & a[2] & a[3] & a[4] & a[5]) != 0xffu)
+        return 0;                                   /* группа, членство неизвестно — не передавать */
+    u32 bt = bcn_rx.bss_type & 3u;                  /* широковещательный: все в группе — сверка роли (табл. 9-69) */
+    if (bt == 0)
+        return 1;
+    u32 role = uc_role_ap ? (uc_role == 3 ? 2u : 3u) : 1u;   /* cmd 0x1b: режим 2 — AP, 3 — PCP, иначе не-AP STA */
+    return bt == role;
+}
+
 #endif

@@ -4,6 +4,9 @@
 #include "../include/hw.h"
 #include "../include/arc.h"
 #include "abft.h"
+/* Условия Discovery Mode (abft.h) — отдельными функциями, чтобы не менять код rx_flow_handle_frame на пути ответа. */
+__attribute__((noinline)) u32 abft_discovery_ok_call(void) { return abft_discovery_ok(); }
+__attribute__((noinline)) u32 abft_discovery_addressed_call(void) { return abft_bcn_addressed_to_us(); }
 #ifndef UC_PATHT
 #define UC_PATHT(i) do { } while (0)                 /* точки Timer1 опыта gp0path — только в exp/abft-stamps */
 #endif
@@ -950,6 +953,10 @@ void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot)
                     sta_tab[r->abft_sta].tx_sel = v;
                     bcn_rx.abft_ok_cnt += 1;
                     abft_cfg.relax_cnt = *(u16 *)&abft_cfg.relax_period;
+                    /* 10.42.5.2: Feedback в A-BFT маяка с Discovery Mode = 1 — не пытаться следующие
+                     * aMaxABFTAccessPeriod (2) A-BFT */
+                    if ((bcn_rx.bi_ctrl[0] & 2u) && abft_cfg.relax_cnt < ABFT_MAX_ACCESS_PERIOD)
+                        abft_cfg.relax_cnt = ABFT_MAX_ACCESS_PERIOD;
                     uc_evt_build_and_post_report(r, 0);
                     r16 = 0x100;
                     goto fdbk_done;
@@ -1163,12 +1170,16 @@ counter_machine:                                       /* L_937118 */
         if (r3c == 1) {
             u32 r0 = bcn_rx.bi_ctrl[0] | ((u32)bcn_rx.bi_ctrl[1] << 8);
             if (r0 & 2)
-                goto dec_counter;
+                goto disc_check;
         } else {
-            goto dec_counter;
+            goto disc_check;
         }
         goto inc_0x26;                                 /* r3c==1 && бит1 сброшен */
     }
+disc_check:
+    if (!abft_discovery_ok())                          /* 10.42.5.1: условия Discovery Mode не выполнены */
+        goto inc_0x26;
+    goto dec_counter;
 
 inc_0x24:
     bcn_rx.abft_skip_mode += 1;
@@ -1179,7 +1190,9 @@ inc_0x26:
     r5 = 0;
     goto sweep_body;
 dec_counter:                                           /* L_9371c8 */
-    if (abft_cfg.relax_cnt >= 1) {                    /* brlt r7,0x1 → знаков. на zero-ext */
+    /* relaxation: после Feedback пропускать следующие A-BFT; маяк, адресующий нас (Discovery, CC, A-BFT Responder
+     * Address = наш MAC), — без пропуска (10.42.5.2, aMaxABFTAccessPeriod) */
+    if (abft_cfg.relax_cnt >= 1 && !abft_bcn_addressed_to_us()) {   /* brlt r7,0x1 → знаков. на zero-ext */
         abft_cfg.relax_cnt -= 1;
         bcn_rx.abft_skip_relax += 1;
         r5 = 0;

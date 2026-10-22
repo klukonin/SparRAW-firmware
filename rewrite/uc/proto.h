@@ -46,6 +46,8 @@ struct uc_ring;
 u32 abft_arm_response_window(void);                             /* bti.c */
 u32 abft_resp_parse_fdbk(struct sls_peer_rec *dst);             /* bti.c */
 void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot);   /* bti.c */
+u32 abft_discovery_ok_call(void);                               /* bti.c — 10.42.5.1 (не встраивается) */
+u32 abft_discovery_addressed_call(void);                        /* bti.c — маяк адресует нас */
 void abft_send_ssw_feedback(u32 a);                             /* bti.c */
 void abif_set_88a204_field(u32 a, u32 b);                       /* tail.c */
 void abif_set_enable_bit(u32 a);                                /* tail.c */
