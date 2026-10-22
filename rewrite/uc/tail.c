@@ -1016,7 +1016,7 @@ void mac_mode_program_c(struct sls_peer_rec *a)
             uc_mac_cmd(0x4d000000u);
             arc_nops(3);
             u32 r55 = arc_core_rd(55);
-            if (r55 >= 0x700)
+            if (r55 >= SIFS_CNT_ABFT_FB_LATE)
                 return;
             if (r55 == 0 || first == 0)
                 return;
@@ -2581,6 +2581,9 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
     u32 rxw0 = 0, rxw1 = 0;                     /* [sp,4], [sp,8] */
     u32 sect = 0;                               /* [sp,0x10] — флаг смены RF-модуля */
     u32 h5c = (u32)ss_plan_cdown << 1;
+#ifdef BTI_TXOP_STD
+    u32 bt_t0 = 0, bt_k = 0;                    /* маяки: Timer1 tx_end первого и число периодов */
+#endif
 
 #ifdef UC_DUR_VENDOR
     u32 dur_add = 0;
@@ -2656,6 +2659,14 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             uc_mac_cmd(0x83u << 25);
         }
         uc_spin_until_event(1u << 15);
+#ifdef BTI_TXOP_STD
+        if (f == 0) {
+            u32 t = abft_t1();
+            if (bt_k == 0)
+                bt_t0 = t;
+            bt_k++;
+        }
+#endif
         h5c = (u32)ss_plan_cdown << 1;       /* ldb_s r2,[0x802e5c] — перечитывается */
         u32 r1 = e | 0x2d000000 | h5c | ((u32)ss_plan_sector << 10);
         u32 r0 = (u32)ss_plan_sector << 10;
@@ -2689,6 +2700,19 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
     mac_set_rf_chain_state_with_sta_sector();
     mac_evt_select_timer_group(3);
     uc_spin_until_event(1u << 15);
+#ifdef BTI_TXOP_STD
+    if (f == 0 && bt_k != 0) {
+        /* Период маяков P = (tx_end последнего − tx_end первого) / (n − 1) — для TXOP следующего BTI
+         * (bti_worker_bti_transmitter_beacon_sweep_flow). Запись bti_cnt +0x04: P (такты) | d << 16 | n << 24.
+         * P вне [d − 1 + SBIFS, d + SBIFS] мкс (обнуление Timer1 тиком L1, смена длины) — 0, TXOP как vendor.
+         * Здесь до txop_event ещё > 15 мкс (tx_end — через ~1,45 мкс от начала последнего маяка). */
+        const struct ss_timing *tm = (const struct ss_timing *)c;
+        u32 dt = abft_t1() - bt_t0;
+        u32 p = (dt < (1u << 24)) ? dt / bt_k : 0;
+        u32 lo = (tm->frame - 1u + tm->gap) * ABFT_CLK_PER_US, hi = (tm->frame + tm->gap) * ABFT_CLK_PER_US;
+        bti_cnt.x04 = (p > lo && p <= hi && bt_k < 255u) ? p | ((u32)tm->frame << 16) | ((bt_k + 1u) << 24) : 0;
+    }
+#endif
     return 1;
 }
 

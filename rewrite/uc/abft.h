@@ -137,6 +137,28 @@
 /* SSW-Ack: Duration SSW-Feedback − MBIFS − TXTIME(SSW-Ack) (9.3.1.17), вверх: D − 27 (литерально, без битов). */
 #define SSWACK_DUR_SUB       27u
 
+/* ---- TXOP BTI (802.11-2020 10.42.4, 9.2.5.1): Duration маяков и конец BTI по эфиру ---- */
+/* vendor: TXOP = n·(d + SBIFS), d — длительность маяка из r47 (MTP_AGGREGATION, целые мкс, вверх: 20 при
+ * TXTIME 19,127): после последнего маяка ~55 мкс пустого эфира (64 маяка), Duration маяков — остаток этого
+ * TXOP (с отбрасыванием дробной части), A-BFT — после него. Стандартно (по умолчанию; отказ —
+ * UC_BTI_TXOP_VENDOR): TXOP = (n − 1)·P + d + запас, P — период маяков (TXTIME + SBIFS), измеренный по tx_end
+ * в предыдущем BTI (Timer1; длину маяка uc не знает, r47 — только целые мкс), d — чтобы MAC видел остаток не
+ * меньше длительности последнего маяка. Конец BTI — через ~1–2 мкс после конца последнего маяка. */
+#ifndef UC_BTI_TXOP_VENDOR
+#define BTI_TXOP_STD 1
+#endif
+#define BTI_TXOP_MARGIN_CLK  82u        /* 0,5 мкс сверх d·165 у последнего маяка (разброс замера P) */
+/* x/165 без деления (Timer1/MAC: 165 тактов в мкс), точно для x < 2^26 */
+static inline __attribute__((always_inline)) u32 clk_to_us_floor(u32 x)
+{
+    u32 q = (u32)(((u64)x * 25421u) >> 22);
+    while (q * 165u > x)
+        q--;
+    while ((q + 1u) * 165u <= x)
+        q++;
+    return q;
+}
+
 /* Timer1 (AUX 0x100 COUNT1) одной инструкцией; предел 0x13ab6680, обнуляется тиком L1. */
 static inline __attribute__((always_inline)) u32 abft_t1(void)
 {

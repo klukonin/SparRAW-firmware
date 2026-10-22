@@ -4,6 +4,7 @@
 #include "../include/hw.h"
 #include "../include/arc.h"
 #include "abft.h"
+#include "ifs.h"
 #ifdef ABFT_STA_STD
 static u32 abft_sta_arm_gp0(void);
 #endif
@@ -455,6 +456,30 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
     }
     bti_measure_frame_duration((u32)sp);
     bi_ctrl_program_mac_bcon();
+#ifdef BTI_TXOP_STD
+    /* TXOP BTI по периоду маяков прошлого BTI (bcon_txss_sweep_step): (n − 1)·P + d + запас, вверх до мкс.
+     * bt_frac — насколько объявленный последним маяком конец BTI (его Duration — остаток TXOP с
+     * отбрасыванием дробной части) раньше txop_event: сетка A-BFT — от объявленного конца. Считается до
+     * ожидания slot_event (путь TBTT → первый маяк не удлиняется), присваивается после txss_set_sweep_param. */
+    u32 bt_std = 0, bt_frac = 0, bt_txop = 0;
+    {
+        const struct ss_timing *tm = (const struct ss_timing *)sp;
+        u32 pk = bti_cnt.x04, n = bti_sw.bcn_ss.n_frames;
+        u32 p = pk & 0xffff;
+        if (n >= 2 && (pk >> 24) == n && ((pk >> 16) & 0xff) == tm->frame && p != 0) {
+            u32 k = n - 1;
+            u32 txop_clk = k * p + tm->frame * ABFT_CLK_PER_US + BTI_TXOP_MARGIN_CLK;
+            u32 txop_us = clk_to_us_floor(txop_clk + ABFT_CLK_PER_US - 1u);
+            u32 last_end = k * p + p - tm->gap * ABFT_CLK_PER_US;
+            u32 x = txop_us * ABFT_CLK_PER_US - last_end;
+            if (txop_us < n * (tm->frame + tm->gap)) {        /* TXOP vendor: n·(d + SBIFS) */
+                bt_txop = txop_us;
+                bt_frac = x - clk_to_us_floor(x) * ABFT_CLK_PER_US;
+                bt_std = 1;
+            }
+        }
+    }
+#endif
     /* СРОК: конец пути «bi1_event (до TBTT) → маяк» — см. l1_task_main_step: всё от входа до этого
      * ожидания slot_event (bti_measure_frame_duration с тремя спинами MTP, bi_ctrl_program_mac_bcon)
      * должно уложиться в упреждение bi1_event. */
@@ -475,6 +500,10 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
         r3 = 0;
     txss_set_sweep_param((u32)sp, &bti_sw.bcn_ss, 1, r3, bti_sw.bcn_ss.n_frames, bti_sweep_set);
     ss_plan_tx_dur += ((const struct ss_timing *)sp)->gap + ((const struct ss_timing *)sp)->frame;
+#ifdef BTI_TXOP_STD
+    if (bt_std)
+        ss_plan_tx_dur = bt_txop;             /* рассчитан до ожидания slot_event (ниже по тексту — выше по ходу) */
+#endif
     uc_mac_cmd(0x14000100);
     if (bcon_txss_sweep_step((u32)tx_ctx, 5, (u32)sp, 0, 0, 0) == 0)   /* beq → L_9241a8 */
         goto done;
@@ -509,7 +538,11 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
          * (0x886d00, mac_mode_kick) + ~0,55 мкс после события GP1 (H-ORIGIN: стенд 264,1 при GP1 254,56 и
          * 268,23 при 258,66), поэтому GP1 = точка Feedback (aAirPropagationTime + aSSDuration + MBIFS,
          * 10.42.5.2) − MBIFS − задержка MAC. vendor: aSSDuration + 1 мкс → Feedback на +1,45 мкс. */
+#ifdef BTI_TXOP_STD
+        u32 slot0 = ABFT_MBIFS_CLK - ABFT_AP_TRIG03_CLK + (bt_std ? 0u - bt_frac : (u32)UC_ABFT_AP_BTI_END_CLK);
+#else
         u32 slot0 = ABFT_MBIFS_CLK + UC_ABFT_AP_BTI_END_CLK - ABFT_AP_TRIG03_CLK;
+#endif
 #endif
         uc_mac_cmd(0x14000000);
 #ifdef ABFT_AP_STD
@@ -745,7 +778,7 @@ u32 abft_responder_tx_ssw(u32 a)
     uc_mac_cmd(0x4d000000);
     arc_nops(3);
     u32 aux55 = arc_core_rd(55);
-    if (aux55 >= 0x160 || aux55 == 0)
+    if (aux55 >= SIFS_CNT_ABFT_SSW_LATE || aux55 == 0)
         return 0;
     uc_mac_cmd(0x3d000100);
     u32 r14 = (r13 << 8) | (rf_chain_cfg | 0x30);

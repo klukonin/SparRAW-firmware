@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "ifs.h"
 
 
 
@@ -104,7 +105,7 @@ void rx_switch_to_rx_mode(void)
     arc_nops(3);
     u32 r1 = arc_core_rd(55);
     rx_sw_sifs_cnt = r1;
-    if (r1 > 0x500 || r1 == 0) {
+    if (r1 > SIFS_CNT_RESP_LATE || r1 == 0) {
         uc_mac_cmd(0x1f000601);
         rx_mode_bad_r55_cnt += 1;                  /* ld_s [gp,4] (байты) / st.as [gp,1] */
     }
@@ -485,7 +486,7 @@ u32 rx_flow_run(void)
         uc_nop3();
         u32 r55 = arc_core_rd(55);
         st = rx_flow_mac_state;
-        if (r55 >= 288)
+        if (r55 >= SIFS_CNT_RX_ENTRY_LATE)
             ok = 0;
     }
     if (st == 0)
