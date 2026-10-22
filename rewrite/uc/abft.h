@@ -11,7 +11,7 @@
  *   * A-BFT начинается через MBIFS после конца BTI (10.42.5.1); первый SSW-слот — в начале A-BFT,
  *     слоты смежны (10.42.5.2);
  *   * aSSSlotTime = aAirPropagationTime + aSSDuration + MBIFS + aSSFBDuration + MBIFS (10.42.5.2) —
- *     таблица period_tab (data.c), aSSDuration — ssw_tab_b;
+ *     формула abft_slot_clk (ниже), aSSDuration — abft_ssdur_clk;
  *   * первый символ SSW-Feedback — за aSSFBDuration + MBIFS до конца слота (10.42.5.2), то есть через
  *     aAirPropagationTime + aSSDuration + MBIFS от начала слота, а не от последнего SSW.
  *
@@ -81,18 +81,47 @@
 /* Событие GP1 станции после конца GP0 (= конец BTI): первый SSW в B + MBIFS при IFS ответа = SIFS. */
 #define ABFT_STA_STD_GP1_CLK  (ABFT_MBIFS_CLK - ABFT_SIFS_CLK - UC_ABFT_MACLAT_CLK)
 /* AP. */
-#define ABFT_AP_TRIG03_CLK    502u      /* пуск GP0/GP2 (0x…030c/0x…0308) после txop_event: стенд 8,05 − 5,00 мкс; std-сборка дала 8,98 */
-#ifndef UC_ABFT_AP_BTI_END_CLK
-/* Конец BTI, объявленный в Duration ПОСЛЕДНЕГО маяка нашего AP, относительно txop_event (H-TXOP). MAC пишет
- * Duration = остаток TXOP BTI в целых мкс с отбрасыванием дробной части (TXOP = n·(20 + 1) от начала первого
- * маяка, d из r47 округлено вверх; запасной путь): стенд std2/std3 (64 маяка × 34 Б), сверка станции и AP: по последнему
- * маяку (Duration 56) конец BTI = txop − 0,64 мкс, по первому — txop − 1,97 (стабильно от загрузки к
- * загрузке). Сетка A-BFT — от объявленного конца BTI (станция берёт последний маяк, 10.42.5.1). Нужна только
- * на запасном пути (длина маяка не сошлась с r47 → TXOP BTI = n·(d + SBIFS)); основной путь — bt_frac (bti.c). */
-#define UC_ABFT_AP_BTI_END_CLK (-105)
-#endif
-#define ABFT_AP_STD_END_GUARD_CLK 330u  /* GP0 (конец A-BFT у AP) за 2 мкс до последней границы GP2: mac_mode_kick
-                                         * выходит по GP0, а не начинает слот n (значение из 6.2, не проверено) */
+/* Пуск GP0/GP2 AP триггером 0x03 (0x…030c/0x…0308) — не по команде uc, а через IFS из 0x886d00 после txop_event
+ * (MAC отсчитывает IFS от события, как у прямой передачи): IFS в A-BFT = aSIFSTime (495) + 7 тактов замера.
+ * Стенд A2: граница слота = txop + 8,05 мкс при GP2 = 5,00 мкс. Сверка с моделью в fc1/fp2/fi1 (64 маяка × 34 Б,
+ * FSS 15): «граница − (txop + MBIFS)» = −0,32…−0,36 мкс = −bt_frac (53 такта), т. е. фактический пуск совпадает
+ * с 502 ±0,02 мкс. Аппаратная величина таймера MAC — от n, L и FSS не зависит по устройству; проверка при других n
+ * и FSS — серия ft1/nsec1 (метрика «граница − (txop+9)»). */
+#define ABFT_AP_TRIG03_CLK    (ABFT_SIFS_CLK + 7u)   /* 502 */
+/* Запасной путь TXOP BTI (длина маяка ≠ r47, n вне 1…64, наборов антенн ≥ 2): Duration маяка пишет MAC как
+ * ⌊остаток TXOP⌋ (H-DUR), а TXOP кончается событием txop_event. Поэтому объявленный последним маяком конец BTI
+ * E = конец кадра + ⌊(txop_event − конец кадра)/1 мкс⌋ лежит в (txop_event − 1 мкс, txop_event] — при любых n, L и
+ * без модели перезапуска TXOP. Правило: сетка A-BFT AP — от самого раннего возможного E (bt_frac = 1 мкс). Тогда AP
+ * слушает слот с его начала, SSW станции приходят не раньше его границы и не позже чем на 1 мкс; Feedback AP
+ * (граница + aAirPropagationTime + aSSDuration + MBIFS, 10.42.5.2) идёт не ближе MBIFS − 1 мкс к концу пачки
+ * станции. Прежние подгонки (+30 тактов «конец последнего маяка», −105 тактов «E − txop_event»; 64 × 34 Б)
+ * лежат внутри этого интервала (−0,64 мкс) и больше не нужны. */
+#define ABFT_AP_FALLBACK_FRAC_CLK ABFT_CLK_PER_US
+/* Конец A-BFT у AP (GP0) — до границы следующего слота (иначе mac_mode_kick начал бы слот n) и после конца
+ * последнего Feedback. По aSSSlotTime (10.42.5.2) Feedback слота кончается за MBIFS до границы следующего слота:
+ * GP0 = граница − aSIFSTime — через MBIFS − SIFS = 6 мкс после Feedback, и у uc остаётся SIFS на выход из
+ * mac_mode_kick до границы (прежде 2 мкс из 6.2, без обоснования). */
+#define ABFT_AP_STD_END_GUARD_CLK ABFT_SIFS_CLK
+_Static_assert(ABFT_AP_STD_END_GUARD_CLK < ABFT_MBIFS_CLK, "конец A-BFT — после конца последнего Feedback");
+
+/* Слот A-BFT (802.11-2020 10.42.5.2, Table 11-22): aSSSlotTime = aAirPropagationTime + aSSDuration + MBIFS +
+ * aSSFBDuration + MBIFS, aSSDuration = (FSS − 1) × SBIFS + FSS × TXTIME(SSW), FSS — число SSW = поле FSS + 1.
+ * Формулой в тактах (умножение, без таблиц): TXTIME(SSW) = 2460 (ifs.h, точно), aAirPropagationTime 0,1 мкс = 16,5 →
+ * 17 тактов (вверх). Прежние таблицы vendor 6.2 (ssw_tab_b / period_tab) брали TXTIME(SSW) = 2459: aSSDuration
+ * короче на FSS тактов, слот — на FSS + 0,5 (при поле 15 — 0,1 мкс на слот); теперь границы слотов у нас на эту
+ * величину позже, чем у vendor 6.2, по стандарту. Поле FSS < aSSFramesPerSlot (4) — нарушение 10.42.5.2:
+ * станция в таком A-BFT не участвует (rx.c, bti.c), формула при этом определена для любого поля 0…15. */
+#define ABFT_SS_FRAMES_PER_SLOT  4u      /* aSSFramesPerSlot (Table 11-22): минимум поля FSS */
+static inline __attribute__((always_inline)) u32 abft_ssdur_clk(u32 fss_field)
+{
+    return (fss_field + 1u) * (DMG_TXTIME_SSW_CLK + DMG_SBIFS_CLK) - DMG_SBIFS_CLK;
+}
+#define ABFT_SLOT_TAIL_CLK  (ABFT_AIRPROP_CLK + ABFT_MBIFS_CLK + ABFT_SSFB_CLK + ABFT_MBIFS_CLK)   /* 5999 */
+static inline __attribute__((always_inline)) u32 abft_slot_clk(u32 fss_field)
+{
+    return abft_ssdur_clk(fss_field) + ABFT_SLOT_TAIL_CLK;
+}
+_Static_assert(DMG_TXTIME_SSW_CLK == 2460u && ABFT_SSFB_CLK == DMG_TXTIME_SSW_ACK_CLK, "TXTIME SSW / SSW-Feedback");
 
 /* Конец BTI станции — по последнему маяку (поправка GP1/GP2, bti_bi2_track_best_metric, 10.42.5.1). */
 /* Поправка станции по последнему маяку успевает, только если конец GP0 (конец BTI по ПЕРВОМУ маяку) позже конца
@@ -147,15 +176,6 @@ _Static_assert(SSWFB_DUR_US == 28u && SSWFB_DUR_BRP_US == 37u && SSWACK_DUR_SUB 
  * ⌈TXTIME/165⌉ должно совпасть с d из r47 (иначе MAC считает кадр иначе — не Control PHY, другая длина) — тогда
  * запасной путь: TXOP = n·(d + SBIFS) (план развёртки; ~55 мкс пустого эфира после 64 маяков) и счётчик
  * fwsh_diag.bti_txop_fallback. */
-/* Duration маяка MAC пишет как остаток TXOP с отбрасыванием дробной части (H-DUR) в конце кадра; маяки в эфире
- * идут на ~0,18 мкс позже, чем по формуле от начала TXOP (TXOP начинается раньше первого маяка): сверка станции
- * и AP — «txop − конец BTI по последнему маяку» 0,64 мкс при TXOP 1344 (std5) и 0,68 при 1289 (bti1), формула
- * без сдвига даёт 0,855 в обоих, со сдвигом 30 тактов — 0,67. Нужна, чтобы сетка A-BFT шла от конца BTI,
- * объявленного последним маяком, так же, как его считает станция. Остаток у последнего маяка целым числом мкс
- * сделать нельзя: TXOP задаётся в целых мкс, а (n − 1)·P + TXTIME — от длины маяка, доля фиксирована. */
-#ifndef UC_BTI_DUR_REF_CLK
-#define UC_BTI_DUR_REF_CLK  30u
-#endif
 /* Duration маяков BTI по 9.2.5.1 (вверх) — буквально (на запасном пути TXOP — ⌊остатка TXOP⌋ MAC).
  * Стенд (exp/dur-round, rnd1, 2026-10-22): 0x14 с б1 перед маяками (0x14000007 вместо 0x14000005) — Duration
  * = значение 0x15 минус d (у всех маяков 1269 = 1289 − 20 при одном значении 0x15 = TXOP), txop_event и A-BFT

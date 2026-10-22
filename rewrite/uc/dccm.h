@@ -1660,9 +1660,6 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define bi_event_names               ((u32 *)0x8015c8)
 #define bi_sm_table                  ((struct bi_sm_entry *)0x8015dc)
 #define init_desc_801aec_fn          (*(u32 *)0x801644)
-#define ssw_tab_a                    ((u16 *)0x80164c)
-#define ssw_tab_b                    ((u16 *)0x801664)
-#define period_tab                   ((u16 *)0x80167c)
 #define init_desc_more_fn            (*(u32 *)0x8016e4)
 #define mcs_tab_886c70               ((u16 *)0x80178c)
 #define rf_fill_template             ((u32 *)0x801820)
@@ -1700,8 +1697,6 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define mac_pub_mask4                (*(u32 *)0x80157c)   /* [в] mac_pub_mask[4] ← 0x800414 (qset 4) в mac_publish_masks (bf.c 66). */
 #define mac_pub_mask5                (*(u32 *)0x801580)   /* [в] mac_pub_mask[5] ← 0x80041c (qset 5) (bf.c 67). */
 #define mac_pub_mask6                (*(u32 *)0x801584)   /* [в] mac_pub_mask[6] ← 0x800424 (qset 6) (bf.c 68). */
-#define ssw_tab_a_8                  (*(u16 *)0x80165c)   /* [с] Псевдоним ssw_tab_a[8] (0x80164c+0x10): ucode_cmd_0x0b-обработчик ldh.as [0x80165c,r3] (cmd.c 1294) → 0x802a14. Не отдельный объект. */
-#define period_tab_m4                (*(u16 *)0x801674)   /* [с] Псевдоним: база «−8» period_tab (0x80167c−8) для индекса mode ≥4 (bf.c 1114, bti.c 1143) и одновременно ssw_tab_b[8] (cmd.c 1295, r3 = 0x8022af). Т... */
 #define rx_capture_defaults_2        (*(u8 *)0x8017ca)   /* [н] rx_capture_defaults[2] (rx.c 2521), сразу перезаписывается. */
 #define rx_capture_defaults_3        (*(u8 *)0x8017cb)   /* [н] rx_capture_defaults[3] (rx.c 2522), сразу перезаписывается. */
 #define rx_capture_defaults_4        (*(u8 *)0x8017cc)   /* [н] rx_capture_defaults[4] (rx.c 2523), сразу перезаписывается. */

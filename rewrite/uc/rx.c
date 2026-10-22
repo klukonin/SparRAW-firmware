@@ -838,6 +838,8 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
             }
             if (!cnt36 && !cnt38 && (ss->bi_ctrl[0] & 2u) && !abft_discovery_ok_call())
                 cnt38 = 1;                      /* 10.42.5.1: условия Discovery Mode не выполнены (вызов — вне пути ответа) */
+            if (((ss->bi_ctrl[1] >> 2) & 0xfu) < 4u)
+                cnt38 = 1;                      /* поле FSS < aSSFramesPerSlot (abft.h, 10.42.5.2): не участвуем */
             if (cnt36) {
                 ss->abft_skip_mode += 1;
                 ss->abft_go = 0;

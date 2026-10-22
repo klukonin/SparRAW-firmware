@@ -4,6 +4,7 @@
 #include "../include/bitfield.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "abft.h"
 
 
 
@@ -1158,10 +1159,9 @@ void ucode_cmd_0x0b_handler(u32 a)
         ucode_cmd_rf_program();
     }
     if (r0 == 0 || r0 == 2) {
-        u8 r3 = bi_cfg.fss;
-        u16 v0 = ssw_tab_a[8 + r3];
-        u16 v1 = period_tab[r3 - 4];
-        bti_sw.ssw_slot_a = v0;
+        u32 r3 = bi_cfg.fss;                          /* fw ставит поле ≥ aSSFramesPerSlot (stubs.c) */
+        u32 v1 = abft_slot_clk(r3);                    /* aSSSlotTime (abft.h, 10.42.5.2) */
+        bti_sw.ssw_slot_a = abft_ssdur_clk(r3);        /* aSSDuration */
         bti_sw.ssw_slot_b = v1;
         u8 r0c = bi_cfg.abft_len + 1;
         bti_sw.abft_dur = r0c * v1;

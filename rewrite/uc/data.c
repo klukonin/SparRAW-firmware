@@ -262,28 +262,10 @@ UCDATA(8015dc) struct bi_sm_entry bi_sm_table[20] = {
     { (u32)&bi_sm_action_935d0c, 2 },
 };
 /* Init-дескриптор 0x801640: функция (копия bi_sm_name_ptr -> bi_sm_desc.name).
- * Внимание: 0x801644 = «база −8» таблицы ssw_tab_a (см. ниже) — индекс < 4 до чтения не доходит. */
+ */
 UCDATA(801644) u32 init_desc_801aec_fn = (u32)&uc_init_cb_801aec;
-/* Три перекрывающиеся по использованию u16-таблицы по 4-битному коду (индексы 4..15, база «−8»):
- * A — abft_ssw_prep_sw (Duration SSW в A-BFT); B — ucode_cmd_0x0b_handler (0x80165c[r] = A[8+r], 0x801674[r] = B[8+r]);
- * C — abft_arm_response_window, bti_arm_period_gp0, bf_gpc_program_mac_by_mode_b. Переставлять по отдельности нельзя. */
-UCDATA(80164c) u16 ssw_tab_a[12] = {
-    0x004f, 0x005f, 0x006f, 0x007f, 0x008f, 0x009e, 0x00ae, 0x00be,
-    0x00ce, 0x00de, 0x00ee, 0x00fe,
-};
-UCDATA(801664) u16 ssw_tab_b[12] = {
-    0x329b, 0x3cdb, 0x471b, 0x515b, 0x5b9b, 0x65db, 0x701b, 0x7a5b,
-    0x849b, 0x8edb, 0x991b, 0xa35b,
-};
-/* period_tab — конец слота A-BFT в тактах по FSS (4..15): aSSSlotTime (802.11-2020 10.42.5.2) =
- * aAirPropagationTime (100 нс) + aSSDuration (FSS × (TXTIME(SSW) + SBIFS) = ssw_tab_b) + MBIFS +
- * aSSFBDuration (TXTIME(SSW-Feedback) = 18,25 мкс) + MBIFS = ssw_tab_b + 5998 тактов. Vendor 6.2
- * держал + 9281 (на 3283 такта ≈ 20 мкс за концом слота: 0x56dc, 0x611c, …); исправление — как в
- * 6.4 (патч 0003-uc-abft-slot-end-per-standard). */
-UCDATA(80167c) u16 period_tab[12] = {
-    0x4a09, 0x5449, 0x5e89, 0x68c9, 0x7309, 0x7d49, 0x8789, 0x91c9,
-    0x9c09, 0xa649, 0xb089, 0xbac9,
-};
+/* 0x80164c..0x801693: прежние таблицы слотов A-BFT vendor 6.2 (ssw_tab_a/ssw_tab_b/period_tab) — убраны: aSSDuration и
+ * aSSSlotTime считаются формулой (abft.h, abft_ssdur_clk/abft_slot_clk). */
 
 /* ---- 0x8016e4..0x801be8 ---- */
 /* Init-дескриптор 0x8016e0: функция (boot_uc_init_more(&rx_meas)). */

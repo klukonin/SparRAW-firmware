@@ -1122,11 +1122,9 @@ void bf_reset_sta_slot(u32 a0)
 void bf_gpc_program_mac_by_mode_b(u32 a0)
 {
     u32 mode = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
-    if (mode < 4) {
-        uc_assert((u32)__builtin_return_address(0), 0x1471);
-        mode = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;  /* vendor продолжает после assert */
-    }
-    u32 r3 = period_tab[mode - 4];   /* ldw.as = x2 */
+    if (mode < ABFT_SS_FRAMES_PER_SLOT)      /* поле FSS ниже aSSFramesPerSlot: A-BFT без нас (решение — rx.c/bti.c) */
+        return;
+    u32 r3 = abft_slot_clk(mode);
     u32 f = ((bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7;
     u32 v = (f & 7) + 1;
     /* Конец A-BFT станции = конец BTI + MBIFS + n·aSSSlotTime (10.42.5.1–2): GP2 от конца GP0 (= конец BTI). */
