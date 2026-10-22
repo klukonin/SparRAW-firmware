@@ -778,7 +778,8 @@ void brd_if_build_tx_sector_list(struct brd_if *o)
             for (j = 0; j < 6; j += 2, row += 2)
                 if (row[0] != 0 || row[1] != 0)
                     nz = 1;
-            if (nz && o->tx_sectors[slot] == 0xff) {
+            /* tx_sectors[0x40]: больше 64 секторов в board file — не за массив (vendor писал по num_tx_sectors) */
+            if (nz && slot < 0x40 && o->num_tx_sectors < 0x40 && o->tx_sectors[slot] == 0xff) {
                 u32 n = o->num_tx_sectors;
 
                 o->tx_sectors[n] = (u8)(start + k / 6);

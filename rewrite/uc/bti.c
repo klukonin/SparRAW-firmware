@@ -416,7 +416,8 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
     tx_ctx->qid = 0x1e;
     if (fwsh_n_sets >= 2) {              /* brlt r6,0x2 */
         const u8 *range = (const u8 *)(fwsh_set_ranges) + (bti_sweep_set) * 2;
-        bti_sw.bcn_ss.n_frames = (u8)(range[1] - range[0] + 1);
+        u32 nr = (u32)range[1] - range[0] + 1u;     /* диапазон набора из board file; order[64] */
+        bti_sw.bcn_ss.n_frames = (u8)(nr <= 0x40u ? nr : 0x40u);
     }
     bti_measure_frame_duration((u32)sp);
     bi_ctrl_program_mac_bcon();

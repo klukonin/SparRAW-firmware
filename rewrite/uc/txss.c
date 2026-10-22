@@ -354,7 +354,7 @@ void txss_set_sweep_param(u32 s, const struct ss_cfg_s *p, u32 a2, u32 a3, u32 a
     if (a3 != 0)
         txss_order_known_sectors_first((u32)p->order, (u32)ss_order_cur);
     else
-        memcpy_uc(ss_order_cur, p->order, p->n_frames);
+        memcpy_uc(ss_order_cur, p->order, p->n_frames < 0x40 ? p->n_frames : 0x40);   /* ss_order_cur[64]: n_frames — байт от хоста/платы */
     if (p->n_frames < 0x40)
         ss_order_cur[p->n_frames] = 0xff;
     ss_plan_idx = 0;
