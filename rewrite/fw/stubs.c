@@ -830,8 +830,11 @@ __attribute__((section(".textlate"))) void bcon_tx_build_step(struct mid_bss *mi
      * прежде здесь было 7) */
     /* fwsh_long_range — литеральным адресом (FWSH_A_*): с символом gcc переносит записи m[0]/m[2] за
      * это чтение (порядок доступов vendor меняется) */
+    /* Поле FSS: 15 (16 SSW в слоте); в long range vendor ставил 3 — ниже aSSFramesPerSlot = 4 (802.11-2020
+     * 10.42.5.2, Table 11-22: «shall set the FSS subfield … no less than aSSFramesPerSlot»), такой маяк роняли
+     * станции vendor и прежний uc (assert 0x1540/0x145d, чтение таблицы слотов за границей). Стандартный минимум — 4. */
     m[1] = (u8)((m[1] & ~(0xfu << 2)) |
-                   (((*(volatile u8 *)FWSH_A_fwsh_long_range == 0) ? 0xfu : 3u) << 2));
+                   (((*(volatile u8 *)FWSH_A_fwsh_long_range == 0) ? 0xfu : 4u) << 2));
     m[1] |= (1u << 6);
 
     /* u16@obj+0x10b: bits_set16_s6_w6(0) → очистить биты [6..11] */
