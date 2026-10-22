@@ -2776,7 +2776,7 @@ void txss_init_send_fdbk_wait_ack(u32 a) {
             uc_assert((u32)__builtin_return_address(0), 0xd);
             continue;
         }
-        if (r14 >= 3) {
+        if (r14 > DOT11_BF_RETRY_LIMIT) {           /* r14 — попыток; повторов r14 − 1 ≤ dot11BFRetryLimit (ifs.h) */
             sls_clear_rx_state();
             txrx_state1 = 0;
             txrx_state2 = 0;

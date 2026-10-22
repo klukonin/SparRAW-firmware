@@ -70,6 +70,22 @@ static inline __attribute__((always_inline)) u32 dmg_ctrl_txtime_clk_rt(u32 L)
     return (tc * 3u + 31u) >> 5;
 }
 
+/* ---- Тайм-ауты ответа (802.11-2020 10.3.2.9 CTSTimeout, 10.3.2.11 AckTimeout) ----
+ * AckTimeout = CTSTimeout = aSIFSTime + aSlotTime + aRxPHYStartDelay (Table 20-30: aRxPHYStartDelay — 10 мкс в DMG
+ * control mode, 3,6 мкс в SC; берётся худший — control: ответ может прийти в control mode) = 3 + 5 + 10 = 18 мкс.
+ * Ожидание ответа в uc (sxd_hal_wait_slot2_busy2 / _busy) считает события slot2 — по одному на aSlotTime (слот MAC
+ * HW_MAC_IFS_SLOT = ifs_cfg_us[2] = 825 тактов, гипотеза H-SLOT2, проверяется опытом lat1) — до занятости эфира
+ * (начало приёма). Число слотов = ⌈тайм-аут / aSlotTime⌉ = 4 (vendor 2 = 10 мкс — меньше AckTimeout: при позднем
+ * ответе — ложный повтор). Long range — vendor 10, отдельно (не меняется). */
+#define DMG_SLOT_US              5u
+#define DMG_RX_PHY_START_DELAY_CTRL_CLK  (10u * DMG_CLK_PER_US)   /* aRxPHYStartDelay, DMG control mode */
+#define DMG_RESP_TIMEOUT_CLK     (DMG_SIFS_CLK + DMG_SLOT_CLK + DMG_RX_PHY_START_DELAY_CTRL_CLK)   /* 2970 = 18 мкс */
+#define DMG_RESP_TIMEOUT_SLOTS   ((DMG_RESP_TIMEOUT_CLK + DMG_SLOT_CLK - 1u) / DMG_SLOT_CLK)       /* 4 */
+_Static_assert(DMG_RESP_TIMEOUT_SLOTS == 4u, "AckTimeout в слотах");
+/* dot11BFRetryLimit (MIB, DEFVAL 8): инициатор может повторить SSW-Feedback до этого числа раз (10.42.6.2, «may restart
+ * the SSW feedback procedure up to dot11BFRetryLimit times»). vendor — 2 повтора (3 попытки). */
+#define DOT11_BF_RETRY_LIMIT     8u
+
 /* ---- Сторожа опоздания по SIFS_CNT ----
  * SIFS_CNT — r55 после команды 0x4d000000: [15:8] целые мкс, [7:0] такты 0…164 (165 МГц); сравнение — по сырому
  * коду (монотонен). Отсчёт — от последнего «события начала IFS» MAC: в A-BFT — от события GP-таймера (стенд

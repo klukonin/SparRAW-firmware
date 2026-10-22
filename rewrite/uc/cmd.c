@@ -284,7 +284,7 @@ void ucode_cmd_0x41_handler(u32 a)
 {
     (void)a;
     uc_log_emit_snapshot(0x20, 0x10015e0);
-    u16 v = (fwsh_long_range != 0) ? 10 : 2;   /* 2 + 8 * (b != 0) */
+    u16 v = (fwsh_long_range != 0) ? 10 : DMG_RESP_TIMEOUT_SLOTS;   /* AckTimeout/CTSTimeout в слотах (ifs.h); long range — 10 */
     resp_wait_slots = v;                                /* sth.as [gp,-16] */
     busy_wait_slots = v;                                /* sth.as [gp,-15] */
     arc_protect_addr_uc(0, UC_WPROT_FW_SRAM, UC_WPROT_FW_SRAM_MASK);
@@ -369,7 +369,7 @@ void ucode_cmd_0x00_handler(const struct lmac_cmd_mac_cfg *c)
     ucode_cmd_apply_mac_cfg((u32)c);
     memcpy_uc(ifs_cfg_us, c->ifs_us, sizeof(c->ifs_us));
     txrx_api_step_b_uc((u32)ifs_cfg_us);
-    u16 v = (fwsh_long_range != 0) ? 10 : 2;   /* ldb + cmp/le: 2 + 8·(b != 0) */
+    u16 v = (fwsh_long_range != 0) ? 10 : DMG_RESP_TIMEOUT_SLOTS;   /* AckTimeout/CTSTimeout в слотах (ifs.h); long range — 10 */
     resp_wait_slots = v;                               /* sth.as [gp,-16] */
     busy_wait_slots = v;                               /* sth.as [gp,-15] */
     mac_cfg_set_gp20_default_15748();
