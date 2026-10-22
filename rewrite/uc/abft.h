@@ -124,6 +124,26 @@ static inline __attribute__((always_inline)) u32 abft_slot_clk(u32 fss_field)
 }
 _Static_assert(DMG_TXTIME_SSW_CLK == 2460u && ABFT_SSFB_CLK == DMG_TXTIME_SSW_ACK_CLK, "TXTIME SSW / SSW-Feedback");
 
+/* GP0 станции (abft_sta_arm_gp0): стартует по концу GP2 = конец приёма маяка + ABFT_STA_GP2_RXEND_CLK − TRIM (H-GP5,
+ * H-GP9), кончается в конец BTI = конец маяка + Duration. Если Duration короче этого старта + 1 мкс (единственный
+ * маяк BTI: Duration = D_last = 3 мкс у нашего AP, 1 мкс у vendor; вход с пути приёма на последнем маяке), GP0
+ * нельзя сделать нужной длины — он берётся 1 мкс, а превышение off = старт + 1 мкс − Duration вычитается из GP1 и
+ * GP2 (они стартуют по концу GP0; bti_tx_program_bi2_regs, bf_gpc_program_mac_by_mode_b). Стенд ft1, n = 1:
+ * без этого пачка и Feedback на 1,58–1,74 мкс позже стандарта = 273 такта = 644 − 41 + 165 − 495 при Duration 3. */
+static inline __attribute__((always_inline)) u32 abft_sta_gp0_clk(u32 dur_us, u32 *off)
+{
+    u32 sub = ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK;
+    u32 d165 = dur_us * ABFT_CLK_PER_US;
+    if (d165 >= sub + ABFT_CLK_PER_US) {
+        *off = 0;
+        return d165 - sub;
+    }
+    *off = sub + ABFT_CLK_PER_US - d165;
+    return ABFT_CLK_PER_US;
+}
+_Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_US < ABFT_STA_STD_GP1_CLK,
+               "превышение GP0 меньше GP1 станции");
+
 /* Конец BTI станции — по последнему маяку (поправка GP1/GP2, bti_bi2_track_best_metric, 10.42.5.1). */
 /* Поправка станции по последнему маяку успевает, только если конец GP0 (конец BTI по ПЕРВОМУ маяку) позже конца
  * последнего маяка на ~1,4 мкс: отчёт о его приёме (r42.16) — через ~0,3 мкс после конца, затем путь цикла

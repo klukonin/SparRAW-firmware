@@ -356,7 +356,10 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
         return;
     }
     if (bcn_rx.abft_here != 0) {
-        u32 off = 0;                            /* конец GP0 = конец BTI (аппаратная привязка) */
+        /* насколько конец GP0 позже конца BTI (abft_sta_gp0_clk): 0, кроме короткой Duration маяка взвода.
+         * rx_buf — ещё маяк взвода: между взводом и этим местом кадров не разбирается. */
+        u32 off;
+        (void)abft_sta_gp0_clk(rx_buf_duration, &off);
         bf_gpc_program_mac_by_mode_b(off);
         if (bcn_rx.abft_go != 0)
             bti_tx_program_bi2_regs(off);
@@ -959,9 +962,8 @@ fdbk_done:
  * 2 — опоздание (r54.8 после квитирования или GP_CLK2 = 0: GP2 не идёт) — A-BFT в этом BI не начинать. */
 static u32 abft_sta_arm_gp0(void)
 {
-    u32 sub = ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK;
-    u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
-    u32 v = (d165 >= sub + ABFT_CLK_PER_US) ? d165 - sub : ABFT_CLK_PER_US;
+    u32 off;
+    u32 v = abft_sta_gp0_clk(rx_buf_duration, &off);
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x49000040);
