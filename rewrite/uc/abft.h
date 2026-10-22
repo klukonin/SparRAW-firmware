@@ -110,7 +110,8 @@ _Static_assert(ABFT_AP_STD_END_GUARD_CLK < ABFT_MBIFS_CLK, "конец A-BFT —
  * 17 тактов (вверх). Прежние таблицы vendor 6.2 (ssw_tab_b / period_tab) брали TXTIME(SSW) = 2459: aSSDuration
  * короче на FSS тактов, слот — на FSS + 0,5 (при поле 15 — 0,1 мкс на слот); теперь границы слотов у нас на эту
  * величину позже, чем у vendor 6.2, по стандарту. Поле FSS < aSSFramesPerSlot (4) — нарушение 10.42.5.2:
- * станция в таком A-BFT не участвует (rx.c, bti.c), формула при этом определена для любого поля 0…15. */
+ * станция в таком A-BFT не участвует (решение по маяку в rx.c/bti.c — как было), а пути, читающие поле позже
+ * (bti_arm_period_gp0, bf_gpc_program_mac_by_mode_b, abft_ssw_go), вместо assert выходят; формула — для любого поля. */
 #define ABFT_SS_FRAMES_PER_SLOT  4u      /* aSSFramesPerSlot (Table 11-22): минимум поля FSS */
 static inline __attribute__((always_inline)) u32 abft_ssdur_clk(u32 fss_field)
 {

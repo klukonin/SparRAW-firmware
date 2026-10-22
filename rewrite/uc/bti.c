@@ -1025,7 +1025,7 @@ static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk)
         bcn_rx.bi_ctrl[5] = rx_buf_body1c;
         bcn_rx.bss_type = rx_buf_bcn_dmg_params & 3;   /* bmsk 0x1 */
         r3 = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
-        if (r3 >= 4)                                   /* bcc → L_937118 */
+        if (r3 >= ABFT_SS_FRAMES_PER_SLOT)             /* поле FSS < aSSFramesPerSlot — A-BFT без нас (abft.h) */
             goto counter_machine;
         bcn_rx.abft_here = 0;
         bcn_rx.abft_go = 0;
@@ -1145,8 +1145,6 @@ counter_machine:                                       /* L_937118 */
         goto inc_0x26;                                 /* r3c==1 && бит1 сброшен */
     }
 disc_check:
-    if (((bcn_rx.bi_ctrl[1] >> 2) & 0xfu) < ABFT_SS_FRAMES_PER_SLOT)
-        goto inc_0x26;                                 /* поле FSS < aSSFramesPerSlot (10.42.5.2): не участвуем */
     if (!abft_discovery_ok())                          /* 10.42.5.1: условия Discovery Mode не выполнены */
         goto inc_0x26;
     goto dec_counter;
