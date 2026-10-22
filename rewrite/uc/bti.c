@@ -651,8 +651,9 @@ void aw_worker_collect_awake_peers(struct aw_win_s *w)
  *  - ответ A-BFT — прямо из ветки «конец GP0», без пяти возвратов и диспетчера; переход автомата BI BTI→A-BFT
  *    (l1_task_dispatch(2)) — после пачки SSW, uc_read_tsf_lo — после A-BFT (bti_dispatch_sweep_step, как был);
  *  - для своего слота: tx_ctx_alloc_next, норм/маска секторов, Duration SSW, шаблон — до ожидания события.
- * Опыты (только UC_DBG): UC_FP_PRE_RF — и переключение RF на TX до события (отказ сторожа → RF обратно);
- * UC_FP_PRETX — весь первый кадр до 0x19 включительно до события (вопрос: стартует ли MAC сам от события). */
+ * RF на передачу и кадр — только после события и сторожа: выданная до события 0x19 — обязательство MAC, её не
+ * отменить (опыт: 0x3d000400+0x3d000200, 0x29000002, 0x3d000004 — «поздняя команда», assert 0x26; 0x18001000 —
+ * кадр всё равно уходит в эфир). */
 struct abft_ssw_st {
     u32 r13, r16, r15, r19, fss, rf;
 };
@@ -722,8 +723,8 @@ static void abft_ssw_rf_back(struct abft_ssw_st *s)
     s->rf = 0;
 }
 
-/* Пачка SSW. stage 0 — с первого кадра (0x2d …), 1 — первый кадр уже выдан до 0x19 включительно (UC_FP_PRETX):
- * продолжить с ожидания r45. */
+/* Пачка SSW с первого кадра (0x2d …); вызов — только stage 0. Ветки stage 1/3 (первый кадр выдан до события) —
+ * от снятого опыта; оставлены, пока их удаление меняет раскладку цикла (ХРУПКО, см. СРОК ниже). */
 static u32 abft_ssw_burst(struct abft_ssw_st *s, u32 stage)
 {
     u32 r13 = s->r13, r16 = s->r16, r15 = s->r15, r19 = s->r19, r14 = s->fss, n;
@@ -784,7 +785,7 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s, u32 stage)
 #ifdef UC_PATH_T
         if (pt12) { UC_PATHT(12); pt12 = 0; }
 #endif
-        if (stage == 3) {                           /* UC_FP_PRETX: первый кадр выдан до события — вернуться */
+        if (stage == 3) {                           /* первый кадр выдан до события — вернуться (не вызывается) */
             s->r13 = r13; s->r16 = r16; s->r15 = r15; s->fss = r14;
             return 1;
         }
@@ -820,28 +821,18 @@ after_go:
     return 1;
 }
 
-/* Подготовка своего слота до события (всё, что не зависит от момента): программная часть, по опытам — RF/кадр. */
+/* Подготовка своего слота до события (всё, что не зависит от момента): программная часть. */
 static void abft_ssw_prep(struct abft_ssw_st *s, u32 a)
 {
     tx_ctx_alloc_next(1);
     abft_ssw_prep_sw(s, a);
-#if defined(UC_FP_PRE_RF) || defined(UC_FP_PRETX)
-    if (s->fss >= 4)
-        abft_ssw_rf_tx(s);
-#endif
-#ifdef UC_FP_PRETX
-    if (s->fss >= 4)
-        (void)abft_ssw_burst(s, 3);                 /* первый кадр до 0x19 включительно — до события */
-#endif
 }
 
 /* СРОК: SSW ответчика — в начале своего слота (802.11-2020 10.42.5.2): от события слота (r54.7) до 0x19 —
- * сторож SIFS_CNT (0x4d000000, 3 nop, r55), при подготовленном слоте — RF (если не UC_FP_PRE_RF) и кадр.
- * Было (gp0path): 622 такта; без RF и шаблона на этом отрезке — меньше на ~программную часть; с UC_FP_PRE_RF —
- * только кадр (0x2d, FIFO Feedback, 0x15/0x14, MTP r43, событие 6, 0x2008000, 0x19). */
+ * сторож SIFS_CNT (0x4d000000, 3 nop, r55), RF и кадр. Было (gp0path): 622 такта; без RF и шаблона на этом
+ * отрезке — меньше на ~программную часть. */
 static u32 abft_ssw_go(struct abft_ssw_st *s)
 {
-#ifndef UC_FP_PRETX
     UC_PAD(PAD_ABFT_SIFSCHK);
     uc_mac_cmd(0x4d000000);
     arc_nops(3);
@@ -853,7 +844,6 @@ static u32 abft_ssw_go(struct abft_ssw_st *s)
     }
     if (!s->rf)
         abft_ssw_rf_tx(s);
-#endif
     if (s->fss < 4) {
         uc_assert((u32)__builtin_return_address(0), 0x145d);
         struct bcn_rx_s *r18 = &bcn_rx;
@@ -862,11 +852,7 @@ static u32 abft_ssw_go(struct abft_ssw_st *s)
         r18->bi_ctrl[1] = (u8)((r5 >> 30) | (r5 << 2));
         return 0;
     }
-#ifdef UC_FP_PRETX
-    return abft_ssw_burst(s, 1);
-#else
     return abft_ssw_burst(s, 0);
-#endif
 }
 
 /* Ответ A-BFT станции, вызов из ветки «конец GP0» bti_bi2_track_best_metric. pre — выбор слота и
