@@ -769,7 +769,9 @@ struct bi_ctx_s {
     u32  kind;                          /* +0x00 вид развёртки BTI (bti_prepare_sweep_set: 0 — свой маяк, 1 — BI2) */
     u8   status;                        /* +0x04 состояние BTI: 1, 2, 4, 5, 6 (= STARTED), возврат bti_prepare_sweep_set */
     u8   round;                         /* +0x05 счётчик кругов развёртки */
-    u8 _pad0[2];
+    u8   fast_done;                     /* +0x06 (наше, у vendor — выравнивание) ответ A-BFT станции уже сделан
+                                         * из bti_bi2_track_best_metric (ABFT_STA_FAST); сброс — bi_run_bti_cycle */
+    u8 _pad0[1];
     struct sls_peer_rec rec;            /* +0x08 */
     u32  dti_wake;                      /* +0x20 DTI-аллокация: пир просил бодрствование (событие 29 при снятии) */
     struct aw_win_s aw;                 /* +0x24 */

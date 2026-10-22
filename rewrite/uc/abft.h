@@ -22,7 +22,8 @@
  *   UC_ABFT_STA_FIRSTBCN — станция берёт конец BTI по первому принятому маяку (vendor); по умолчанию —
  *                        по последнему (10.42.5.1): GP1/GP2 сдвигаются на поправку от каждого маяка BTI;
  *   UC_DUR_VENDOR      — Duration SSW (A-BFT, ISS/RSS), SSW-Feedback, SSW-Ack как vendor 6.2;
- *   UC_BCN_DUR_VENDOR  — Duration маяков BTI считает MAC (остаток TXOP, ⌊⌋), как vendor 6.2.
+ *   UC_BCN_DUR_VENDOR  — Duration маяков BTI считает MAC (остаток TXOP, ⌊⌋), как vendor 6.2;
+ *   UC_ABFT_STA_SLOWPATH — ответ станции в A-BFT по прежнему пути (без подготовки до конца GP0).
  *
  * Стандартный тайминг:
  *   станция — GP0 = Duration − 0x284 от конца GP2 (= конец приёма маяка + 3,903 мкс) кончается в конец
@@ -130,6 +131,12 @@
  * (стенд bcn2: команды поправки через 1,40 мкс после конца маяка). Удлинять GP0 станции нельзя: путь uc от конца
  * GP0 до ожидания границы слота ~3,4 мкс (bcn2, r3std_3: при GP0 + 3 мкс отказ tx_ssw по сторожу SIFS_CNT 1,68 мкс),
  * а GP1 = 5,45 мкс − запас. Поэтому запас даёт AP: BCN_DUR_DLAST_US (ниже). */
+
+/* Быстрый путь ответа станции в A-BFT (bti.c, abft_responder_fast; abft-timing.md §20); отказ — UC_ABFT_STA_SLOWPATH
+ * (путь как в open 9cbac9dc: ответ после возврата из BTI через bi_run_bti_cycle). */
+#ifndef UC_ABFT_STA_SLOWPATH
+#define ABFT_STA_FAST 1
+#endif
 
 /* Duration кадров SLS (9.3.1.15–17); отказ — UC_DUR_VENDOR. */
 #define ABFT_CLK2FX_MUL      6355u      /* такты → 1/1024 мкс: 1024/165 = 6,2061 ≈ 6355/1024 */

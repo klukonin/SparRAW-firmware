@@ -4,6 +4,7 @@
 #include "../include/bitfield.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "abft.h"
 
 
 /* Уже портированы в boot.c / stubs.c / mac.c — не переопределять. */
@@ -352,8 +353,17 @@ void bi_run_bti_cycle(struct bi_ctx_s *c)
         uc_assert((u32)__builtin_return_address(0), 0x59);
     struct sls_peer_rec *r13 = &c->rec;
     if (bcn_rx.abft_here != 0) {
+#ifdef ABFT_STA_FAST
+        if (c->fast_done != 0) {
+            c->fast_done = 0;                   /* A-BFT станции пройден в abft_responder_fast, автомат BI — там же */
+        } else {
+            l1_task_dispatch(2, 0);
+            bf_ctx_dispatch_by_role(r13);
+        }
+#else
         l1_task_dispatch(2, 0);
         bf_ctx_dispatch_by_role(r13);
+#endif
     }
     bi_manager_step_a(c);
     bi_manager_step_b(r13);
