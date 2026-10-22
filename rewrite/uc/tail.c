@@ -2720,7 +2720,7 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
 }
 
 
-/* Ожидание SSW-Ack и повтор SSW-Feedback (аудит IFS, P12). 802.11-2020 10.42.6.2: если SSW-Ack не
+/* Ожидание SSW-Ack и повтор SSW-Feedback. 802.11-2020 10.42.6.2: если SSW-Ack не
  * принят, инициатор повторяет SSW-Feedback (до dot11BFRetryLimit раз) «PIFS following the expected
  * end of the SSW-Ack frame»: ответчик начинает Ack через MBIFS после Feedback (10.42.2.5, 10.42.6.2),
  * значит повтор — через MBIFS + TXTIME(SSW-Ack) + PIFS = 9 + 18,255 + 8 = 35,255 мкс (5817 тактов)

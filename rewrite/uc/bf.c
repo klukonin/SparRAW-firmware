@@ -173,7 +173,7 @@ void txss_resp_flow(u32 a)
         /* SSW-Feedback → SSW-Ack через MBIFS (802.11-2020 10.42.2.2, 10.3.2.3.10). MAC отсчитывает
          * ответ по 0x886d00: в нём MBIFS (3×SIFS) с начала SLS. Vendor возвращал SIFS ещё в
          * txss_resp_wait_fdbk — Ack уходил через 5,0 мкс; с MBIFS до отправки Ack — 9,05 мкс
-         * (стенд 2026-10-21, опыт E1, двусторонний замер, notes/timing/IFS-MEASURED.md). */
+         * (стенд 2026-10-21, опыт E1, двусторонний замер). */
         if (r == 1) {
             sls_send_ssw_ack(r13, 0);
             bf_store_flow_status(r13, 9);

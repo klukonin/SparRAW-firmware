@@ -959,7 +959,7 @@ void internal_tx_flow_sm2(u32 a)
     u32 v = sta_tab[sta].qid_mask_q6;
     ctx->qid = (30 - arc_norm(v));      /* norm + rsub 0x1e */
     gp0_arm_usec_b(0x12);
-    /* Duration RTS = 40 мкс (vendor), оставлено (аудит IFS, P12). По 802.11-2020 9.2.5.2 a) 1) —
+    /* Duration RTS = 40 мкс (vendor), оставлено. По 802.11-2020 9.2.5.2 a) 1) —
      * TXTIME(кадр) + TXTIME(DMG CTS) + TXTIME(Ack) + 3·SIFS, с округлением вверх. Известно:
      * DMG CTS 20 Б на control PHY = 14,04 мкс (ответ на RTS в control PHY; окно GP0 18 мкс от конца
      * RTS вмещает SIFS + 14,04), 3·SIFS = 9 мкс. Кадр берёт MTP из очереди станции только после
