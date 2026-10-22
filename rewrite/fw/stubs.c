@@ -841,8 +841,8 @@ __attribute__((section(".textlate"))) void bcon_tx_build_step(struct mid_bss *mi
     /* u16@obj+0x10b: bits_set16_s6_w6(0) → очистить биты [6..11] */
     bf16le(m + 4, 6, 6, 0);
 
-    /* байт obj+0x10a, биты [5..7] → bi_cfg.n_bi_abft (bcn_tx_init_bi_cfg: s[3] >> 5) → поле N BIs A-BFT:
-     * A-BFT в каждом BI (include/abft_cfg.h; vendor — 4) */
+    /* байт obj+0x10a, биты [5..7] → bi_cfg.n_bi_abft (bcn_tx_init_bi_cfg: s[3] >> 5) → поле N BIs A-BFT
+     * (include/abft_cfg.h: период A-BFT) */
     bf8(m + 3, 5, 3, ABFT_N_BI_ABFT);
 
     /* u16@obj+0x108: bcon_bits_set16_s7_w6(0) → очистить биты [7..12] */
