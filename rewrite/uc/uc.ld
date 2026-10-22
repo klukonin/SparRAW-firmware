@@ -45,6 +45,10 @@ SECTIONS
         . = ALIGN(4);
         __bss_end = .;
     } > DATA
+    /* Регион DATA (0x940000) — адрес загрузки uc_data в .fw (вид хоста/fw), а не рантайм-адрес данных uc (DCCM 0x800000):
+     * static-переменная uc попала бы в чужую память (опыт fc2: static в abft_responder_fast ронял станцию). */
+    ASSERT(SIZEOF(.data) == 0 && SIZEOF(.bss) == 0,
+           "uc: .data/.bss запрещены - переменные uc только по фиксированным адресам DCCM (dccm.h)")
 
     __stack_top = 0x803a48;
     /* Кольцо журнала MAC-команд по r25 (uc_mac_cmd, include/arc.h): 0x800000..0x8003ff, 1 КБ,
