@@ -140,6 +140,10 @@ SECTIONS
         __bss_end = .;
     } > DATA
 
+    /* .bss/.data ставятся с начала DATA (0x800000) — поверх неподвижных переменных DCCM (.fwdata.<адрес>, dccm.h):
+     * ld перекрытие с NOLOAD не проверяет, crt0 обнулил бы и начальные значения (abft-timing.md §20.11). */
+    ASSERT(SIZEOF(.data) == 0 && SIZEOF(.bss) == 0,
+           "fw: .data/.bss запрещены - переменные fw только по фиксированным адресам (.fwdata.<addr>, dccm.h)")
     /* Верхушка стека — конец DATA. */
     __stack_top = ORIGIN(DATA) + LENGTH(DATA);
     __dccm_start = ORIGIN(DATA);              /* 0x800000: начало DCCM (fw/power.c — проверка описателя) */
