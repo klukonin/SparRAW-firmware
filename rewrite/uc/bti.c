@@ -1187,11 +1187,16 @@ void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot)
     u32 pt_first = 1;
 #endif
     for (;;) {
-        if (r14 == 0 && !prepped) {
+        /* Подготовка — только пока ждём слоты (r16 б7): после принятого Feedback (r16 = 0x100, ждём конца
+         * A-BFT) кадров больше не будет — без лишнего tx_ctx_alloc_next (он трогает rf_chain_word) и без RF.
+         * fp1: без этого условия fp_rf/fp_tx держали RF на передаче от Feedback до конца A-BFT. */
+        if (r14 == 0 && !prepped && (r16 & (1u << 7))) {
             abft_ssw_prep(&st, (u32)r);
             prepped = 1;
         }
-        UC_PATHT(8);
+#ifdef UC_PATH_T
+        if (pt_first) UC_PATHT(8);
+#endif
         uc_spin_until_event4(r16);
 #ifdef UC_PATH_T
         if (pt_first) { UC_PATHT(9); pt_first = 0; }
