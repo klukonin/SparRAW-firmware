@@ -2567,7 +2567,9 @@ static void bcon_tx_ack_cmds(void)
  * у нас bcon_tx_ack_cmds — вызов, +2). Это больше SBIFS в тактах (165), значит фактический
  * срок задают события 5/6 MAC и/или опережение tx_end относительно эфира — не установлено;
  * запас: не определён, участок после события 6 — ~10 инструкций (единицы). Колбэк d (TXSS,
- * txss.c) стоит на этом же пути. Срыв: интервал > SBIFS, кадры развёртки съезжают против
+ * txss.c) стоит на этом же пути. У SSW (f ≠ 0) Duration по стандарту (SLS_SSW_DUR) — +ldb/mul64/сдвиг/sub
+ * против vendor (+5 инструкций на кадр), до ожидания события 5 (поглощается им, если ожидание ненулевое).
+ * У маяка (f = 0) вход функции до первой 0x15 — +4 инструкции (сравнение f и два обнуления, objdump). Срыв: интервал > SBIFS, кадры развёртки съезжают против
  * Duration/CDOWN (ss_plan_tx_dur уменьшается на frame + gap за кадр) — развёртка вылезает
  * за BTI/слот, приёмник считает время до конца ISS неверно. */
 u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
@@ -2583,16 +2585,25 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
     u32 h5c = (u32)ss_plan_cdown << 1;
 
 #ifdef UC_DUR_VENDOR
-    u32 dur_add = 0;
-#else
-    /* Duration SSW в ISS/RSS — до конца SSW с CDOWN = 0 плюс MBIFS (802.11-2020 9.3.1.15). ss_plan_tx_dur —
-     * время от конца этого кадра до конца последнего, а «TXOP» 0x15 (биты 24/26/28) отсчитывается от
-     * начала своего кадра (H-DUR, abft.h): + кадр + MBIFS. vendor: последний SSW ≈ 0 вместо 9. У маяка (f = 0)
-     * TXOP BTI уже включает свой кадр (bti.c), не трогать. */
-    u32 dur_add = (f != 0) ? ((const struct ss_timing *)c)->frame + ABFT_MBIFS_CLK / ABFT_CLK_PER_US : 0;
-#endif
     if (b != 1) {
-        uc_mac_cmd((ss_plan_tx_dur + dur_add) | (1u << 24) | (1u << 26) | (1u << 28));
+        uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
+#else
+    /* Duration SSW в ISS/RSS (f ≠ 0) — до конца SSW с CDOWN 0 + MBIFS, вверх (9.3.1.15, 9.2.5.1), буквально:
+     * SLS_SSW_DUR (abft.h). vendor: ss_plan_tx_dur = до конца последнего SSW + SBIFS, у CDOWN 0 — 1 вместо 9.
+     * У маяка (f = 0) 0x15 — TXOP BTI, не трогать; множитель и слагаемое считаются только при f ≠ 0, чтобы
+     * не удлинять путь slot_event → первый маяк (остаток: +4 инструкции, см. СРОК выше). */
+    const struct ss_timing *tmg = (const struct ss_timing *)c;
+    u32 dmul = 0, dadd = 0;
+    if (f != 0) {
+        dmul = sls_ssw_dur_mul(tmg->frame);
+        dadd = SLS_MBIFS_US - tmg->gap;
+    }
+    if (b != 1) {
+        if (f == 0)
+            uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
+        else
+            uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, dadd, ss_plan_cdown, dmul) | (1u << 24) | (1u << 26) | (1u << 28));
+#endif
         uc_mac_cmd(0x14000007);
     }
     {
@@ -2661,7 +2672,11 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
         u32 r0 = (u32)ss_plan_sector << 10;
         uc_mac_cmd(r1);
         if (f != 0) {
-            uc_mac_cmd((ss_plan_tx_dur + dur_add) | (1u << 24) | (1u << 26) | (1u << 28));
+#ifdef UC_DUR_VENDOR
+            uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
+#else
+            uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, dadd, ss_plan_cdown, dmul) | (1u << 24) | (1u << 26) | (1u << 28));
+#endif
             uc_mac_cmd(0x14000007);
             r0 = 0x14000007;
         }
@@ -2945,8 +2960,8 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
     u32 r0 = txss_timing_add + (t >> 8);
 #else
     /* Duration SSW-Feedback в DTI (9.3.1.16 a/b): TXTIME(SSW-Ack) + MBIFS, + ещё MBIFS при запросе BRP (L-RX
-     * ниже — у станции на поддержании); значение 0x15 — с учётом своего кадра (H-DUR, abft.h). */
-    u32 r0 = (maint_sta_mask & (1u << b)) ? SSWFB_DUR_TXOP_BRP : SSWFB_DUR_TXOP;
+     * ниже — у станции на поддержании); 0x15 вне BTI — буквально (abft.h): 28 / 37. */
+    u32 r0 = (maint_sta_mask & (1u << b)) ? SSWFB_DUR_BRP_US : SSWFB_DUR_US;
 #endif
     r0 |= (1u << 24) | (1u << 26) | (1u << 28);
     uc_mac_cmd(r0);

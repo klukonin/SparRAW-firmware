@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #ifndef UC_ABFT_H
 #define UC_ABFT_H
+#include "ifs.h"
 /* Тайминг A-BFT (802.11-2020 10.42.5): величины стандарта в тактах MAC/uc (165 МГц, 1 мкс = 165 тактов)
  * и константы vendor 6.2 (сборка с флагами отказа UC_ABFT_*_VENDOR).
  * Разбор цепочки и отклонений — отчёт abft-timing.md (рядом с ifs-audit.md).
@@ -128,14 +129,40 @@
 #define ABFT_CLK2FX_MUL      6355u      /* такты → 1/1024 мкс: 1024/165 = 6,2061 ≈ 6355/1024 */
 #define ABFT_SSW_TXTIME_FX   15267u     /* TXTIME(SSW 26 Б) = 14,909 мкс в 1/1024 мкс */
 #define ABFT_SSW_STEP_FX     16291u     /* TXTIME(SSW) + SBIFS = 15,909 мкс */
-/* SSW-Feedback в DTI: MAC пишет в Duration остаток «TXOP» из 0x15 (биты 24/26/28) после своего кадра, с
- * отбрасыванием дробной части (как у маяков, H-DUR). Нужное поле — TXTIME(SSW-Ack) + MBIFS = 27,255 → 28
- * мкс (без BRP), + 2·MBIFS = 36,255 → 37 (запрошен BRP: L-RX ≠ 0 у станции на поддержании); значение
- * 0x15 = поле + 19 (TXTIME(SSW-Feedback) 18,255). vendor: 17 + MBIFS = 26 → в эфире ≈ 7 мкс (по H-DUR). */
-#define SSWFB_DUR_TXOP       (28u + 19u)
-#define SSWFB_DUR_TXOP_BRP   (37u + 19u)
-/* SSW-Ack: Duration SSW-Feedback − MBIFS − TXTIME(SSW-Ack) (9.3.1.17), вверх: D − 27 (литерально, без битов). */
-#define SSWACK_DUR_SUB       27u
+/* Duration кадров SLS вне BTI. Команда 0x15 (код = биты 24/26/28) с последующей 0x14000007 — значение
+ * Duration БУКВАЛЬНО (стенд, метка 3, std4/std5/bti1: SSW vendor-станции в ISS/RSS — CDOWN 1/0 → 17/1 =
+ * ss_plan_tx_dur; SSW-Feedback vendor — 20 = txss_timing_add 17 + SIFS 3; A-BFT — 254/275). Остаток
+ * «TXOP» MAC пишет только у маяков BTI (перед ними 0x14000005, abft-timing.md §16.2). Округление — вверх
+ * (9.2.5.1): ⌈x / 1 мкс⌉ из тактов ifs.h.
+ *
+ * SSW в ISS/RSS (9.3.1.15): до конца SSW с CDOWN 0 + MBIFS. ss_plan_tx_dur = gap + cdown·(frame + gap)
+ * (txss_set_sweep_param / ss_plan_next_sector; frame = txss_timing_base = ⌈TXTIME(SSW)⌉ мкс, gap = SBIFS
+ * из 0x886d0c), поэтому
+ *   Duration = ⌈(cdown·(TXTIME(SSW) + gap) + MBIFS) / 165⌉ = ss_plan_tx_dur − gap + MBIFS − ⌊cdown·δ / 165⌋,
+ *   δ = frame·165 − TXTIME(SSW) (тактов, на которые frame в плане длиннее кадра; 15 при frame 15).
+ * Тождество верно, пока MBIFS — целое число мкс. ⌊cdown·δ/165⌋ — умножением: m = δ·101681 ≥ δ·2^24/165,
+ * (cdown·m) >> 24; точно при cdown ≤ 255, δ ≤ 164 (проверено перебором; cdown·m < 2^32), без деления на пути
+ * между SSW. При смене
+ * антенны (несколько DMG-антенн у пира) план добавляет на неё frame + gap (UC_LBIFS_STD) или 17 мкс (vendor) —
+ * эту часть Duration берёт из плана как есть (на стенде путь не исполняется). Конец выделения
+ * («whichever comes first») не учитывается — как и раньше. */
+_Static_assert(DMG_MBIFS_CLK % DMG_CLK_PER_US == 0, "MBIFS — целое число мкс");
+#define SLS_MBIFS_US          (DMG_MBIFS_CLK / DMG_CLK_PER_US)
+static inline __attribute__((always_inline)) u32 sls_ssw_dur_mul(u32 frame_us)
+{
+    s32 d = (s32)(frame_us * DMG_CLK_PER_US) - (s32)DMG_TXTIME_SSW_CLK;
+    return d > 0 ? (u32)d * 101681u : 0u;
+}
+/* Duration SSW с этим cdown; add = SLS_MBIFS_US − gap (считается до развёртки). */
+#define SLS_SSW_DUR(plan, add, cdown, mul) \
+    ((plan) + (add) - (((u32)(cdown) * (mul)) >> 24))
+/* SSW-Feedback в DTI (9.3.1.16 a/b): TXTIME(SSW-Ack) + MBIFS; при запросе BRP — + 2·MBIFS; вверх. 28 / 37. */
+#define SSWFB_DUR_US      ((DMG_TXTIME_SSW_ACK_CLK + DMG_MBIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
+#define SSWFB_DUR_BRP_US  ((DMG_TXTIME_SSW_ACK_CLK + 2u * DMG_MBIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
+/* SSW-Ack (9.3.1.17): Duration SSW-Feedback − MBIFS − TXTIME(SSW-Ack), вверх; для целого D:
+ * ⌈D − x⌉ = D − ⌊x⌋ → D − 27 (28 → 1, 37 → 10). */
+#define SSWACK_DUR_SUB    ((DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK) / DMG_CLK_PER_US)
+_Static_assert(SSWFB_DUR_US == 28u && SSWFB_DUR_BRP_US == 37u && SSWACK_DUR_SUB == 27u, "Duration SLS");
 
 /* ---- TXOP BTI (802.11-2020 10.42.4, 9.2.5.1): Duration маяков и конец BTI по эфиру ---- */
 /* vendor: TXOP = n·(d + SBIFS), d — длительность маяка из r47 (MTP_AGGREGATION, целые мкс, вверх: 20 при

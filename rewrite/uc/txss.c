@@ -506,8 +506,9 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
 #ifdef UC_DUR_VENDOR
         uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
 #else
-        /* первый SSW RSS: + свой кадр + MBIFS, как в bcon_txss_sweep_step (9.3.1.15, H-DUR) */
-        uc_mac_cmd((ss_plan_tx_dur + timing[1] + ABFT_MBIFS_CLK / ABFT_CLK_PER_US) | (1u << 24) | (1u << 26) | (1u << 28));
+        /* первый SSW RSS: до конца SSW с CDOWN 0 + MBIFS, вверх, буквально (9.3.1.15; SLS_SSW_DUR, abft.h) */
+        uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, SLS_MBIFS_US - timing[2], ss_plan_cdown, sls_ssw_dur_mul(timing[1])) |
+                   (1u << 24) | (1u << 26) | (1u << 28));
 #endif
         uc_mac_cmd(0x14000007);
     }
@@ -722,8 +723,8 @@ void sls_send_ssw_ack(u32 a, u32 b)
     direct_tx_program_cmd34(0x10, 0x18);
 #ifndef UC_DUR_VENDOR
     {
-        /* Duration SSW-Ack = Duration принятого SSW-Feedback − MBIFS − TXTIME(SSW-Ack) (9.3.1.17), буквально
-         * (0x15 без битов, как SSW в A-BFT). vendor команды не давал — поле из буфера (не заполнялось). */
+        /* Duration SSW-Ack = Duration принятого SSW-Feedback − MBIFS − TXTIME(SSW-Ack), вверх (9.3.1.17;
+         * SSWACK_DUR_SUB, abft.h), 0x15 буквально. vendor команды не давал — поле из буфера (не заполнялось). */
         u32 dfb = rx_buf_duration;
         uc_mac_cmd(((dfb > SSWACK_DUR_SUB) ? dfb - SSWACK_DUR_SUB : 0u) | 0x15000000);
         uc_mac_cmd(0x14000007);
