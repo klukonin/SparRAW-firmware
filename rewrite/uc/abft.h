@@ -125,24 +125,26 @@ static inline __attribute__((always_inline)) u32 abft_slot_clk(u32 fss_field)
 _Static_assert(DMG_TXTIME_SSW_CLK == 2460u && ABFT_SSFB_CLK == DMG_TXTIME_SSW_ACK_CLK, "TXTIME SSW / SSW-Feedback");
 
 /* GP0 станции (abft_sta_arm_gp0): стартует по концу GP2 = конец приёма маяка + ABFT_STA_GP2_RXEND_CLK − TRIM (H-GP5,
- * H-GP9), кончается в конец BTI = конец маяка + Duration. Если Duration короче этого старта + 1 мкс (единственный
- * маяк BTI: Duration = D_last = 3 мкс у нашего AP, 1 мкс у vendor; вход с пути приёма на последнем маяке), GP0
- * нельзя сделать нужной длины — он берётся 1 мкс, а превышение off = старт + 1 мкс − Duration вычитается из GP1 и
- * GP2 (они стартуют по концу GP0; bti_tx_program_bi2_regs, bf_gpc_program_mac_by_mode_b). Стенд ft1, n = 1:
- * без этого пачка и Feedback на 1,58–1,74 мкс позже стандарта = 273 такта = 644 − 41 + 165 − 495 при Duration 3. */
-static inline __attribute__((always_inline)) u32 abft_sta_gp0_clk(u32 dur_us, u32 *off)
+ * H-GP9), должен кончиться в конце BTI = конец маяка + Duration. Конец BTI — по ПОСЛЕДНЕМУ принятому маяку (10.42.5.1):
+ * если за маяком взвода идут ещё маяки (CDOWN > 0), поправка по ним (bti_bi2_track_best_metric) выдаётся через
+ * ~1,40 мкс после конца маяка (стенд bcn2) и должна успеть, пока GP0 идёт. AP не обязан оставлять запас после
+ * последнего маяка: у vendor Duration ⌊⌋ — последний маяк 1 мкс, первый кончает BTI раньше последнего + 1,4 мкс
+ * (стенд ft3: R2 n = 2, 3 — «GP0 уже кончился» на поправке, первый SSW по первому маяку +0,2). Поэтому GP0 взводится
+ * длиннее на ABFT_STA_GP0_CATCH_CLK (путь поправки + шаг 0,2 мкс), а превышение off вычитается из GP1 и GP2 — при
+ * взводе (bti_tx_program_bi2_regs, bf_gpc_program_mac_by_mode_b) и в поправке — так что граница слота и конец A-BFT
+ * остаются от конца BTI. Короткая Duration (единственный маяк: D_last 3 мкс у нашего AP, 1 мкс у vendor) — GP0 не
+ * короче 1 мкс, превышение — так же (стенд ft1, n = 1: без этого +1,65 мкс). off < GP1 станции. */
+#define ABFT_STA_GP0_CATCH_CLK  264u    /* 1,40 мкс (путь поправки после конца маяка, bcn2) + 0,20 = 1,60 мкс */
+static inline __attribute__((always_inline)) u32 abft_sta_gp0_clk(u32 dur_us, u32 cdown, u32 *off)
 {
-    u32 sub = ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK;
-    u32 d165 = dur_us * ABFT_CLK_PER_US;
-    if (d165 >= sub + ABFT_CLK_PER_US) {
-        *off = 0;
-        return d165 - sub;
-    }
-    *off = sub + ABFT_CLK_PER_US - d165;
-    return ABFT_CLK_PER_US;
+    s32 base = (s32)(dur_us * ABFT_CLK_PER_US) - (s32)(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK);
+    s32 want = base + (cdown != 0 ? (s32)ABFT_STA_GP0_CATCH_CLK : 0);
+    s32 gp0 = want < (s32)ABFT_CLK_PER_US ? (s32)ABFT_CLK_PER_US : want;
+    *off = (u32)(gp0 - base);
+    return (u32)gp0;
 }
-_Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_US < ABFT_STA_STD_GP1_CLK,
-               "превышение GP0 меньше GP1 станции");
+_Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_US < ABFT_STA_STD_GP1_CLK &&
+               ABFT_STA_GP0_CATCH_CLK < ABFT_STA_STD_GP1_CLK, "превышение GP0 меньше GP1 станции");
 
 /* Конец BTI станции — по последнему маяку (поправка GP1/GP2, bti_bi2_track_best_metric, 10.42.5.1). */
 /* Поправка станции по последнему маяку успевает, только если конец GP0 (конец BTI по ПЕРВОМУ маяку) позже конца

@@ -359,7 +359,7 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
         /* насколько конец GP0 позже конца BTI (abft_sta_gp0_clk): 0, кроме короткой Duration маяка взвода.
          * rx_buf — ещё маяк взвода: между взводом и этим местом кадров не разбирается. */
         u32 off;
-        (void)abft_sta_gp0_clk(rx_buf_duration, &off);
+        (void)abft_sta_gp0_clk(rx_buf_duration, (rx_buf_bcn_ssw >> 1) & 0x1ff, &off);
         bf_gpc_program_mac_by_mode_b(off);
         if (bcn_rx.abft_go != 0)
             bti_tx_program_bi2_regs(off);
@@ -963,7 +963,7 @@ fdbk_done:
 static u32 abft_sta_arm_gp0(void)
 {
     u32 off;
-    u32 v = abft_sta_gp0_clk(rx_buf_duration, &off);
+    u32 v = abft_sta_gp0_clk(rx_buf_duration, (rx_buf_bcn_ssw >> 1) & 0x1ff, &off);
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x49000040);
@@ -1192,6 +1192,8 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
     u32 fp_pre = 0, fp_slot = 0;              /* выбор слота и mac_set_mode_a000 сделаны после маяка CDOWN 0 */
 
     uc_mac_cmd(0x2011000);
+    u32 g0off;                                 /* превышение GP0 маяка взвода (abft_sta_gp0_clk): rx_buf — ещё он */
+    (void)abft_sta_gp0_clk(rx_buf_duration, (rx_buf_bcn_ssw >> 1) & 0x1ff, &g0off);
 
     for (;;) {
         /* L_93dcbc */
@@ -1211,12 +1213,12 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                 u32 fss = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
                 if (dl > -(s32)(5 * ABFT_CLK_PER_US) && dl < (s32)(5 * ABFT_CLK_PER_US) && fss >= ABFT_SS_FRAMES_PER_SLOT) {
                     if (bcn_rx.abft_go != 0) {       /* как bti_tx_program_bi2_regs, без квитирования r54.7 */
-                        uc_mac_cmd((u32)((s32)ABFT_STA_STD_GP1_CLK + dl) | 0x50000000u);
+                        uc_mac_cmd((u32)((s32)ABFT_STA_STD_GP1_CLK + dl - (s32)g0off) | 0x50000000u);
                         uc_mac_cmd(0x5300070e);
                     }
                     u32 n = ((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7 & 7) + 1;
                     /* как bf_gpc_program_mac_by_mode_b, без квитирования r54.8 (его ждёт этот цикл, r16) */
-                    uc_mac_cmd((u32)((s32)(n * abft_slot_clk(fss) + ABFT_MBIFS_CLK) + dl) | 0x51000000u);
+                    uc_mac_cmd((u32)((s32)(n * abft_slot_clk(fss) + ABFT_MBIFS_CLK) + dl - (s32)g0off) | 0x51000000u);
                     uc_mac_cmd(0x5400070e);
                 }
             }
