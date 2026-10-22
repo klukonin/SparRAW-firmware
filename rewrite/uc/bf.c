@@ -571,7 +571,9 @@ void bf_ctx_dispatch_by_role(struct sls_peer_rec *a)
         return;
     }
     if (bcn_rx.abft_go != 0) {
-        abft_responder_respond_flow(a);
+        /* обычно ответ уже сделан из bti_bi2_track_best_metric (bi_ctx.fast_done, сюда не доходит); запасной
+         * вход — без подготовки после маяка CDOWN 0 */
+        abft_responder_fast(a, 0, 0);
         return;
     }
     uc_spin_until_event4_r0_100();
@@ -1127,12 +1129,8 @@ void bf_gpc_program_mac_by_mode_b(u32 a0)
     u32 r3 = period_tab[mode - 4];   /* ldw.as = x2 */
     u32 f = ((bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7;
     u32 v = (f & 7) + 1;
-#ifdef ABFT_STA_STD
     /* Конец A-BFT станции = конец BTI + MBIFS + n·aSSSlotTime (10.42.5.1–2): GP2 от конца GP0 (= конец BTI). */
     u32 r4 = (v * r3 + ABFT_MBIFS_CLK - a0) | 0x51000000;
-#else
-    u32 r4 = (v * r3 + ABFT_V62_STA_END_CLK - a0) | 0x51000000;
-#endif
     uc_mac_cmd(r4);
     uc_mac_cmd(0x5400070e);
     uc_mac_cmd(0x49000100);

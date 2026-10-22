@@ -2570,7 +2570,7 @@ static void bcon_tx_ack_cmds(void)
  * txss.c) стоит на этом же пути. У SSW (f ≠ 0) Duration по стандарту (SLS_SSW_DUR) — +ldb/mul64/сдвиг/sub
  * против vendor (+5 инструкций на кадр), до ожидания события 5 (поглощается им, если ожидание ненулевое).
  * У маяка (f = 0) вход функции до первой 0x15 — +4 инструкции (сравнение f и два обнуления, objdump).
- * BCN_DUR_STD: у маяка 0x15 + 0x14000007 на каждом кадре (как у SSW) — +22 инструкции на маяк (ldb CDOWN,
+ * Буквальный Duration маяков: у маяка 0x15 + 0x14000007 на каждом кадре (как у SSW) — +22 инструкции на маяк (ldb CDOWN,
  * mul64, r57, сдвиг, два add/sub, две команды), до ожидания события 5; вход — ещё +4 и 2 сохранения регистров.
  * Признак опоздания — рост замеренного P (метка 1 опытной ветки) и FWERR 0x26. Срыв: интервал > SBIFS, кадры развёртки съезжают против
  * Duration/CDOWN (ss_plan_tx_dur уменьшается на frame + gap за кадр) — развёртка вылезает
@@ -2587,21 +2587,15 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
     u32 sect = 0;                               /* [sp,0x10] — флаг смены RF-модуля */
     u32 h5c = (u32)ss_plan_cdown << 1;
 
-#ifdef BCN_DUR_STD
-    /* Маяк (f = 0): Duration буквально, ⌈⌉ до конца BTI (abft.h, BCN_DUR_STD): bti.c положил m + 1 в _6 и K в
+    /* Маяк (f = 0): Duration буквально, ⌈⌉ до конца BTI (abft.h, Duration маяков BTI): bti.c положил m + 1 в _6 и K в
      * total; 0x15 = ss_plan_tx_dur + K − ⌊CDOWN·δb/165⌋ — тот же SLS_SSW_DUR, что у SSW. У первого маяка это TXOP. */
     u32 bmul = 0, badd = 0;
     if (f == 0 && ((const struct ss_timing *)c)->_6 != 0) {
         bmul = (u32)((const struct ss_timing *)c)->_6 << 8;
         badd = ((const struct ss_timing *)c)->total;
     }
-#endif
-#ifdef UC_DUR_VENDOR
-    if (b != 1) {
-        uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
-#else
     /* Duration SSW в ISS/RSS (f ≠ 0) — до конца SSW с CDOWN 0 + MBIFS, вверх (9.3.1.15, 9.2.5.1), буквально:
-     * SLS_SSW_DUR (abft.h). vendor: ss_plan_tx_dur = до конца последнего SSW + SBIFS, у CDOWN 0 — 1 вместо 9.
+     * SLS_SSW_DUR (abft.h).
      * У маяка (f = 0) 0x15 — TXOP BTI, не трогать; множитель и слагаемое считаются только при f ≠ 0, чтобы
      * не удлинять путь slot_event → первый маяк (остаток: +4 инструкции, см. СРОК выше). */
     const struct ss_timing *tmg = (const struct ss_timing *)c;
@@ -2615,7 +2609,6 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
         else
             uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, dadd, ss_plan_cdown, dmul) | (1u << 24) | (1u << 26) | (1u << 28));
-#endif
         uc_mac_cmd(0x14000007);
     }
     {
@@ -2644,11 +2637,7 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
         (void)rxw1;
         mac_evt_enable_bit_sync_b(6);
         if (f == 0) {
-#ifdef BCN_DUR_STD
             uc_mac_cmd(bmul != 0 ? 0x14000007 : 0x14000005);   /* б1 — Duration = 0x15 − d буквально (abft.h) */
-#else
-            uc_mac_cmd(0x14000005);
-#endif
             uc_mac_cmd(0x2000080);
         }
         bcon_tx_ack_cmds();
@@ -2675,11 +2664,7 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             uc_mac_cmd(0x36000038);
             uc_mac_cmd(0x6000103);
         } else {
-#ifdef UC_LBIFS_STD
             bcon_txss_program_sector(3, DMG_LBIFS_CLK, 4);   /* смена антенны: LBIFS (ifs.h, P11) */
-#else
-            bcon_txss_program_sector(3, 0x29u << 6, 4);      /* vendor 0xa40 (ifs.h, P11) */
-#endif
             uc_mac_cmd(0x83u << 25);
         }
         uc_spin_until_event(1u << 15);
@@ -2688,20 +2673,14 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
         u32 r0 = (u32)ss_plan_sector << 10;
         uc_mac_cmd(r1);
         if (f != 0) {
-#ifdef UC_DUR_VENDOR
-            uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
-#else
             uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, dadd, ss_plan_cdown, dmul) | (1u << 24) | (1u << 26) | (1u << 28));
-#endif
             uc_mac_cmd(0x14000007);
             r0 = 0x14000007;
         }
-#ifdef BCN_DUR_STD
         else if (bmul != 0) {                /* маяк: Duration ⌈⌉ буквально, путь как у SSW выше */
             uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, badd, ss_plan_cdown, bmul) | (1u << 24) | (1u << 26) | (1u << 28));
             uc_mac_cmd(0x14000007);
         }
-#endif
         if (d != 0)
             ((cb_t)d)(r0, r1, h5c, d);
         u32 r16 = ((u32)ss_plan_rf_sector << 8) | (rf_chain_cfg | 0x30);
@@ -2745,19 +2724,15 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  * принят, инициатор повторяет SSW-Feedback (до dot11BFRetryLimit раз) «PIFS following the expected
  * end of the SSW-Ack frame»: ответчик начинает Ack через MBIFS после Feedback (10.42.2.5, 10.42.6.2),
  * значит повтор — через MBIFS + TXTIME(SSW-Ack) + PIFS = 9 + 18,255 + 8 = 35,255 мкс (5817 тактов)
- * после конца Feedback. GP1 и есть это окно: ожидание Ack и момент повтора. vendor 0x2087 = 8327
- * тактов (50,47 мкс) — повтор на ~15 мкс позже стандарта. GP1 взводится через ~40 инструкций и
+ * после конца Feedback. GP1 и есть это окно: ожидание Ack и момент повтора (в 6.2 было 0x2087 = 50,47 мкс —
+ * на ~15 мкс позже стандарта). GP1 взводится через ~40 инструкций и
  * ожидание события 5 после tx_end Feedback, а после срабатывания до 0x19 повтора ещё
  * txss_init_send_ssw_fdbk (~1,5–2 мкс) — в эфире повтор ≈ 37 мкс; этот путь не вычитается.
  * Запас на приём Ack: Ack ответчика по стандарту кончается через 27,26 + 0,49 мкс (наш ответчик —
  * 9,05 мкс + 18,26, vendor 6.2 — 5,03 + 18,26), до срабатывания GP1 остаётся PIFS 8 мкс на задержку
- * события конца приёма. UC_DBG=-DUC_SSWFB_RETRY_VENDOR — прежние 50,47 мкс.
- * Не сделано (как у vendor): проверка, что до конца выделения хватит времени на Feedback + Ack. */
-#ifdef UC_SSWFB_RETRY_VENDOR
-#define SSWFB_ACK_WAIT_CLK  (0x87u | (1u << 13))                                  /* 8327 */
-#else
+ * события конца приёма.
+ * Не сделано: проверка, что до конца выделения хватит времени на Feedback + Ack (10.42.6.2). */
 #define SSWFB_ACK_WAIT_CLK  (DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_PIFS_CLK)  /* 5817 */
-#endif
 void txss_init_send_fdbk_wait_ack(u32 a) {
     /* 6.2 asm 0x93b9c0. */
     txrx_state2 = 0x400000;
@@ -2977,14 +2952,9 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
         abif_dvs_rf_ctrl_shadow = v;
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = v;
     }
-#ifdef UC_DUR_VENDOR
-    u32 t = (u16)*(volatile u32 *)HW_MAC_IFS_SIFS;
-    u32 r0 = txss_timing_add + (t >> 8);
-#else
     /* Duration SSW-Feedback в DTI (9.3.1.16 a/b): TXTIME(SSW-Ack) + MBIFS, + ещё MBIFS при запросе BRP (L-RX
      * ниже — у станции на поддержании); 0x15 вне BTI — буквально (abft.h): 28 / 37. */
     u32 r0 = (maint_sta_mask & (1u << b)) ? SSWFB_DUR_BRP_US : SSWFB_DUR_US;
-#endif
     r0 |= (1u << 24) | (1u << 26) | (1u << 28);
     uc_mac_cmd(r0);
     uc_mac_cmd(0x14000007);
@@ -3508,10 +3478,8 @@ u32 ss_plan_next_sector(u32 a, u32 b) {
         if (b != 0) {
             ss_plan_cdown = (u8)(r13 - 1);
             *(u32 *)b = 1;
-#ifdef UC_LBIFS_STD
             /* LBIFS — одна передача в CDOWN и frame + gap в Duration (ifs.h, P11) */
             ss_plan_tx_dur -= ((const struct ss_timing *)a)->frame + ((const struct ss_timing *)a)->gap;
-#endif
         }
         u8 r1 = ss_plan_idx;
         u8 r2v = ss_order_cur[r1];

@@ -265,7 +265,7 @@ UCDATA(8015dc) struct bi_sm_entry bi_sm_table[20] = {
  * Внимание: 0x801644 = «база −8» таблицы ssw_tab_a (см. ниже) — индекс < 4 до чтения не доходит. */
 UCDATA(801644) u32 init_desc_801aec_fn = (u32)&uc_init_cb_801aec;
 /* Три перекрывающиеся по использованию u16-таблицы по 4-битному коду (индексы 4..15, база «−8»):
- * A — abft_responder_tx_ssw; B — ucode_cmd_0x0b_handler (0x80165c[r] = A[8+r], 0x801674[r] = B[8+r]);
+ * A — abft_ssw_prep_sw (Duration SSW в A-BFT); B — ucode_cmd_0x0b_handler (0x80165c[r] = A[8+r], 0x801674[r] = B[8+r]);
  * C — abft_arm_response_window, bti_arm_period_gp0, bf_gpc_program_mac_by_mode_b. Переставлять по отдельности нельзя. */
 UCDATA(80164c) u16 ssw_tab_a[12] = {
     0x004f, 0x005f, 0x006f, 0x007f, 0x008f, 0x009e, 0x00ae, 0x00be,

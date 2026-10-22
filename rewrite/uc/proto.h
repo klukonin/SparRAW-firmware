@@ -45,8 +45,7 @@ struct uc_ring;
 
 u32 abft_arm_response_window(void);                             /* bti.c */
 u32 abft_resp_parse_fdbk(struct sls_peer_rec *dst);             /* bti.c */
-void abft_responder_respond_flow(struct sls_peer_rec *r);       /* bti.c */
-u32 abft_responder_tx_ssw(u32 a);                               /* bti.c */
+void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot);   /* bti.c */
 void abft_send_ssw_feedback(u32 a);                             /* bti.c */
 void abif_set_88a204_field(u32 a, u32 b);                       /* tail.c */
 void abif_set_enable_bit(u32 a);                                /* tail.c */

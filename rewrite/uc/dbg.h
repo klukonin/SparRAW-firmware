@@ -20,12 +20,12 @@
 #define PAD_RESP_ENTRY    2   /* rx: вход rx_flow_handle_frame */
 #define PAD_TXOP          3   /* rx: перед 0x1b001111 в rx_txop_continue (прежний UC_DBG_TXOP_PAD) */
 #define PAD_TRN_LOOP      4   /* brp: тело цикла метрик TRN */
-#define PAD_ABFT_SSW      5   /* bti: между SSW в abft_responder_tx_ssw */
+#define PAD_ABFT_SSW      5   /* bti: между SSW в abft_ssw_burst (сейчас не используется) */
 #define PAD_IMM_RESP      6   /* tx: перед командой в tx_send_imm_response (DMG CTS/DTS) */
 #define PAD_CTS_SWITCH    7   /* mac: mac_mode_switch_after_ppdu (CTS на RTS) */
 #define PAD_SSWFB_ABFT    8   /* tail: direct_tx_step (SSW-Feedback в A-BFT) */
 #define PAD_D10_WRITE     9   /* rx: перед записью 0x886d10 в rx_flow_step */
-#define PAD_ABFT_SIFSCHK 10   /* bti: перед проверкой SIFS_CNT в abft_responder_respond_flow */
+#define PAD_ABFT_SIFSCHK 10   /* bti: перед проверкой SIFS_CNT в abft_ssw_go */
 
 #if defined(UC_PAD_SITE) && defined(UC_PAD_K) && UC_PAD_K > 0
 /* nop строками, а не .rept: GCC оценивает длину вставки по числу строк шаблона, и с .rept

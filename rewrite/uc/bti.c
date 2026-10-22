@@ -8,9 +8,7 @@
 #define UC_PATHT(i) do { } while (0)                 /* точки Timer1 опыта gp0path — только в exp/abft-stamps */
 #endif
 #include "ifs.h"
-#ifdef ABFT_STA_STD
 static u32 abft_sta_arm_gp0(void);
-#endif
 static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk);
 
 
@@ -108,12 +106,8 @@ void aw_compute_tbtt_from_hw(u32 a, u32 *out)
  * конец BTI + 9,45 мкс; стандарт — MBIFS − SIFS − задержка MAC: SSW ровно в конец BTI + MBIFS. */
 void bti_tx_program_bi2_regs(u32 a)
 {
-#ifdef ABFT_STA_STD
     u32 v = ABFT_STA_STD_GP1_CLK;
     uc_mac_cmd(((a < v) ? v - a : 1u) | 0x50000000u);
-#else
-    uc_mac_cmd((ABFT_V62_STA_SLOT0_CLK - a) | 0x50000000u);
-#endif
     uc_mac_cmd(0x5300070e);
     uc_mac_cmd(0x49000080);
 }
@@ -132,7 +126,7 @@ void aw_fold_peer_masks(u32 a, u32 b, u32 c)
     }
 }
 
-/* СРОК: на пути между соседними SSW ответчика (SBIFS) — см. abft_responder_tx_ssw. */
+/* СРОК: на пути между соседними SSW ответчика (SBIFS) — см. abft_ssw_burst. */
 void abft_send_ssw_feedback(u32 a)
 {
     (void)a;
@@ -241,12 +235,6 @@ void bti_measure_frame_duration(u32 a)
     d = (d + r13) * mul - r13;
     struct ss_timing *t = (struct ss_timing *)r14;
     t->total = (u16)d;
-#ifndef UC_LBIFS_STD
-    if (fwsh_n_sets >= 2) {             /* vendor +10 мкс; в BTI смены антенны нет (ifs.h, P11) */
-        d += 0xa;
-        t->total = (u16)d;
-    }
-#endif
     t->frame = (u16)r47b;                       /* stw_s r1,[r14,2] */
     t->gap = (u16)r13;
 }
@@ -318,7 +306,6 @@ u32 bti_worker_bi2_step(u32 a, u32 b)
 
 void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
 {
-#ifdef ABFT_STA_STD
     if (c->kind == 1) {
         /* Вход в BTI с пути приёма (l1_task_phase_of → rx_flow → автомат BI, аргумент 1): маяк уже
          * разобран rx_flow, GP2 (0x284 от конца его приёма) давно кончился — vendor взводил GP0 по
@@ -347,18 +334,11 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
     } else if (bti_bi2_event_step(c) == 0) {
         return;
     }
-#else
-    if (c->kind != 1) {
-        if (bti_bi2_event_step(c) == 0)
-            return;
-    }
-#endif
     /* СРОК: GP0 стартует по концу GP2 (0x284 = 3,903 мкс от конца приёма маяка, H-GP5, uc/abft.h), поэтому
      * путь uc в конец BTI не входит, но взвести GP0 нужно, пока GP2 идёт: от r42.12 маяка через
      * bti_bi2_event_step + bti_worker_bi2_step (ожидание ppdu_report r42.16, сверка BSSID) до 0x5200090c
      * — меньше 3,9 мкс. При входе с пути приёма (kind 1) маяк уже разобран rx_flow и окно пропущено
      * (стенд 2026-10-21: отказ на каждом маяке BTI, у vendor-кода путь тот же). */
-#ifdef ABFT_STA_STD
     /* GP0 взведён в bti_bi2_event_step сразу после сверки BSSID (abft_sta_arm_gp0); без него (kind 1 при
      * CDOWN = 0) — здесь, с той же проверкой окна GP2. */
     u32 st = bti_cnt.x04 >> 30;
@@ -372,30 +352,8 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
         c->status = 4;
         return;
     }
-#else
-    u32 n = rx_buf_duration;
-    u32 r1 = (n < ABFT_V62_STA_GP0_ADV_US) ? ABFT_V62_STA_GP0_ADV_US
-                                            : (n - ABFT_V62_STA_GP0_ADV_US);   /* cmp 4; mov.cs 4; sub.cc 4 */
-    u32 mlo = r1 * 0xa5;
-    uc_mac_cmd(0x52000000);
-    uc_mac_cmd(0x52000000);
-    uc_mac_cmd(0x49000040);
-    uc_mac_cmd(mlo | 0x4f000000);
-    uc_mac_cmd(0x5200090c);
-    if (bti_bi2_gp2_end_flag() != 0) {          /* 0x923bec: r54.8 уже взведён → L_923c64 */
-        bcn_rx.x1c += 1;
-        c->status = 4;
-        return;
-    }
-#endif
     if (bcn_rx.abft_here != 0) {
-#ifdef ABFT_STA_STD
         u32 off = 0;                            /* конец GP0 = конец BTI (аппаратная привязка) */
-#else
-        /* vendor: при Duration ≥ 4 мкс off = 4 ТАКТА (mov.cc 4 — не мкс), GP1/GP2 короче на 24 нс. */
-        u32 r8 = rx_buf_duration;
-        u32 off = (r8 < 4) ? (4 - r8) * 0xa5 : 4;  /* rsub; mulu64; cmp 4; mov.cs mlo; mov.cc 4 */
-#endif
         bf_gpc_program_mac_by_mode_b(off);
         if (bcn_rx.abft_go != 0)
             bti_tx_program_bi2_regs(off);
@@ -459,7 +417,6 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
     }
     bti_measure_frame_duration((u32)sp);
     bi_ctrl_program_mac_bcon();
-#ifdef BTI_TXOP_STD
     /* TXOP BTI по TXTIME маяка (abft.h): длина PSDU — от fw (fwsh_diag.bcn_psdu_len), TXTIME — формула Control
      * PHY в тактах, сверка с d (r47). Последний маяк кончается через (n − 1)·P + TXTIME от начала первого;
      * TXOP = ⌈((n − 1)·P + d·165) / 165⌉ мкс. bt_frac — насколько конец BTI, объявленный последним маяком
@@ -467,9 +424,7 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
      * раньше txop_event: сетка A-BFT — от объявленного конца. Считается до ожидания slot_event (путь slot_event →
      * первый маяк — одно присваивание ниже), без делений. */
     u32 bt_std = 0, bt_frac = 0, bt_txop = 0;
-#ifdef BCN_DUR_STD
     ((struct ss_timing *)sp)->_6 = 0;                /* sp — стек: без расчёта ниже буквального режима нет */
-#endif
     {
         const struct ss_timing *tm = (const struct ss_timing *)sp;
         u32 n = bti_sw.bcn_ss.n_frames, L = FWSH(fwsh_diag, bcn_psdu_len);
@@ -485,8 +440,7 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
             bt_txop = txop_us;
             bt_frac = x - clk_to_us_floor(x) * ABFT_CLK_PER_US;
             bt_std = 1;
-#ifdef BCN_DUR_STD
-            /* Duration маяков буквально, ⌈⌉ до E = конец последнего маяка + D_last (abft.h, BCN_DUR_STD): сетка A-BFT
+            /* Duration маяков буквально, ⌈⌉ до E = конец последнего маяка + D_last (abft.h, Duration маяков BTI): сетка A-BFT
              * — от E (bt_frac — ниже, по новому txop_event; slot0 считается по модулю 2^32). Наборы секторов
              * ≥ 2 (смена антенны в BTI) — период не постоянный, остаётся ⌊⌋ MAC. */
             struct ss_timing *tw = (struct ss_timing *)sp;
@@ -505,12 +459,10 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
                 tw->total = (u16)(((n - 1u) * m) >> 16);                            /* K */
                 tw->_6 = (u16)(m + 1u);              /* ≠ 0 — буквальный режим; m + 1 ≤ 65137 (точно, abft.h) */
             }
-#endif
         } else {
             FWSH(fwsh_diag, bti_txop_fallback) += 1;                /* длина не сходится с r47 — TXOP vendor */
         }
     }
-#endif
     /* СРОК: конец пути «bi1_event (до TBTT) → маяк» — см. l1_task_main_step: всё от входа до этого
      * ожидания slot_event (bti_measure_frame_duration с тремя спинами MTP, bi_ctrl_program_mac_bcon)
      * должно уложиться в упреждение bi1_event. */
@@ -531,10 +483,8 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
         r3 = 0;
     txss_set_sweep_param((u32)sp, &bti_sw.bcn_ss, 1, r3, bti_sw.bcn_ss.n_frames, bti_sweep_set);
     ss_plan_tx_dur += ((const struct ss_timing *)sp)->gap + ((const struct ss_timing *)sp)->frame;
-#ifdef BTI_TXOP_STD
     if (bt_std)
         ss_plan_tx_dur = bt_txop;             /* рассчитан до ожидания slot_event (ниже по тексту — выше по ходу) */
-#endif
     uc_mac_cmd(0x14000100);
     if (bcon_txss_sweep_step((u32)tx_ctx, 5, (u32)sp, 0, 0, 0) == 0)   /* beq → L_9241a8 */
         goto done;
@@ -560,7 +510,6 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
          * станции (она строит её по Duration маяка) — SSW станций ложатся на край слота. */
         while (!(arc_core_rd(42) & (1u << 7)))    /* L_923fd4: bbit0 → spin */
             ;
-#ifdef ABFT_AP_STD
         /* Сетка A-BFT от конца BTI (10.42.5.1): GP0/GP2 с триггером 0x03 стартуют не по команде, а через
          * ~SIFS после txop_event (стенд A2: граница слота = txop + 8,05 мкс при GP2 = 5 мкс), поэтому
          * путь uc сюда не входит и Timer1 не нужен. Слот 0 = txop + MBIFS (+ UC_ABFT_AP_BTI_END_CLK, если
@@ -568,29 +517,16 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
          * начала каждого слота; стенд: событие в aSSDuration + 1,0 мкс): Feedback MAC начинает через MBIFS
          * (0x886d00, mac_mode_kick) + ~0,55 мкс после события GP1 (H-ORIGIN: стенд 264,1 при GP1 254,56 и
          * 268,23 при 258,66), поэтому GP1 = точка Feedback (aAirPropagationTime + aSSDuration + MBIFS,
-         * 10.42.5.2) − MBIFS − задержка MAC. vendor: aSSDuration + 1 мкс → Feedback на +1,45 мкс. */
-#ifdef BTI_TXOP_STD
+         * 10.42.5.2) − MBIFS − задержка MAC. */
         u32 slot0 = ABFT_MBIFS_CLK - ABFT_AP_TRIG03_CLK + (bt_std ? 0u - bt_frac : (u32)UC_ABFT_AP_BTI_END_CLK);
-#else
-        u32 slot0 = ABFT_MBIFS_CLK + UC_ABFT_AP_BTI_END_CLK - ABFT_AP_TRIG03_CLK;
-#endif
-#endif
         uc_mac_cmd(0x14000000);
-#ifdef ABFT_AP_STD
         u32 r13 = slot0 + bti_sw.abft_dur - ABFT_AP_STD_END_GUARD_CLK;
-#else
-        u32 r13 = bti_sw.abft_dur + ABFT_V62_AP_END_CLK;
-#endif
         uc_mac_cmd(0x52000000);
         uc_mac_cmd(0x52000000);
         uc_mac_cmd(0x49000040);
         uc_mac_cmd(r13 | 0x4f000000);
         uc_mac_cmd(0x52000308);
-#ifdef ABFT_AP_STD
         r13 = ABFT_AIRPROP_CLK + bti_sw.ssw_slot_a - UC_ABFT_MACLAT_CLK;   /* + 0x886d00 = MBIFS (mac_mode_kick) */
-#else
-        r13 = bti_sw.ssw_slot_a + ABFT_V62_AP_FB_CLK;
-#endif
         uc_mac_cmd(0x53000000);
         uc_mac_cmd(0x53000000);
         uc_mac_cmd(0x49000080);
@@ -599,11 +535,7 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
         uc_mac_cmd(0x54000000);
         uc_mac_cmd(0x54000000);
         uc_mac_cmd(0x49000100);
-#ifdef ABFT_AP_STD
         uc_mac_cmd(slot0 | 0x51000000);
-#else
-        uc_mac_cmd(0x51000000 | ABFT_V62_AP_SLOT0_CLK);
-#endif
         uc_mac_cmd(0x5400030c);
         u32 r8 = mac_sel_shadow & 0xffff0fff;
         mac_sel_shadow = r8;
@@ -706,229 +638,9 @@ void aw_worker_collect_awake_peers(struct aw_win_s *w)
     FWSH(fwq_tx_avail, aw_info) = w4;
 }
 
-/* СРОК: SSW ответчика начинается в начале своего SSW-слота (802.11-2020 10.42.5.2, 10.42.2.3.2).
- * От gp1_end (r54.7, граница слота) через uc_spin_until_event4 → 0x49000080 → abft_arm_response_window
- * → tx_ctx_alloc_next → вход abft_responder_tx_ssw до чтения SIFS_CNT ~95 инструкций (vendor ~85; пролог
- * tx_ssw у нас через __st_r13_to_r24); запас: десятки–сотня тактов до порога SIFS_CNT 0x160 (1 мкс +
- * 96 тактов), если SIFS_CNT идёт от границы слота (не установлено). Срыв — tx_ssw возвращает 0, слот
- * пропущен, новый случайный слот или следующий BI (A-BFT не пройден). */
-void abft_responder_respond_flow(struct sls_peer_rec *r)
-{
-    /* 6.2 asm 0x930370 (632 Б). Ответ в A-BFT: ждать слот (r14 слотов, r47 — случайное),
-     * отправить SSW, ждать feedback. Начальный выбор слота — один раз на входе. */
-    mac_set_mode_a000((u32)r);
-    uc_mac_cmd(0x3d000002);
-    u32 r17 = arc_core_rd(54);
-    u32 r16 = 0x180;
-    /* Число слотов A-BFT = поле A-BFT Length + 1 (802.11-2020 9.3.4.2; 10.42.5.2 — случайный слот из
-     * [0, число слотов)). Vendor 6.2 брал & 7 без +1: при двух слотах всегда первый, при одном
-     * диапазон пуст. Как в 4.1 и 6.4 (патч 0008-uc-abft-length-is-slot-count). */
-    u32 r14 = (((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7) & 7) + 1;
-    u32 g = mac_sel_shadow & 0xfff0ffff;
-    mac_sel_shadow = g | (1u << 17);
-    uc_mac_cmd(g | 0x1d020000);
-    arc_nops_nop(2);
-    r14 = (u32)(((u64)arc_core_rd(47) * r14) >> 32);
-    u32 r15 = 0x100;
-    if ((r17 & (1u << 7)) && r14 == 0) {
-        if (((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) & 0x380) == 0)
-            uc_spin_until_event4(r15);              /* L_930440 */
-        else
-            r14 = 1;
-    } else if (abft_gp0_armed != 0) {              /* L_93044c: ldb [gp,-239] */
-        u32 r4 = abft_gp0_periods;                   /* ldb [gp,-229] */
-        if (r4 < r14) {
-            r14 -= r4 + 1;
-            abft_gp0_armed = 0;
-        }
-    }
-    for (;;) {
-        uc_spin_until_event4(r16);                  /* L_93046c */
-        if (arc_core_rd(54) & r15) {
-            uc_mac_cmd(0x3d000400);
-            uc_mac_cmd(0x3d000200);
-            return;
-        }
-        uc_mac_cmd(0x49000080);
-        if (abft_arm_response_window() != 0) {      /* -> L_930438 */
-            r15 = 0x100;
-            continue;
-        }
-        if (r14 != 0) {                             /* L_930434 */
-            r14 -= 1;
-            r15 = 0x100;
-            continue;
-        }
-        tx_ctx_alloc_next(1);
-        r14 = 0;
-        if (abft_responder_tx_ssw((u32)r) != 0) {
-            for (;;) {                              /* L_9304f4 */
-                uc_wait_event1_or_event4(1u << 12, 0x80, 0);
-                if (arc_core_rd(42) & (1u << 12)) {
-                    if (abft_resp_parse_fdbk(r) == 0)
-                        continue;
-                    u32 v = ((u32)r->abft_sector << 8) | rf_chain_cfg | 0x30;
-                    sta_tab[r->abft_sta].tx_sel = v;
-                    bcn_rx.abft_ok_cnt += 1;
-                    abft_cfg.relax_cnt = *(u16 *)&abft_cfg.relax_period;   /* ldh/sth — 16 бит */
-                    uc_evt_build_and_post_report(r, 0);    /* vendor 0x930560: (r13, 0) */
-                    r16 = 0x100;
-                    goto abft_fdbk_done;
-                }
-                if (arc_core_rd(54) & (1u << 7))
-                    break;                          /* -> L_930578 */
-            }
-        }
-        /* L_930578: feedback не получен — новый случайный слот */
-        bcn_rx.abft_nofb_cnt += 1;
-        r14 = (((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7) & 7) + 1;   /* поле + 1 (см. выше) */
-        g = mac_sel_shadow & 0xfff0ffff;
-        mac_sel_shadow = g | (1u << 17);
-        uc_mac_cmd(g | 0x1d020000);
-        arc_nops(3);
-        r14 = (u32)(((u64)arc_core_rd(47) * r14) >> 32);
-abft_fdbk_done:   /* L_9305d0 */
-        mac_set_mode_a000((u32)r);
-        uc_mac_cmd(0x3d000002);
-        r15 = 0x100;                                /* -> L_930438 -> L_93046c */
-    }
-}
 
-u32 abft_responder_tx_ssw(u32 a)
-{
-    /* 6.2 asm 0x930908. Возврат: 0 — окно занято/assert, 1 — SSW отправлены. */
-    u32 r19 = a;
-    u32 r11 = 0x7fffffff;
-    u32 n;
-    __asm__ volatile("norm %0, %1" : "=r"(n) : "r"(r11));
-    u32 r13 = (u8)(n + 1);
-    u32 r16 = r11 & ~(1u << (0x1f - r13));
-    /* СРОК: аппаратная отсечка опоздания — SIFS_CNT ≥ 0x160 (1 мкс + 96 тактов) или 0 → SSW в этом
-     * слоте не передаётся (как vendor 0x93095a); путь до чтения — см. abft_responder_respond_flow. */
-    UC_PAD(PAD_ABFT_SIFSCHK);
-    uc_mac_cmd(0x4d000000);
-    arc_nops(3);
-    u32 aux55 = arc_core_rd(55);
-    if (aux55 >= SIFS_CNT_ABFT_SSW_LATE || aux55 == 0)
-        return 0;
-    uc_mac_cmd(0x3d000100);
-    u32 r14 = (r13 << 8) | (rf_chain_cfg | 0x30);
-    uc_mac_cmd(0x38000200);
-    uc_mac_cmd(0x36000038);
-    uc_mac_cmd(0x6000101);
-    uc_mac_cmd(r14 | 0x3f000000);
-    uc_mac_cmd(0x3e000000);
-    uc_mac_cmd(0x37000020);
-    uc_stats.tx_start += 1;
-    u32 r3 = (rf_set_tx << 24) | (abif_dvs_rf_ctrl_shadow & 0xfcffffff);
-    abif_dvs_rf_ctrl_shadow = r3;
-    *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r3;
-    struct bcn_rx_s *r18 = &bcn_rx;
-    r14 = bcn_rx_fss(r18);
-    if (r14 < 4) {
-        uc_assert((u32)__builtin_return_address(0), 0x145d);
-        u32 byte = r18->bi_ctrl[1];             /* FSS := 4: ror 2, bmsk, rol 2 */
-        u32 r5 = (((byte >> 2) | (byte << 30)) & ~0xf) | 4;
-        r18->bi_ctrl[1] = (u8)((r5 >> 30) | (r5 << 2));
-        return 0;
-    }
-#ifdef UC_DUR_VENDOR
-    u32 r15 = ssw_tab_a[r14 - 4];                 /* vendor: aSSDuration в мкс, −16 мкс на кадр */
-#else
-    /* Duration SSW в A-BFT — время до конца текущего SSW-слота (802.11-2020 9.3.1.15): от конца кадра k
-     * (кадры с начала слота, SBIFS держит MAC) до конца слота aSSSlotTime. Счёт в 1/1024 мкс, Duration —
-     * с округлением вверх. vendor: aSSDuration − 16·k — на 21 мкс короче у первого кадра (0xfe против 275). */
-    u32 r15 = (u32)(((u64)period_tab[r14 - 4] * ABFT_CLK2FX_MUL) >> 10) - ABFT_SSW_TXTIME_FX;
-#endif
-    ssw_tpl_fc = 0x864;
-    ssw_tpl_fb_sector = (r18->antenna << 6) | r18->sector;
-    ssw_tpl_fb_snr = r18->metric;
-    ssw_tpl_fb_b2 = 0;
-    ssw_tpl_ra[0] = r18->bssid[0];
-    ssw_tpl_ra[1] = r18->bssid[1];
-    ssw_tpl_ra[2] = r18->bssid[2];
-    u32 r17 = 1;
-    /* СРОК: соседние SSW ответчика — через SBIFS = 1 мкс, допуск aSBIFSAccuracy 0,03 мкс (802.11-2020
-     * 10.3.2.3.8, 10.42.2.3.2); FSS кадров должны уложиться в aSSDuration (10.42.5.2). Путь между
-     * кадрами (от tx_end r42.15 до запроса 0x19 и спина r45: шаблон, mac_evt_enable_bit_sync, 0x2d,
-     * abft_send_ssw_feedback — 10 Б в FIFO и ожидание direct TX, mac_program_tx_common, спин MTP r43)
-     * ~230 инструкций ≈ 1,5–2 мкс + задержки MTP (vendor ~ так же); запас: нет — SBIFS программно не
-     * выдерживается ни у нас, ни у vendor. Хвост пачки уходит за aSSDuration и может наехать на
-     * SSW-Feedback AP (через MBIFS после aSSDuration): AP 6.2 держит слот на 20 мкс дольше (таблица 3,
-     * STANDARD-MAPPING.md), AP по стандарту (6.4, чужие) — нет. Удлинение пути — меньше SSW в слоте. */
-    do {
-        UC_PAD(PAD_ABFT_SSW);
-        uc_mac_cmd((*(u8 *)&rf_chain_cfg << 16) |
-                           ((r14 << 1) | 0x2d000001 | (r13 << 10)));   /* asl r11,r14 = r14<<1 */
-        abft_send_ssw_feedback(0);
-#ifdef UC_DUR_VENDOR
-        uc_mac_cmd(r15 | 0x15000000);
-        uc_mac_cmd(0x14000007);
-        r15 -= 0x10;
-#else
-        uc_mac_cmd(((r15 + 1023u) >> 10) | 0x15000000);
-        uc_mac_cmd(0x14000007);
-        r15 -= ABFT_SSW_STEP_FX;
-#endif
-        mac_program_tx_common();
-        while (!(arc_core_rd(43) & (1u << 31)))
-            ;
-        u32 aux51 = arc_core_rd(51);
-        mtp_desc_lo = aux51 & 0xf;
-        mtp_desc_hi = aux51 >> 4;
-        mac_evt_enable_bit_sync_b(6);
-        if (r17 != 0) {
-            u32 r4 = mac_sel_shadow & 0xfff0ffff;
-            mac_sel_shadow = r4 | (1u << 18);
-            uc_mac_cmd(r4 | 0x1d040000);
-            arc_nops_nop(2);
-            uc_mac_cmd(0x38000200);
-            uc_mac_cmd(0x36000038);
-            uc_mac_cmd(0x6000103);
-            r17 = 0;
-        }
-        uc_mac_cmd(0x2008000);
-        u32 v;
-        if (txrx_state1 & 0x10) {             /* [gp,51] */
-            v = (((mtp_desc_lo & 2) == 2) ? 1u : 0u) << 6;
-            v |= 0x19800830;
-            v |= mtp_desc_hi << 14;
-        } else {
-            v = 0x19000001;
-        }
-        uc_mac_cmd(v);
-        while (!(arc_core_rd(45) & (1u << 31)))
-            ;
-        uc_mac_cmd((txrx_state1 & 0x10) ? 0x18000000 : 0x18001000);
-        if (r14 == 0)
-            break;
-        r14 -= 1;
-        __asm__ volatile("norm %0, %1" : "=r"(n) : "r"(r16));
-        r13 = (u8)(n + 1);
-        r16 = r16 & ~(1u << ((0x1f - r13) & 31));
-        tx_program_vector_rf(r19, (rf_chain_cfg | 0x30) | (r13 << 8));
-        while (!(arc_core_rd(42) & (1u << 15)))
-            ;
-        ssw_tpl_fc = 0x864;
-        ssw_tpl_fb_sector = (r18->antenna << 6) | r18->sector;
-        ssw_tpl_fb_snr = r18->metric;
-        ssw_tpl_fb_b2 = 0;
-        ssw_tpl_ra[0] = r18->bssid[0];
-        ssw_tpl_ra[1] = r18->bssid[1];
-        ssw_tpl_ra[2] = r18->bssid[2];
-        mac_evt_enable_bit_sync(5);
-    } while (1);
-    mac_set_rf_chain_state_with_sta_sector();
-    mac_evt_enable_bit_sync(5);
-    u32 r = (rf_set_rx << 24) | (abif_dvs_rf_ctrl_shadow & 0xfcffffff);
-    abif_dvs_rf_ctrl_shadow = r;
-    *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r;
-    return 1;
-}
-
-#ifdef ABFT_STA_FAST
-/* ===== Быстрый путь ответа станции в A-BFT (abft-timing.md §19–20; отказ — UC_ABFT_STA_SLOWPATH) =====
- * Стенд gp0path (UC_PATH_T, сборка с метками): вход abft_responder_respond_flow → mac_set_mode_a000 119 тактов,
+/* ===== Ответ станции в A-BFT (abft-timing.md §19–20; прежний путь abft_responder_respond_flow/_tx_ssw удалён) =====
+ * Стенд gp0path (UC_PATH_T, сборка с метками, прежний путь): вход → mac_set_mode_a000 119 тактов,
  * → ожидание слота ещё 51–60, событие слота → tx_ssw 112, → чтение SIFS_CNT 41, SIFS_CNT → первая 0x19 469;
  * событие слота → 0x19 = 622 такта (3,77 мкс). До события делается всё, что от него не зависит:
  *  - выбор слота (r47) и mac_set_mode_a000 + 0x3d000002 — после маяка с CDOWN 0 (приём завершён), в цикле
@@ -944,7 +656,8 @@ struct abft_ssw_st {
 
 static u32 abft_sta_pick_slot(void)
 {
-    /* число слотов = поле A-BFT Length + 1 (как abft_responder_respond_flow); r47 — случайное */
+    /* число слотов = поле A-BFT Length + 1 (802.11-2020 9.3.4.2; 10.42.5.2 — случайный слот из [0, число слотов);
+     * в 6.2 было & 7 без +1); r47 — случайное */
     u32 r14 = (((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7) & 7) + 1;
     u32 g = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = g | (1u << 17);
@@ -953,7 +666,7 @@ static u32 abft_sta_pick_slot(void)
     return (u32)(((u64)arc_core_rd(47) * r14) >> 32);
 }
 
-/* Программная часть abft_responder_tx_ssw до цикла кадров — не зависит от момента события слота. */
+/* Программная часть ответа до цикла кадров — не зависит от момента события слота. */
 static void abft_ssw_prep_sw(struct abft_ssw_st *s, u32 a)
 {
     u32 r11 = 0x7fffffff, n;
@@ -966,11 +679,7 @@ static void abft_ssw_prep_sw(struct abft_ssw_st *s, u32 a)
     s->fss = bcn_rx_fss(r18);
     if (s->fss < 4)
         return;                                     /* разбор — в abft_ssw_go, как у vendor */
-#ifdef UC_DUR_VENDOR
-    s->r15 = ssw_tab_a[s->fss - 4];
-#else
     s->r15 = (u32)(((u64)period_tab[s->fss - 4] * ABFT_CLK2FX_MUL) >> 10) - ABFT_SSW_TXTIME_FX;
-#endif
     ssw_tpl_fc = 0x864;
     ssw_tpl_fb_sector = (r18->antenna << 6) | r18->sector;
     ssw_tpl_fb_snr = r18->metric;
@@ -980,7 +689,7 @@ static void abft_ssw_prep_sw(struct abft_ssw_st *s, u32 a)
     ssw_tpl_ra[2] = r18->bssid[2];
 }
 
-/* RF на передачу (как в abft_responder_tx_ssw после сторожа). */
+/* RF на передачу (после сторожа SIFS_CNT). */
 static void abft_ssw_rf_tx(struct abft_ssw_st *s)
 {
     uc_mac_cmd(0x3d000100);
@@ -998,7 +707,7 @@ static void abft_ssw_rf_tx(struct abft_ssw_st *s)
     s->rf = 1;
 }
 
-/* RF обратно на приём без передачи (как конец abft_responder_tx_ssw, без ожидания события 5 — кадра не было). */
+/* RF обратно на приём без передачи (как конец пачки, но без ожидания события 5 — кадра не было). */
 static void abft_ssw_rf_back(struct abft_ssw_st *s)
 {
     if (!s->rf)
@@ -1011,7 +720,7 @@ static void abft_ssw_rf_back(struct abft_ssw_st *s)
 }
 
 /* Пачка SSW. stage 0 — с первого кадра (0x2d …), 1 — первый кадр уже выдан до 0x19 включительно (UC_FP_PRETX):
- * продолжить с ожидания r45. Тело кадра — то же, что в abft_responder_tx_ssw. */
+ * продолжить с ожидания r45. */
 static u32 abft_ssw_burst(struct abft_ssw_st *s, u32 stage)
 {
     u32 r13 = s->r13, r16 = s->r16, r15 = s->r15, r19 = s->r19, r14 = s->fss, n;
@@ -1020,23 +729,26 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s, u32 stage)
 #ifdef UC_PATH_T
     u32 pt12 = 1;
 #endif
+    /* СРОК: соседние SSW ответчика — через SBIFS = 1 мкс, допуск aSBIFSAccuracy 0,03 мкс (802.11-2020
+     * 10.3.2.3.8, 10.42.2.3.2); FSS кадров должны уложиться в aSSDuration (10.42.5.2). Путь между кадрами (от
+     * tx_end r42.15 до запроса 0x19 и спина r45: шаблон, mac_evt_enable_bit_sync, 0x2d, abft_send_ssw_feedback —
+     * 10 Б в FIFO и ожидание direct TX, mac_program_tx_common, спин MTP r43) ~230 инструкций ≈ 1,5–2 мкс +
+     * задержки MTP; запас: нет — SBIFS программно не выдерживается. Хвост пачки уходит за aSSDuration и может
+     * наехать на SSW-Feedback AP (через MBIFS после aSSDuration). Удлинение пути — меньше SSW в слоте. */
     if (stage == 1) {
         r17 = 0;
+#ifdef UC_PATH_T
+        pt12 = 0;                                   /* первая 0x19 уже выдана до события (точка 12 — там) */
+#endif
         goto after_go;
     }
     do {
         uc_mac_cmd((*(u8 *)&rf_chain_cfg << 16) |
                            ((r14 << 1) | 0x2d000001 | (r13 << 10)));
         abft_send_ssw_feedback(0);
-#ifdef UC_DUR_VENDOR
-        uc_mac_cmd(r15 | 0x15000000);
-        uc_mac_cmd(0x14000007);
-        r15 -= 0x10;
-#else
         uc_mac_cmd(((r15 + 1023u) >> 10) | 0x15000000);
         uc_mac_cmd(0x14000007);
         r15 -= ABFT_SSW_STEP_FX;
-#endif
         mac_program_tx_common();
         while (!(arc_core_rd(43) & (1u << 31)))
             ;
@@ -1254,9 +966,7 @@ fdbk_done:
         r15 = 0x100;
     }
 }
-#endif
 
-#ifdef ABFT_STA_STD
 /* GP0 станции: конец BTI по Duration принятого маяка (802.11-2020 10.42.5.1).
  * Пуск 0x5200090c — по концу GP2 (H-GP9), GP2 = 0x284 = 3,903 мкс стартует концом приёма кадра (H-GP5):
  * GP0 = Duration − 0x284 + UC_ABFT_STA_GP0_TRIM_CLK кончается в конец BTI. Стенд std2 (5 пачек, оба AP):
@@ -1268,8 +978,8 @@ fdbk_done:
  * (наш AP), 11,92 (vendor) — запас 2,4 мкс ≈ 400 тактов. Почти весь путь — ожидание ppdu_report (r42.16) в
  * bti_worker_bi2_step: rx_buf (BSSID, Duration) читается после переключения буфера по r42.16, раньше взводить
  * нечем. Вытеснение прерываниями L1/L2 на этом отрезке не ограничено (кандидат: запрет прерываний от r42.12
- * до взвода). Отказ в std3 (r2std_3) — не это окно: вход kind 1 на последнем маяке (CDOWN 0). Порядок команд —
- * как vendor: квитирование r54.8 (0x49000100) до взвода. Возврат: 1 — GP2 идёт, GP0 стартует по его концу;
+ * до взвода). Отказ в std3 (r2std_3) — не это окно: вход kind 1 на последнем маяке (CDOWN 0). Порядок команд:
+ * квитирование r54.8 (0x49000100) до взвода (иначе r54.8 прошлого GP2 читается как опоздание). Возврат: 1 — GP2 идёт, GP0 стартует по его концу;
  * 2 — опоздание (r54.8 после квитирования или GP_CLK2 = 0: GP2 не идёт) — A-BFT в этом BI не начинать. */
 static u32 abft_sta_arm_gp0(void)
 {
@@ -1283,7 +993,6 @@ static u32 abft_sta_arm_gp0(void)
     uc_mac_cmd(0x5200090c);
     return (bti_bi2_gp2_end_flag() != 0 || abft_gp_clk2() == 0) ? 2u : 1u;
 }
-#endif
 
 /* chk = 0 — без проверок окна BI и синхронизации BI (вход в BTI с пути приёма, см. bti_transmitter_bi2_flow). */
 static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk)
@@ -1300,14 +1009,10 @@ static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk)
             goto err;
     }
 
-#ifdef ABFT_STA_STD
     u32 t_bcn = 0;
-#endif
     for (;;) {                                        /* L_936e90 */
         uc_wait_event_busy(0x20u | (1u << 12), 0);
-#ifdef ABFT_STA_STD
-        t_bcn = abft_t1();                           /* r42.12 первого маяка: конец BTI для ABFT_STA_LASTBCN */
-#endif
+        t_bcn = abft_t1();                           /* r42.12 первого маяка: конец BTI для поправки по последнему маяку */
         if (!(arc_core_rd(42) & (1u << 12))) {
             /* L_937298 */
             u32 r1 = mac_sel_shadow & 0xffff0fff;
@@ -1327,14 +1032,12 @@ static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk)
     }
 
     uc_mac_cmd(0x49000100);
-#ifdef ABFT_STA_STD
     {
         /* б31..30 — итог взвода GP0 (для bti_transmitter_bi2_flow), б29..0 — Timer1 «конца BTI» по этому маяку
          * (t r42.12 + Duration; для поправки по последнему маяку в bti_bi2_track_best_metric). Timer1 < 2^29. */
         u32 st = abft_sta_arm_gp0();
         bti_cnt.x04 = ((t_bcn + (u32)rx_buf_duration * ABFT_CLK_PER_US) & 0x3fffffffu) | (st << 30);
     }
-#endif
     bcn_rx.my_bss = arc_core_rd(38) & 1;                 /* bmsk r1,r38,0x0 */
     u32 r3 = (rx_buf_body18 | ((u32)rx_buf_body19 << 8)) & 0x780;
 
@@ -1502,9 +1205,7 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
     /* 6.2 asm 0x93dc80. */
     u32 r16 = 0x140;
     u32 metric = 0;                           /* sp[0] */
-#ifdef ABFT_STA_FAST
     u32 fp_pre = 0, fp_slot = 0;              /* выбор слота и mac_set_mode_a000 сделаны после маяка CDOWN 0 */
-#endif
 
     uc_mac_cmd(0x2011000);
 
@@ -1512,12 +1213,9 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
         /* L_93dcbc */
         uc_wait_event1_or_event4(1u << 12, r16, 0);  /* r1 = r16 (биты r54), r2 = 0 */
         if (arc_core_rd(42) & (1u << 12)) {        /* btst r3,0xc */
-#ifdef ABFT_STA_LASTBCN
             u32 t_bcn = abft_t1();
-#endif
             if (bti_worker_bi2_step(c->kind, 0) == 0)   /* breq → цикл */
                 continue;
-#ifdef ABFT_STA_LASTBCN
             /* Конец BTI — по Duration ПОСЛЕДНЕГО принятого маяка (802.11-2020 10.42.5.1). GP0 не трогаем (он
              * стартовал по концу GP2 первого маяка); границы слотов (GP1) и конец A-BFT (GP2) ещё не
              * стартовали — их значения сдвигаются на разницу «конец BTI по этому маяку − по первому»
@@ -1538,7 +1236,6 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                     uc_mac_cmd(0x5400070e);
                 }
             }
-#endif
 
             u32 r8 = mac_sel_shadow & 0xffff0fff;
             mac_sel_shadow = r8 | 0xd000;
@@ -1606,7 +1303,6 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                     }
                 }
             }
-#ifdef ABFT_STA_FAST
             /* Маяк с CDOWN 0 — последний в BTI, приём завершён: подготовка ответа A-BFT до конца GP0 (abft-timing.md
              * §20) — выбор слота (r47) и mac_set_mode_a000 + 0x3d000002 (ожидания r40.24/r40.3 уже выполнены).
              * Путь цикла после маяка удлиняется на ~100 инструкций, но до конца GP0 у нашего AP ≥ 1,6 мкс
@@ -1617,7 +1313,6 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                 fp_slot = abft_sta_pick_slot();
                 fp_pre = 1;
             }
-#endif
         } else {
             /* L_93dec4 */
             if (arc_core_rd(54) & (1u << 6)) {             /* bbit1 r6,0x6 */
@@ -1629,14 +1324,12 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                 if (bcn_rx.abft_go != 0)   /* bl.ne L_9307bc */
                     bti_arm_period_gp0();
                 c->status = 1;
-#ifdef ABFT_STA_FAST
                 if (bcn_rx.abft_go != 0) {
                     /* ответ A-BFT сразу, без возврата через bti_transmitter_bi2_flow/bti_prepare_sweep_set/
                      * bti_dispatch_sweep_step/bi_run_bti_cycle; bi_run_bti_cycle его не повторит (fast_done) */
                     abft_responder_fast(&c->rec, fp_pre, fp_slot);
                     c->fast_done = 1;
                 }
-#endif
                 return;
             } else {
                 if (arc_core_rd(54) & (1u << 8)) {         /* bbit0 r3,0x8 → assert */
@@ -1666,7 +1359,6 @@ void bti_arm_period_gp0(void)
      * должна совпадать с сеткой AP с точностью ~aAirPropagationTime (0,1 мкс). От чтения r55 до 0x50
      * ~11 инструкций + 4 на каждый уже прошедший слот в цикле вычитания (vendor 0x930838 — тот же
      * цикл); запас: десятки. Каждый такт здесь сдвигает границы слотов станции позже AP. */
-#ifdef ABFT_STA_STD
     if (arc_core_rd(54) & 0x80u) {
         /* Поздно: первая граница GP1 уже прошла. Прошло от конца GP0 e = (ход GP2) − остаток (H-CLK2);
          * границы GP1 — first + k·P. vendor (ветка ниже) считал фазу от конца GP0 + MBIFS, а не от своей
@@ -1687,26 +1379,6 @@ void bti_arm_period_gp0(void)
         uc_mac_cmd(0x49000080);
         abft_gp0_armed = 1;
     }
-#else
-    if (arc_core_rd(54) & 0x80u) {                /* btst r1,0x7 */
-        u32 r4 = (((u32)bcn_rx.bi_ctrl[0] | ((u32)bcn_rx.bi_ctrl[1] << 8)) >> 7) & 7;
-        r4 += 1;
-        u32 mlo = r4 * r14;                  /* mulu64 → младшие 32 бита */
-        uc_mac_cmd(0x4d00000a);
-        arc_nops_nop(2);
-        u32 r13 = mlo - arc_core_rd(55);
-        u32 r6 = 0;
-        while (r13 >= r14) {                 /* brlo → сразу; цикл вычитания */
-            r13 -= r14;
-            r6++;
-        }
-        abft_gp0_periods = (u8)r6;          /* stb r6,[gp,-0xe5] */
-        uc_mac_cmd((r14 - r13) | 0x50000000u);
-        uc_mac_cmd(0x5300080e);
-        uc_mac_cmd(0x49000080);
-        abft_gp0_armed = 1;               /* stb r7,[gp,-0xef] */
-    }
-#endif
     uc_mac_cmd(r14 | 0x50000000u);
     uc_mac_cmd(0x5300080e);
     uc_mac_cmd(0x49000080);

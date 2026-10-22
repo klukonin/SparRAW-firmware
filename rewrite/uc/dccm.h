@@ -770,7 +770,7 @@ struct bi_ctx_s {
     u8   status;                        /* +0x04 состояние BTI: 1, 2, 4, 5, 6 (= STARTED), возврат bti_prepare_sweep_set */
     u8   round;                         /* +0x05 счётчик кругов развёртки */
     u8   fast_done;                     /* +0x06 (наше, у vendor — выравнивание) ответ A-BFT станции уже сделан
-                                         * из bti_bi2_track_best_metric (ABFT_STA_FAST); сброс — bi_run_bti_cycle */
+                                         * из bti_bi2_track_best_metric (abft_responder_fast); сброс — bi_run_bti_cycle */
     u8 _pad0[1];
     struct sls_peer_rec rec;            /* +0x08 */
     u32  dti_wake;                      /* +0x20 DTI-аллокация: пир просил бодрствование (событие 29 при снятии) */
@@ -1732,10 +1732,10 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define rx_buf_toggle_dis            (*(u8 *)0x800436)   /* [с] ≠ 0 — не выдавать команду 0x32 переключения буфера (и не ++ 0x80042f); 12 проверок в rx/bti/brp/boot, писателя в uc нет (задаётся извне, в образе 0). */
 #define bf_abort_nonhead_cnt         (*(u8 *)0x800437)   /* [с] ucode_cmd_0x0f_handler: BF станции прерван, но станция не в голове кольца запросов BF → ++ (иначе ставится фоновая задача 1). Только счётчик. */
 #define discovery_type               (*(u8 *)0x800438)   /* [в] Байт +4 команды LMAC 0x24 (discovery_mode_cfg, «DISCOVERY ON/OFF (Type: %d)»); ucode_cmd_0x0b_handler при ==1 вызывает disable_tsf_event. */
-#define abft_gp0_armed               (*(u8 *)0x800439)   /* [с] bti_arm_period_gp0 ставит 1 после программирования периода (команды 0x50/0x53/0x49); abft_responder_respond_flow при ≠0 корректирует номер слота на... */
+#define abft_gp0_armed               (*(u8 *)0x800439)   /* [с] bti_arm_period_gp0 ставит 1 после программирования периода (команды 0x50/0x53/0x49); abft_responder_fast при ≠0 корректирует номер слота на... */
 #define fsched_log_idx               (*(u8 *)0x80043a)   /* [в] Индекс записи журнала fsched_log 0x8007d4 (+4·idx), ++ в l1_fixed_sched_*_sm, 0 при ≥16; аргумент rx_flow_run_and_check_bf_abort. NAMES-EXTRA («Инд... */
 #define qh_dma_open                  (*(u8 *)0x80043b)   /* [с] sched_cfg_merge_update ставит 1 (если 0); qh_write_while_dma_open_check при ≠0 считает «QH Write while DMA is open» (счётчик 0x80070f) и сбрасывает... */
-#define abft_gp0_periods             (*(u8 *)0x800443)   /* [с] bti_arm_period_gp0: число целых периодов, прошедших до программирования (цикл вычитания) — stb [gp,-0xe5]; abft_responder_respond_flow вычитает (n+... */
+#define abft_gp0_periods             (*(u8 *)0x800443)   /* [с] bti_arm_period_gp0: число целых периодов, прошедших до программирования (цикл вычитания) — stb [gp,-0xe5]; abft_responder_fast вычитает (n+... */
 #define mac_cmd31_mode               (*(u8 *)0x800444)   /* [с] Аргумент a последней MAC-команды 0x31 (mac_select_rf_module_cmd31: 0x31000000|a<<4|sta<<9); ≠0 включает ожидание BAP (r53.0, команды 0x23010003/0x2... */
 #define rx_last_mcs                  (*(u8 *)0x800447)   /* [в] r38[24:20] received_mcs последнего кадра (rx_flow_handle_frame); ≥2 и RS не включён → событие rs_started (rx_funcs_rx_flow). UC-REGISTERS §2 r38. */
 #define aw_tx_peer_mask              (*(u8 *)0x800448)   /* [с] Битовая карта станций (<8), которым была передача в слоте фикс. расписания (fixed_sched_run_tx_slot при 0x8006c0≠0); aw_worker_collect_awake_peers ... */

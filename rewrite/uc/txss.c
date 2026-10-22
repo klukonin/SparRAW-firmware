@@ -503,13 +503,9 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = t;
         u32 sv = (u8)((r14 - 1) + ss->n_frames * r14);
         txss_set_sweep_param((u32)timing, ss, r14, 0, sv, sp4);
-#ifdef UC_DUR_VENDOR
-        uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
-#else
         /* первый SSW RSS: до конца SSW с CDOWN 0 + MBIFS, вверх, буквально (9.3.1.15; SLS_SSW_DUR, abft.h) */
         uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, SLS_MBIFS_US - timing[2], ss_plan_cdown, sls_ssw_dur_mul(timing[1])) |
                    (1u << 24) | (1u << 26) | (1u << 28));
-#endif
         uc_mac_cmd(0x14000007);
     }
     direct_tx_program_cmd34(0x10, 0x16);
@@ -721,7 +717,6 @@ void sls_send_ssw_ack(u32 a, u32 b)
     *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r;
     sls_build_ssw_ack(&buf, a, b);
     direct_tx_program_cmd34(0x10, 0x18);
-#ifndef UC_DUR_VENDOR
     {
         /* Duration SSW-Ack = Duration принятого SSW-Feedback − MBIFS − TXTIME(SSW-Ack), вверх (9.3.1.17;
          * SSWACK_DUR_SUB, abft.h), 0x15 буквально. vendor команды не давал — поле из буфера (не заполнялось). */
@@ -729,7 +724,6 @@ void sls_send_ssw_ack(u32 a, u32 b)
         uc_mac_cmd(((dfb > SSWACK_DUR_SUB) ? dfb - SSWACK_DUR_SUB : 0u) | 0x15000000);
         uc_mac_cmd(0x14000007);
     }
-#endif
     mac_program_tx_common();
     uc_mac_cmd(0x2008000);
     u32 v;
@@ -1281,12 +1275,8 @@ void txss_sweep_timing(u32 out, u32 byte1, u32 byte2)
      * где base=*(0x801598), r13=(0x886d0c>>24). */
     u32 r13 = MMIO32(HW_MAC_IFS_RIFS_SBIFS) >> 24;
     u32 base = txss_timing_base;
-#ifdef UC_LBIFS_STD
-    /* смена антенны пира: + (LBIFS − SBIFS) = frame + gap на каждую (ifs.h, P11); byte2 = 0 — как vendor */
+    /* смена антенны пира: + (LBIFS − SBIFS) = frame + gap на каждую (ifs.h, P11); при byte2 = 0 (антенн у пира нет — не бывает) выражение из 6.2 */
     u32 r1 = (byte2 != 0 ? (byte2 - 1) * (base + r13) : byte2 * 0x11 - 0x11) + (base + r13) * byte1 * byte2;
-#else
-    u32 r1 = (byte2 * 0x11 - 0x11) + (base + r13) * byte1 * byte2;   /* vendor: +17 мкс на смену (ifs.h, P11) */
-#endif
     struct ss_timing *t = (struct ss_timing *)out;
     t->total = (u16)r1;
     t->frame = (u16)base;
