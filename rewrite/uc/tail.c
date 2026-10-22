@@ -2569,7 +2569,10 @@ static void bcon_tx_ack_cmds(void)
  * запас: не определён, участок после события 6 — ~10 инструкций (единицы). Колбэк d (TXSS,
  * txss.c) стоит на этом же пути. У SSW (f ≠ 0) Duration по стандарту (SLS_SSW_DUR) — +ldb/mul64/сдвиг/sub
  * против vendor (+5 инструкций на кадр), до ожидания события 5 (поглощается им, если ожидание ненулевое).
- * У маяка (f = 0) вход функции до первой 0x15 — +4 инструкции (сравнение f и два обнуления, objdump). Срыв: интервал > SBIFS, кадры развёртки съезжают против
+ * У маяка (f = 0) вход функции до первой 0x15 — +4 инструкции (сравнение f и два обнуления, objdump).
+ * BCN_DUR_STD: у маяка 0x15 + 0x14000007 на каждом кадре (как у SSW) — +22 инструкции на маяк (ldb CDOWN,
+ * mul64, r57, сдвиг, два add/sub, две команды), до ожидания события 5; вход — ещё +4 и 2 сохранения регистров.
+ * Признак опоздания — рост замеренного P (метка 1 опытной ветки) и FWERR 0x26. Срыв: интервал > SBIFS, кадры развёртки съезжают против
  * Duration/CDOWN (ss_plan_tx_dur уменьшается на frame + gap за кадр) — развёртка вылезает
  * за BTI/слот, приёмник считает время до конца ISS неверно. */
 u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
@@ -2584,6 +2587,15 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
     u32 sect = 0;                               /* [sp,0x10] — флаг смены RF-модуля */
     u32 h5c = (u32)ss_plan_cdown << 1;
 
+#ifdef BCN_DUR_STD
+    /* Маяк (f = 0): Duration буквально, ⌈⌉ до конца BTI (abft.h, BCN_DUR_STD): bti.c положил m + 1 в _6 и K в
+     * total; 0x15 = ss_plan_tx_dur + K − ⌊CDOWN·δb/165⌋ — тот же SLS_SSW_DUR, что у SSW. У первого маяка это TXOP. */
+    u32 bmul = 0, badd = 0;
+    if (f == 0 && ((const struct ss_timing *)c)->_6 != 0) {
+        bmul = (u32)((const struct ss_timing *)c)->_6 << 8;
+        badd = ((const struct ss_timing *)c)->total;
+    }
+#endif
 #ifdef UC_DUR_VENDOR
     if (b != 1) {
         uc_mac_cmd(ss_plan_tx_dur | (1u << 24) | (1u << 26) | (1u << 28));
@@ -2632,7 +2644,11 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
         (void)rxw1;
         mac_evt_enable_bit_sync_b(6);
         if (f == 0) {
+#ifdef BCN_DUR_STD
+            uc_mac_cmd(bmul != 0 ? 0x14000007 : 0x14000005);   /* б1 — Duration = 0x15 − d буквально (abft.h) */
+#else
             uc_mac_cmd(0x14000005);
+#endif
             uc_mac_cmd(0x2000080);
         }
         bcon_tx_ack_cmds();
@@ -2680,6 +2696,12 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             uc_mac_cmd(0x14000007);
             r0 = 0x14000007;
         }
+#ifdef BCN_DUR_STD
+        else if (bmul != 0) {                /* маяк: Duration ⌈⌉ буквально, путь как у SSW выше */
+            uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, badd, ss_plan_cdown, bmul) | (1u << 24) | (1u << 26) | (1u << 28));
+            uc_mac_cmd(0x14000007);
+        }
+#endif
         if (d != 0)
             ((cb_t)d)(r0, r1, h5c, d);
         u32 r16 = ((u32)ss_plan_rf_sector << 8) | (rf_chain_cfg | 0x30);

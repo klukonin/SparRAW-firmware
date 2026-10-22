@@ -21,7 +21,8 @@
  *   UC_ABFT_AP_VENDOR  — AP как vendor 6.2 (слот 0 = GP2 0x339, GP1 = aSSDuration + 1 мкс).
  *   UC_ABFT_STA_FIRSTBCN — станция берёт конец BTI по первому принятому маяку (vendor); по умолчанию —
  *                        по последнему (10.42.5.1): GP1/GP2 сдвигаются на поправку от каждого маяка BTI;
- *   UC_DUR_VENDOR      — Duration SSW (A-BFT, ISS/RSS), SSW-Feedback, SSW-Ack как vendor 6.2.
+ *   UC_DUR_VENDOR      — Duration SSW (A-BFT, ISS/RSS), SSW-Feedback, SSW-Ack как vendor 6.2;
+ *   UC_BCN_DUR_VENDOR  — Duration маяков BTI считает MAC (остаток TXOP, ⌊⌋), как vendor 6.2.
  *
  * Стандартный тайминг:
  *   станция — GP0 = Duration − 0x284 от конца GP2 (= конец приёма маяка + 3,903 мкс) кончается в конец
@@ -184,6 +185,28 @@ _Static_assert(SSWFB_DUR_US == 28u && SSWFB_DUR_BRP_US == 37u && SSWACK_DUR_SUB 
 #ifndef UC_BTI_DUR_REF_CLK
 #define UC_BTI_DUR_REF_CLK  30u
 #endif
+/* Duration маяков BTI по 9.2.5.1 (вверх) — буквально (отказ — UC_BCN_DUR_VENDOR; без BTI_TXOP_STD — тоже vendor).
+ * Стенд (exp/dur-round, rnd1, 2026-10-22): 0x14 с б1 перед маяками (0x14000007 вместо 0x14000005) — Duration
+ * = значение 0x15 минус d (у всех маяков 1269 = 1289 − 20 при одном значении 0x15 = TXOP), txop_event и A-BFT
+ * AP живы; без б1 MAC пишет ⌊остатка TXOP⌋. Гипотеза H-LIT2: в буквальном режиме Duration маяка = 0x15 − d,
+ * d — длительность кадра MAC в целых мкс вверх (r47 = ss_timing.frame), проверена только при d = 20.
+ *
+ * Конец BTI E выбирается так, чтобы первый маяк получил 0x15 = TXOP (то же значение, что сейчас ставит TXOP
+ * BTI, — TXOP не меняется ни при какой модели защёлкивания 0x15): E = конец последнего маяка + D_last,
+ * D_last = TXOP − d − ⌈(n − 1)·P / 165⌉ (≥ 0 по построению TXOP; при n = 64, 34 Б — 0). Маяк с CDOWN j несёт
+ * Duration = ⌈(j·P + D_last·165) / 165⌉ = D_last + ⌈j·P/165⌉ — точное округление вверх до E (9.2.5.1); станция
+ * по последнему маяку (10.42.5.1) получает ровно E. В 0x15 пишется Duration + d. Через план развёртки
+ * (ss_plan_tx_dur = TXOP − (d + gap)·(n − 1 − j), ss_plan_next_sector) и δb = d·165 − TXTIME (0…164):
+ *   0x15 = ss_plan_tx_dur + K − ⌊j·δb/165⌋,   K = ⌊(n − 1)·δb/165⌋
+ * (тождество ⌈j·P/165⌉ = (d + gap)·j − ⌊j·δb/165⌋) — та же форма, что SLS_SSW_DUR у SSW, тот же путь цикла.
+ * ⌊j·δb/165⌋ = (j·m) >> 16, m = ⌈δb·2^16/165⌉; в цикле — SLS_SSW_DUR с dmul = (m + 1) << 8 (перебором: точно
+ * при j ≤ 222, δb ≤ 164 — у маяков j ≤ 63; произведение < 2^32). bti.c кладёт m + 1 в ss_timing._6 и K в ss_timing.total (total
+ * читает только txss_set_sweep_param, а план затем заменяется TXOP); _6 = 0 — буквального режима нет (TXOP
+ * vendor, наборы секторов ≥ 2). */
+#if defined(BTI_TXOP_STD) && !defined(UC_BCN_DUR_VENDOR)
+#define BCN_DUR_STD 1
+#endif
+
 /* x/165 без деления (Timer1/MAC: 165 тактов в мкс), точно для x < 2^26 */
 static inline __attribute__((always_inline)) u32 clk_to_us_floor(u32 x)
 {

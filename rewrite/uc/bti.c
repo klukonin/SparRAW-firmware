@@ -464,6 +464,9 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
      * раньше txop_event: сетка A-BFT — от объявленного конца. Считается до ожидания slot_event (путь slot_event →
      * первый маяк — одно присваивание ниже), без делений. */
     u32 bt_std = 0, bt_frac = 0, bt_txop = 0;
+#ifdef BCN_DUR_STD
+    ((struct ss_timing *)sp)->_6 = 0;                /* sp — стек: без расчёта ниже буквального режима нет */
+#endif
     {
         const struct ss_timing *tm = (const struct ss_timing *)sp;
         u32 n = bti_sw.bcn_ss.n_frames, L = FWSH(fwsh_diag, bcn_psdu_len);
@@ -479,6 +482,20 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
             bt_txop = txop_us;
             bt_frac = x - clk_to_us_floor(x) * ABFT_CLK_PER_US;
             bt_std = 1;
+#ifdef BCN_DUR_STD
+            /* Duration маяков буквально, ⌈⌉ до E = конец последнего маяка + D_last (abft.h, BCN_DUR_STD): сетка A-BFT
+             * — от E (bt_frac = x − D_last·165, может быть < 0 — slot0 считается по модулю 2^32). Наборы секторов
+             * ≥ 2 (смена антенны в BTI) — период не постоянный, остаётся ⌊⌋ MAC. */
+            struct ss_timing *tw = (struct ss_timing *)sp;
+            if (fwsh_n_sets < 2 && n <= 64u) {
+                u32 c_us = clk_to_us_floor((n - 1u) * p + ABFT_CLK_PER_US - 1u);   /* ⌈(n − 1)·P/165⌉ */
+                u32 dlast = txop_us - tm->frame - c_us;                              /* ≥ 0: TXOP ≥ C + d */
+                u32 m = clk_to_us_floor((d165 - T) * 65536u + ABFT_CLK_PER_US - 1u);  /* ⌈δb·2^16/165⌉ */
+                bt_frac = x - dlast * ABFT_CLK_PER_US;
+                tw->total = (u16)(((n - 1u) * m) >> 16);                            /* K */
+                tw->_6 = (u16)(m + 1u);              /* ≠ 0 — буквальный режим; m + 1 ≤ 65137 (точно, abft.h) */
+            }
+#endif
         } else {
             FWSH(fwsh_diag, bti_txop_fallback) += 1;                /* длина не сходится с r47 — TXOP vendor */
         }
