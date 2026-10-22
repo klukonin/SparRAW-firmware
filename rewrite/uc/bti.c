@@ -387,7 +387,7 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
 #endif
     if (bcn_rx.abft_here != 0) {
 #ifdef ABFT_STA_STD
-        u32 off = 0;                            /* конец GP0 = конец BTI (аппаратная привязка) */
+        u32 off = ABFT_STA_GP0_LATE_CLK;        /* конец GP0 = конец BTI + запас (abft.h); 0 при FIRSTBCN */
 #else
         /* vendor: при Duration ≥ 4 мкс off = 4 ТАКТА (mov.cc 4 — не мкс), GP1/GP2 короче на 24 нс. */
         u32 r8 = rx_buf_duration;
@@ -484,14 +484,19 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
             bt_std = 1;
 #ifdef BCN_DUR_STD
             /* Duration маяков буквально, ⌈⌉ до E = конец последнего маяка + D_last (abft.h, BCN_DUR_STD): сетка A-BFT
-             * — от E (bt_frac = x − D_last·165, может быть < 0 — slot0 считается по модулю 2^32). Наборы секторов
+             * — от E (bt_frac — ниже, по новому txop_event; slot0 считается по модулю 2^32). Наборы секторов
              * ≥ 2 (смена антенны в BTI) — период не постоянный, остаётся ⌊⌋ MAC. */
             struct ss_timing *tw = (struct ss_timing *)sp;
             if (fwsh_n_sets < 2 && n <= 64u) {
-                u32 c_us = clk_to_us_floor((n - 1u) * p + ABFT_CLK_PER_US - 1u);   /* ⌈(n − 1)·P/165⌉ */
-                u32 dlast = txop_us - tm->frame - c_us;                              /* ≥ 0: TXOP ≥ C + d */
+                /* D_last = TXOP − d − ⌈(n − 1)·P/165⌉ (≥ 0) входит в Duration неявно — через K и план (abft.h). */
                 u32 m = clk_to_us_floor((d165 - T) * 65536u + ABFT_CLK_PER_US - 1u);  /* ⌈δb·2^16/165⌉ */
-                bt_frac = x - dlast * ABFT_CLK_PER_US;
+                /* Сетка A-BFT (стенд bcn1): запись 0x15 на маяк перезадаёт TXOP — txop_event пришёл на 1,35 мкс раньше
+                 * (tx_end последнего маяка → txop_event 17,85 вместо 19,20). Модель H-TXOP: MAC начинает TXOP заново от
+                 * команды пуска каждого кадра (за UC_ABFT_MACLAT_CLK до начала кадра в эфире, как прямая передача в
+                 * A-BFT, H-ORIGIN) длиной 0x15: txop_event = начало последнего маяка − MACLAT + (D_last + d)·165 =
+                 * E + δb − MACLAT (не зависит от D_last; 144 − 91 = 53 такта = 0,32 мкс — ровно сдвиг bcn1:
+                 * 1,67 − 1,35). Сетка — от E: bt_frac = δb − MACLAT (может быть < 0). */
+                bt_frac = (d165 - T) - UC_ABFT_MACLAT_CLK;
                 tw->total = (u16)(((n - 1u) * m) >> 16);                            /* K */
                 tw->_6 = (u16)(m + 1u);              /* ≠ 0 — буквальный режим; m + 1 ≤ 65137 (точно, abft.h) */
             }
@@ -935,7 +940,7 @@ static u32 abft_sta_arm_gp0(void)
 {
     u32 sub = ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK;
     u32 d165 = (u32)rx_buf_duration * ABFT_CLK_PER_US;
-    u32 v = (d165 >= sub + ABFT_CLK_PER_US) ? d165 - sub : ABFT_CLK_PER_US;
+    u32 v = ((d165 >= sub + ABFT_CLK_PER_US) ? d165 - sub : ABFT_CLK_PER_US) + ABFT_STA_GP0_LATE_CLK;
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x49000040);
@@ -1186,12 +1191,12 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                 u32 fss = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
                 if (dl > -(s32)(5 * ABFT_CLK_PER_US) && dl < (s32)(5 * ABFT_CLK_PER_US) && fss >= 4) {
                     if (bcn_rx.abft_go != 0) {       /* как bti_tx_program_bi2_regs, без квитирования r54.7 */
-                        uc_mac_cmd((u32)((s32)ABFT_STA_STD_GP1_CLK + dl) | 0x50000000u);
+                        uc_mac_cmd((u32)((s32)(ABFT_STA_STD_GP1_CLK - ABFT_STA_GP0_LATE_CLK) + dl) | 0x50000000u);
                         uc_mac_cmd(0x5300070e);
                     }
                     u32 n = ((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7 & 7) + 1;
                     /* как bf_gpc_program_mac_by_mode_b, без квитирования r54.8 (его ждёт этот цикл, r16) */
-                    uc_mac_cmd((u32)((s32)(n * period_tab[fss - 4] + ABFT_MBIFS_CLK) + dl) | 0x51000000u);
+                    uc_mac_cmd((u32)((s32)(n * period_tab[fss - 4] + ABFT_MBIFS_CLK - ABFT_STA_GP0_LATE_CLK) + dl) | 0x51000000u);
                     uc_mac_cmd(0x5400070e);
                 }
             }
