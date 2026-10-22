@@ -73,7 +73,8 @@ void bcn_tx_init_bi_cfg(volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 w1)
 
 /* bcn_tx_init_ss_params (0x8c4664, 166 Б): список секторов бикона cmd->ss (+4). Нет платы
  * ([gp-0x18] = 0x80016c == 0) — ассерт 0x104d (и дальше). Конфигураций ucode
- * ([0x85773c]) < 2 — сектора 0..63 подряд (ss.order, +0xc), число 0x40, x0/host_set = 0;
+ * ([0x85773c]) < 2 — у vendor сектора 0..63 подряд (ss.order, +0xc), число 0x40, x0/host_set = 0; у нас — список
+ * TX-секторов board file, при пустом — 0..63;
  * иначе — список RF-объекта 0x8042c8 (sector_list__validate, a = b = 0; ошибка — ассерт
  * 0x1369). Бит 1 байта s[0] (discovery) — число секторов 0x10. w1 не используется. */
 void bcn_tx_init_ss_params(volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 w1)
@@ -83,11 +84,16 @@ void bcn_tx_init_ss_params(volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 
     if (plat_board_info == 0)
         fw_sysassert_fatal(RA(), 0x104d);
     if ((s32)(u32)VOL(fwsh_sets.n_sec[1][0]) < 2) {
-        for (i = 0; i < 64; i++)                    /* lp 64: stb i,[cmd+0xc+i] */
-            cmd->ss.order[i] = (u8)i;
-        cmd->ss.n_frames = 0x40;
-        cmd->ss.x0 = 0;
-        cmd->ss.host_set = 0;
+        /* Один набор RF: маяки — по TX-секторам board file (brd_if_build_tx_sector_list), а не всегда 0..63:
+         * каждый лишний маяк — TXTIME + SBIFS ≈ 20,7 мкс эфира в каждом BI (64 — 1,33 мс). Пустой или негодный
+         * список — прежние 0..63. */
+        if (sector_list_validate((struct ss_cfg_s *)&cmd->ss, rf_if_tx_sectors(&rf_obj), 0, 0) == 0) {
+            for (i = 0; i < 64; i++)                /* lp 64: stb i,[cmd+0xc+i] */
+                cmd->ss.order[i] = (u8)i;
+            cmd->ss.n_frames = 0x40;
+            cmd->ss.x0 = 0;
+            cmd->ss.host_set = 0;
+        }
         ok = 1;
     } else {
         ok = sector_list_validate((struct ss_cfg_s *)&cmd->ss, rf_if_tx_sectors(&rf_obj), 0, 0);
