@@ -962,6 +962,11 @@ __attribute__((section(".textlate"))) u32 TX_API_send_dband_bcon(u32 payload, u1
 
     pkt = TX_PKT_OF(payload);
     pkt->len = len;
+    /* uc считает TXOP BTI по TXTIME маяка (uc/bti.c): длина PSDU = MPDU из шаблона + FCS (MAC дописывает 4 Б);
+     * маяк 30 Б без IE → PSDU 34 Б (замер E4: PHY_PLCP_RX_LEN 34 у станции). Один шаблон на все маяки BTI. */
+#ifndef UC_BTI_TXOP_VENDOR
+    fwsh_diag.bcn_psdu_len = (u32)len + 4u;
+#endif
     pkt->done = wb;
     pkt->sent_cb = cb;
     pkt->sent_info = info;

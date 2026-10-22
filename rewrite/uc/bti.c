@@ -457,26 +457,30 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
     bti_measure_frame_duration((u32)sp);
     bi_ctrl_program_mac_bcon();
 #ifdef BTI_TXOP_STD
-    /* TXOP BTI по периоду маяков прошлого BTI (bcon_txss_sweep_step): (n − 1)·P + d + запас, вверх до мкс.
-     * bt_frac — насколько объявленный последним маяком конец BTI (его Duration — остаток TXOP с
-     * отбрасыванием дробной части) раньше txop_event: сетка A-BFT — от объявленного конца. Считается до
-     * ожидания slot_event (путь TBTT → первый маяк не удлиняется), присваивается после txss_set_sweep_param. */
+    /* TXOP BTI по TXTIME маяка (abft.h): длина PSDU — от fw (fwsh_diag.bcn_psdu_len), TXTIME — формула Control
+     * PHY в тактах, сверка с d (r47). Последний маяк кончается через (n − 1)·P + TXTIME от начала первого;
+     * TXOP = ⌈((n − 1)·P + d·165) / 165⌉ мкс. bt_frac — насколько конец BTI, объявленный последним маяком
+     * (Duration = остаток TXOP с отбрасыванием дробной части; кадры — на UC_BTI_DUR_REF_CLK позже формулы),
+     * раньше txop_event: сетка A-BFT — от объявленного конца. Считается до ожидания slot_event (путь slot_event →
+     * первый маяк — одно присваивание ниже), без делений. */
     u32 bt_std = 0, bt_frac = 0, bt_txop = 0;
     {
         const struct ss_timing *tm = (const struct ss_timing *)sp;
-        u32 pk = bti_cnt.x04, n = bti_sw.bcn_ss.n_frames;
-        u32 p = pk & 0xffff;
-        if (n >= 2 && (pk >> 24) == n && ((pk >> 16) & 0xff) == tm->frame && p != 0) {
-            u32 k = n - 1;
-            u32 txop_clk = k * p + tm->frame * ABFT_CLK_PER_US + BTI_TXOP_MARGIN_CLK;
-            u32 txop_us = clk_to_us_floor(txop_clk + ABFT_CLK_PER_US - 1u);
-            u32 last_end = k * p + p - tm->gap * ABFT_CLK_PER_US;
-            u32 x = txop_us * ABFT_CLK_PER_US - last_end;
-            if (txop_us < n * (tm->frame + tm->gap)) {        /* TXOP vendor: n·(d + SBIFS) */
-                bt_txop = txop_us;
-                bt_frac = x - clk_to_us_floor(x) * ABFT_CLK_PER_US;
-                bt_std = 1;
-            }
+        u32 n = bti_sw.bcn_ss.n_frames, L = FWSH(fwsh_diag, bcn_psdu_len);
+        u32 d165 = tm->frame * ABFT_CLK_PER_US;
+        u32 T = (L >= 14u && L < 2048u) ? dmg_ctrl_txtime_clk_rt(L) : 0;
+        if (n >= 2 && T <= d165 && T + ABFT_CLK_PER_US > d165) {
+            u32 p = T + tm->gap * ABFT_CLK_PER_US;
+            u32 lastend = (n - 1u) * p + T + UC_BTI_DUR_REF_CLK;     /* «конец» последнего маяка для Duration */
+            u32 txop_us = clk_to_us_floor((n - 1u) * p + d165 + ABFT_CLK_PER_US - 1u);
+            if (txop_us * ABFT_CLK_PER_US < lastend)
+                txop_us++;                                          /* остаток у последнего маяка ≥ 0 */
+            u32 x = txop_us * ABFT_CLK_PER_US - lastend;
+            bt_txop = txop_us;
+            bt_frac = x - clk_to_us_floor(x) * ABFT_CLK_PER_US;
+            bt_std = 1;
+        } else {
+            FWSH(fwsh_diag, bti_txop_fallback) += 1;                /* длина не сходится с r47 — TXOP vendor */
         }
     }
 #endif

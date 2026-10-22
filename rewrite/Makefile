@@ -44,6 +44,8 @@ $(BUILD)/uc/%.o: CFLAGS += -ffixed-r25 -include uc/proto.h -include uc/dccm.h -i
 $(BUILD)/uc/%.o: uc/proto.h uc/dccm.h
 # отладочные вставки uc (напр. UC_DBG=-DUC_DBG_SIFS); в рабочей сборке пусто
 $(BUILD)/uc/%.o: CFLAGS += $(UC_DBG)
+# флаг отказа TXOP BTI действует и на fw (запись длины маяка для uc, fw/stubs.c)
+$(BUILD)/fw/%.o: CFLAGS += $(filter -DUC_BTI_TXOP_VENDOR,$(UC_DBG))
 # uc/data.c определяет объекты с именами из dccm.h — там эти имена не макросы
 $(BUILD)/uc/data.o: CFLAGS += -DUC_DCCM_OBJECTS
 # uc/proto.h — tools/gen_uc_proto.py (перегенерировать при добавлении/смене сигнатур)
