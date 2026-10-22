@@ -924,11 +924,10 @@ void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot)
                     u32 v = ((u32)r->abft_sector << 8) | rf_chain_cfg | 0x30;
                     sta_tab[r->abft_sta].tx_sel = v;
                     bcn_rx.abft_ok_cnt += 1;
-                    abft_cfg.relax_cnt = *(u16 *)&abft_cfg.relax_period;
-                    /* 10.42.5.2: Feedback в A-BFT маяка с Discovery Mode = 1 — не пытаться следующие
-                     * aMaxABFTAccessPeriod (2) A-BFT */
-                    if ((bcn_rx.bi_ctrl[0] & 2u) && abft_cfg.relax_cnt < ABFT_MAX_ACCESS_PERIOD)
-                        abft_cfg.relax_cnt = ABFT_MAX_ACCESS_PERIOD;
+                    /* 10.42.5.2: пропуск следующих A-BFT после Feedback — только в A-BFT маяка с Discovery Mode = 1
+                     * (aMaxABFTAccessPeriod = 2). Вне Discovery стандарт пропуска не требует; relax_period от fw
+                     * (LMAC 0x23, политика vendor: 1) не действует — он стоил латентности BF станции на BI. */
+                    abft_cfg.relax_cnt = (bcn_rx.bi_ctrl[0] & 2u) ? ABFT_MAX_ACCESS_PERIOD : 0u;
                     uc_evt_build_and_post_report(r, 0);
                     r16 = 0x100;
                     goto fdbk_done;
