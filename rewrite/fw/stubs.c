@@ -2,6 +2,7 @@
 /* Порты vendor, не получившие отдельного модуля (исторически — место заглушек init-функций;
  * заглушек здесь больше нет): DMG-бикон и discovery-бикон, analog/RF-восстановление,
  * ящики хоста, разное. Переносятся в свои модули при случае. */
+#include "../include/abft_cfg.h"
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
@@ -834,14 +835,15 @@ __attribute__((section(".textlate"))) void bcon_tx_build_step(struct mid_bss *mi
      * 10.42.5.2, Table 11-22: «shall set the FSS subfield … no less than aSSFramesPerSlot»), такой маяк роняли
      * станции vendor и прежний uc (assert 0x1540/0x145d, чтение таблицы слотов за границей). Стандартный минимум — 4. */
     m[1] = (u8)((m[1] & ~(0xfu << 2)) |
-                   (((*(volatile u8 *)FWSH_A_fwsh_long_range == 0) ? 0xfu : 4u) << 2));
+                   (((*(volatile u8 *)FWSH_A_fwsh_long_range == 0) ? ABFT_FSS_FIELD : ABFT_FSS_FIELD_MIN) << 2));
     m[1] |= (1u << 6);
 
     /* u16@obj+0x10b: bits_set16_s6_w6(0) → очистить биты [6..11] */
     bf16le(m + 4, 6, 6, 0);
 
-    /* байт obj+0x10a: bcon_bits_set8_s5_w3(4) → биты [5..7] = 4 */
-    bf8(m + 3, 5, 3, 4);
+    /* байт obj+0x10a, биты [5..7] → bi_cfg.n_bi_abft (bcn_tx_init_bi_cfg: s[3] >> 5) → поле N BIs A-BFT:
+     * A-BFT в каждом BI (include/abft_cfg.h; vendor — 4) */
+    bf8(m + 3, 5, 3, ABFT_N_BI_ABFT);
 
     /* u16@obj+0x108: bcon_bits_set16_s7_w6(0) → очистить биты [7..12] */
     bf16le(m + 1, 7, 6, 0);

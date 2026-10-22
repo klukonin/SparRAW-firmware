@@ -5,6 +5,7 @@
  * Запись mid (struct mid, include/mid.h) — элемент пула mid_pool (1 × 0x2b0, память
  * mid_recs); узел списка mid_list — в начале записи. Битовая карта открытых mid — байт
  * [gp,0xd5] = 0x800259. */
+#include "../include/abft_cfg.h"
 #include "../include/types.h"
 #include "../include/ieee80211.h"
 #include "../include/hw.h"
@@ -137,7 +138,7 @@ static void mid_init(struct mid_bss *o, struct mid *e)
     /* volatile: соседние байты — две записи stb, как у vendor (stb_s [r1,0x14]/[r1,0x15]);
      * без volatile gcc сливает их в одну sth */
     ((volatile struct mid_bss *)o)->is_go = 0;
-    ((volatile struct mid_bss *)o)->abft_len = 1;
+    ((volatile struct mid_bss *)o)->abft_len = ABFT_LEN_SLOTS_DEFAULT - 1u;   /* include/abft_cfg.h */
     for (i = 0; i < 8; i++)
         o->pbss[i].aid = 8;
     if (app_ies_clear(&o->ie_assoc_req) != 0)

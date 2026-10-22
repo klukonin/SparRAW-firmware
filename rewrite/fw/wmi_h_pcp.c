@@ -26,6 +26,7 @@
  *   [gp-0x98] 0x8000ec — таймер информационного потока, 0x8000a0 + mid·4, 0x8000f0.
  * Конфигурация 0x803b80: +0 канал PCP, +4 SSID, +0x26 длина SSID, +0x6c/+0x70 — флаги
  *   безопасности BCON_CTRL, +0x8c (0x803c0c) — OOB-режим, +0xa8 (0x803c28) — split MAC. */
+#include "../include/abft_cfg.h"
 #include "../include/types.h"
 #include "../include/ieee80211.h"
 #include "../include/rf_sets.h"
@@ -642,7 +643,7 @@ void wmi_bcon_ctrl(const struct wmi_bcon_ctrl_cmd *cmd, u32 mid)
     dashboard.pcp_sec_offload_en = offload;
     bcon_ctrl_prepare_mid(mid, sec, offload);
     n = cmd->abft_len;
-    a4 = (n >= 1 && n < 9) ? ((n - 1) & 0xffu) : 1u;
+    a4 = (n >= 1 && n < 9) ? ((n - 1) & 0xffu) : ABFT_LEN_SLOTS_DEFAULT - 1u;   /* поле A-BFT Length (include/abft_cfg.h) */
     fw_log_emit2(0x20, 0x100b4c8, a4, n);
     l2mgr_pcp_start(mid, cmd->network_type, cmd->hidden_ssid, cmd->is_go, a4);
     conn_alloc_and_link(0, 1, mid);
