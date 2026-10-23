@@ -55,7 +55,16 @@ static u32 tdma_dti_start_us(const struct mid *mid, u32 ese_len)
 {
     u32 n = fwsh_total_sectors != 0 ? fwsh_total_sectors : 1u;
     u32 ant = fwsh_n_rx_ant > 1 ? fwsh_n_rx_ant : 1u;
+    /* длина текущего маяка уже включает прежний ESE (пересборка каждый BI) — заменить его новым */
     u32 L = FWSH(fwsh_diag, bcn_psdu_len) + ese_len;
+    const struct app_ies *blk = mid_app_ie_block((struct mid_bss *)&mid->bss, 0);
+    const u8 *ie = (const u8 *)blk->buf;
+    for (u32 i = 0; ie != 0 && i + 2u <= blk->len && i + 2u + ie[i + 1] <= blk->len; i += 2u + ie[i + 1]) {
+        if (ie[i] == EID_EXT_SCHED_IE && L > 2u + ie[i + 1]) {
+            L -= 2u + ie[i + 1];
+            break;
+        }
+    }
     if (L < 6u)
         L = 6u;
     u32 bcn_clk = DMG_CTRL_TXTIME_CLK(L) + DMG_SBIFS_CLK;
