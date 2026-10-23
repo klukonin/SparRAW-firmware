@@ -600,10 +600,13 @@ s64 fw_ashr64(s64 v, u32 n) { return v >> n; }
 __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocations(struct sched_scheme *a)
 {
     fw_log_emit0(0x2b, 0x1014510);
+    /* built = 0 до add_bcon: пересобранный маяк уже без ESE должен нести CBAP Only = 1
+     * (builder_push_dmg_parameters). Vendor сбрасывал после add_bcon — у vendor бит от
+     * схемы при ESE не зависел. */
+    a->built = 0;
     remove_app_ie((u32)a->mid, 0, 0x90);
     add_bcon(a->mid);
     sched_builder_reset_alloc_list(a->ese);
-    a->built = 0;
 }
 
 /* 0x8023c0: таблица переходов switch vendor remove_app_ie (0x8e2600; ldb, цель = 0x8e263a +
@@ -920,12 +923,18 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_copy_addr_from_mid(u8 *dst, co
     memcpy_fw(dst, obj->bss.bi_ctrl, 6);
     return 6;
 }
-/* BUILDER_push_dmg_parameters (0x8c06d0, 104 Б): DMG-параметры в байт IE. */
+/* BUILDER_push_dmg_parameters (0x8c06d0, 104 Б): DMG-параметры в байт IE.
+ * CBAP Only (B2) = 1 только когда весь DTI — CBAP: нет ни расписания ESE, ни фиксированного
+ * расписания (802.11-2020 9.4.1.46, 10.39.6.3: «CBAP Only = 0, если DTI распределён Extended
+ * Schedule»). Vendor (0x8c06ea..0x8c06f8): 1 при выключенном фиксированном расписании даже со
+ * схемой ESE — точка объявляла «весь DTI — CBAP» вместе с расписанием (стенд 2026-10-23: маяк
+ * vendor с ESE — DMG Parameters 0x07); при фиксированном — 1 только со схемой. Прежний порт
+ * (fixed || !built) расходился с vendor в обоих случаях и стандарту тоже не следовал. */
 __attribute__((section(".textlate"))) u32 builder_push_dmg_parameters(u8 *dst, const struct mid *obj)
 {
     *(u8 *)dst = (*(u8 *)dst & ~3u) | (obj->bss.mode & 3);
     u32 r15 = 1;
-    if (fixed_sched.enabled == 0 && mid_get_field_0c(obj->sched) != 0)
+    if (fixed_sched.enabled != 0 || mid_get_field_0c(obj->sched) != 0)
         r15 = 0;
     u8 b = *(u8 *)dst;
     b = (b & ~0xcu) | ((r15 & 1) << 2);

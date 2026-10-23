@@ -538,8 +538,12 @@ __attribute__((section(".textlate"))) u32 dmg_bcon_rx_handler(struct mid_disc *o
     u32 other = 0;
     const u8 *p = ei->dmg_params;
     if (p != 0) {
-        u32 x = ((*p >> 2) ^ 1u) & 1u;
-        other = (*(volatile u8 *)&fixed_sched.enabled != x) ? 1u : 0u;
+        /* Маяк не свой только при включённом фиксированном расписании и CBAP Only = 1.
+         * Vendor (0x8c9458..0x8c9464): «CBAP Only = 0 ⇔ фиксированное расписание» — маяк
+         * точки с ESE (CBAP Only = 0, 802.11-2020 10.39.6.3) станция без фиксированного
+         * расписания отбрасывала целиком: ни разбора ESE, ни BCON_RX, ни сторожа маяков. */
+        u32 cbap_only = (*p >> 2) & 1u;
+        other = (*(volatile u8 *)&fixed_sched.enabled != 0 && cbap_only != 0) ? 1u : 0u;
     }
     u32 r16;
     if (obj->find.active != 0) {
@@ -584,6 +588,7 @@ __attribute__((section(".textlate"))) u32 dmg_bcon_rx_handler(struct mid_disc *o
     }
     struct conn *conn = mid_list_find_by(obj->mid, &pkt->hdr->addr1);
     if (conn != 0) {
+        ese_rx_on_own_beacon(pkt);              /* флаг «DTI расписан» для uc (fw/rx.c) */
         if (pkt->ei->ext_sched.body != 0)
             dmg_bcon_build_allocations(obj->mid, pkt);
         else if (VOL(ese_slot_tbl.mode) == 2)

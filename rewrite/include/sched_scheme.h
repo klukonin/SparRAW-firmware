@@ -35,13 +35,14 @@ _Static_assert(sizeof(struct ese_sched) == 8, "ese_sched");
 struct sched_scheme {
     struct ese_sched *ese;                     /* 0x00: 0x8052e4 */
     u8  seq;                                   /* 0x04: номер распределения (полубайт) */
-    u8  rsv_05[3];
+    u8  ese_n;                                 /* 0x05: число полей последнего ESE маяка (sched_alloc_changed) */
+    u8  rsv_06[2];
     u32 next_bi_tsf;                           /* 0x08: TSF начала следующего BI */
     u32 built;                                 /* 0x0c: != 0 — распределения собраны */
     struct mid *mid;                           /* 0x10 */
     u32 start_acc;                             /* 0x14: накопитель начала слота (ESE-режим) */
     u8  same_cnt;                              /* 0x18: биконов подряд без изменений (до 0x10) */
-    u8  rsv_19[3];
+    u8  ese_hash[3];                           /* 0x19: 24-битный отпечаток последнего ESE маяка (sched_alloc_changed) */
     /* 0x1c: шаблон 15-байтового поля Allocation IE (биты 4..6 = 1, бит 7; [0xc] = 1 —
      * mid__init_sched_scheme) */
     union {

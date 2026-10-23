@@ -3417,6 +3417,11 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
     if (FWSH(ese_slot_tbl, uc_alloc_end) != 0) {
         FWSH(ese_slot_tbl, uc_alloc_end) = 0;
         uc_log_emit1(0x21, 0x1001e44, r17);
+        /* Пустая таблица (расписание снято): конец окна несёт вектор «все CID» — иначе fw
+         * (ps_assoc_mgr, vring_schd) оставляла запрет всех колец хоста навсегда (docs/ESE.md §3). */
+        if (FWSH(ese_slot_tbl, count) == 0)
+            sp.ev.awake = 0xff;
+        ese_dti_slot_end();
         if (*wake != 0) {
             *wake = 0;
             memset0_words_uc(&sp.e29, sizeof(sp.e29));
@@ -3433,6 +3438,7 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
     FWSH(ese_slot_tbl, uc_cur_slot) = (u8)(uc_divmod_signed_qr(n, FWSH(ese_slot_tbl, count)) >> 32);   /* остаток (r1) */
     u32 r16 = r14 & 0xffff;
     uc_log_emit2(0x21, 0x1001df4, r14 & 0xf, r17);
+    ese_dti_slot_start(r16);                    /* открыть передачу на разрешённое окно (uc/ese_dti.c) */
     if (r16 & (1u << 7)) {
         sp.ev.awake = sp.e29.b[1];
         uc_mac_cmd(0x1f000601);

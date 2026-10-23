@@ -164,7 +164,15 @@ struct fwsh_diag {
     u32 uc_assert_caller;                      /* 0x18: … и место вызова */
     u32 uc_wd_pm_ms[2];                        /* 0x1c: uc L2-сторож — счётчики PM (мс) до/после пересчёта */
     u32 bti_txop_fallback;                     /* 0x24: uc — TXOP BTI по r47 (vendor): длина маяка не сходится с r47 */
-    u32 rsv_28;
+    struct {                                   /* 0x28: расписание ESE своей точки у станции (802.11-2020 10.39.4,
+                                                *       10.39.5, 10.39.6.2); байтами — пишут оба ядра */
+        u8  ese_dti_sched;                     /*       fw: 1 — DTI распределён ESE (ESE в маяке, CBAP Only = 0,
+                                                *       нет фиксированного расписания); ставится по каждому маяку
+                                                *       своей точки (fw/rx.c ese_rx_on_own_beacon) */
+        u8  ese_dti_bcons;                     /*       fw: маяков с расписанием (по модулю 256, для отладки) */
+        u8  ese_dti_closed;                    /*       uc: сколько раз передача закрыта (uc/ese_dti.c) */
+        u8  ese_dti_opened;                    /*       uc: сколько раз открыта на окно */
+    };
     u32 rts_rx;                                /* 0x2c: uc — принят RTS в TXOP (rx_txop_rts) */
     u32 bcn_nav;                               /* 0x30: uc — развёртка маяка при NAV (beacon_nav) */
     u32 rx_arm;                                /* 0x34: uc — обработанные PPDU (зеркало uc_stats.rx_arm) */
@@ -177,6 +185,7 @@ struct fwsh_diag {
 FWSH_OFF(struct fwsh_diag, fw_assert_code, 0x0c);
 FWSH_OFF(struct fwsh_diag, uc_assert_code, 0x14);
 FWSH_OFF(struct fwsh_diag, uc_wd_pm_ms, 0x1c);
+FWSH_OFF(struct fwsh_diag, ese_dti_sched, 0x28);
 FWSH_OFF(struct fwsh_diag, rts_rx, 0x2c);
 FWSH_OFF(struct fwsh_diag, aw_peers, 0x3c);
 _Static_assert(sizeof(struct fwsh_diag) == 0x40, "fwsh_diag");

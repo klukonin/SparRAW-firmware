@@ -396,6 +396,53 @@ __attribute__((section(".textlate"))) void dmg_bcon_build_allocations(struct mid
 {
     schedule_scheme_builder_build_allocations_from_beacon(a->sched, &b->ei->ext_sched);
 }
+/* Расписание ESE своей точки у станции (802.11-2020 10.39.4, 10.39.5, 10.39.6.2). Vendor брал
+ * в таблицу все поля, где станция источник или назначение либо адрес 255 (cid_pair_matches), не
+ * глядя на тип, и ставил записи бит 7 при Source AID = свой или 255; доступ к среде расписание не
+ * ограничивало. Теперь в таблицу идут только окна, где станции можно инициировать обмен, и SP,
+ * где она назначение:
+ *   SP   (тип 0): источник = свой — инициировать можно; назначение = свой — без права инициации
+ *                 (10.39.6.2: в SP передаёт источник, назначение только отвечает);
+ *   CBAP (тип 1): Source AID = свой или 255, либо Destination AID = свой (10.39.5);
+ *   прочее не берётся: чужие SP и CBAP, SP с широковещательным адресом соблюдаются тем, что DTI
+ *   вне разрешённых окон закрыт (uc/ese_dti.c).
+ * Бит 7 записи — «инициировать можно»: по нему uc открывает передачу на время окна. Таблица
+ * общая с режимом точки (WMI 0xa01, fw/wmi_h_bf.c) — там прежний отбор. */
+#define ESE_TYPE_SP   0u
+#define ESE_TYPE_CBAP 1u
+static inline u32 ese_alloc_type(const struct ese_alloc *b)
+{
+    return (b->ctrl[0] >> 4) & 7u;              /* Allocation Control B4..B6 (9.4.2.131) */
+}
+static u32 ese_alloc_wanted(struct sched_scheme *obj, const struct ese_alloc *b)
+{
+    u32 own = obj->mid->aid;
+    switch (ese_alloc_type(b)) {
+    case ESE_TYPE_SP:
+        return (b->src_aid == own || b->dst_aid == own) ? 1u : 0u;
+    case ESE_TYPE_CBAP:
+        return (b->src_aid == own || b->src_aid == 0xff || b->dst_aid == own) ? 1u : 0u;
+    default:
+        return 0;
+    }
+}
+static u32 ese_may_initiate(struct sched_scheme *obj, const struct ese_alloc *b)
+{
+    if (ese_alloc_type(b) == ESE_TYPE_CBAP)
+        return 1;                               /* в таблице только разрешённые CBAP */
+    return (b->src_aid == obj->mid->aid) ? 1u : 0u;
+}
+/* Маяк своей точки (dmg_bcon_rx_handler): флаг «DTI расписан» для uc — ESE в маяке, CBAP Only = 0,
+ * нет фиксированного расписания vendor (WMI 0xa03 идёт своим путём). */
+__attribute__((section(".textlate"))) void ese_rx_on_own_beacon(const struct rx_pkt *pkt)
+{
+    const u8 *dmg = pkt->ei->dmg_params;
+    u32 sched = pkt->ei->ext_sched.body != 0 && dmg != 0 && !(*dmg & 4u) &&
+                *(volatile u8 *)&fixed_sched.enabled == 0;
+    FWSH(fwsh_diag, ese_dti_sched) = (u8)sched;
+    if (sched)
+        FWSH(fwsh_diag, ese_dti_bcons) += 1;
+}
 /* schedule_scheme_builder__build_allocations_from_beacon (0x8c5248, 120 Б). */
 __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocations_from_beacon(struct sched_scheme *obj, const struct ie_ref *bcn)
 {
@@ -411,7 +458,7 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
     if (r16 >= 1) {
         u32 r17 = r16;
         do {
-            if (cid_pair_matches(obj, r13->src_aid, r13->dst_aid) != 0) {
+            if (ese_alloc_wanted(obj, r13) != 0) {
                 ese_alloc_to_slot(obj, r18, r13);
                 r15++;
             }
@@ -421,6 +468,23 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
     }
     fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
     schedule_scheme_sum_two(obj);
+}
+/* Отпечаток ESE маяка (число полей и 24-битная свёртка всех байт полей): vendor замечал
+ * только смену ID и адресов первого поля — новое начало, длительность, другие поля и их число
+ * до таблицы и железа не доходили. Возврат 1 — ESE изменился (отпечаток обновлён). */
+static u32 ese_fingerprint_changed(struct sched_scheme *obj, const struct ese_alloc *a, u32 c)
+{
+    const u8 *p = (const u8 *)a;
+    u32 h = 0x811c9du;
+    for (u32 i = 0; i < c * sizeof(struct ese_alloc); i++)
+        h = ((h ^ p[i]) * 0x193u) & 0xffffffu;
+    u32 old = obj->ese_hash[0] | ((u32)obj->ese_hash[1] << 8) | ((u32)obj->ese_hash[2] << 16);
+    u32 ch = (obj->ese_n != (u8)c || old != h) ? 1u : 0u;
+    obj->ese_n = (u8)c;
+    obj->ese_hash[0] = (u8)h;
+    obj->ese_hash[1] = (u8)(h >> 8);
+    obj->ese_hash[2] = (u8)(h >> 16);
+    return ch;
 }
 /* sched__alloc_changed (0x8da3f4, 108 Б): изменилась ли alloc. ESE-режим: число слотов
  * ≠ c или 0x10 биконов без изменений — сброс счётчика и 1. Иначе — сравнение первого
@@ -433,9 +497,11 @@ __attribute__((section(".textlate"))) u32 sched_alloc_changed(struct sched_schem
 {
     struct ese_sched *r3 = obj->ese;
     /* OOB R2 (счётчик повторов таблицы) — только SparRAW-pro. */
-    (void)c;
+    u32 ch = ese_fingerprint_changed(obj, a, c);
     const struct ese_slot_tbl *r2 = r3->tbl;
     if (r2->count == 0)
+        return 1;
+    if (ch != 0)
         return 1;
     if ((r2->slot[0].ctrl & 0xfu) != (a->ctrl[0] & 0xfu))
         return 1;
@@ -469,9 +535,7 @@ __attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme
     sp.ctrl = (sp.ctrl & ~0xfu) | (b->ctrl[0] & 0xfu);                      /* bits_set32_s0_w4 */
     sp.ctrl = (sp.ctrl & ~(3u << 4)) | (((b->ctrl[0] >> 4) & 3u) << 4);     /* bits_set32_s4_w2 */
     sp.ctrl &= ~(1u << 6);
-    u32 cid = obj->mid->aid;
-    u32 b4 = b->src_aid;
-    sp.ctrl = (sp.ctrl & ~(1u << 7)) | (((b4 == cid || b4 == 0xff) ? 1u : 0u) << 7);
+    sp.ctrl = (sp.ctrl & ~(1u << 7)) | (ese_may_initiate(obj, b) << 7);
     sp.peer_cid = (u8)ese_peer_cid_by_aid(obj, b->src_aid, b->dst_aid);
     sp.src_aid = b->src_aid;
     sp.dst_aid = b->dst_aid;
@@ -556,6 +620,13 @@ __attribute__((section(".textlate"))) u32 mac_get_beacon_interval_us(void)
 __attribute__((section(".textlate"))) void lmac_if_evt_walk(struct sched_scheme *obj)
 {
     u32 r14 = 0;
+    /* Пустая таблица — записи SP не закладывать. Vendor после снятия расписания
+     * (num_of_allocations = 0) по каждому событию uc 0x29 закладывал 4 нулевые записи: без
+     * бита 7 они идут с start/end_mask_ind (аппаратная маска передачи на время SP), и после
+     * снятия ESE передача вставала у точки и у станции навсегда (docs/ESE.md §3, стенд 6.4).
+     * Пустой бывает и таблица станции, если все окна точки чужие (ese_alloc_wanted). */
+    if (obj->ese->tbl->count == 0)
+        return;
     while (r14 < 4) {
         const struct ese_slot *ev = lmac_evt_entry_end(obj->ese);   /* текущий слот: 0x8c7ef0 */
         u32 r3 = ev->start + obj->next_bi_tsf;

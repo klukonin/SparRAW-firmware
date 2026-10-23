@@ -163,6 +163,7 @@ void bi_dti_step(void)
     } else {
         sxd_hal_write_qset_field(0, 0);
     }
+    ese_dti_dti_start();                        /* расписание ESE: DTI закрыт вне разрешённых окон */
 }
 
 void bi_manager_step_b(struct sls_peer_rec *r)

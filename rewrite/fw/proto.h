@@ -619,6 +619,7 @@ void ese_alloc_to_slot (struct sched_scheme *obj, u32 a, const struct ese_alloc 
 void ese_bits_set16h_s0_w3 (void *p, u32 v);                                                         /* rx_chain.c */
 void ese_bits_set32_s3_w29 (void *p, u32 v);                                                         /* rx_chain.c */
 u32 ese_peer_cid_by_aid (struct sched_scheme *obj, u32 a, u32 b);                                    /* rx.c */
+void ese_rx_on_own_beacon (const struct rx_pkt *pkt);                                                /* rx.c */
 void ese_set_alloc_type (void *p, u32 mode, u32 type, u32 flag);                                     /* rx_chain.c */
 void ese_slot_table_add (struct ese_sched *obj, const void *slot);                                   /* rx.c */
 void event_flush_q_done (const struct lmac_evt_u32 *e);                                              /* lmac_evt.c */
