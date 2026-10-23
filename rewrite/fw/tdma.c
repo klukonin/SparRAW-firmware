@@ -139,6 +139,8 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     if (need >= bi)
         return;                             /* BI мал для расписания — DTI остаётся как есть */
     u32 w = (bi - t0 - TDMA_COMMON_US - (n + 1u) * g) / n;
+    if (w > 0xffffu)
+        w = 0xffffu;                        /* Allocation Block Duration — u16, мкс (9.4.2.131) */
     u32 base = mac_get_bi_start_tsf() + bi;  /* Allocation Start — TSF в следующем BI */
     ie[0] = EID_EXT_SCHED_IE;
     ie[1] = (u8)(ese_len - 2u);
