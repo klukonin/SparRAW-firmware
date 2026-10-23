@@ -5,6 +5,8 @@
 #   Порядок: залить fw на .12 -> .11 в STA (ищет WL60RW) -> power-cycle .12 -> AP на .12 ->
 #   ждать FW ready / станцию в `iw station dump` .12 / Connected на .11 -> ping 10.60.0.11 -> 10.60.0.12
 #   (+ iperf3 в обе стороны, если IPERF=<с>). Печатает RESULT: data|assoc|ready|noready.
+#   Сервер iperf3 на .12 — на cpu2 (taskset 4): прерывания wil6210 на cpu0, softirq приёма ~1 Гбит/с занимает
+#   его на 100 %; сервер, попавший на cpu0, давал ~740 Мбит/с вверх вместо ~1000 (стенд 2026-10-23).
 #   Интерфейсы phy0-* вне зон fw4 (input REJECT) — временное nft accept на обоих.
 #   В конце .11 возвращается в AP WL60TEST (как память ap11), если не KEEP=1.
 FW=${1:?fw}; T=${2:-90}
@@ -48,7 +50,7 @@ $SSH $AP "$ENCSET uci set wireless.radio0.disabled=0; uci set wireless.default_r
   dmesg | grep -vE 'WMI_DBG' | grep -E 'FW ver|FW ready|Firmware|error detected|wmi_echo|Connect |Disconnect|pcp|PCP' | tail -10;
   iw dev phy0-ap0 info 2>/dev/null | grep -E 'ssid|type|channel'; iw dev phy0-ap0 station dump 2>/dev/null | grep -E 'Station|signal|bitrate';
   ip addr add 10.60.0.12/24 dev phy0-ap0 2>/dev/null; nft insert rule inet fw4 input iifname phy0-ap0 accept; sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2;
-  killall iperf3 2>/dev/null; iperf3 -s -D; echo AP: \$r" | tee /dev/stderr | grep -q 'AP: assoc' || { echo RESULT: $($SSH $AP "dmesg | grep -q 'FW ready after' && echo ready || echo noready"); $SSH $AP "echo FWERR: \$(dmesg | grep -c 'error detected')"; dump; exit 1; }
+  killall iperf3 2>/dev/null; taskset 4 iperf3 -s -D 2>/dev/null || iperf3 -s -D; echo AP: \$r" | tee /dev/stderr | grep -q 'AP: assoc' || { echo RESULT: $($SSH $AP "dmesg | grep -q 'FW ready after' && echo ready || echo noready"); $SSH $AP "echo FWERR: \$(dmesg | grep -c 'error detected')"; dump; exit 1; }
 $SSH $ST "sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2;
   for i in \$(seq 10); do iw dev phy0-sta0 link 2>/dev/null | grep -q Connected && break; sleep 1; done;
   iw dev phy0-sta0 link | grep -E 'Connected|SSID|signal|bitrate'; ip addr add 10.60.0.11/24 dev phy0-sta0 2>/dev/null;
