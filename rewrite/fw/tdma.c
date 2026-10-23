@@ -17,6 +17,8 @@
  * 10.39.5 может начинать обмен в любом; при N ≥ 3 таблица переполнилась бы (фатал 0x11bb).
  * ESE добавляется в блок IE маяка (тип 0) к IE хоста, а не вместо них (vendor-сборщик блок заменял). */
 #include "../include/types.h"
+#include "../include/hw.h"
+#include "../include/arc.h"
 #include "../include/mid.h"
 #include "../include/conn.h"
 #include "../include/fwsh.h"
@@ -103,6 +105,34 @@ static void tdma_set_beacon_ese(struct mid *mid, const u8 *ese, u32 len)
     mid_set_app_ie_block(&mid->bss, 0, n, buf);
 }
 
+/* Allocation Start — TSF начала окна (9.4.2.131); станция по 10.39.6.4 игнорирует псевдостатическую
+ * аллокацию, начало которой при приёме маяка уже прошло (obsolete). Маяк собирается один раз
+ * (add_bcon), поэтому расписание пересобирается каждый BI — в середине BI, с Allocation Start
+ * следующего BI (vendor 4.1 так же переиздавал ESE каждый BI; 6.2 ставил начало один раз). */
+static void tdma_refresh_cb(u32 a0, u32 a1)
+{
+    struct mid *mid = (struct mid *)a0;
+    (void)a1;
+    mid->sched->tdma_armed = 0;
+    if (mid->sched->tdma_owned != 0)
+        tdma_ap_update(mid, 0);             /* пересобрать и взвести снова */
+}
+
+static void tdma_arm(struct mid *mid)
+{
+    struct sched_scheme *ss = mid->sched;
+    if (ss->tdma_armed != 0)
+        return;
+    u32 bi = mac_get_beacon_interval_us();
+    u32 off = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5) - mac_get_bi_start_tsf();
+    u32 mid_bi = bi / 2u;
+    u32 delay = off < mid_bi ? mid_bi - off : bi - off + mid_bi;
+    if (delay < 0x20u)
+        delay += bi;
+    ss->tdma_armed = 1;
+    u_schd_schedule(tdma_refresh_cb, (u32)mid, 0, 1, delay, 0, 0);
+}
+
 /* Пересобрать расписание точки: связь или разрыв станции (exclude — разрываемое соединение). */
 void tdma_ap_update(struct mid *mid, const struct conn *exclude)
 {
@@ -121,8 +151,11 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
         if (c != exclude && st >= 5 && st <= 7)
             aid[n++] = c->aid != 0 ? c->aid : (u8)(c->cid + 1u);
     }
+    if (ss->built != 0 && ss->tdma_owned == 0)
+        return;                             /* расписание задал хост (WMI 0xa01) — не трогать */
     if (n < TDMA_MIN_STA) {
         if (ss->built != 0) {
+            ss->tdma_owned = 0;
             fw_log_emit0(0x2b, 0x1014510);  /* «Clearing scheme» */
             ss->built = 0;                  /* CBAP Only = 1 (builder_push_dmg_parameters) */
             tdma_set_beacon_ese(mid, 0, 0);
@@ -152,7 +185,9 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
         t += w + g;
     }
     ss->built = 1;                          /* CBAP Only = 0 */
+    ss->tdma_owned = 1;
     tdma_set_beacon_ese(mid, ie, ese_len);
     add_bcon(mid);
+    tdma_arm(mid);
     fw_log_emit1(0x2b, 0x1014450, n + 1u); /* «Number of slots in cmd» */
 }

@@ -1028,6 +1028,7 @@ static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi
     if (fl & 4)
         schedule_scheme_builder_build_allocations(ssb_);
     ssb->built = 1;
+    ssb->tdma_owned = 0;                           /* расписание хоста — TDMA точки его не трогает (fw/tdma.c) */
     fw_log_emit1(0x2b, 0x1014450, n);
     if (b->ese_advertisment == 0) {
         ((volatile struct ese_sched *)ssb->ese)->tbl->mode = 1;

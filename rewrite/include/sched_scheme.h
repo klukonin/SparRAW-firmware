@@ -36,7 +36,8 @@ struct sched_scheme {
     struct ese_sched *ese;                     /* 0x00: 0x8052e4 */
     u8  seq;                                   /* 0x04: номер распределения (полубайт) */
     u8  ese_n;                                 /* 0x05: число полей последнего ESE маяка (sched_alloc_changed) */
-    u8  rsv_06[2];
+    u8  tdma_armed;                            /* 0x06: таймер обновления расписания TDMA взведён (fw/tdma.c) */
+    u8  tdma_owned;                            /* 0x07: расписание построено TDMA точки, а не хостом (WMI 0xa01) */
     u32 next_bi_tsf;                           /* 0x08: TSF начала следующего BI */
     u32 built;                                 /* 0x0c: != 0 — распределения собраны */
     struct mid *mid;                           /* 0x10 */
