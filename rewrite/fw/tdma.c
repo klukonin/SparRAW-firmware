@@ -115,10 +115,11 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     while (list_has_items(&it) && n < TDMA_MAX_STA) {
         struct conn *c = (struct conn *)iter_next(&it);
         u32 st = c->msm.sm.state;
-        /* станция: AID от хоста (≠ 0; служебное соединение kind 1 — AID 0), состояние 5..7
-         * (ASSOCIATED, WAIT_FOR_LM_START, KEY_ASSOC); вызов из mlme_sm_association_done — в 5 */
-        if (c != exclude && c->aid != 0 && st >= 5 && st <= 7)
-            aid[n++] = c->aid;
+        /* связанная станция: состояние 5..7 (ASSOCIATED, WAIT_FOR_LM_START, KEY_ASSOC). AID: при SME
+         * хоста — из его ответа (conn->aid, mlme_sm_on_ctrl_assoc_response_ret); при SME прошивки
+         * conn->aid = 0, а в Assoc Response уходит cid + 1 (mgmt_tx_build_assoc_resp). */
+        if (c != exclude && st >= 5 && st <= 7)
+            aid[n++] = c->aid != 0 ? c->aid : (u8)(c->cid + 1u);
     }
     if (n < TDMA_MIN_STA) {
         if (ss->built != 0) {
