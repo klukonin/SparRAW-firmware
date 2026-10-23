@@ -476,8 +476,17 @@ static u32 ese_fingerprint_changed(struct sched_scheme *obj, const struct ese_al
 {
     const u8 *p = (const u8 *)a;
     u32 h = 0x811c9du;
-    for (u32 i = 0; i < c * sizeof(struct ese_alloc); i++)
-        h = ((h ^ p[i]) * 0x193u) & 0xffffffu;
+    u32 bi = mac_get_beacon_interval_us(), base = mac_get_bi_start_tsf();
+    for (u32 k = 0; k < c; k++, p += sizeof(struct ese_alloc)) {
+        /* Allocation Start (+6..+9) — смещением от начала BI, а не TSF: точка с псевдостатическим
+         * расписанием обновляет его каждый BI (10.39.6.4), раскладка от этого не меняется */
+        u32 st = p[6] | ((u32)p[7] << 8) | ((u32)p[8] << 16) | ((u32)p[9] << 24);
+        u32 off = bi != 0 ? (u32)(((s32)(st - base) % (s32)bi + (s32)bi) % (s32)bi) : st;
+        for (u32 i = 0; i < sizeof(struct ese_alloc); i++) {
+            u32 b = (i >= 6 && i < 10) ? (off >> (8 * (i - 6))) & 0xffu : p[i];
+            h = ((h ^ b) * 0x193u) & 0xffffffu;
+        }
+    }
     u32 old = obj->ese_hash[0] | ((u32)obj->ese_hash[1] << 8) | ((u32)obj->ese_hash[2] << 16);
     u32 ch = (obj->ese_n != (u8)c || old != h) ? 1u : 0u;
     obj->ese_n = (u8)c;
