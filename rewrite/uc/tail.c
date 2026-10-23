@@ -2740,8 +2740,9 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  * дальше конца CBAP/SP»).
  *  Нужно от момента взвода GP1: SSWFB_ACK_WAIT_CLK (до точки повтора) + TXTIME(SSW-Feedback) + MBIFS +
  *  TXTIME(SSW-Ack) = 5817 + 3012 + 1485 + 3012 = 13326 тактов = 80,76 мкс → SSWFB_RETRY_NEED_US = 81 (вверх).
- *  Конец выделения — следующий TBTT: DTI кончается началом BTI следующего BI, и любое выделение DTI (CBAP, SP)
- *  кончается не позже; при DTI целиком в CBAP (CBAP Only = 1 — наш случай без ESE) это и есть конец CBAP.
+ *  Конец выделения — меньшее из двух: следующий TBTT (DTI кончается началом BTI следующего BI, любое выделение
+ *  DTI кончается не позже; при CBAP Only = 1 это и есть конец CBAP) и конец текущей записи ESE своей таблицы
+ *  (ese_slot_tbl: CBAP/SP, где узел участвует — TDMA точки, расписание станции; ese_dti_us_to_window_end).
  *  Источник — HW_MAC_USEC_TO_TBTT (0x886ec0): обратный отсчёт до TBTT в мкс, 26 бит, у AP и у станции (стенд
  *  2026-09-28, 6.2/ref/REGS-62.md); при выключенном MAC — 0x3ffffff (проверка проходит, как раньше). Одно
  *  чтение MMIO, без деления. Округление регистра (вниз или вверх) неизвестно: строгое «> 81» верно при любом
@@ -2753,10 +2754,9 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  *  лишнем сохраняемом регистре (+1 инструкция пролога до первого Feedback, СРОК в bf.c txss_init_flow).
  *  Не хватает — r14 = DOT11_BF_RETRY_LIMIT + 1, выход как при исчерпании попыток (подсостояние 4; Ack,
  *  пришедший в окне, по-прежнему принимается).
- *  НЕ УЧТЕНО: (1) путь GP1 → эфир повтора (~1,5–2 мкс, выше; не измерен) — повтор может кончиться на эту
- *  величину позже расчёта; (2) конец SP из ESE раньше TBTT (ese_slot_tbl; vendor-исполнение ESE не держит
- *  SLS внутри SP — docs/ESE.md §3); REMAINING_TIME_RD (r40 сел. 3, мкс, «остаток сессии/SP») для этого не
- *  годится, пока не проверен на стенде вне TXOP. */
+ *  Запись ESE: проверка в ней — цикл не длиннее ESE_SLOTS_N, укладывается в окно ожидания Ack (≥ 9 мкс).
+ *  НЕ УЧТЕНО: путь GP1 → эфир повтора (~1,5–2 мкс, выше; не измерен) — повтор может кончиться на эту
+ *  величину позже расчёта. */
 #define SSWFB_ACK_WAIT_CLK  (DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_PIFS_CLK)  /* 5817 */
 #define SSWFB_RETRY_NEED_CLK (SSWFB_ACK_WAIT_CLK + DMG_TXTIME_SSW_FB_CLK + DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK)
 #define SSWFB_RETRY_NEED_US  ((SSWFB_RETRY_NEED_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
@@ -2764,7 +2764,11 @@ _Static_assert(SSWFB_RETRY_NEED_CLK == 13326u && SSWFB_RETRY_NEED_US == 81u, "о
 #define USEC_TO_TBTT_MASK    0x3ffffffu                                     /* [25:0] */
 static __attribute__((noinline)) u32 sswfb_retry_fits(void)
 {
-    return (MMIO32(HW_MAC_USEC_TO_TBTT) & USEC_TO_TBTT_MASK) > SSWFB_RETRY_NEED_US;
+    u32 rem = MMIO32(HW_MAC_USEC_TO_TBTT) & USEC_TO_TBTT_MASK;
+    u32 win = ese_dti_us_to_window_end();
+    if (win < rem)
+        rem = win;
+    return rem > SSWFB_RETRY_NEED_US;
 }
 void txss_init_send_fdbk_wait_ack(u32 a) {
     /* 6.2 asm 0x93b9c0. */

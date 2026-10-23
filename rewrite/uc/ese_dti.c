@@ -70,6 +70,21 @@ u32 ese_dti_window_now(void)
     return 0;
 }
 
+/* Мкс до конца записи таблицы ESE, в интервал которой попадает текущий TSF, или 0xffffffff, если
+ * TSF вне записей (таблица пуста — без ESE). TSF в мкс с усечением: истинный остаток в (результат − 1,
+ * результат]. Для проверки остатка выделения перед повтором SSW-Feedback (uc/tail.c sswfb_retry_fits). */
+u32 ese_dti_us_to_window_end(void)
+{
+    u32 n = FWSH(ese_slot_tbl, count);
+    u32 off = uc_read_tsf_lo() - MMIO32(HW_MAC_BI_START_TSF_LO);
+    for (u32 k = 0; k < n && k < ESE_SLOTS_N; k++) {
+        u32 d = off - FWSH_AT(ese_slot_tbl, slot, k).start;
+        if (d < FWSH_AT(ese_slot_tbl, slot, k).dur)
+            return FWSH_AT(ese_slot_tbl, slot, k).dur - d;
+    }
+    return 0xffffffffu;
+}
+
 /* Начало DTI (bi_dti_step): без расписания — снять свою паузу (расписание сняли); с ним —
  * закрыть, если сейчас не идёт разрешённое окно. */
 void ese_dti_dti_start(void)

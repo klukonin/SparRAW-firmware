@@ -255,6 +255,7 @@ void ese_dti_dti_start(void);                                   /* ese_dti.c */
 void ese_dti_slot_end(void);                                    /* ese_dti.c */
 void ese_dti_slot_start(u32 ctrl);                              /* ese_dti.c */
 u32 ese_dti_window_now(void);                                   /* ese_dti.c */
+u32 ese_dti_us_to_window_end(void);                             /* ese_dti.c */
 void evt_queue_noop_lock_hook(void);                            /* util.c */
 void evt_queue_take_locked(struct uc_mbox_ctx *a, u32 a1, u32 a2, u32 a3); /* tail.c */
 void field_set_0x00_934998(u32 a);                              /* bi.c */
