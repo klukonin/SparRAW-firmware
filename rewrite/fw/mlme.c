@@ -1154,6 +1154,7 @@ void mlme_sm_disconnect_ev_handle(u32 a0, u32 code)
         radio_mgr_unset_primary_channel();
     low_sme_termination_check(0);
     dashboard_on_disconnect(cid);
+    tdma_ap_update(e, conn);                    /* простой TDMA точки (fw/tdma.c) */
     conn_chk_sys_idle();
     if (conn->pbss == 0)
         sys_state_broadcast(8, cid);

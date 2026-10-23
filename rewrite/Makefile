@@ -44,6 +44,8 @@ $(BUILD)/uc/%.o: CFLAGS += -ffixed-r25 -include uc/proto.h -include uc/dccm.h -i
 $(BUILD)/uc/%.o: uc/proto.h uc/dccm.h
 # отладочные вставки uc (напр. UC_DBG=-DUC_DBG_SIFS); в рабочей сборке пусто
 $(BUILD)/uc/%.o: CFLAGS += $(UC_DBG)
+# отладочные вставки fw (напр. FW_DBG=-DTDMA_MIN_STA=1); в рабочей сборке пусто
+$(BUILD)/fw/%.o: CFLAGS += $(FW_DBG)
 # uc/data.c определяет объекты с именами из dccm.h — там эти имена не макросы
 $(BUILD)/uc/data.o: CFLAGS += -DUC_DCCM_OBJECTS
 # uc/proto.h — tools/gen_uc_proto.py (перегенерировать при добавлении/смене сигнатур)

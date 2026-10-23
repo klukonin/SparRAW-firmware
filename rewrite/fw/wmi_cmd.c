@@ -821,6 +821,12 @@ FWDATA(8023b8) const u8 mid_set_app_ie_block_jt[5] = {
 
 /* set_app_ie (0x8e6224, 128 Б): заменить блок IE кадра type: прежний буфер — в пул TX,
  * новый (если len != 0) — в блок, журнал IE. */
+/* Блок IE кадра type (0 — маяк) записи BSS (fw/tdma.c). */
+struct app_ies *mid_app_ie_block(struct mid_bss *obj, u32 type)
+{
+    return (struct app_ies *)((u8 *)obj + app_ie_block_off[type]);
+}
+
 void mid_set_app_ie_block(struct mid_bss *obj, u32 type, u32 len, u32 buf)
 {
     fw_log_emit2(0x2b, 0x100c8ac, type, len);

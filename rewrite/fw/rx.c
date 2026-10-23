@@ -540,7 +540,18 @@ __attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme
     sp.src_aid = b->src_aid;
     sp.dst_aid = b->dst_aid;
     u32 r = b->start[0] | ((u32)b->start[1] << 8) | ((u32)b->start[2] << 16) | ((u32)b->start[3] << 24);
-    sp.start = r - a;
+    /* Смещение окна от начала BI — по модулю BI: Allocation Start — абсолютный TSF (9.4.2.131), а ESE
+     * разбирается и через несколько BI после того, как точка его собрала (новая станция, пропуск
+     * маяков). Vendor брал r − a как есть: окно уходило в прошлое на k·BI. Аллокации псевдостатические
+     * (10.39.6.4) — повторяются каждый BI с тем же смещением. */
+    u32 bi = mac_get_beacon_interval_us();
+    s32 d = (s32)(r - a);
+    if (bi != 0) {
+        d %= (s32)bi;
+        if (d < 0)
+            d += (s32)bi;
+    }
+    sp.start = (u32)d;
     sp.dur = (u16)(b->block_dur[0] | ((u32)b->block_dur[1] << 8));
     ese_slot_table_add(obj->ese, &sp);
 }

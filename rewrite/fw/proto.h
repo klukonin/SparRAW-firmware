@@ -1405,6 +1405,7 @@ u32 mgmt_tx_copy_ie_hdr (u8 *dst, const struct mid_bss *mid);                   
 u32 mgmt_tx_copy_ie_max96 (u8 *dst, const u8 *src, u32 len);                                         /* mgmt_tx.c */
 u32 mgmt_tx_probe_resp_ies (u8 *dst, struct mid_bss *mid, const u8 *ssid, u32 ssid_len);             /* mgmt_tx.c */
 u32 mgmt_tx_set_frame_control (u32 dst, const struct mid *obj);                                      /* stubs.c */
+struct app_ies *mid_app_ie_block (struct mid_bss *obj, u32 type);                                    /* wmi_cmd.c */
 void mid_apply_app_ies (struct mid *e, u32 type, u32 len, u32 buf);                                  /* wmi_cmd.c */
 u32 mid_cid_by_aid (struct mid *obj, u32 aid);                                                       /* rx.c */
 void mid_clear_rsn_ie_len (struct mid *e);                                                           /* wmi_cmd.c */
@@ -1902,6 +1903,7 @@ void sysassert_debug_hold (void);                                               
 void sysassert_dump_stack (void);                                                                    /* sysassert.c */
 void sysassert_dump_ucode_int6 (void);                                                               /* sysassert.c */
 void sysassert_dump_ucode_stack (void);                                                              /* sysassert.c */
+void tdma_ap_update (struct mid *mid, const struct conn *exclude);                                   /* tdma.c */
 u32 temp_get_active_rf (u32 a);                                                                      /* stubs.c */
 u32 temp_get_rf_by_index (u32 a, u32 b);                                                             /* stubs.c */
 void temp_sense_get_cached (temp_done_fn cb, u32 ctx);                                               /* lmac.c */

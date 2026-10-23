@@ -736,6 +736,7 @@ void mlme_sm_association_done(u32 a0, u32 a1)
     conn_alloc_and_link_kind1(0, mid->id);
     fw_status_set_state(6);
     dashboard_add_connection(conn);
+    tdma_ap_update(conn->mid, 0);               /* простой TDMA точки (fw/tdma.c) */
 }
 
 /* vring_tbl__find_by_id (0x8cce14, 46 Б): стрим (таблица stream_by_vr, 10 шт.)
