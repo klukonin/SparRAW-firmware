@@ -24,15 +24,18 @@
 
 /* SSW: FC 2 + Duration 2 + RA 6 + TA 6 + SSW 3 + SSW Feedback 3 + FCS 4 = 26 Б (9.3.1.15);
  * SSW-Ack: FC 2 + Duration 2 + RA 6 + TA 6 + SSW Feedback 3 + BRP Request 4 + Beamformed Link
- * Maintenance 1 + FCS 4 = 28 Б (9.3.1.17). */
+ * Maintenance 1 + FCS 4 = 28 Б (9.3.1.17); SSW-Feedback — те же поля, 28 Б (9.3.1.16, Figure 9-55). */
 #define DMG_SSW_LEN      26u
 #define DMG_SSW_ACK_LEN  28u
+#define DMG_SSW_FB_LEN   28u
 #define DMG_TXTIME_SSW_CLK      DMG_CTRL_TXTIME_CLK(DMG_SSW_LEN)       /* 2460 = 14,909 мкс */
 #define DMG_TXTIME_SSW_ACK_CLK  DMG_CTRL_TXTIME_CLK(DMG_SSW_ACK_LEN)   /* 3012 = 18,255 мкс */
+#define DMG_TXTIME_SSW_FB_CLK   DMG_CTRL_TXTIME_CLK(DMG_SSW_FB_LEN)    /* 3012 = 18,255 мкс */
 #define DMG_LBIFS_CLK    (DMG_TXTIME_SSW_CLK + 2u * DMG_SBIFS_CLK)     /* 2790 = 16,909 мкс */
 
 _Static_assert(DMG_TXTIME_SSW_CLK == 2460, "TXTIME(SSW)");
 _Static_assert(DMG_TXTIME_SSW_ACK_CLK == 3012, "TXTIME(SSW-Ack)");
+_Static_assert(DMG_TXTIME_SSW_FB_CLK == 3012, "TXTIME(SSW-Feedback)");
 _Static_assert(DMG_LBIFS_CLK == 2790, "LBIFS");
 
 /* LBIFS при смене DMG-антенны (802.11-2020 10.3.2.3.11, 10.42.2.2.2) — по стандарту, безусловно.

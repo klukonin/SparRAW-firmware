@@ -2731,8 +2731,41 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  * Запас на приём Ack: Ack ответчика по стандарту кончается через 27,26 + 0,49 мкс (наш ответчик —
  * 9,05 мкс + 18,26, vendor 6.2 — 5,03 + 18,26), до срабатывания GP1 остаётся PIFS 8 мкс на задержку
  * события конца приёма.
- * Не сделано: проверка, что до конца выделения хватит времени на Feedback + Ack (10.42.6.2). */
+ *
+ * Остаток выделения перед повтором (10.42.6.2): «The initiator shall restart the SSW feedback procedure PIFS
+ * following the expected end of the SSW-Ack frame by the responder, provided there is sufficient time left in
+ * the allocation for the initiator to begin the SSW feedback procedure followed by an SSW ack procedure from the
+ * responder in an MBIFS. If there is not sufficient time left ..., the initiator may restart the SSW feedback
+ * procedure in the following allocation». Иначе — нарушение 10.39.4/10.39.5/10.39.6.2 (последовательность «не
+ * дальше конца CBAP/SP»).
+ *  Нужно от момента взвода GP1: SSWFB_ACK_WAIT_CLK (до точки повтора) + TXTIME(SSW-Feedback) + MBIFS +
+ *  TXTIME(SSW-Ack) = 5817 + 3012 + 1485 + 3012 = 13326 тактов = 80,76 мкс → SSWFB_RETRY_NEED_US = 81 (вверх).
+ *  Конец выделения — следующий TBTT: DTI кончается началом BTI следующего BI, и любое выделение DTI (CBAP, SP)
+ *  кончается не позже; при DTI целиком в CBAP (CBAP Only = 1 — наш случай без ESE) это и есть конец CBAP.
+ *  Источник — HW_MAC_USEC_TO_TBTT (0x886ec0): обратный отсчёт до TBTT в мкс, 26 бит, у AP и у станции (стенд
+ *  2026-09-28, 6.2/ref/REGS-62.md); при выключенном MAC — 0x3ffffff (проверка проходит, как раньше). Одно
+ *  чтение MMIO, без деления. Округление регистра (вниз или вверх) неизвестно: строгое «> 81» верно при любом
+ *  (истинный остаток > значение − 1 ≥ 81 ≥ 80,76). Читается после взвода GP1 — остаток занижен, в безопасную
+ *  сторону.
+ *  Проверка — сразу после взвода GP1 (ожидание Ack, до события ≥ 9 мкс), а не после срабатывания GP1: путь
+ *  GP1 → 0x19 повтора не удлиняется (objdump: 10 инструкций от r54 до вызова txss_init_send_ssw_fdbk против 11
+ *  прежде — r14 += 1 ушло за взвод GP1). sswfb_retry_fits — noinline: встроенная держала бы адрес регистра в
+ *  лишнем сохраняемом регистре (+1 инструкция пролога до первого Feedback, СРОК в bf.c txss_init_flow).
+ *  Не хватает — r14 = DOT11_BF_RETRY_LIMIT + 1, выход как при исчерпании попыток (подсостояние 4; Ack,
+ *  пришедший в окне, по-прежнему принимается).
+ *  НЕ УЧТЕНО: (1) путь GP1 → эфир повтора (~1,5–2 мкс, выше; не измерен) — повтор может кончиться на эту
+ *  величину позже расчёта; (2) конец SP из ESE раньше TBTT (ese_slot_tbl; vendor-исполнение ESE не держит
+ *  SLS внутри SP — docs/ESE.md §3); REMAINING_TIME_RD (r40 сел. 3, мкс, «остаток сессии/SP») для этого не
+ *  годится, пока не проверен на стенде вне TXOP. */
 #define SSWFB_ACK_WAIT_CLK  (DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_PIFS_CLK)  /* 5817 */
+#define SSWFB_RETRY_NEED_CLK (SSWFB_ACK_WAIT_CLK + DMG_TXTIME_SSW_FB_CLK + DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK)
+#define SSWFB_RETRY_NEED_US  ((SSWFB_RETRY_NEED_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
+_Static_assert(SSWFB_RETRY_NEED_CLK == 13326u && SSWFB_RETRY_NEED_US == 81u, "остаток для повтора SSW-Feedback");
+#define USEC_TO_TBTT_MASK    0x3ffffffu                                     /* [25:0] */
+static __attribute__((noinline)) u32 sswfb_retry_fits(void)
+{
+    return (MMIO32(HW_MAC_USEC_TO_TBTT) & USEC_TO_TBTT_MASK) > SSWFB_RETRY_NEED_US;
+}
 void txss_init_send_fdbk_wait_ack(u32 a) {
     /* 6.2 asm 0x93b9c0. */
     txrx_state2 = 0x400000;
@@ -2753,6 +2786,8 @@ void txss_init_send_fdbk_wait_ack(u32 a) {
     mac_evt_enable_bit_sync(5);
     u32 r14 = 1;
     gp_timer_arm(r14, SSWFB_ACK_WAIT_CLK, 0, 0);
+    if (!sswfb_retry_fits())
+        r14 = DOT11_BF_RETRY_LIMIT + 1;             /* до конца выделения повтор не помещается (10.42.6.2) */
     for (;;) {
         uc_wait_event1_or_event4(1u << 19, 0x80, 0);
         u32 r42 = arc_core_rd(42);
@@ -2790,6 +2825,8 @@ void txss_init_send_fdbk_wait_ack(u32 a) {
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = v2;
         gp_timer_arm(1, SSWFB_ACK_WAIT_CLK, 0, 0);
         r14 += 1;
+        if (!sswfb_retry_fits())
+            r14 = DOT11_BF_RETRY_LIMIT + 1;         /* как выше */
     }
 }
 
