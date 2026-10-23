@@ -57,6 +57,19 @@ static void ese_dti_open(void)
         FWSH(fwsh_diag, ese_dti_opened) += 1;
 }
 
+/* Запись таблицы ESE, в интервал которой попадает текущий TSF (номер + 1), или 0: смещение от
+ * начала BI (0x886fc4) против [start, start + dur) записей (ese_slot.start — от начала BI). */
+u32 ese_dti_window_now(void)
+{
+    u32 n = FWSH(ese_slot_tbl, count);
+    u32 off = uc_read_tsf_lo() - MMIO32(HW_MAC_BI_START_TSF_LO);
+    for (u32 k = 0; k < n && k < ESE_SLOTS_N; k++) {
+        if (off - FWSH_AT(ese_slot_tbl, slot, k).start < FWSH_AT(ese_slot_tbl, slot, k).dur)
+            return k + 1u;
+    }
+    return 0;
+}
+
 /* Начало DTI (bi_dti_step): без расписания — снять свою паузу (расписание сняли); с ним —
  * закрыть, если сейчас не идёт разрешённое окно. */
 void ese_dti_dti_start(void)
@@ -65,9 +78,11 @@ void ese_dti_dti_start(void)
         ese_dti_open();
         return;
     }
-    if (FWSH(ese_slot_tbl, uc_alloc_end) == 0 ||
-        !(MMIO32(HW_MAC_SCHED_SLOT_STATUS) & ESE_SLOT_MAY_INIT))
+    u32 win = ese_dti_window_now();
+    if (win == 0 || !(FWSH_AT(ese_slot_tbl, slot, win - 1u).ctrl_b0 & ESE_SLOT_MAY_INIT))
         ese_dti_close();
+    else
+        ese_dti_open();
 }
 
 /* Начало окна: ctrl — управляющее слово записи (0x886f8c, r16 dti_worker). */

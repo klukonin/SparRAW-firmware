@@ -3414,7 +3414,13 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
         } e29;
     } sp;
     memset0_words_uc(&sp.ev, sizeof(sp.ev));
-    if (FWSH(ese_slot_tbl, uc_alloc_end) != 0) {
+    /* Начало или конец окна — по TSF (uc/ese_dti.c), а не чередованием, как у vendor: событие SP —
+     * один бит r54 (4); два события ближе, чем uc успевает заметить первое (конец окна и начало
+     * соседнего через Tguard 26 мкс, 10.39.6.5), сливаются, и чередование сдвигалось навсегда —
+     * передача станции и кольца хоста открывались вне окон и закрывались в них (стенд 2026-10-23,
+     * TDMA точки: станция передавала только после конца своего окна). */
+    u32 win = ese_dti_window_now();
+    if (win == 0) {
         FWSH(ese_slot_tbl, uc_alloc_end) = 0;
         uc_log_emit1(0x21, 0x1001e44, r17);
         /* Пустая таблица (расписание снято): конец окна несёт вектор «все CID» — иначе fw
@@ -3431,11 +3437,17 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
         uc_send_evt_ps_awake_peer((u32)&sp.ev);
         return;
     }
+    if (*wake != 0) {
+        /* конец прошлого окна слился с этим началом — его подкачка записей (событие 0x29) здесь,
+         * иначе аппаратный массив SP остался бы без следующих записей */
+        *wake = 0;
+        memset0_words_uc(&sp.e29, sizeof(sp.e29));
+        uc_evt_send_29_sync((u32)&sp.e29);
+    }
     u32 r14 = MMIO32(HW_MAC_SCHED_SLOT_STATUS); /* ld [0x887000,-0x74] — без .as, смещение в байтах */
     sp.e29.h = (u16)r14;
-    u32 n = FWSH(ese_slot_tbl, uc_cur_slot) + 1;
     FWSH(ese_slot_tbl, uc_alloc_end) = 1;
-    FWSH(ese_slot_tbl, uc_cur_slot) = (u8)(uc_divmod_signed_qr(n, FWSH(ese_slot_tbl, count)) >> 32);   /* остаток (r1) */
+    FWSH(ese_slot_tbl, uc_cur_slot) = (u8)(win - 1u);   /* vendor: (+1) % count — чередованием */
     u32 r16 = r14 & 0xffff;
     uc_log_emit2(0x21, 0x1001df4, r14 & 0xf, r17);
     ese_dti_slot_start(r16);                    /* открыть передачу на разрешённое окно (uc/ese_dti.c) */
