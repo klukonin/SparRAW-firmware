@@ -26,7 +26,9 @@ struct mid;
 /* Курсор ESE (0x8052e4, 8 Б): текущий слот обхода и таблица. */
 struct ese_sched {
     u8  cur;                                   /* 0x00: текущий слот (по модулю count) */
-    u8  rsv_01[3];
+    u8  tdma_off;                              /* 0x01: TDMA точки выключен хостом (WMI_SPARRAW_TDMA_CFG, fw/tdma.c) */
+    u8  tdma_min_sta;                          /* 0x02: порог включения TDMA (станций); 0 — по умолчанию (TDMA_MIN_STA) */
+    u8  rsv_03;
     struct ese_slot_tbl *tbl;                  /* 0x04: 0x857264 */
 };
 _Static_assert(sizeof(struct ese_sched) == 8, "ese_sched");

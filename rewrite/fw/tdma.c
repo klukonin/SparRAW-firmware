@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* Простой TDMA точки (open): время DTI поровну между связанными станциями (решение пользователя
- * 2026-10-23). Включается сам при TDMA_MIN_STA и более станциях, при меньшем числе снимается —
- * весь DTI снова CBAP (CBAP Only = 1).
+ * 2026-10-23). Включается сам при TDMA_MIN_STA (2) и более станциях, при меньшем числе снимается —
+ * весь DTI снова CBAP (CBAP Only = 1). Хост может выключить TDMA и задать порог командой
+ * WMI_SPARRAW_TDMA_CFG (0x0f10, tools/tdma_ctl.sh); по умолчанию включён.
  *
  * Расписание — Extended Schedule в маяке (802.11-2020 9.4.2.131, 10.39.6), псевдостатическое (B7 = 1,
  * один блок): каждый BI одинаково.
@@ -24,6 +25,7 @@
 #include "../include/fwsh.h"
 #include "../include/sched_scheme.h"
 #include "../include/abft_cfg.h"
+#include "../include/wmi.h"
 #include "../uc/ifs.h"                      /* только макросы TXTIME/IFS в тактах 165 МГц */
 
 /* aSSSlotTime (10.42.5.2) в тактах — та же формула, что abft_slot_clk() в uc/abft.h (тот заголовок в fw не
@@ -33,7 +35,7 @@
                                  17u + DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_MBIFS_CLK)
 
 #ifndef TDMA_MIN_STA
-#define TDMA_MIN_STA 2u                     /* станций для включения (стенд: FW_DBG=-DTDMA_MIN_STA=1) */
+#define TDMA_MIN_STA 2u                     /* станций для включения по умолчанию (WMI_SPARRAW_TDMA_CFG — свой порог) */
 #endif
 #define TDMA_COMMON_US     2000u            /* общее окно CBAP 255→255 */
 #define TDMA_MAX_STA       8u               /* CONN_MAX */
@@ -162,7 +164,8 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     }
     if (ss->built != 0 && ss->tdma_owned == 0)
         return;                             /* расписание задал хост (WMI 0xa01) — не трогать */
-    if (n < TDMA_MIN_STA) {
+    u32 min = ss->ese->tdma_min_sta != 0 ? ss->ese->tdma_min_sta : TDMA_MIN_STA;
+    if (ss->ese->tdma_off != 0 || n < min) {
         if (ss->built != 0) {
             ss->tdma_owned = 0;
             fw_log_emit0(0x2b, 0x1014510);  /* «Clearing scheme» */
@@ -199,4 +202,16 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     add_bcon(mid);
     tdma_arm(mid);
     fw_log_emit1(0x2b, 0x1014450, n + 1u); /* «Number of slots in cmd» */
+}
+
+/* WMI_SPARRAW_TDMA_CFG (0x0f10): включить/выключить TDMA точки и порог; применяется сразу. */
+void wmi_sparraw_tdma_cfg(const struct wmi_sparraw_tdma_cfg_cmd *cmd, u32 mid_id)
+{
+    struct mid *mid = mid_list_by_mid_fw(mid_id);
+    if (mid == 0)
+        return;
+    mid->sched->ese->tdma_off = cmd->enable == 0 ? 1u : 0u;
+    mid->sched->ese->tdma_min_sta = cmd->min_sta;
+    fw_log_emit2(0x2b, 0x1014450, cmd->enable, cmd->min_sta);
+    tdma_ap_update(mid, 0);
 }

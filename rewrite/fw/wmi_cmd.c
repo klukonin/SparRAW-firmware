@@ -1775,6 +1775,9 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
             HOST_CMD_LOG(0x100791c);
             wmi_bf_control(body, mb);
             break;
+        case WMI_SPARRAW_TDMA_CFG_CMDID:            /* SparRAW: простой TDMA точки (fw/tdma.c) */
+            wmi_sparraw_tdma_cfg((const struct wmi_sparraw_tdma_cfg_cmd *)body, mid);
+            break;
         case 0xa01:                                 /* WMI_ESE_CFG */
             HOST_CMD_LOG(0x10069bc);
             wmi_ese_cfg(body, mid, mb);

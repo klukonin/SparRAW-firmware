@@ -192,6 +192,7 @@ struct wmi_set_rf_sector_params_cmd;
 struct wmi_set_sectors_cmd;
 struct wmi_set_selected_rf_sector_index_cmd;
 struct wmi_set_ssid_cmd;
+struct wmi_sparraw_tdma_cfg_cmd;
 struct wmi_start_scan_cmd;
 struct wmi_sw_ring_cfg;
 struct wmi_sw_tx_req_cmd;
@@ -2168,6 +2169,7 @@ void wmi_set_multi_directed_omnis_config (struct wmi_mbox *mb, const struct wmi_
 void wmi_set_passphrase_handler (const struct wmi_set_passphrase_cmd *cmd, u32 mid);                 /* wmi_h_sta.c */
 void wmi_set_pcp_channel (const struct wmi_set_pcp_channel_cmd *cmd);                                /* wmi_h_pcp.c */
 void wmi_set_rf_sector_on (const void *cmd, struct wmi_mbox *mb);                                    /* wmi_h_bf.c */
+void wmi_sparraw_tdma_cfg (const struct wmi_sparraw_tdma_cfg_cmd *cmd, u32 mid_id);                  /* tdma.c */
 void wmi_sw_tx_req (const struct wmi_sw_tx_req_cmd *cmd, u32 mid);                                   /* wmi_h_pcp.c */
 void wmi_temp_sense (struct wmi_mbox *mb, const struct wmi_temp_sense_cmd *cmd);                     /* wmi_h_sta.c */
 void wmi_trigger_beamforming (const struct wmi_bf_trig_cmd *cmd, u32 mid);                           /* wmi_h_bf.c */

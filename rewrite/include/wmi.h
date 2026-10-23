@@ -687,6 +687,16 @@ struct wmi_prio_tx_sectors_set_default_cfg_cmd {
     u8  reserved[2];                           /* 0x02 */
 };
 
+/* WMI_SPARRAW_TDMA_CFG_CMDID (0x0f10, SparRAW): простой TDMA точки (fw/tdma.c) — включён по умолчанию,
+ * порог по умолчанию TDMA_MIN_STA. Ответного события нет. Хост: tools/tdma_ctl.sh. */
+#define WMI_SPARRAW_TDMA_CFG_CMDID 0x0f10u
+struct wmi_sparraw_tdma_cfg_cmd {
+    u8  enable;                                /* 0x00: 0 — выключить (весь DTI — CBAP), иначе включить */
+    u8  min_sta;                               /* 0x01: порог (станций); 0 — по умолчанию */
+    u8  reserved[2];                           /* 0x02 */
+};
+WMI_SIZE(struct wmi_sparraw_tdma_cfg_cmd, 4);
+
 /* WMI_SCHEDULING_SCHEME_CMDID (0xa01; у vendor — ESE_CFG). Слот — 20 Б. */
 struct wmi_sched_scheme_slot {
     u32 tbtt_offset;                           /* 0x00 */
