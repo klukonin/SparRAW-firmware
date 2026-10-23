@@ -967,6 +967,11 @@ static void sched_build_alloc_entry(u32 start, u32 nib, const volatile struct wm
     union { u32 w[4]; u16 h[8]; u8 b[16]; } t;     /* vendor: sp, 16 Б; 15 из шаблона */
     memcpy_fw(t.b, &sched_scheme.alloc_tpl, 0xf);
     bf_set32(&t.w[0], 0, 4, nib & 0xfu);           /* bits__set32_s0_w4 (0x8ed370) */
+    /* Allocation Type (B4..B6, 9.4.2.131): SP (0) из команды; прочее — CBAP (1). Vendor тип не
+     * переносил — в маяке оставался тип шаблона (CBAP, mid__init_sched_scheme), и любая
+     * аллокация, в том числе SP, объявлялась как CBAP (стенд 2026-10-23: таблица станции
+     * ctrl 0x91 на SP 0→1 точки). Свою таблицу точка строит с типом из команды. */
+    bf_set32(&t.w[0], 4, 3, e->type == 0 ? 0u : 1u);
     t.b[4] = e->src_aid;
     t.h[3] = (u16)start;                           /* [6] */
     t.b[5] = e->dest_aid;
