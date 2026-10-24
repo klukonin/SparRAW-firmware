@@ -711,6 +711,7 @@ void uc_list_insert_by_prio(u32 obj);                           /* util.c */
 void uc_log_emit1(u32 lvl, u32 token, u32 a0);                  /* bf.c */
 void uc_log_emit2(u32 lvl, u32 token, u32 a0, u32 a1);          /* bf.c */
 void uc_log_emit3(u32 lvl, u32 token, u32 a0, u32 a1, u32 a2);  /* stubs.c */
+void uc_rssi_sample(void);                                       /* sched.c */
 void uc_log_emit_snapshot(u32 a, u32 b);                        /* stubs.c */
 void uc_log_init_ring(void);                                    /* stubs.c */
 void uc_mailbox_init_rings(struct uc_mbox_ctx *m);              /* stubs.c */

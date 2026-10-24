@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* Диспетчер фоновых задач uCode (0x9215d2) — главный цикл uc. */
+#include "../include/sta_max.h"
 #include "../include/types.h"
 #include "../include/arc.h"
 #include "../include/hw.h"
@@ -30,6 +31,7 @@ void background_task_dispatch(void)
             arc_flag(s & ~(1u << 1));
             background_bi_step();
             arc_flag(arc_lr(ARC_STATUS32) | (s & (1u << 1)));
+            uc_rssi_sample();                           /* SparRAW: RSSI станций — с разрешёнными прерываниями L1 */
             s = arc_lr(ARC_STATUS32);
             arc_flag(s & ~(1u << 1));
             if (!(*tasks & VOL(bg_task_mask))) {
@@ -93,4 +95,31 @@ void background_task_dispatch(void)
 void boot_uc_init_tail(void)
 {
     background_task_dispatch();
+}
+
+/* RSSI станций (fwsh_rssi, include/fwsh.h): в простое, после нового PPDU (ppdu_evt_cnt изменился) — если последний
+ * принятый кадр от известной станции (r38 б11, cid [10:8]), отсчёт «RSSI АЦП (0x883bec[9:0], знак., Q4 дБ) + 16·строка
+ * AGC (0x88306c[5:0])» — входы rx_energy__calc_rssi_q4 — в скользящее среднее станции (вес 1/16). Кадр станции
+ * принимается её RX-сектором (rx_sel), т. е. отсчёт — по лучу, предназначенному станции. Вне сроков: прерывания
+ * разрешены, ответы через SIFS не затрагиваются. */
+void uc_rssi_sample(void)
+{
+    u32 n = ppdu_evt_cnt;
+    if (n == FWSH(fwsh_rssi, last_ppdu))
+        return;
+    FWSH(fwsh_rssi, last_ppdu) = n;
+    u32 r38 = arc_core_rd(38);
+    if (!(r38 & (1u << 11)))
+        return;
+    u32 sta = (r38 >> 8) & 7u;
+    if (sta >= SPARRAW_MAX_STA)
+        return;
+    s32 adc = (s32)(MMIO32(HW_PHY_RX_RSSI_ADC_LOCKED) << 22) >> 22;
+    s32 raw = adc + (s32)((MMIO32(HW_PHY_RX_AGC_ROW) & 0x3fu) << 4);
+    u32 c = FWSH_AT(fwsh_rssi, cnt, sta);
+    s32 q = FWSH_AT(fwsh_rssi, q4x16, sta);
+    q = (c == 0) ? raw * 16 : q + ((raw * 16 - q) >> 4);
+    FWSH_AT(fwsh_rssi, q4x16, sta) = q;
+    if (c != 0xffffu)
+        FWSH_AT(fwsh_rssi, cnt, sta) = (u16)(c + 1u);
 }

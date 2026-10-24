@@ -415,6 +415,17 @@ FWSH_OFF(struct fwsh_sets, set_ranges, 0x80);
 FWSH_OFF(struct fwsh_sets, abft_sectors, 0x84);
 _Static_assert(sizeof(struct fwsh_sets) == 0x88, "fwsh_sets");
 
+/* RSSI станций (0x857828, SparRAW; у vendor не используется): uc копит по cid скользящее среднее (вес 1/16) от
+ * «RSSI АЦП + 16·строка AGC» последнего принятого PPDU известной станции (r38 б11, cid [10:8]) — то же, что входы
+ * rx_energy__calc_rssi_q4 без калибровочных поправок; fw переводит в дБм по калибровке (rx_energy_calc_rssi_q4)
+ * и отдаёт хосту в WMI_NOTIFY_REQ_DONE.rssi. cnt — число отсчётов (0 — нет данных). */
+struct fwsh_rssi {
+    s32 q4x16[SPARRAW_MAX_STA];                /* 0x00: среднее ×16 (Q4 дБ × 16) */
+    u16 cnt[SPARRAW_MAX_STA];                  /* 0x20 */
+    u32 last_ppdu;                             /* 0x30: ppdu_evt_cnt последнего учтённого отсчёта (uc) */
+};
+FWSH_OFF(struct fwsh_rssi, cnt, 4 * SPARRAW_MAX_STA);
+
 
 
 /* ---------------- объекты ---------------- */
@@ -433,6 +444,7 @@ _Static_assert(sizeof(struct fwsh_sets) == 0x88, "fwsh_sets");
 #define FWSH_A_fwsh_energy        0x857290u
 #define FWSH_A_fwsh_phy           0x8576a0u
 #define FWSH_A_fwsh_sets          0x857730u
+#define FWSH_A_fwsh_rssi          0x857828u
 
 /* Поле общего объекта по его собственному литеральному адресу (целая константа «адрес
  * объекта + offsetof») — кодоген как с числом. Форма obj.field даёт у gcc адрес «база
@@ -462,6 +474,7 @@ extern volatile u8 fwsh_long_range;            /* 0x85728e: 1 — режим д�
 extern struct fwsh_energy fwsh_energy;         /* 0x857290 */
 extern struct fwsh_phy_blk fwsh_phy;           /* 0x8576a0 */
 extern struct fwsh_sets fwsh_sets;             /* 0x857730 */
+extern struct fwsh_rssi fwsh_rssi;             /* 0x857828 */
 #else
 /* uc: имена — макросы на литеральный адрес. */
 #define fw_stats_dash      (*(volatile struct fw_stats_dash *)FWSH_A_fw_stats_dash)
@@ -476,6 +489,7 @@ extern struct fwsh_sets fwsh_sets;             /* 0x857730 */
 #define fwsh_energy        (*(volatile struct fwsh_energy *)FWSH_A_fwsh_energy)
 #define fwsh_phy           (*(volatile struct fwsh_phy_blk *)FWSH_A_fwsh_phy)
 #define fwsh_sets          (*(volatile struct fwsh_sets *)FWSH_A_fwsh_sets)
+#define fwsh_rssi          (*(volatile struct fwsh_rssi *)FWSH_A_fwsh_rssi)
 
 
 /* Псевдонимы uc. «Число наборов» развёртки = n_sec[1][0] (≥ 2 — по набору своя база сектора). */

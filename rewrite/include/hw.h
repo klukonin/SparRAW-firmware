@@ -89,6 +89,7 @@
 #define HW_DMA_RINGS_WITH_DATA               0x881c84u   /* dma_rings_with_data */
 #define HW_PHY_RX_CTL                        0x883010u   /* phy_rx_ctl */
 #define HW_PHY_RX_AGC_ROW                    0x88306cu   /* phy_rx_agc_row */
+#define HW_PHY_RX_RSSI_ADC_LOCKED            0x883becu   /* [9:0] RSSI АЦП (знак., Q4 дБ), по SFD (phy_rx__read_rssi_adc_locked) */
 #define HW_PHY_RX_INA_AGC_START              0x88312cu   /* phy_rx_ina_agc_start */
 #define HW_PHY_RX_INA_DET_MODE               0x883150u   /* phy_rx_ina_det_mode */
 #define HW_PHY_RX_INA_AGC_GAIN_ARRAY         0x8831ccu   /* phy_rx_ina_agc_gain_array */

@@ -99,12 +99,13 @@ fwsh_long_range    = 0x85728e;  /* uc: u8 */
 fwsh_energy  = 0x857290;  /* uc: struct fwsh_energy — отсчёты статистики энергии */
 fwsh_phy     = 0x8576a0;  /* uc: struct fwsh_phy_blk — статистика PHY RX */
 fwsh_sets    = 0x857730;  /* uc: struct fwsh_sets — наборы RF и параметры развёртки */
+fwsh_rssi    = 0x857828;  /* uc: struct fwsh_rssi — RSSI станций (SparRAW) */
 
 /* Диапазоны, которые обнуляет crt0 (fw/start.S, как vendor). */
 __sram_clr_start = tx_ring_mem_data;        /* 0x840000 */
 __sram_clr_end   = phy_monitor + 0x3c;      /* 0x84e81c: конец struct phy_monitor */
 __fwsh_clr_start = fwsh_diag;               /* 0x857000 */
-__fwsh_clr_end   = 0x857828;               /* как vendor (до конца области шаблона FTM — SparRAW-pro) */
+__fwsh_clr_end   = fwsh_rssi + 0x34;       /* vendor — 0x857828 (конец шаблона FTM, SparRAW-pro); + fwsh_rssi */
 __conn_clr_start = conn_mgr;                /* 0x854000 */
 __conn_clr_end   = ll_detectors + 8 * 0xa4; /* 0x8552f4: конец ll_detectors[8] */
 

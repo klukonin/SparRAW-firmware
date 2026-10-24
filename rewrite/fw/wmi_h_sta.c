@@ -14,6 +14,9 @@
  *   [gp+191]  0x800243 — байт «тип RF» для WMI_GET_RF_STATUS;
  *   [gp+0x278] 0x8003fc — задержка таймеров установки ключа (ld.as [gp,158]);
  *   0x8000a4 — температура BB (м°C, служба температуры). */
+#include "../include/fwsh.h"
+#include "../include/sta_max.h"
+#include "../include/calib.h"
 #include "../include/types.h"
 #include "../include/rf_kill.h"
 #include "../include/sysapi_mgr.h"
@@ -94,6 +97,21 @@ static u32 link_stats_calc_throughput_mbps(u32 total, u32 bad, u32 mcs)
  *   +0x14/+0x18 слова +0x58/+0x64 записи lm_sm (link_stats__get_sta_word58/64,
  *   0x8ccf64/0x8ccb50 — цепочки переходов +0x10+0x2c+0x1c / +0x28), +0x1c mcs,
  *   +0x1e..+0x24 секторы снимка; +0x28 sqi = bf_avg соединения. */
+/* Сигнал станции, дБм (SparRAW): мощность принятых кадров станции — среднее uc (fwsh_rssi: RSSI АЦП + 16·строка AGC,
+ * её кадры, её RX-сектор) через rx_energy_calc_rssi_q4 с калибровкой (calib_zero_db.row8, rf_if_gain_rssi_ofs),
+ * округление к ближайшему. vendor отдавал «SNR связи − 72» (snap.rssi — SNR BRP/SLS, не мощность); он — запасной,
+ * пока отсчётов нет. Абсолютная точность — по калибровке silent RSSI (пока значения образа). */
+static s8 link_stats_rssi_dbm(struct lm_if *lm)
+{
+    u32 cid = lm->conn->cid;
+    if (cid < SPARRAW_MAX_STA && fwsh_rssi.cnt[cid] != 0) {
+        s32 raw = fwsh_rssi.q4x16[cid] / 16;
+        s32 q4 = rx_energy_calc_rssi_q4((u32)raw, 0, calib_zero_db.row8, rf_if_gain_rssi_ofs);
+        return (s8)((q4 + 8) >> 4);
+    }
+    return (s8)(lm->snap.rssi - 72);
+}
+
 static void link_stats_fill_sta_entry(struct lm_if *lm, struct wmi_notify_req_done_event *ev)
 {
     /* volatile — как прежние W()/H(): порядок и ширина записей vendor */
@@ -116,7 +134,7 @@ static void link_stats_fill_sta_entry(struct lm_if *lm, struct wmi_notify_req_do
         e->other_tx_sector = 0xff;
     } else {
         u32 mcs = lm->mcs;
-        ev->rssi = (s8)(lm->snap.rssi - 72);
+        ev->rssi = link_stats_rssi_dbm(lm);
         e->tx_tpt = link_stats_calc_throughput_mbps(lm->mcs_total[mcs], lm->mcs_bad[mcs], mcs);
         e->tx_goodput = lm->lm_sm->msm.stats.tx_goodput;
         e->rx_goodput = lm->lm_sm->msm.stats.rx_goodput;

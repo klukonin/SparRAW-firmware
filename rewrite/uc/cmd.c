@@ -922,6 +922,8 @@ void ucode_cmd_0x05_handler(const struct lmac_cmd_sta_cfg *c)
         sta_miss_cnt[r15] = 0;
         fsched_peer_add(&fsched_peers, r15);
         memset0_words_uc(st, sizeof(*st));
+        if (r15 < SPARRAW_MAX_STA)
+            FWSH_AT(fwsh_rssi, cnt, r15) = 0;  /* SparRAW: RSSI новой станции — заново (uc_rssi_sample) */
         st->flags |= 3;
         st->cfg_10 = c->cfg_10;
         st->cfg_28 = c->cfg_28;
