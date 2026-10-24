@@ -347,6 +347,18 @@ static u32 tsf_ref_gt(const u32 *ref, const u32 *now)
     return ref[0] > now[0];
 }
 
+/* Команда uc 0x26 (CMD_KEEP_ALIVE_TRIGGER, тело 1 Б = cid): uc keep_alive_arm_slot ставит бит cid в itx_ka_pending,
+ * internal_tx_flow_sm2 шлёт RTS → CTS → кадр из очередей станции → Ack. ОШИБКА vendor 6.2: task пишет в журнал
+ * «Initiating CMD_KEEP_ALIVE_TRIGGER to uCode», но команду не шлёт — ни один из 60 вызовов lmac_if__post_cmd в fw 6.2
+ * не передаёт 0x26, и keep-alive в простое не уходит никогда (стенд 2026-10-24: журнал fw каждые ~31 с, путь uc ни
+ * разу). В 4.1 это делает lmac_if_keep_alive_trigger_handler (0x8d85e4, send_cmd2_lmac(0x26, 1)), вызов из task. */
+static void ka_send_trigger(u32 cid)
+{
+    volatile u8 *b = lmac_cmd_pool_alloc();
+    b[0] = (u8)cid;
+    lmac_if_post_cmd(b, 0x26, 1, 0);
+}
+
 /* ka_necessity_detector::task (0x8e8bfc, 488 Б) — vt->task детектора keep-alive cid.
  * Без трафика (ctx->traffic[cid] не менялся) и без ожидающих данных копит прошедшее время
  * в ctx->ka_acc[cid]; превысив период (по SNR, ctx->ka_period[cid]) или по запросу
@@ -411,6 +423,7 @@ void ka_necessity_detector_task(struct psvc *svc, u32 count)
         c = d->ctx;
         cid = d->cid;
         c->ka_cnt[cid] = c->ka_cnt[cid] + 1;
+        ka_send_trigger(cid);
         VCTX(d)->ka_acc[d->cid] = 0;
         LLC->fsched_flush_mask &= ~(1u << d->cid);
         LLC->fsched_flush_over &= ~(1u << d->cid);

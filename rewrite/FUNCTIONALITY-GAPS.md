@@ -45,6 +45,12 @@
 - 0x8d8230 (split-MAC IE): копия IE хоста в 256-байтный стек без проверки длины — в порту
   чтение напрямую из кадра (без переполнения).
 - Отладочная область DBG 0x806a00..0x806a7f (include/dbg.h) — наша, vendor её не пишет.
+- Keep-alive в простое (fw/link_loss.c, ka_send_trigger). В vendor 6.2 ka_necessity_detector::task
+  пишет в журнал «Initiating CMD_KEEP_ALIVE_TRIGGER to uCode», но команду uc 0x26 не шлёт. Ни один из
+  60 вызовов lmac_if__post_cmd в fw 6.2 не передаёт id 0x26, а в 4.1 её шлёт lmac_if_keep_alive_trigger_handler.
+  Поэтому путь uc internal_tx_flow_sm2 (RTS → CTS → кадр → Ack) у vendor не запускается никогда, и линк без
+  трафика держится только маяками. В порту команда шлётся, как в 4.1. Стенд 2026-10-24, 150 с простоя:
+  STA — 4 keep-alive, Ack 4/4; AP — 5 keep-alive, Ack 5/5; у vendor и у нас без починки — ни одного.
 
 ## Сохранённые особенности vendor (с комментариями в коде)
 
