@@ -882,16 +882,20 @@ u32 bf_req_enqueue(u32 a0, u32 a1, u32 a2)
 {
     struct bf_req_q_s *q = &bf_req;
     u32 was_empty = (q->pending_mask == 0) ? 1 : 0;
+    /* исправлено (vendor): станций с запросом бывает до SPARRAW_STA_SLOTS (9), очередь — BF_REQ_FIFO_N (8): 9-й запрос
+     * затирал голову (fifo[tail & 7] == fifo[head & 7]) и ронял uc (assert 0x12). Полная очередь — запрос не ставится. */
+    if (q->tail - q->head >= BF_REQ_FIFO_N) {
+        uc_log_emit1(0x20, 0x1000c3c, a0);
+        return 0;
+    }
     q->pending_mask |= 1u << a0;
     struct bf_sta_s *e = &bf_sta[a0];
     e->state = a1;
     e->flow_status = 0;
     e->brp_flags = 0;
     e->req_desc = (struct bf_req_desc *)a2;
-    q->fifo[q->tail & 7] = a0;
+    q->fifo[q->tail % BF_REQ_FIFO_N] = a0;
     q->tail++;
-    if (q->tail - q->head >= 9)
-        uc_assert((u32)__builtin_return_address(0), 0x12);
     return was_empty;
 }
 
@@ -901,14 +905,14 @@ u32 bf_req_dequeue_head(u32 a0, u32 a1)
     struct bf_req_q_s *q = &bf_req;
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~2u);
-    u32 head = q->head & 7;
+    u32 head = q->head % BF_REQ_FIFO_N;
     u32 sta = q->fifo[head];
     q->head++;
     q->pending_mask &= ~(1u << sta);
     struct bf_sta_s *e = &bf_sta[sta];
     e->state = 0;
     if (q->pending_mask != 0) {
-        u32 nx = q->fifo[q->head & 7];
+        u32 nx = q->fifo[q->head % BF_REQ_FIFO_N];
         *(u32 *)sls.peer_mac = *(u32 *)sta_tab[nx].mac;
         sls.peer_mac[2] = sta_tab[nx].mac[2];
         bf_abort_step(nx);
@@ -996,7 +1000,7 @@ void bf_sm_process_request_fifo(void)
         return;
     ucode_pm_set_busy_flag(0);
     uc_tx_is_idle();
-    u32 sta = q->fifo[q->head & 7];
+    u32 sta = q->fifo[q->head % BF_REQ_FIFO_N];
     struct bf_sta_s *e = &bf_sta[sta];
     if (e->flow_status != 0 && e->state != 3)
         uc_log_emit3(0x20, 0x1000c3c, e->state, e->flow_status, q->pending_mask);

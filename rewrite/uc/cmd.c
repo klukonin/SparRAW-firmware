@@ -1201,7 +1201,7 @@ void ucode_cmd_0x0f_handler(const struct lmac_cmd_maint_sta *c)
         maint_sta_mask = r1 & (u8)nmask;
         if (bf_req.pending_mask & mask) {
             bf_abort_to_state11(sta);       /* L_9258c8 */
-            u32 idx = bf_req.head & 0x7;
+            u32 idx = bf_req.head % BF_REQ_FIFO_N;
             if (sta == bf_req.fifo[idx])
                 bf_pending_set_bit(1);      /* L_9216f8 */
             else

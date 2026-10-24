@@ -110,7 +110,7 @@ void fixed_sched_manager_decrement_curr_sta_rd_counter(struct fsched_peer_ctx *p
 /* ---- L1 task-слой ---- */
 void l1_task_select_by_mode(void)
 {
-    u32 r0 = bf_req.head & 7;
+    u32 r0 = bf_req.head % BF_REQ_FIFO_N;
     u8 r13 = bf_req.fifo[r0];
     if (bf_sta[r13].state != 0x12)
         return;

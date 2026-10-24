@@ -834,9 +834,12 @@ struct bf_sta_s {
     u32  done_cb2;                      /* +0x10 второй колбэк завершения (из req_desc->cb2) */
 };
 _Static_assert(sizeof(struct bf_sta_s) == 20, "bf_sta");
+/* Глубина очереди запросов BF — раскладка DCCM vendor (0x8020b0, 0x14 Б). Меньше SPARRAW_STA_SLOTS: запрос при полной
+ * очереди не ставится (bf_req_enqueue), его повторит триггер BF. */
+#define BF_REQ_FIFO_N 8u
 struct bf_req_q_s {
     u32  pending_mask;                  /* +0x00 станции с запросом в очереди (б8 — неизвестный пир) */
-    u8   fifo[8];                       /* +0x04 номера станций, индекс & 7 */
+    u8   fifo[BF_REQ_FIFO_N];           /* +0x04 номера станций, индекс & (BF_REQ_FIFO_N − 1) */
     u32  head;                          /* +0x0c счётчик головы */
     u32  tail;                          /* +0x10 счётчик хвоста; tail − head ≥ 9 → assert 0x12 */
 };
