@@ -713,9 +713,8 @@ static void abft_ssw_rf_back(struct abft_ssw_st *s)
     s->rf = 0;
 }
 
-/* Пачка SSW с первого кадра (0x2d …); вызов — только stage 0. Ветки stage 1/3 (первый кадр выдан до события) —
- * от снятого опыта; оставлены, пока их удаление меняет раскладку цикла (ХРУПКО, см. СРОК ниже). */
-static u32 abft_ssw_burst(struct abft_ssw_st *s, u32 stage)
+/* Пачка SSW с первого кадра (0x2d …). */
+static u32 abft_ssw_burst(struct abft_ssw_st *s)
 {
     u32 r13 = s->r13, r16 = s->r16, r15 = s->r15, r19 = s->r19, r14 = s->fss, n;
     struct bcn_rx_s *r18 = &bcn_rx;
@@ -729,20 +728,12 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s, u32 stage)
      * 10 Б в FIFO и ожидание direct TX, mac_program_tx_common, спин MTP r43) ~230 инструкций ≈ 1,5–2 мкс +
      * задержки MTP; запас: нет — SBIFS программно не выдерживается. Хвост пачки уходит за aSSDuration и может
      * наехать на SSW-Feedback AP (через MBIFS после aSSDuration). Удлинение пути — меньше SSW в слоте. */
-    if (stage == 1) {
-        r17 = 0;
-#ifdef UC_PATH_T
-        pt12 = 0;                                   /* первая 0x19 уже выдана до события (точка 12 — там) */
-#endif
-        goto after_go;
-    }
     do {
         uc_mac_cmd((*(u8 *)&rf_chain_cfg << 16) |
                            ((r14 << 1) | 0x2d000001 | (r13 << 10)));
         abft_send_ssw_feedback(0);
         uc_mac_cmd(((r15 + 1023u) >> 10) | 0x15000000);
         uc_mac_cmd(0x14000007);
-        r15 -= ABFT_SSW_STEP_FX;
         mac_program_tx_common();
         while (!(arc_core_rd(43) & (1u << 31)))
             ;
@@ -775,17 +766,13 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s, u32 stage)
 #ifdef UC_PATH_T
         if (pt12) { UC_PATHT(12); pt12 = 0; }
 #endif
-        if (stage == 3) {                           /* первый кадр выдан до события — вернуться (не вызывается) */
-            s->r13 = r13; s->r16 = r16; s->r15 = r15; s->fss = r14;
-            return 1;
-        }
-after_go:
         while (!(arc_core_rd(45) & (1u << 31)))
             ;
         uc_mac_cmd((txrx_state1 & 0x10) ? 0x18000000 : 0x18001000);
         if (r14 == 0)
             break;
         r14 -= 1;
+        r15 -= ABFT_SSW_STEP_FX;                    /* ХРУПКО: до спина r42 — вне отрезка tx_end → 0x19 */
         __asm__ volatile("norm %0, %1" : "=r"(n) : "r"(r16));
         r13 = (u8)(n + 1);
         r16 = r16 & ~(1u << ((0x1f - r13) & 31));
@@ -800,7 +787,6 @@ after_go:
         ssw_tpl_ra[1] = r18->bssid[1];
         ssw_tpl_ra[2] = r18->bssid[2];
         mac_evt_enable_bit_sync(5);
-        stage = 0;
     } while (1);
     mac_set_rf_chain_state_with_sta_sector();
     mac_evt_enable_bit_sync(5);
@@ -838,7 +824,7 @@ static u32 abft_ssw_go(struct abft_ssw_st *s)
         abft_ssw_rf_back(s);
         return 0;
     }
-    return abft_ssw_burst(s, 0);
+    return abft_ssw_burst(s);
 }
 
 /* Ответ A-BFT станции, вызов из ветки «конец GP0» bti_bi2_track_best_metric. pre — выбор слота и
