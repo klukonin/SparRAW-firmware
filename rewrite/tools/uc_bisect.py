@@ -94,7 +94,7 @@ AP = 'root@192.168.1.11'
 
 def ap_restart():
     """AP .11 со временем залипает (перестаёт принимать ассоциации даже эталона):
-    перезапуск radio на .11 (разрешено пользователем 2026-10-13), uci без commit."""
+    перезапуск radio на .11 (допустимо на стенде), uci без commit."""
     subprocess.run(SSH[:-1] + [AP, 'wifi down; sleep 3; wifi up; sleep 15'], capture_output=True, timeout=120)
     log('  AP .11: wifi перезапущен')
 
