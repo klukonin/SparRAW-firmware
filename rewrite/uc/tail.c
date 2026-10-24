@@ -2724,13 +2724,11 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  * принят, инициатор повторяет SSW-Feedback (до dot11BFRetryLimit раз) «PIFS following the expected
  * end of the SSW-Ack frame»: ответчик начинает Ack через MBIFS после Feedback (10.42.2.5, 10.42.6.2),
  * значит повтор — через MBIFS + TXTIME(SSW-Ack) + PIFS = 9 + 18,255 + 8 = 35,255 мкс (5817 тактов)
- * после конца Feedback. GP1 и есть это окно: ожидание Ack и момент повтора (в 6.2 было 0x2087 = 50,47 мкс —
- * на ~15 мкс позже стандарта). GP1 взводится через ~40 инструкций и
- * ожидание события 5 после tx_end Feedback, а после срабатывания до 0x19 повтора ещё
- * txss_init_send_ssw_fdbk (~1,5–2 мкс) — в эфире повтор ≈ 37 мкс; этот путь не вычитается.
- * Запас на приём Ack: Ack ответчика по стандарту кончается через 27,26 + 0,49 мкс (наш ответчик —
- * 9,05 мкс + 18,26, vendor 6.2 — 5,03 + 18,26), до срабатывания GP1 остаётся PIFS 8 мкс на задержку
- * события конца приёма.
+ * после конца Feedback. GP1 — ожидание Ack и момент повтора (в 6.2 было 0x2087 = 50,47 мкс — на ~15 мкс позже
+ * стандарта). GP1 взводится через ~40 инструкций и ожидание события 5 после tx_end Feedback, а после
+ * срабатывания до 0x19 повтора ещё txss_init_send_ssw_fdbk и MAC; этот путь (замер ниже) вычитается из GP1
+ * (SSWFB_GP1_CLK). Ack ответчика по стандарту начинается через MBIFS и кончается через 27,26 + 0,49 мкс (наш
+ * ответчик — 9,05 мкс + 18,26, vendor 6.2 — 5,03 + 18,26); uc видит начало приёма задолго до GP1 (ниже).
  *
  * Остаток выделения перед повтором (10.42.6.2): «The initiator shall restart the SSW feedback procedure PIFS
  * following the expected end of the SSW-Ack frame by the responder, provided there is sufficient time left in
@@ -2738,9 +2736,9 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  * responder in an MBIFS. If there is not sufficient time left ..., the initiator may restart the SSW feedback
  * procedure in the following allocation». Иначе — нарушение 10.39.4/10.39.5/10.39.6.2 (последовательность «не
  * дальше конца CBAP/SP»).
- *  Нужно от момента взвода GP1: SSWFB_ACK_WAIT_CLK (до точки повтора) + путь до эфира SSWFB_RETRY_PATH_CLK +
- *  TXTIME(SSW-Feedback) + MBIFS + TXTIME(SSW-Ack) = 5817 + 744 + 3012 + 1485 + 3012 = 14070 тактов = 85,27 мкс →
- *  SSWFB_RETRY_NEED_US = 86 (вверх).
+ *  Нужно от момента взвода GP1: SSWFB_GP1_CLK (до срабатывания) + путь до эфира SSWFB_RETRY_PATH_CLK (max) +
+ *  TXTIME(SSW-Feedback) + MBIFS + TXTIME(SSW-Ack) = 5092 + 744 + 3012 + 1485 + 3012 = 13345 тактов = 80,88 мкс →
+ *  SSWFB_RETRY_NEED_US = 81 (вверх).
  *  SSWFB_RETRY_PATH_CLK — замер (опыт fbr, образ fbr_a3: ответчик шлёт первые 3 SSW-Ack с чужим RA; оба узла
  *  наши, AP .12 + STA .11, n = 82 повтора, 2026-10-24): конец Feedback → начало повтора в эфире 39,65 / 39,74 /
  *  39,76 мкс (min/med/max; по разности возвратов txss_init_send_ssw_fdbk минус TXTIME(Feedback)); из них взвод →
@@ -2748,15 +2746,19 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  *  события конца TX до взвода и MAC от 0x19 до эфира. GP1 взводится после mac_evt_enable_bit_sync(5), который
  *  ждёт подтверждения MAC (r42.14) — MAC занят до конца кадра, т. е. взвод (и проверка) не раньше конца Feedback;
  *  отсюда от проверки до начала повтора не больше max = 39,76 мкс = 6561 такт: 6561 − 5817 = 744.
- *  Повтор начинается на ~4,5 мкс позже «PIFS после ожидаемого конца SSW-Ack» — запас PIFS на приём Ack цел;
- *  сдвиг взвода раньше на путь — отдельная задача (сократит этот запас).
+ *  Поэтому GP1 взводится раньше на минимальный путь SSWFB_RETRY_PATH_MIN_CLK = 39,65 мкс − 35,255 = 725 тактов:
+ *  повтор в эфире — не раньше 35,255 мкс и не позже ~35,37 мкс после конца Feedback (без сдвига было 39,65–39,76,
+ *  на ~4,5 мкс позже стандарта — почти DIFS 13 мкс после ожидаемого конца Ack, когда среду могут занять другие).
+ *  Окно Ack это не сокращает по сути: событие приёма (r42.19) — начало приёма Ack, uc видит его через 9,3–9,5 мкс
+ *  после взвода (Ack сразу, n = 44) и 5,2–5,7 мкс на повторах (n = 42; опыт fbr 2026-10-24), дальше rx_flow_run
+ *  дочитывает кадр; срабатывание GP1 (через ~30,9 мкс) во время приёма не мешает — запас ~21 мкс.
  *  Конец выделения — меньшее из двух: следующий TBTT (DTI кончается началом BTI следующего BI, любое выделение
  *  DTI кончается не позже; при CBAP Only = 1 это и есть конец CBAP) и конец текущей записи ESE своей таблицы
  *  (ese_slot_tbl: CBAP/SP, где узел участвует — TDMA точки, расписание станции; ese_dti_us_to_window_end).
  *  Источник — HW_MAC_USEC_TO_TBTT (0x886ec0): обратный отсчёт до TBTT в мкс, 26 бит, у AP и у станции (стенд
  *  2026-09-28, 6.2/ref/REGS-62.md); при выключенном MAC — 0x3ffffff (проверка проходит, как раньше). Одно
  *  чтение MMIO, без деления. Округление регистра (вниз или вверх) неизвестно: строгое «> 86» верно при любом
- *  (истинный остаток > значение − 1 ≥ 86 ≥ 85,27). Читается после взвода GP1 — остаток занижен, в безопасную
+ *  (истинный остаток > значение − 1 ≥ 81 ≥ 80,88). Читается после взвода GP1 — остаток занижен, в безопасную
  *  сторону.
  *  Проверка — сразу после взвода GP1 (ожидание Ack, до события ≥ 9 мкс), а не после срабатывания GP1: путь
  *  GP1 → 0x19 повтора не удлиняется (objdump: 10 инструкций от r54 до вызова txss_init_send_ssw_fdbk против 11
@@ -2768,10 +2770,13 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  */
 #define SSWFB_ACK_WAIT_CLK  (DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_PIFS_CLK)  /* 5817 */
 #define SSWFB_RETRY_PATH_CLK 744u      /* замер fbr 2026-10-24 (выше): max(конец Feedback → повтор) − SSWFB_ACK_WAIT_CLK */
-#define SSWFB_RETRY_NEED_CLK (SSWFB_ACK_WAIT_CLK + SSWFB_RETRY_PATH_CLK + DMG_TXTIME_SSW_FB_CLK + DMG_MBIFS_CLK + \
+#define SSWFB_RETRY_PATH_MIN_CLK 725u  /* то же, min: 39,65 мкс = 6542 такта − 5817 */
+#define SSWFB_GP1_CLK (SSWFB_ACK_WAIT_CLK - SSWFB_RETRY_PATH_MIN_CLK)  /* 5092: повтор в эфире не раньше 35,255 мкс */
+#define SSWFB_RETRY_NEED_CLK (SSWFB_GP1_CLK + SSWFB_RETRY_PATH_CLK + DMG_TXTIME_SSW_FB_CLK + DMG_MBIFS_CLK + \
                               DMG_TXTIME_SSW_ACK_CLK)
 #define SSWFB_RETRY_NEED_US  ((SSWFB_RETRY_NEED_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
-_Static_assert(SSWFB_RETRY_NEED_CLK == 14070u && SSWFB_RETRY_NEED_US == 86u, "остаток для повтора SSW-Feedback");
+_Static_assert(SSWFB_GP1_CLK == 5092u && SSWFB_RETRY_NEED_CLK == 13345u && SSWFB_RETRY_NEED_US == 81u,
+               "повтор SSW-Feedback: взвод GP1 и остаток выделения");
 #define USEC_TO_TBTT_MASK    0x3ffffffu                                     /* [25:0] */
 static __attribute__((noinline)) u32 sswfb_retry_fits(void)
 {
@@ -2800,7 +2805,7 @@ void txss_init_send_fdbk_wait_ack(u32 a) {
     uc_mac_cmd(0x41 << 19);
     mac_evt_enable_bit_sync(5);
     u32 r14 = 1;
-    gp_timer_arm(r14, SSWFB_ACK_WAIT_CLK, 0, 0);
+    gp_timer_arm(r14, SSWFB_GP1_CLK, 0, 0);
     if (!sswfb_retry_fits())
         r14 = DOT11_BF_RETRY_LIMIT + 1;             /* до конца выделения повтор не помещается (10.42.6.2) */
     for (;;) {
@@ -2838,7 +2843,7 @@ void txss_init_send_fdbk_wait_ack(u32 a) {
         u32 v2 = (abif_dvs_rf_ctrl_shadow & ~(1u << 24) & ~(1u << 25)) | (rf_set_rx << 24);
         abif_dvs_rf_ctrl_shadow = v2;
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = v2;
-        gp_timer_arm(1, SSWFB_ACK_WAIT_CLK, 0, 0);
+        gp_timer_arm(1, SSWFB_GP1_CLK, 0, 0);
         r14 += 1;
         if (!sswfb_retry_fits())
             r14 = DOT11_BF_RETRY_LIMIT + 1;         /* как выше */
