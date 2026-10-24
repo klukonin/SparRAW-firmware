@@ -817,7 +817,11 @@ __attribute__((section(".textlate"))) void lmac_if_send_sta_cfg_05(struct conn *
     cmd->tx_sector = a->lm.snap.sector[1];           /* add3 a,0xe → a+0x70; +0x12 */
     /* vendor перечитывает rf_idx перед каждой из трёх записей — чтения volatile */
     cmd->tx_rf = *(volatile u8 *)&rf_obj.rf_idx;
-    cmd->rx_sector = a->lm.snap.sector[0];           /* add3 a,0xe → a+0x70; +0x11 */
+    /* RX-сектор — из снимка BF; пока успешного BF нет (snap.status != 1: снимок обнулён при открытии соединения),
+     * 0xff — «не обучен», uc ставит направленный омни 0x60 + cid. Исправлено (vendor 6.2 слал 0 из пустого снимка —
+     * станция слушала узкий сектор 0: первый BRP-инициатор не слышал TRN точки, бит bf_sta_mask не снимался,
+     * BRP не шёл никогда, «сигнал» в отчёте −72, штормы CTS; стенд 2026-10-24: с 0xff BRP 3/3). */
+    cmd->rx_sector = (a->lm.snap.status == 1) ? a->lm.snap.sector[0] : 0xff;
     cmd->rx_rf = *(volatile u8 *)&rf_obj.rf_idx;
     if (state == 2 || state == 3)
         cmd->omni_sector = 0xffff;
