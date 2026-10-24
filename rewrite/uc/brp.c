@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* BRP (Beam Refinement Protocol) uCode. */
+#include "../include/sta_max.h"
 #include "../include/types.h"
 #include "../include/bitfield.h"
 #include "../include/hw.h"
@@ -66,7 +67,7 @@ void brp_set_tx_sector_id(u32 ptr, u32 value)
 u32 brp_is_peer_ctrl_frame(void)
 {
     /* vendor перечитывает r38 и r37 перед каждой проверкой */
-    u32 v = (arc_core_rd(38) & (1u << 11)) ? ((arc_core_rd(38) >> 8) & 7) : 8;
+    u32 v = (arc_core_rd(38) & (1u << 11)) ? ((arc_core_rd(38) >> 8) & 7) : SPARRAW_PEER_UNKNOWN;
     if (brp_ctx.resp_sta != v)
         return 0;
     if (arc_core_rd(37) & (1u << 16)) return 1;
@@ -190,6 +191,11 @@ void brp_pick_sector_cfg(u32 a)
     u8 r0 = brp_rf_cfg.sta_sel[a];
     if (((r0 >> 6) & 3) != 0)
         brp_pick.count = r0 & 0x3f;
+    /* исправлено (vendor): count из настроек (до 63 / 255) не ограничивался — brp_rank_insert сдвигал записи за
+     * brp_rank[rf][32] (для RF 7 — в brp_stats/brp_trn_metric), config_brp_rf читал за массивом. Подполей TRN
+     * в измерении всегда 32 (brp_program_and_measure). */
+    if (brp_pick.count > 32u)
+        brp_pick.count = 32u;
     brp_pick.selected = 0;
 }
 

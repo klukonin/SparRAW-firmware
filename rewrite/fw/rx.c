@@ -459,6 +459,12 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
         u32 r17 = r16;
         do {
             if (ese_alloc_wanted(obj, r13) != 0) {
+                /* исправлено (vendor): 4-е подходящее поле из маяка (ESE до 17 полей, 9.4.2.131) упиралось в
+                 * fatal 0x11bb ese_slot_table_add — остановка fw кадром из эфира. Лишние поля пропускаются. */
+                if (obj->ese->tbl->count >= ESE_SLOTS_N) {
+                    fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
+                    break;
+                }
                 ese_alloc_to_slot(obj, r18, r13);
                 r15++;
             }

@@ -22,6 +22,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 
 #define ESE_PAUSE_REASON  8u
 #define ESE_SLOT_MAY_INIT (1u << 7)         /* бит 7 управляющего слова записи (fw ese_may_initiate) */
@@ -34,7 +35,7 @@ static u32 ese_dti_scheduled(void)
 static void ese_dti_close(void)
 {
     u32 any = 0;
-    for (u32 cid = 0; cid < 8; cid++) {
+    for (u32 cid = 0; cid < SPARRAW_MAX_STA; cid++) {
         if (!(sta_tab[cid].flags & 1u) || (tx_dis_mask[cid] & (1u << ESE_PAUSE_REASON)))
             continue;
         bf_pause_sta_tx(ESE_PAUSE_REASON, cid);
@@ -47,7 +48,7 @@ static void ese_dti_close(void)
 static void ese_dti_open(void)
 {
     u32 any = 0;
-    for (u32 cid = 0; cid < 8; cid++) {
+    for (u32 cid = 0; cid < SPARRAW_MAX_STA; cid++) {
         if (!(tx_dis_mask[cid] & (1u << ESE_PAUSE_REASON)))
             continue;
         bf_resume_sta_tx(ESE_PAUSE_REASON, cid);

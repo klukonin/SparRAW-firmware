@@ -5,6 +5,7 @@
 #include "ifs.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 #include "abft.h"
 #include "../include/macq_desc.h"
 
@@ -194,7 +195,7 @@ void rf_update_active_antenna(u32 a, u32 b)
 /* Индекс пира с данным qid среди станций maint_sta_mask, 0xff — нет. */
 u32 sta_find_by_byte(struct fsched_peer_ctx *p, u32 qid)
 {
-    for (u32 i = 0; i < 8; i++) {
+    for (u32 i = 0; i < SPARRAW_MAX_STA; i++) {
         if ((maint_sta_mask & (1u << i)) && p->ent[i].qid == qid)   /* brne r1,r3 — r1 целиком */
             return i;
     }
@@ -297,7 +298,7 @@ void sta_reset_link_state(u32 a, u32 b, u32 c)
     /* 6.2 asm 0x921900: memset 3 байта @0x8005fc; при b!=0 сброс
      * *(u8*)(0x857e49+a*20); при c!=0 проверка sta_link → rs_abort. */
     memset0_words_uc(txss_retry_cnt, 3);
-    if (b != 0)
+    if (b != 0 && a < SPARRAW_MAX_STA)      /* у пира 8 (A-BFT) записи link_stat нет */
         VOL(link_stat[a].bf_reasons) = 0;
     if (c != 0) {
         if (sta_link_byte_by_index(a) == 0)
@@ -308,7 +309,7 @@ void sta_reset_link_state(u32 a, u32 b, u32 c)
 void sta_apply_bf_result(u32 a, u32 b)
 {
     /* 6.2 asm 0x921ca8. */
-    u32 flag = ((VOL(link_stat[b].bf_reasons) & 0x40) == 0) ? 1 : 0; /* bic -0x41 = & 0x40 */
+    u32 flag = (b >= SPARRAW_MAX_STA || (VOL(link_stat[b].bf_reasons) & 0x40) == 0) ? 1 : 0; /* bic -0x41 = & 0x40; пир 8 — без link_stat */
     sta_reset_link_state(b, 1, flag);
     if (a == 1) {
         bf_tx_sector = bf_res.rx_sector;
@@ -322,7 +323,7 @@ void sta_apply_bf_result(u32 a, u32 b)
         bf_resume_sta_tx(3, b);
         ucode_pm_set_busy_flag(1);
     } else {
-        if (b == 8)
+        if (b == SPARRAW_PEER_UNKNOWN)
             return;
         u32 r2 = rf_chain_cfg;
         struct sta_entry *r14 = &sta_tab[b];
@@ -482,7 +483,7 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
     u32 r13 = a;
     u32 r16;
     if (uc_role_ap != 0 && (s32)(u8)fwsh_n_sets >= 2 && c != 0 &&
-        (a == 8 || (sta_tab[a].omni_rx_sel & 0x7fff00) == 0x7fff00))
+        (a == SPARRAW_PEER_UNKNOWN || (sta_tab[a].omni_rx_sel & 0x7fff00) == 0x7fff00))
         r16 = (u32)&ss_rfset;
     else
         r16 = (u32)&txss_ss[a];

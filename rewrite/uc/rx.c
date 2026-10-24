@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 #include "ifs.h"
 
 
@@ -284,6 +285,8 @@ void rx_send_response_frame(void)
 {
     /* 6.2 asm 0x936200. */
     u32 r = bi_remaining_time_us();
+    /* 9.3.1.14: Duration DTS = NAV − (TXTIME(DMG DTS) + SIFS); vendor отдавал NAV без вычета */
+    r = r > DMG_RESP_DUR_SUB_US(DMG_DTS_LEN) ? r - DMG_RESP_DUR_SUB_US(DMG_DTS_LEN) : 0u;
     tx_send_imm_response(0, r, 0x16);
     arc_core_wr(33, 0x664);
     tx_fifo_free -= 0x10;
@@ -305,7 +308,10 @@ void rx_send_dmg_cts(void)
 {
     /* 6.2 asm 0x936320. */
     struct dtx_ctrl_frame sp;
-    u32 r1 = rx_buf_duration - 0x14;
+    /* 9.3.1.18: Duration Grant Ack = Duration Grant − (TXTIME(Grant Ack) + SIFS), не меньше 0; vendor вычитал
+     * 20 без отсечки — Grant с Duration < 20 давал Grant Ack с Duration ≈ 32,7 мс (NAV соседям). */
+    u32 d = rx_buf_duration;
+    u32 r1 = d > DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) ? d - DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) : 0u;
     tx_send_imm_response(ctrl_frame_mcs, r1, 0x17);  /* [gp,-0xec] = [0x80043c] */
     direct_tx_init_rx_desc(&sp, 1, 1);
     arc_core_wr(33, sp.fc);
@@ -512,7 +518,7 @@ u32 rx_flow_run(void)
             uc_assert((u32)__builtin_return_address(0), 68);
     }
     seq = ppdu_evt_cnt & 0x3f;
-    rxf.sta = 8;
+    rxf.sta = SPARRAW_PEER_UNKNOWN;
     ctx = tx_ctx_pool.cur;
     rxf.resp_type = 0;
     rxf.flags = (rxf.flags & 8) | 0x80000000;
@@ -936,7 +942,7 @@ chk:                                            /* 0x93215c */
     } else if (arc_core_rd(36) & (1u << 6)) {
         *sta = sta_tbl_find_by_mac((u32)rx_buf_ta);
     } else {
-        *sta = 8;
+        *sta = SPARRAW_PEER_UNKNOWN;
         local = 0;
     }
 
@@ -1066,7 +1072,7 @@ chk:                                            /* 0x93215c */
             prs_mcast_addr[0] == f[10] && prs_mcast_addr[1] == f[11] && prs_mcast_addr[2] == f[12] &&
             prs_mcast_addr[3] == f[13] && prs_mcast_addr[4] == f[14] && prs_mcast_addr[5] == f[15]) {
             u32 s = sta_tbl_find_by_mac((u32)rx_buf_ra);
-            if (s >= 8) {
+            if (s >= SPARRAW_MAX_STA) {
                 uc_stats.ra_unknown += 1;
             } else {
                 *sta = s;
@@ -1174,7 +1180,7 @@ u32 rx_funcs_rx_flow(void)
     tx_ctx_alloc_next(1);
     (*pctx)->rf_word = rf_cur_sector_word;
     rxf.key_sta = 0xff;
-    *sta = 8;
+    *sta = SPARRAW_PEER_UNKNOWN;
     rxf.flags = 0;
     rx_flow_run();
     if (*st & 0x3001000) {
@@ -1759,7 +1765,7 @@ void rx_funcs_handle_ppdu_report(void)
     else if (arc_core_rd(36) & (1u << 6))
         *sta = sta_tbl_find_by_mac((u32)rx_buf_ta);
     else
-        *sta = 8;
+        *sta = SPARRAW_PEER_UNKNOWN;
 
     if (arc_core_rd(37) & 1) {
         if (!(txrx_state1 & (1u << 10))) {

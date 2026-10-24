@@ -1096,7 +1096,7 @@ static void l2mgr_send_pbss_leave_evt(struct conn *conn)
 static void dashboard_on_disconnect(u32 cid)
 {
     u32 w;
-    if ((s32)cid >= 8)
+    if ((s32)cid >= (s32)SPARRAW_MAX_STA)
         fw_sysassert_fatal((void *)0, 0x111b);
     w = VOL(fw_stats_dash.state);
     VOL(fw_stats_dash.state) = (w & 0x1fffffffu) | ((((w >> 29) - 1) & 7u) << 29);

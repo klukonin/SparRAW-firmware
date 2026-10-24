@@ -2,6 +2,7 @@
 /* Утилиты uCode (uc_*): divmod, сдвиги, IRQ, события, ring, ap/tsf. */
 #include "../include/types.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 
 #include "../include/hw.h"
 
@@ -267,7 +268,7 @@ void ucode_pm_set_busy_flag(u32 a)
 /* Штампование TSF-слотов (0x93c7a8). */
 void ucode_pm_stamp_tsf_slots(void)
 {
-    for (u32 r13 = 0; r13 < 8; r13++) {
+    for (u32 r13 = 0; r13 < SPARRAW_MAX_STA; r13++) {
         struct link_stat_s *r15 = &link_stat[r13];
         u32 tsf = uc_read_tsf_lo();
         r15->ka_ok = 0;                  /* stw_s r0(=0),[r15,2] в delay-слоте */

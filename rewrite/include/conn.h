@@ -15,6 +15,7 @@
 #include "llist.h"
 #include "mem_pool.h"
 #include "mid.h"
+#include "sta_max.h"
 
 #define CONN_OFF(t, f, o) _Static_assert(__builtin_offsetof(t, f) == (o), #t "." #f)
 
@@ -26,7 +27,7 @@ struct rm_req;
 struct lm_sm;
 struct ll_detectors;
 
-#define CONN_MAX 8                             /* cid 0..7 (conn_mgr__by_cid: ассерт 0x11c9) */
+#define CONN_MAX SPARRAW_MAX_STA               /* cid 0..7 (conn_mgr__by_cid: ассерт 0x11c9) */
 
 /* Снимок результата BF / dband-информации бикона (0x44 Б): conn__snapshot_step (0x8c28d0)
  * копирует его из события LMAC в lm_if+0xc; lm_if__on_linkup_ready передаёт его lm_sm. */

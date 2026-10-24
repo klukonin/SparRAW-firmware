@@ -14,6 +14,7 @@
 #include "mem_pool.h"
 #include "scan_mngr.h"
 #include "sched_scheme.h"
+#include "sta_max.h"
 
 #define MID_OFF(t, f, o) _Static_assert(__builtin_offsetof(t, f) == (o), #t "." #f)
 
@@ -110,7 +111,7 @@ struct mid_bss {
                 u8 capinfo_b[2];
             };
             struct dmg_cap dmg_cap;            /* 0x5e: свой DMG Capabilities */
-            struct dmg_cap pbss[8];            /* 0x6f: список станций PBSS по AID */
+            struct dmg_cap pbss[SPARRAW_MAX_STA];   /* 0x6f: список станций PBSS по AID */
         };
     };
     u8 blk_f8[10];                             /* 0xf8: обнуляется mid__reset_10b_at_248, [9] = 0x14 */
@@ -182,7 +183,7 @@ struct find_mngr;
 /* Автомат find_sm (описатель 0x8030f4, obj_vt8030f4__ctor 0x8f532c; fw/link_sm.c). */
 struct find_sm {
     struct basic_sm hdr;                       /* 0x00 */
-    u8 bf_state[8];                            /* 0x08: состояние BF по cid (8 — свободно) */
+    u8 bf_state[SPARRAW_MAX_STA];              /* 0x08: состояние BF по cid (8 — свободно) */
     struct find_mngr *owner;                   /* 0x10 */
     u32 req;                                   /* 0x14: запрос радио (struct rm_req *), 0 в ctor */
     struct llist found;                        /* 0x18: найденные BSS (dband-инфо) */

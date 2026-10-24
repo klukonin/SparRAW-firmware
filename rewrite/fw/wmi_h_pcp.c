@@ -997,8 +997,9 @@ static void handle_packet_args(u8 *dst, u16 *lenp, struct mid *e, u8 *src, u32 l
     u32 n;
 
     memcpy_fw(dst, src, 0x18);
+    /* исправлено (vendor): len < 0x18 давало (len − 0x18) & 0xffff ≈ 65500 Б тела — слияние IE за буферы 0x500 */
     n = mgmt_tx_build_assoc_resp_sm(dst + 0x18, e, src + 0x18,
-                                    (len - 0x18) & 0xffffu);
+                                    len >= 0x18 ? (len - 0x18) & 0xffffu : 0u);
     *lenp = (u16)(n + 0x18);
 }
 

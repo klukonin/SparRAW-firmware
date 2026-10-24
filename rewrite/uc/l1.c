@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* L1/L2 task-слой uCode. */
+#include "../include/sta_max.h"
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
@@ -264,7 +265,7 @@ void l1_task_report_link_lost(void)
     u8 r3 = maint_sta_mask;
     u32 buf[3];
     buf[2] = 1;                                 /* st r13(=1),[sp,8] в delay-слоте */
-    buf[0] = (r3 == 0) ? 8 : (30 - arc_norm(r3));
+    buf[0] = (r3 == 0) ? SPARRAW_PEER_UNKNOWN : (30 - arc_norm(r3));
     buf[1] = agc_cfg.agc_start;
     uc_send_evt_link_lost(buf);
 }

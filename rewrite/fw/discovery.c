@@ -974,7 +974,7 @@ __attribute__((section(".textlate"))) u32 conn_mgr_activate_conn(struct conn *co
 /* conn_mgr__allocate_cid_db_element (0x8c36c0): найти свободный cid-слот в cid_db. */
 __attribute__((section(".textlate"))) u32 conn_mgr_allocate_cid_db_element(struct conn *conn, u32 *out)
 {
-    for (u32 r13 = 0; r13 < 8; r13++) {
+    for (u32 r13 = 0; r13 < SPARRAW_MAX_STA; r13++) {
         *out = r13;
         struct conn_cid_slot *r14 = &conn_mgr.cid_db[r13];
         if (r14->used == 0) {
@@ -1194,7 +1194,7 @@ __attribute__((section(".textlate"))) void peer_check_flag_30(struct ll_ageing_d
         return;
     }
     u32 idx = obj->cid;
-    if (idx >= 8)
+    if (idx >= SPARRAW_MAX_STA)
         fw_sysassert_fatal((void *)0, 0x1503);
     obj->ctx->idle[idx] = 0;
 }
@@ -1212,7 +1212,7 @@ __attribute__((section(".textlate"))) void ka_check_peer_state(struct ll_ka_det 
         return;
     }
     u32 idx = obj->cid;
-    if (idx >= 8)
+    if (idx >= SPARRAW_MAX_STA)
         fw_sysassert_fatal((void *)0, 0x1548);
     struct ll_ctx *base = obj->ctx;
     base->ka_period[idx] = base->cfg[idx].ka_period_hi;

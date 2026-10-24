@@ -331,7 +331,7 @@ static void link_maintain_cfg_apply(u32 conn, u32 flag)
     u32 i;
     link_maintain_cfg_copy(sel, cfg);
     fw_log_emit3(0x2b, 0x100bed0, conn, flag, sel);
-    for (i = 0; i < 8; i++)
+    for (i = 0; i < SPARRAW_MAX_STA; i++)
         memcpy_fw(&ll_ctx.cfg[i], cfg, 0x24);
 }
 
@@ -483,7 +483,7 @@ void bad_beacons_check_counter(struct ll_bcn_det *o)
 {
     if (detector_slot_is_bound(o) == 0)
         return;
-    if (o->cid >= 8)
+    if (o->cid >= SPARRAW_MAX_STA)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1526);
     o->ctx->bcn_cnt[o->cid] = 0;
 }
@@ -492,7 +492,7 @@ void bad_beacons_check_counter(struct ll_bcn_det *o)
 static void bad_beacons_detector_init(struct ll_bcn_det *det, u32 cid, struct ll_ctx *ctx)
 {
     volatile struct ll_bcn_det *o = det;
-    if ((s32)cid >= 8)
+    if ((s32)cid >= (s32)SPARRAW_MAX_STA)
         fw_sysassert_fatal(__builtin_return_address(0), 0x147b);
     o->cid = (u8)cid;
     o->ctx = ctx;
@@ -506,7 +506,7 @@ static void bad_beacons_detector_init(struct ll_bcn_det *det, u32 cid, struct ll
 static void detector_init_per_cid_a(struct ll_ka_det *det, u32 cid, struct ll_ctx *ctx)
 {
     volatile struct ll_ka_det *o = det;
-    if ((s32)cid >= 8)
+    if ((s32)cid >= (s32)SPARRAW_MAX_STA)
         fw_sysassert_fatal(__builtin_return_address(0), 0x147a);
     o->cid = (u8)cid;
     o->ctx = ctx;
@@ -520,7 +520,7 @@ static void detector_init_per_cid_a(struct ll_ka_det *det, u32 cid, struct ll_ct
 static void detector_init_per_cid_b(struct ll_ageing_det *det, u32 cid, struct ll_ctx *ctx)
 {
     volatile struct ll_ageing_det *o = det;
-    if ((s32)cid >= 8)
+    if ((s32)cid >= (s32)SPARRAW_MAX_STA)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1479);
     o->cid = (u8)cid;
     o->ctx = ctx;
@@ -542,7 +542,7 @@ static void link_loss_detectors_init(void)
     mem_pool_init(&conn_mgr.rank_pool, conn_mgr.rank_elems, sizeof(struct conn_rank),
                   CONN_MAX);
     memset0_words(conn_mgr.cid_db, sizeof(conn_mgr.cid_db));
-    for (cid = 0; cid < 8; cid++) {
+    for (cid = 0; cid < SPARRAW_MAX_STA; cid++) {
         struct ll_detectors *d = &ll_detectors[cid];
         detector_init_per_cid_b(&d->ageing, cid, &ll_ctx);
         detector_init_per_cid_a(&d->ka, cid, &ll_ctx);

@@ -22,6 +22,7 @@
 #ifndef FWSH_H
 #define FWSH_H
 #include "types.h"
+#include "sta_max.h"
 
 #define FWSH_OFF(t, f, o) _Static_assert(__builtin_offsetof(t, f) == (o), #t "." #f)
 
@@ -195,10 +196,10 @@ _Static_assert(sizeof(struct fwsh_diag) == 0x40, "fwsh_diag");
 struct fwq_tx_avail {
     u32 aw_info;                               /* 0x00: uc — [7:0] копия mask, б25..27 — флаги окна
                                                 *       пробуждения (aw_worker_collect_awake_peers, misc.c) */
-    volatile u8 count[9];                      /* 0x04 */
+    volatile u8 count[SPARRAW_STA_SLOTS];      /* 0x04 */
     u8  rsv_0d[3];
     volatile u32 mask;                         /* 0x10: cid с count ≠ 0 */
-    volatile u8 prio_count[9];                 /* 0x14 */
+    volatile u8 prio_count[SPARRAW_STA_SLOTS]; /* 0x14 */
     u8  rsv_1d[3];
     volatile u32 prio_mask;                    /* 0x20: cid с prio_count ≠ 0 */
 };
@@ -226,20 +227,20 @@ _Static_assert(sizeof(struct ll_cid_cfg) == 0x24, "ll_cid_cfg");
 /* Контекст поддержания линка (0x857064, 0x200 Б; include/link_loss.h — детекторы). Счётчики
  * и маски по cid пишет и uc. */
 struct ll_ctx {
-    struct ll_cid_cfg cfg[8];                  /* 0x000 */
-    u32 traffic[8];                            /* 0x120: счётчик активности очереди cid (uc: ++ по ответу/ACK) */
-    u32 act_140[8];                            /* 0x140: счётчик активности (старение TX; uc: += NAV пира) */
+    struct ll_cid_cfg cfg[SPARRAW_MAX_STA];    /* 0x000 */
+    u32 traffic[SPARRAW_MAX_STA];              /* 0x120: счётчик активности очереди cid (uc: ++ по ответу/ACK) */
+    u32 act_140[SPARRAW_MAX_STA];              /* 0x140: счётчик активности (старение TX; uc: += NAV пира) */
     u32 pending_mask;                          /* 0x160: маска cid с отложенными данными (uc: itx_ka_pending) */
-    u32 idle[8];                               /* 0x164: накопленный простой TX (старение) */
-    u32 ka_acc[8];                             /* 0x184: накопленное время без трафика (keep-alive) */
-    u32 ka_period[8];                          /* 0x1a4: текущий период keep-alive */
-    u32 ka_cnt[8];                             /* 0x1c4: срабатываний keep-alive */
+    u32 idle[SPARRAW_MAX_STA];                 /* 0x164: накопленный простой TX (старение) */
+    u32 ka_acc[SPARRAW_MAX_STA];               /* 0x184: накопленное время без трафика (keep-alive) */
+    u32 ka_period[SPARRAW_MAX_STA];            /* 0x1a4: текущий период keep-alive */
+    u32 ka_cnt[SPARRAW_MAX_STA];               /* 0x1c4: срабатываний keep-alive */
     u32 fsched_flush_mask;                     /* 0x1e4: uc — станции, у которых слот fixed-sched кончился
                                                 *       flush (fsched_ctx.flush_cnt); fw — «есть ожидающее» и
                                                 *       запрос keep-alive по cid */
     u32 fsched_flush_over;                     /* 0x1e8: uc — flush_cnt ≥ fsched_ctx.max_cnt; fw — запрос
                                                 *       keep-alive при fixed_sched.enabled */
-    u16 bcn_cnt[8];                            /* 0x1ec: BI без бикона подряд */
+    u16 bcn_cnt[SPARRAW_MAX_STA];              /* 0x1ec: BI без бикона подряд */
     u8  drop_req;                              /* 0x1fc: запрос разрыва по cid (детектор старения) */
     u8  rsv_1fd[3];
 };
@@ -384,7 +385,7 @@ struct fwsh_sets {
      * его же пишет rf.c (sector_cfg_cnt). */
     u8  n_sec[2][RF_SETS_MAX];
     struct fixed_sched *volatile fsched_tbl;   /* 0x14 (0x857744): таблица fixed-sched (fixed_sched__start) */
-    u32 fsched_airtime[8];                     /* 0x18 (0x857748): uc — время слотов fixed-sched по станции, TSF-мкс */
+    u32 fsched_airtime[SPARRAW_MAX_STA];       /* 0x18 (0x857748): uc — время слотов fixed-sched по станции, TSF-мкс */
     u32 n_sets;                                /* 0x38 (0x857768): число наборов RF (2/3 — также поправка silent RSSI) */
     u32 brp_cfg_mask[RF_SETS_MAX];             /* 0x3c (0x85776c): по RF — разрешённые конфигурации BRP */
     union {                                    /* 0x5c (0x85778c): маска RF-модулей набора */

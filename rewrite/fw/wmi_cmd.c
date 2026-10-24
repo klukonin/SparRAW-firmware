@@ -1467,6 +1467,14 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
         }
     }
 
+    /* исправлено (vendor): mid заголовка без записи mid_list — обработчики разыменовывали 0
+     * (mid_list_by_mid_fw → 0: WMI_SET_SSID, SET_PASSPHRASE, ESE_CFG, …). Такая команда — «не поддерживается»;
+     * WMI_PORT_ALLOCATE (0x911) берёт mid из тела и создаёт запись — её пропускаем. */
+    if (handled == 0 && hdr->id != 0x911 && mid_list_by_mid_fw(mid) == 0) {
+        wmi_evt_send_command_not_supported(mb, hdr->id, 0, mid);
+        handled = 1;
+    }
+
     if (handled == 0) {
         u32 id = hdr->id;                           /* ldh — без знака */
         switch (id) {

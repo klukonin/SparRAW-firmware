@@ -3,6 +3,7 @@
 #include "../include/bitfield.h"
 #include "../include/types.h"
 #include "../include/hw.h"
+#include "../include/sta_max.h"
 static inline s32 min(s32 a, s32 b) { return a < b ? a : b; }   /* ARC min (знаковое) */
 static inline s32 max(s32 a, s32 b) { return a > b ? a : b; }   /* ARC max (знаковое) */
 
@@ -252,7 +253,7 @@ void internal_tx_clear_pending(u32 a)
     arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
     r0 = itx_ka_pending;
     FWSH(ll_ctx, pending_mask) = r0;                        /* delay-слот brhs.d — всегда */
-    if (a < 8) {
+    if (a < SPARRAW_MAX_STA) {
         VOL(link_stat[a].ka_fail) = 0;
         VOL(link_stat[a].ka_cca_busy) = 0;
     }

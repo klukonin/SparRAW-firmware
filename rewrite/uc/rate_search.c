@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 
 
 
@@ -40,7 +41,7 @@ u32 rs_is_sta_enabled(u32 a)
 
 void rate_search_apply_mcs(u32 a, u32 b)
 {
-    if (b == 8)
+    if (b == SPARRAW_PEER_UNKNOWN)
         return;
     rs_stats[b].mcs_cur = (u8)a;
     mac_set_cid_mcs_uc(a, b);

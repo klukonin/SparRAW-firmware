@@ -1732,8 +1732,8 @@ void find_sm_radio_allocated_cb(struct rm_req *req, u32 arg)
 void find_sm_on_start(struct find_sm *f)
 {
     u32 i;
-    for (i = 0; i < 8; i++)
-        f->bf_state[i] = 8;
+    for (i = 0; i < SPARRAW_MAX_STA; i++)
+        f->bf_state[i] = SPARRAW_PEER_UNKNOWN;
     f->req = (u32)radio_mgr_request_secondary(find_sm_radio_allocated_cb, (u32)f, 0,
         0xffff, find_mngr_mid_e(f->owner)->id);
 }
@@ -1801,11 +1801,11 @@ void find_sm_on_beamforming(struct find_sm *f, struct conn *c, u32 status)
         return;
     }
     cid = c->cid;
-    if (cid >= 8)
+    if (cid >= SPARRAW_MAX_STA)
         fw_sysassert_fatal((void *)0, 0x1474);
-    if (f->bf_state[cid] != 8) {
+    if (f->bf_state[cid] != SPARRAW_PEER_UNKNOWN) {
         fw_log_emit1(0x2c, 0x1017ff4, u_schd_now());
-        f->bf_state[cid] = 8;
+        f->bf_state[cid] = SPARRAW_PEER_UNKNOWN;
         return;
     }
     payload = TX_API_alloc_tx_payload();

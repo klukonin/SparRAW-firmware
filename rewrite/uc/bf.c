@@ -6,6 +6,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 #include "abft.h"
 
 
@@ -160,10 +161,10 @@ void txss_resp_flow(u32 a)
     rate_search_apply_mcs(1, r13);
     txss_ifs_restore = 1;
     txrx_state1 = 0x40;
-    if (r13 == 8) {
-        sta_tab[8].mac[0] = sls.peer_mac[0];
-        sta_tab[8].mac[1] = sls.peer_mac[1];
-        sta_tab[8].mac[2] = sls.peer_mac[2];
+    if (r13 == SPARRAW_PEER_UNKNOWN) {
+        sta_tab[SPARRAW_PEER_UNKNOWN].mac[0] = sls.peer_mac[0];
+        sta_tab[SPARRAW_PEER_UNKNOWN].mac[1] = sls.peer_mac[1];
+        sta_tab[SPARRAW_PEER_UNKNOWN].mac[2] = sls.peer_mac[2];
     }
     txrx_state2 = 0x200000;
     u32 rss = rss_wait_get(r13);
@@ -497,12 +498,12 @@ void bf_init_globals(void)
     bf_tx_sector = 0x21;                    /* sth.as [gp,-93] */
     bf_rx_sector = 0x21;                    /* sth.as [gp,-94] */
     bf_ctrl.snr_samples = 0x80;
-    memset0_words_uc((void *)link_stat, 8 * sizeof(struct link_stat_s));
+    memset0_words_uc((void *)link_stat, SPARRAW_MAX_STA * sizeof(struct link_stat_s));
 }
 
 void bf_flow_exit(u32 a0)
 {
-    if (sta_link_byte_by_index(a0) == 0) {
+    if (a0 < SPARRAW_MAX_STA && sta_link_byte_by_index(a0) == 0) {   /* у пира 8 (A-BFT) записи link_stat нет */
         if (VOL(link_stat[a0].bf_reasons) & 0xbf)     /* bic r0,r0,-0xc0 == & 0xbf */
             rs_abort(a0);
     }
@@ -521,7 +522,8 @@ void bf_reset_sta(u32 a0, u32 a1)
         bf_clear_pending_and_notify(a0);
         bf_req_dequeue_head(0, 0);
     }
-    VOL(link_stat[a0].bf_reasons) = 0;
+    if (a0 < SPARRAW_MAX_STA)
+        VOL(link_stat[a0].bf_reasons) = 0;
     memset0_words_uc(&bf_sta[a0], sizeof(struct bf_sta_s));
     if (a1 == 1)
         bf_sm_set_sta_state(a0, 0x11);
@@ -841,7 +843,7 @@ u32 bf_sm_dispatch_by_state(u32 sta)
 /* bf_pause_sta_tx (0x92ba54). */
 void bf_pause_sta_tx(u32 a0, u32 a1)
 {
-    if (a1 == 8)
+    if (a1 == SPARRAW_PEER_UNKNOWN)
         return;
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~(1u << 1));
@@ -930,16 +932,20 @@ void bf_init_sm(u32 a, u32 b)
     if (req[0] == 0) {
         /* полный сброс */
         memset0_words_uc((void *)&bf_res, 0x1c);
-        memset0_words_uc(bf_sta, 9 * sizeof(struct bf_sta_s) + sizeof(struct bf_req_q_s));   /* bf_sta[9] и bf_req */
+        memset0_words_uc(bf_sta, SPARRAW_STA_SLOTS * sizeof(struct bf_sta_s) + sizeof(struct bf_req_q_s));   /* bf_sta[9] и bf_req */
         bf_res.done_cnt = bf_done_cnt_pub;
         return;
     }
-    /* инициализация одной станции */
+    /* инициализация одной станции; исправлено (vendor): номер из команды (WMI TRIGGER_BEAMFORMING тип 1 — cid без
+     * проверки, до 255) шёл в 1u << sta и sls.attempts[sta] (8 записей) — запись за массивами. bf_sta/sta_tab — на
+     * 9 записей (8 — неизвестный пир A-BFT), link_stat и sls.attempts — на 8. */
+    if (sta > SPARRAW_PEER_UNKNOWN)
+        return;
     u32 r16 = 1u << sta;
     if (bf_req.pending_mask & r16) {
-        volatile struct link_stat_s *sl = &link_stat[sta];
-        u8 bv = sl->bf_reasons;
-        if ((bv & 0x10) != (bv & 0xBF)) {
+        volatile struct link_stat_s *sl = &link_stat[sta < SPARRAW_MAX_STA ? sta : 0];
+        u8 bv = sta < SPARRAW_MAX_STA ? sl->bf_reasons : 0x40u;   /* у пира 8 записи link_stat нет — как «сброс разрешён» */
+        if (sta < SPARRAW_MAX_STA && (bv & 0x10) != (bv & 0xBF)) {
             bv &= (u8)~0x10;
             sl->bf_reasons = bv;
         }
@@ -948,9 +954,11 @@ void bf_init_sm(u32 a, u32 b)
         bf_reset_sta_slot(sta);
     }
     /* счётчик попыток */
-    sls.attempts[sta] += 1;
-    if (b == 1)
-        VOL(link_stat[sta].bf_reasons) |= 0x10;
+    if (sta < SPARRAW_MAX_STA) {
+        sls.attempts[sta] += 1;
+        if (b == 1)
+            VOL(link_stat[sta].bf_reasons) |= 0x10;
+    }
     /* код состояния */
     u32 r1;
     u32 t = req[1];

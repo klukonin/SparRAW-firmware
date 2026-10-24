@@ -67,7 +67,7 @@ struct vring_tbl_entry *vring_tbl_entry_addr(u32 idx)
 /* conn_mgr__by_cid (0x8cbffc, 38 Б): соединение cid из cid_db (0 — нет). */
 struct conn *conn_mgr_by_cid(u32 cid)
 {
-    if (cid >= 8u)
+    if (cid >= SPARRAW_MAX_STA)
         fw_sysassert_fatal((void *)0, 0x11c9u);
     return conn_mgr.cid_db[cid].conn;
 }

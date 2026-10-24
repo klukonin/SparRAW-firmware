@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 
 
 
@@ -143,8 +144,8 @@ u32 fsched_ap_next_station(struct fsched_peer_ctx *p)
 {
     /* 6.2 asm 0x920d04: кольцевой поиск следующей станции после cur_idx (шаг 1..8):
      * бит в maint_sta_mask и непустая sta_tab[i].qid_mask_q6 → запомнить, опросить, вернуть 1. */
-    for (u32 k = 1; k < 9; k++) {
-        u32 i = (p->cur_idx + k) & 7;
+    for (u32 k = 1; k < SPARRAW_STA_SLOTS; k++) {
+        u32 i = (p->cur_idx + k) % SPARRAW_MAX_STA;
         if (!(maint_sta_mask & (1u << i)))
             continue;
         if (sta_tab[i].qid_mask_q6 == 0)

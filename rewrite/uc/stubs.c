@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 
 
 #include "../include/hw.h"
@@ -140,7 +141,7 @@ void bi_mode_init_sta_table(void)
 {
     bcast_ctx_qid = 0x1f;
     bcast_ctx_flags = 0x11;
-    memset0_words_uc(txss_ss, 9 * sizeof(struct ss_cfg_s));
+    memset0_words_uc(txss_ss, SPARRAW_STA_SLOTS * sizeof(struct ss_cfg_s));
 }
 /* bti_clear_sweep_counters — в bti.c. */
 /* mac_program_13ab6680 — в boot.c. */

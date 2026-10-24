@@ -9,6 +9,7 @@
  * кода; где не установлен — так и написано). Таблицы переходов vendor-кода, которые читали
  * только его switch'и, сюда не перенесены (0x8017d8 .. 0x801be0, 20 таблиц, 496 Б):
  * в нашем образе там нули. Указатели на код и на данные образа — C-инициализаторы. */
+#include "../include/sta_max.h"
 #include "../include/types.h"
 /* Здесь — сами объекты: макросы dccm.h выключены (-DUC_DCCM_OBJECTS в Makefile). */
 #include "dccm.h"
@@ -100,7 +101,7 @@ UCDATA(800674) u8 brp_rf_cfg_rf = 0x5;
 /* +9: маска RF. */
 UCDATA(800675) u8 brp_rf_cfg_mask = 0xff;
 /* +0xc: по-секторная настройка BRP (brp_pick_sector_cfg). */
-UCDATA(800678) UCD_ARRAY(u8, 8) brp_rf_cfg_sector = {{
+UCDATA(800678) UCD_ARRAY(u8, SPARRAW_MAX_STA) brp_rf_cfg_sector = {{
     0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x60,
 }};
 /* Конфигурация RF-модулей (пишет ucode_cmd_0x01; читают ~20 функций BRP/RF). */

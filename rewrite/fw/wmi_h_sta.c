@@ -264,7 +264,7 @@ void wmi_get_assoc_list(struct wmi_mbox *mb, u32 mid)
     /* vendor обнуляет 0x40 Б из 0x44 (0x8ec6a2: r1 = 0x40) и пишет только счётчик +0x40 —
      * резерв +0x41..+0x43 у vendor — остаток слота пула; у нас нули (mem_pool_alloc_locked обнуляет). */
     p->count = 0;
-    for (cid = 0; cid < 8; cid++) {
+    for (cid = 0; cid < SPARRAW_MAX_STA; cid++) {
         struct conn *conn = conn_mgr_by_cid(cid);
         if (conn != 0 && conn->mlme.sm.state == 2) {
             u32 n = p->count;
@@ -363,7 +363,7 @@ static u32 lm_cfg_copy_preset(u32 idx, void *dst)
  * add3_s r0,r0,r0 = 9·(4·cid)) в dst; иначе 1. */
 static u32 lm_cfg_read(u32 cid, void *dst)
 {
-    if (cid >= 8)
+    if (cid >= SPARRAW_MAX_STA)
         return 1;
     memcpy_fw(dst, &ll_ctx.cfg[cid], 0x24);
     return 0;
@@ -386,7 +386,7 @@ static u32 lm_cfg_write(u32 type, u32 cid, const u8 *cfg)
     u32 buf[0x24 / 4];
     u32 last, n;
     fw_log_emit2(0x2b, 0x100c1ec, type, cid);
-    if (cid != 0xffffffffu && cid >= 8) {
+    if (cid != 0xffffffffu && cid >= SPARRAW_MAX_STA) {
         fw_log_emit1(0xb, 0x100c228, cid);
         return 1;
     }
@@ -848,20 +848,26 @@ void wmi_delete_cipher_key(const struct wmi_delete_cipher_key_cmd *cmd, u32 mid)
     fw_log_emit2(0x20, 0x100b664, mac_hi16(cmd->mac), mac_lo32(cmd->mac));
 }
 
-/* dashboard__store_passphrase (0x8eac90, 28 Б). ХРУПКО (баг vendor, сохранён): длина
- * копии — СТАРАЯ длина SSID ldw [d+0x26] (в слоте задержки bl.d memcpy затирает r2), а не
- * len; len лишь записывается в [d+0x68]. */
+/* dashboard__store_passphrase (0x8eac90, 28 Б). Исправлено (баг vendor): vendor копировал по СТАРОЙ
+ * длине SSID ldw [d+0x26] (в слоте задержки bl.d memcpy затирает r2), а не по len — пароль сохранялся
+ * не той длины, а длина SSID от хоста (до 255) переполняла passphrase[64] и соседние поля dashboard
+ * в DCCM. Здесь — длина пароля из команды, не больше буфера. */
 static void dashboard_store_passphrase(struct dashboard *d, const u8 *src, u32 len)
 {
-    memcpy_fw(d->passphrase, src, d->ssid_len);
+    if (len > DASHBOARD_PASSPHRASE_MAX)
+        len = DASHBOARD_PASSPHRASE_MAX;
+    memcpy_fw(d->passphrase, src, len);
     d->passphrase_len = (u16)len;
 }
 
-/* dashboard__store_ssid (0x8eace8, 24 Б). ХРУПКО (баг vendor, сохранён): длина копии —
- * старая длина [d+0x26], затем [d+0x26] = len (первый SET_PASSPHRASE копирует 0 Б). */
+/* dashboard__store_ssid (0x8eace8, 24 Б). Исправлено (баг vendor): vendor копировал по старой длине
+ * [d+0x26] (первый SET_PASSPHRASE — 0 Б, дальше — длина прошлой команды до 255 в ssid[32]). Здесь —
+ * длина из команды, не больше буфера. */
 static void dashboard_store_ssid(struct dashboard *d, const u8 *src, u32 len)
 {
-    memcpy_fw(d->ssid, src, d->ssid_len);
+    if (len > DASHBOARD_SSID_MAX)
+        len = DASHBOARD_SSID_MAX;
+    memcpy_fw(d->ssid, src, len);
     d->ssid_len = (u16)len;
 }
 

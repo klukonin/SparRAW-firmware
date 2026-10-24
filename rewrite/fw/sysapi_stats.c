@@ -359,7 +359,7 @@ void fw_sysapi_mgr_get_rssi_and_snr_statistics(struct fw_sysapi_mgr *mgr, u32 n,
 u32 hw_sysapi_force_mcs(u32 a, u32 b, u32 c)
 {
     fw_log_emit3(0x25, 0x101a49c, a, b, c);
-    if ((s32)a >= 8) {
+    if ((s32)a >= (s32)SPARRAW_MAX_STA) {
         fw_log_emit1(5, 0x101a4d8, a);
         return 0;
     }

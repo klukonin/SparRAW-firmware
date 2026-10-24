@@ -336,7 +336,9 @@ void host_if_read_rf_xpm(struct wmi_mbox *mb, const struct wmi_rf_xpm_read_cmd *
         e->status = 0;
     if (e->status != 0)
         fw_log_emit3(0, 0x1006134, cmd->rf_id, cmd->xpm_bit_address, cmd->num_bytes); /* "XPM read failed. ..." */
-    wmi_evt_post(mb, e, 0, 0x1856, (u16)(cmd->num_bytes + 4), 0, 0, 0);
+    /* исправлено (vendor): при отказе проверки длина события всё равно num_bytes + 4 — больше элемента пула,
+     * хосту уходила память fw за элементом. При отказе — только статус. */
+    wmi_evt_post(mb, e, 0, 0x1856, (u16)(e->status == 0 ? cmd->num_bytes + 4 : 4), 0, 0, 0);
 }
 
 /* host_if::write_rf_xpm_handler (0x8e36cc, 152 Б): WMI_RF_XPM_WRITE {rf_id,

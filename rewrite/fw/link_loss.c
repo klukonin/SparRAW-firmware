@@ -140,7 +140,7 @@ static u32 detector_flag_enabled(volatile u8 *cid, struct ll_ctx *volatile *ctx,
                                  u32 code, void *ra)
 {
     u32 f;
-    if (*cid >= 8)
+    if (*cid >= SPARRAW_MAX_STA)
         fw_sysassert_fatal(ra, code);
     f = ((volatile struct ll_ctx *)*ctx)->cfg[*cid].flags;
     if (((f >> bit) & 1) == 0)
@@ -173,7 +173,7 @@ static u32 bad_beacons_detector_is_enabled(struct ll_bcn_det *det)
     u32 f;
     if (detector_slot_is_bound(det) == 0)
         return 0;
-    if (o->cid >= 8)
+    if (o->cid >= SPARRAW_MAX_STA)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1527);
     f = o->ctx->cfg[o->cid].flags;
     if ((f & 4) == 0)
@@ -211,7 +211,7 @@ void tx_ppdu_ageing_timeout_detector_start_monitoring(struct ll_ageing_det *det)
         fw_log_emit0(0xb, 0x10147d4);
         return;
     }
-    if (d->cid >= 8)
+    if (d->cid >= SPARRAW_MAX_STA)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1589);
     en = tx_ageing_detector_is_enabled(det);
     ctx = d->ctx;
@@ -242,7 +242,7 @@ void ka_necessity_detector_start_monitoring(struct ll_ka_det *det)
         fw_log_emit0(0xb, 0x1014ac4);
         return;
     }
-    if (d->cid >= 8)
+    if (d->cid >= SPARRAW_MAX_STA)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1547);
     en = ka_detector_is_enabled(det);
     ctx = d->ctx;
@@ -502,9 +502,9 @@ void tx_ppdu_ageing_timeout_detector_task(struct psvc *svc, u32 count)
     r15 = tbl->vt->time_of_pring(tbl, d->cid);
     cid = d->cid;
     r21 = VCTX(d)->act_140[cid];
-    if ((s32)cid >= 8)
+    if ((s32)cid >= (s32)SPARRAW_MAX_STA)
         fw_log_emit2(0, 0x1014930, (u32)&det->cid, cid);
-    if ((s32)d->cid >= 8) {
+    if ((s32)d->cid >= (s32)SPARRAW_MAX_STA) {
         /* vendor: недопустимый cid — дамп 0x28 пар слов перед детектором */
         p = (u32)det - 0x70;
         fw_log_emit3(0, 0x1014950, d->cid, (u32)&det->cid, p);
@@ -686,7 +686,7 @@ void conn_mgr_bi_evt_all_conns(void)
     u32 cid;
     struct conn *conn;
     if (mid_state_is_2_or_3(0) == 0) {
-        for (cid = 0; cid < 8; cid++) {
+        for (cid = 0; cid < SPARRAW_MAX_STA; cid++) {
             conn = conn_mgr_by_cid(cid);
             if (conn != 0 && conn->mlme.sm.state == 2)
                 bad_beacons_on_bi_evt(conn);

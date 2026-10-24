@@ -5,6 +5,7 @@
 #include "ifs.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 #include "abft.h"
 
 
@@ -1071,7 +1072,7 @@ void mac_mode_program_c(struct sls_peer_rec *a)
             if (arc_core_rd(38) & (1u << 11)) {
                 a->sta = (arc_core_rd(38) >> 8) & 7u;          /* L_92c0d0 */
             } else {
-                a->sta = 8;
+                a->sta = SPARRAW_PEER_UNKNOWN;
             }
             /* L_92c0dc */
             a->rx_antenna = rx_buf_bcn_ssw & 3u;
@@ -2021,8 +2022,8 @@ void tx_bcast_flow(u32 a) {
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
     mac_evt_enable_bit_sync_b(6);
-    if (sta_tab[8].key_valid != 0) {
-        mac_load_tx_key((const u32 *)sta_tab[8].tx_key);
+    if (sta_tab[SPARRAW_PEER_UNKNOWN].key_valid != 0) {
+        mac_load_tx_key((const u32 *)sta_tab[SPARRAW_PEER_UNKNOWN].tx_key);
         tx_flow_arm_88606c_0x102();
     }
     uc_spin_until_event(1u << 15);
@@ -3107,7 +3108,7 @@ u32 background_bi_step(void)
                 return 0;
             }
             r14 = 1;
-            for (u32 i = 0; i < 8; i++) {
+            for (u32 i = 0; i < SPARRAW_MAX_STA; i++) {
                 const struct link_stat_s *ls = &link_stat[i];
                 if (ls->x4 != 0 || ls->x5 != 0) {
                     u16 r2 = ls->ka_ok;
@@ -3204,6 +3205,8 @@ void update_sector_sweep_frames_number(u32 a, u32 b) {
     while (r3 < 0x40 && ss->order[r3] != 0xff)
         r3++;
     u32 v = ((s32)b >= (s32)r3) ? r3 : b;      /* brge — знаковое */
+    if (v == 0)                                 /* исправлено: 0 (пустой план или запрос) — SSW с сектором 0xff; прежнее число */
+        return;
     ss->n_frames = (u8)v;
     uc_log_emit1(0x20, 0x1001978, v);
 }
@@ -3328,7 +3331,7 @@ u32 mtp_queue_release_mgmt(struct tx_ctx_s *a, u32 b, u32 c, u32 d) {
     }
     u32 idx = (arc_core_rd(43) >> 8) & 0xf;   /* vendor читает r43 заново */
     a->sta = idx;
-    if (idx >= 8)
+    if (idx >= SPARRAW_MAX_STA)
         uc_assert((u32)__builtin_return_address(0), 8);
     struct sta_entry *p = &sta_tab[idx];
     ri->cfg_10 = p->cfg_10;
@@ -3521,7 +3524,7 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
 
 u32 sta_tbl_find_by_mac(u32 a) {
     u16 *mac = (u16 *)a;
-    for (u32 i = 0; i < 8; i++) {
+    for (u32 i = 0; i < SPARRAW_MAX_STA; i++) {
         struct sta_entry *r2 = &sta_tab[i];
         if (r2->mac[0] == mac[0] &&
             r2->mac[1] == mac[1] &&
@@ -3529,7 +3532,7 @@ u32 sta_tbl_find_by_mac(u32 a) {
             (r2->flags & 1u))
             return i;
     }
-    return 8;
+    return SPARRAW_PEER_UNKNOWN;
 }
 
 

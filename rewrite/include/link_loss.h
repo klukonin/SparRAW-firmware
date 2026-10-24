@@ -103,7 +103,7 @@ LL_OFF(struct ll_detectors, bcn, 0x98);
 _Static_assert(sizeof(struct ll_detectors) == 0xa4, "ll_detectors");
 
 /* Экземпляры — символы fw/fw.ld (рабочая память, не DCCM). */
-extern struct ll_detectors ll_detectors[8];    /* 0x854dd4 */
+extern struct ll_detectors ll_detectors[SPARRAW_MAX_STA];   /* 0x854dd4 */
 /* Наборы параметров поддержания линка 0..3 (fw_data 0x801518, fw/l2mgr.c): 0/1 — есть
  * соединение (флаг 0/1), 2/3 — нет. */
 extern const struct ll_cid_cfg ll_cfg_presets[4];

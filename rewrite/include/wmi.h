@@ -17,6 +17,7 @@
 #ifndef WMI_H
 #define WMI_H
 #include "types.h"
+#include "sta_max.h"
 
 #define WMI_OFF(t, f, o) _Static_assert(__builtin_offsetof(t, f) == (o), #t "." #f)
 #define WMI_SIZE(t, n)   _Static_assert(sizeof(t) == (n), #t)
@@ -713,6 +714,7 @@ struct wmi_sched_scheme_slot {
 };
 WMI_SIZE(struct wmi_sched_scheme_slot, 0x14);
 
+#define WMI_SCHED_MAX_ALLOCS_PER_CMD 4u                /* как в драйвере wil6210 (wmi.h) */
 struct wmi_scheduling_scheme_cmd {
     u8  serial_num;                            /* 0x00 */
     u8  ese_advertisment;                      /* 0x01: строить Allocation IE */
@@ -720,7 +722,7 @@ struct wmi_scheduling_scheme_cmd {
     u8  num_allocs;                            /* 0x04 */
     u8  reserved[3];                           /* 0x05 */
     u32 start_tbtt[2];                         /* 0x08: u64 */
-    struct wmi_sched_scheme_slot allocs[];     /* 0x10: WMI_SCHED_MAX_ALLOCS_PER_CMD */
+    struct wmi_sched_scheme_slot allocs[];     /* 0x10: до WMI_SCHED_MAX_ALLOCS_PER_CMD */
 };
 WMI_OFF(struct wmi_scheduling_scheme_cmd, allocs, 0x10);
 
@@ -986,7 +988,7 @@ struct wmi_assoc_sta_info {
 WMI_SIZE(struct wmi_assoc_sta_info, 8);
 
 struct wmi_get_assoc_list_res_event {
-    struct wmi_assoc_sta_info assoc_sta_list[8];   /* 0x00: WMI_GET_ASSOC_LIST_SIZE */
+    struct wmi_assoc_sta_info assoc_sta_list[SPARRAW_MAX_STA];   /* 0x00: WMI_GET_ASSOC_LIST_SIZE */
     u8  count;                                 /* 0x40 */
     u8  reserved[3];                           /* 0x41 */
 };

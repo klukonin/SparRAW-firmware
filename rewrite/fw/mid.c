@@ -139,8 +139,8 @@ static void mid_init(struct mid_bss *o, struct mid *e)
      * без volatile gcc сливает их в одну sth */
     ((volatile struct mid_bss *)o)->is_go = 0;
     ((volatile struct mid_bss *)o)->abft_len = ABFT_LEN_SLOTS_DEFAULT - 1u;   /* include/abft_cfg.h */
-    for (i = 0; i < 8; i++)
-        o->pbss[i].aid = 8;
+    for (i = 0; i < SPARRAW_MAX_STA; i++)
+        o->pbss[i].aid = SPARRAW_PEER_UNKNOWN;
     if (app_ies_clear(&o->ie_assoc_req) != 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x11ef);
     if (app_ies_clear(&o->ie_assoc_resp) != 0)

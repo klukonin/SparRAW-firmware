@@ -43,7 +43,7 @@ void ps_mark_data_pending(u32 idx, u32 flag)
 {
     struct fwq_tx_avail *av = &fwq_tx_avail;
     u32 bit = 1u << idx;
-    if ((s32)idx >= 9)
+    if ((s32)idx >= (s32)SPARRAW_STA_SLOTS)
         fw_sysassert_fatal((void *)0, 0x134e);
     av->count[idx] = (u8)(av->count[idx] + 1);
     av->mask |= bit;

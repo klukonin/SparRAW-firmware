@@ -31,6 +31,11 @@
 #define DMG_TXTIME_SSW_CLK      DMG_CTRL_TXTIME_CLK(DMG_SSW_LEN)       /* 2460 = 14,909 мкс */
 #define DMG_TXTIME_SSW_ACK_CLK  DMG_CTRL_TXTIME_CLK(DMG_SSW_ACK_LEN)   /* 3012 = 18,255 мкс */
 #define DMG_TXTIME_SSW_FB_CLK   DMG_CTRL_TXTIME_CLK(DMG_SSW_FB_LEN)    /* 3012 = 18,255 мкс */
+/* Duration ответов через SIFS (9.3.1.14, 9.3.1.18): Duration пира минус TXTIME(ответа) + SIFS, мкс вверх.
+ * DMG DTS — FC, Duration, NAV-SA, NAV-DA, FCS = 20 Б; Grant Ack — FC, Duration, RA, TA, 7 Б тела, FCS = 27 Б. */
+#define DMG_DTS_LEN              20u
+#define DMG_GRANT_ACK_LEN        27u
+#define DMG_RESP_DUR_SUB_US(len) ((DMG_CTRL_TXTIME_CLK(len) + DMG_SIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
 #define DMG_LBIFS_CLK    (DMG_TXTIME_SSW_CLK + 2u * DMG_SBIFS_CLK)     /* 2790 = 16,909 мкс */
 
 _Static_assert(DMG_TXTIME_SSW_CLK == 2460, "TXTIME(SSW)");

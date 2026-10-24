@@ -373,7 +373,7 @@ void lmac_if_link_lost_evt_handler(const struct lmac_evt_link_lost *e)
         return;
     if (e->confirmed != 1)
         return;
-    if (e->cid != 8) {
+    if (e->cid != SPARRAW_PEER_UNKNOWN) {
         struct lmac_evt_bf_done n;
         fw_log_emit1(0x20, 0x1003fdc, e->cid);
         memset0_words(&n, sizeof(n));

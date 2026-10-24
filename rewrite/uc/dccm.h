@@ -8,6 +8,7 @@
  * проверяет tools/check_dccm.py после компоновки. */
 #ifndef UC_DCCM_H
 #define UC_DCCM_H
+#include "../include/sta_max.h"
 #include "../include/types.h"
 /* Общая память с fw (0x85xxxx): типы и имена — include/fwsh.h; в uc — макросы на адрес
  * (FWSH_UC — до первого включения fwsh.h, в т. ч. через lmac_cmd.h). */
@@ -282,7 +283,7 @@ struct fsched_ctx_s {
     u8 _pad0[1];
     u32  slot_start_tsf;            /* +0x08 +8 TSF начала AP-слота (ev4_state2); в ev4_state4 разность добавляется к 0x857748+4·sta. */
     u32  slot_end_tsf;              /* +0x0c +0xc TSF конца слота (ev4_state4). BF-ENGINE.md «0x800658[cid] — MCS на соседа» — другое ( */
-    u8   flush_cnt[8];              /* +0x10 по станциям: подряд слотов с flush (бит в 0x857248); ≥ max_cnt → бит в 0x85724c */
+    u8   flush_cnt[SPARRAW_MAX_STA];   /* +0x10 по станциям: подряд слотов с flush (бит в 0x857248); ≥ max_cnt → бит в 0x85724c */
     u8   max_cnt;                   /* +0x18 порог flush_cnt; образ 0xc8 (data.c fsched_max_cnt) */
     u8 _pad1[3];
     u32  tbtt_left_prev;            /* +0x1c +0x1c: предыдущее время до TBTT (fsched_time_left_class). */
@@ -304,7 +305,7 @@ struct brp_rf_cfg_s {
     u8   rf;                        /* +0x08 RF для шаблонов override_en; образ 5 */
     u8   mask;                      /* +0x09 RF, для которых конфигурация пишется в регистры; образ 0xff */
     u8 _pad0[2];
-    u8   sta_sel[8];                /* +0x0c по станциям (LMAC 0x32): б7..6 режим (≠0 — фиксированное число подполей, 2 — флаг в config_brp_rf), б5..0 число */
+    u8   sta_sel[SPARRAW_MAX_STA];                /* +0x0c по станциям (LMAC 0x32): б7..6 режим (≠0 — фиксированное число подполей, 2 — флаг в config_brp_rf), б5..0 число */
     u32  last_cfg_mask;             /* +0x14 +0x14: итоговая маска конфигураций (r13) в config_brp_rf. */
     u32  cfg_cnt;                   /* +0x18 +0x18: ++ при каждом config_brp_rf. */
 };
@@ -545,7 +546,7 @@ struct brp_rf_meas {
     u32  meas_8836c8;               /* +0x04 +4: PHY 0x8836c8[21:0] (brp.c 928); читателей в uc нет */
     u16  metric_sum;                /* +0x08 +8: сумма метрик c лучших секторов из 0x801c94[rf] (brp_rf_store_cfg, brp.c 236..239) */
     s16  gain_ref;                  /* +0x0a +0xa: = brp_rf_gain_ref (dccm.h) */
-    u16  sta_gain[9];               /* +0x0c по станциям 0..8: gain_ref − 4·(agc_row − agc_start) − lin_to_db8_48[метрика] + lin_to_db8_48[8837f4] (brp_rf_store_cfg) */
+    u16  sta_gain[SPARRAW_STA_SLOTS];  /* +0x0c по станциям 0..8: gain_ref − 4·(agc_row − agc_start) − lin_to_db8_48[метрика] + lin_to_db8_48[8837f4] (brp_rf_store_cfg) */
     s8   omni_offset;               /* +0x1e +0x1e: s8, читает bf.c 253 (vendor 0x92f5a6 ldb.x [0x801504,30]) на пути «по таблице станц */
     s8   module_byte[8];            /* +0x1f по RF: копия brp_rf_module_byte (brp_rf_store_module_byte); знаковая добавка в rx_mode_configure */
     u8 _pad2[1];
@@ -622,7 +623,7 @@ struct qh_write_cmd {
 _Static_assert(sizeof(struct qh_write_cmd) == 0x74, "qh_write_cmd");
 
 struct fsched_peer_ctx {
-    struct fsched_peer_ent ent[8];      /* +0x00 */
+    struct fsched_peer_ent ent[SPARRAW_MAX_STA];   /* +0x00 */
     u8   cur_idx;                       /* +0x28 Индекс текущей станции слота (0..7); fsched_ap_next_station ведёт от него кольцевой поиск */
     u8   active_mask;                   /* +0x29 Станции в расписании: ставят ucode_cmd_05_index и peer_masks_update_sta_bit(set) */
     u8   pend_off_qid;                  /* +0x2a Отложенное снятие пира (снимаемая станция — текущая): qid, 0xff — нет */
@@ -901,7 +902,7 @@ struct sls_ctx_s {
     u8   maint_sta_mask;                /* +0x68 станции «на поддержании» (LMAC 0x0f) */
     u8   maint_sta_mask_prev;           /* +0x69 */
     u8   _6a[2];
-    u32  attempts[8];                   /* +0x6c попыток BF по станциям (bf_init_sm) */
+    u32  attempts[SPARRAW_MAX_STA];     /* +0x6c попыток BF по станциям (bf_init_sm) */
 };
 _Static_assert(sizeof(struct sls_ctx_s) == 0x8c, "sls_ctx");
 _Static_assert(__builtin_offsetof(struct sls_ctx_s, maint_sta_mask) == 0x68, "sls.maint_sta_mask");

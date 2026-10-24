@@ -151,6 +151,8 @@ void wmi_trigger_beamforming(const struct wmi_bf_trig_cmd *cmd, u32 mid)
         lmac_if_trigger_bf(e->cid, 0);
     } else if (t == 1) {
         fw_log_emit1(0x2b, 0x100de6c, cmd->cid32);
+        if (cmd->cid >= SPARRAW_MAX_STA)        /* исправлено (vendor): cid без проверки → uc bf_init_sm за массивами */
+            return;
         lmac_if_trigger_bf(cmd->cid, 1);
     } else if (t == 2) {
         /* vendor: mov.eq r0,blink — blink здесь уже от bl mid_list__by_mid_fw */
@@ -180,7 +182,7 @@ static u32 rs_cfg_validate(const struct wmi_rs_cfg_cmd *c)
 {
     const struct wmi_rs_cfg *r = &c->rs_cfg;
     u32 i, v, msb;
-    if (c->cid >= 8) {
+    if (c->cid >= SPARRAW_MAX_STA) {
         fw_log_emit1(5, 0x1006618, c->cid);
         return 0;
     }
@@ -245,7 +247,7 @@ void wmi_get_detailed_rs_res(struct wmi_mbox *mb, const struct wmi_get_detailed_
     memset0_words(p, sizeof(*p));
     p->cid = cmd->cid;
     p->status = 1;
-    if (cmd->cid >= 8) {
+    if (cmd->cid >= SPARRAW_MAX_STA) {
         fw_log_emit1(5, 0x1006618, cmd->cid);
     } else {
         fw_log_emit1(0x25, 0x1006798, cmd->cid);
@@ -271,7 +273,7 @@ void wmi_get_detailed_rs_res(struct wmi_mbox *mb, const struct wmi_get_detailed_
  * таблицу аргументом r2 = mid вызывающего). Ошибка — журнал hdr 5 и 0. */
 static u32 ant_limit_validate(const struct wmi_brp_set_ant_limit_cmd *b, u32 mid)
 {
-    if (b->cid >= 8) {
+    if (b->cid >= SPARRAW_MAX_STA) {
         fw_log_emit1(5, 0x1006704, b->cid);
         return 0;
     }
@@ -566,7 +568,7 @@ static u32 selected_rf_sector_check(const struct rf_sector_sel_req *self,
         fw_log_emit2(5, tok[1], self->req[0], self->req[1]);
         st = 2;
     }
-    if (b->cid >= 8) {
+    if (b->cid >= SPARRAW_MAX_STA) {
         fw_log_emit2(5, tok[2], b->cid, 7);
         st = 1;
     }
@@ -679,7 +681,7 @@ static u32 ss_sectors_order(const struct wmi_prio_tx_sectors_order_cmd *b)
     struct ss_cfg_s tmp;
     struct lmac_cmd_ss_order *c;
     memset0_words(&tmp, 0x4c);
-    if (b->cid >= 9) {
+    if (b->cid >= SPARRAW_STA_SLOTS) {
         fw_log_emit1(0x10, 0x1004cac, b->cid);
         return 1;
     }
@@ -704,7 +706,7 @@ static u32 ss_sectors_order(const struct wmi_prio_tx_sectors_order_cmd *b)
 static u32 ss_sectors_number(const struct wmi_prio_tx_sectors_number_cmd *b)
 {
     u8 *c;
-    if (b->cid >= 9) {
+    if (b->cid >= SPARRAW_STA_SLOTS) {
         fw_log_emit1(0x10, 0x1004e78, b->cid);
         return 1;
     }
@@ -728,7 +730,7 @@ static u32 ss_sectors_number(const struct wmi_prio_tx_sectors_number_cmd *b)
 static u32 ss_sectors_default_cfg(const struct wmi_prio_tx_sectors_set_default_cfg_cmd *b)
 {
     struct lmac_cmd_ss_order *c;
-    if (b->cid >= 9) {
+    if (b->cid >= SPARRAW_STA_SLOTS) {
         fw_log_emit1(0x10, 0x1004db4, b->cid);
         return 1;
     }
@@ -1019,6 +1021,8 @@ static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi
     u32 fl = b->flags;
     u32 n = b->num_allocs;
     u32 tx = 0, base, i, rem, nib, start;
+    if (n > WMI_SCHED_MAX_ALLOCS_PER_CMD)          /* исправлено (vendor: до 255 → 2 + 15·n Б в TX-буфер 0x500) */
+        n = WMI_SCHED_MAX_ALLOCS_PER_CMD;
     const struct wmi_sched_scheme_slot *e;
 
     if (!(fl & 1) || n == 0) {
@@ -1105,7 +1109,9 @@ void wmi_fixed_scheduling_config(struct wmi_mbox *mb, const struct wmi_fixed_sch
     FSCHED.virtual_slot_us = cmd->virtual_slot_duration_in_usec;
     for (i = 0; i < WMI_NUM_MCS; i++) {            /* lp_count = 0xd */
         const struct wmi_map_mcs_to_schd_params *s = &cmd->mcs_to_schd_params_map[i];
-        volatile struct fixed_sched_mcs *d = &FSCHED.mcs[s->mcs];   /* индекс не проверяется */
+        if (s->mcs >= FIXED_SCHED_MCS_N)           /* исправлено (vendor не проверял: до 255 → запись за таблицу) */
+            continue;
+        volatile struct fixed_sched_mcs *d = &FSCHED.mcs[s->mcs];
         d->time_before_tx_us = s->time_in_usec_before_initiate_tx;
         d->rd_count = s->rd_enabled;
         d->stop_vring_us = s->time_in_usec_to_stop_vring;

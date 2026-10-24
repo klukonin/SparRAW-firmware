@@ -268,7 +268,7 @@ void lmac_if_config_txss(u32 cid)
     u8 list[0x44];
     const u8 *lp = 0;
     buf->sta = (u8)cid;
-    if (fwsh_sets.n_sec[1][0] >= 2 && cid != 8) {
+    if (fwsh_sets.n_sec[1][0] >= 2 && cid != SPARRAW_PEER_UNKNOWN) {
         struct conn *conn = conn_mgr_by_cid(cid);
         if (conn != 0) {
             u32 idx = conn->rx_sector;

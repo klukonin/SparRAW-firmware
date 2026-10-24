@@ -455,7 +455,7 @@ FWDATA(802744) struct sm_desc conn_msm_desc = {
  * соединения, STA-конфиг uc (команда 5), правило MAC-парсера пира, далее как 0x8e2aac. */
 void conn_msm_on_own_start_link_unres(struct conn_msm *sm, u32 cid, u32 a1)
 {
-    if (cid >= 8) {
+    if (cid >= SPARRAW_MAX_STA) {
         fw_sysassert_fatal((void *)0, 0x1543);
         return;
     }
@@ -612,7 +612,7 @@ void dashboard_add_connection(struct conn *conn)
     if (conn == 0)
         fw_sysassert_fatal((void *)0, 0x1119);
     cid = conn->cid;
-    if ((s32)cid >= 8)
+    if ((s32)cid >= (s32)SPARRAW_MAX_STA)
         fw_sysassert_fatal((void *)0, 0x111a);
     w = VOL(fw_stats_dash.state);
     VOL(fw_stats_dash.state) = (w & 0x1fffffffu) | ((((w >> 29) + 1) & 7u) << 29);

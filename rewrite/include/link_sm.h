@@ -11,6 +11,7 @@
 #define LINK_SM_H
 #include "types.h"
 #include "basic_sm.h"
+#include "sta_max.h"
 
 #define LSM_OFF(t, f, o) _Static_assert(__builtin_offsetof(t, f) == (o), #t "." #f)
 
@@ -107,7 +108,7 @@ LSM_OFF(struct lm_sm, rsv_a0, 0xa0);
 _Static_assert(sizeof(struct lm_sm) == 0xa4, "lm_sm");
 
 /* Экземпляр — символ fw/fw.ld (рабочая память, не DCCM). */
-extern struct lm_sm lm_sm_recs[8];             /* 0x841c28 */
+extern struct lm_sm lm_sm_recs[SPARRAW_MAX_STA];  /* 0x841c28 */
 
 /* fw_data (fw/link_sm.c): период долгосрочного BF по MCS 0..12 (мкс; WMI_BF_CONTROL и
  * fixed_sched_start переписывают). */

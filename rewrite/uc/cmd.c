@@ -4,6 +4,7 @@
 #include "../include/bitfield.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 #include "abft.h"
 
 
@@ -27,7 +28,7 @@ u32 rs_start(u32 a, u32 b)              /* 6.2 asm 0x9300ec */
     /* 0x9300f6: breq r0,0x8 → return 0. Индекс 8 (широковещательный vring, только AP/PCP)
      * вышел бы за массивы rs_state/rs_stats (8 станций) в rs_stats[0]/rs_cfg[0]; было
      * `a != 8 && …` — AP не отвечал на probe (стенд 2026-10-19, uc_bisect --goal ap). */
-    if (a == 8 || rs_is_sta_enabled(a) == 0)
+    if (a == SPARRAW_PEER_UNKNOWN || rs_is_sta_enabled(a) == 0)
         return 0;
     if (b != 0)
         return 0;
@@ -345,7 +346,13 @@ void wmi_cmd_txss_set_sectors_order(const struct lmac_cmd_ss_order *c)
     uc_log_emit1(0x20, 0x10019d0, set);
     if (c->set >= 9)
         uc_assert((u32)__builtin_return_address(0), 0x136c);
+    /* исправлено (vendor): n_frames не проверялся — 0 давал SSW с сектором 0xff (терминатор плана), > 64 —
+     * CDOWN от полного числа при плане из 64 (CDOWN 0 не доходил до пира, 10.42.2.2). */
+    if (c->ss.n_frames == 0)
+        return;
     memcpy_uc(&txss_ss[c->set], &c->ss, sizeof(struct ss_cfg_s));
+    if (txss_ss[c->set].n_frames > 0x40)
+        txss_ss[c->set].n_frames = 0x40;
 }
 void wmi_cmd_txss_set_sectors_number(u32 a)
 {
@@ -379,9 +386,9 @@ void ucode_cmd_0x00_handler(const struct lmac_cmd_mac_cfg *c)
     ((u16 *)prs_mcast_addr)[1] = (u16)(r0 >> 16);                 /* sth.as [gp,95] */
     ((u16 *)prs_mcast_addr)[2] = (u16)r1;                         /* sth.as [gp,96] (слот bl.d) */
     mac_cmd_56_57();
-    sta_tab[8].peer_n_ant = 1;
-    sta_tab[8].peer_n_sectors = 0x40;
-    rss_wait_clk[8] = 0x29528;
+    sta_tab[SPARRAW_PEER_UNKNOWN].peer_n_ant = 1;
+    sta_tab[SPARRAW_PEER_UNKNOWN].peer_n_sectors = 0x40;
+    rss_wait_clk[SPARRAW_PEER_UNKNOWN] = 0x29528;
     abif_dvs_rf_ctrl_shadow = MMIO32(HW_ABIF_DVS_RF_CTRL);     /* st.as [gp,94] (слот bl.d) */
     rf_compute_tx_rx_sets();
 }
@@ -441,7 +448,7 @@ void ucode_cmd_0x18_handler(const struct lmac_cmd_sta_field *c)
 void ucode_cmd_0x0c_handler(u32 a)
 {
     u32 idx = *(u8 *)a;
-    if (idx >= 9)
+    if (idx >= SPARRAW_STA_SLOTS)
         uc_assert((u32)__builtin_return_address(0), 0xfd);   /* возвращается, индекс прежний */
     struct ss_cfg_s *ss = &txss_ss[idx];
     ucode_cmd_0b_apply(ss, &((const struct lmac_cmd_sta_sweep *)a)->ss);

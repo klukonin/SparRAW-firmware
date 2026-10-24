@@ -38,7 +38,7 @@
 #define TDMA_MIN_STA 2u                     /* станций для включения по умолчанию (WMI_SPARRAW_TDMA_CFG — свой порог) */
 #endif
 #define TDMA_COMMON_US     2000u            /* общее окно CBAP 255→255 */
-#define TDMA_MAX_STA       8u               /* CONN_MAX */
+#define TDMA_MAX_STA       SPARRAW_MAX_STA  /* CONN_MAX */
 #define EID_EXT_SCHED_IE   0x90u
 #define ESE_FIELD_LEN      15u
 #define MAX_LOST_BEACONS   4u               /* dot11MaxLostBeacons, DEFVAL (Annex C) */
@@ -144,6 +144,19 @@ static void tdma_arm(struct mid *mid)
     u_schd_schedule(tdma_refresh_cb, (u32)mid, 0, 1, delay, 0, 0);
 }
 
+/* Снять расписание TDMA (если было): весь DTI — CBAP, маяк без ESE. */
+static void tdma_clear(struct mid *mid)
+{
+    struct sched_scheme *ss = mid->sched;
+    if (ss->built == 0)
+        return;
+    ss->tdma_owned = 0;
+    fw_log_emit0(0x2b, 0x1014510);          /* «Clearing scheme» */
+    ss->built = 0;                          /* CBAP Only = 1 (builder_push_dmg_parameters) */
+    tdma_set_beacon_ese(mid, 0, 0);
+    add_bcon(mid);
+}
+
 /* Пересобрать расписание точки: связь или разрыв станции (exclude — разрываемое соединение). */
 void tdma_ap_update(struct mid *mid, const struct conn *exclude)
 {
@@ -166,13 +179,7 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
         return;                             /* расписание задал хост (WMI 0xa01) — не трогать */
     u32 min = ss->ese->tdma_min_sta != 0 ? ss->ese->tdma_min_sta : TDMA_MIN_STA;
     if (ss->ese->tdma_off != 0 || n < min) {
-        if (ss->built != 0) {
-            ss->tdma_owned = 0;
-            fw_log_emit0(0x2b, 0x1014510);  /* «Clearing scheme» */
-            ss->built = 0;                  /* CBAP Only = 1 (builder_push_dmg_parameters) */
-            tdma_set_beacon_ese(mid, 0, 0);
-            add_bcon(mid);
-        }
+        tdma_clear(mid);
         return;
     }
     u8 ie[2u + (TDMA_MAX_STA + 1u) * ESE_FIELD_LEN];
@@ -181,8 +188,12 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     u32 g = tdma_guard_us(bi);
     u32 t0 = tdma_dti_start_us(mid, ese_len) + g;
     u32 need = t0 + TDMA_COMMON_US + (n + 1u) * g + n * 1000u;   /* окно станции — не меньше 1 мс */
-    if (need >= bi)
-        return;                             /* BI мал для расписания — DTI остаётся как есть */
+    if (need >= bi) {
+        /* BI мал для окон всех станций — расписание снимается: иначе в маяке оставался прежний ESE с
+         * Allocation Start прошлого BI (устаревшая аллокация, 10.39.6.1), а таймер пересборки не взводился */
+        tdma_clear(mid);
+        return;
+    }
     u32 w = (bi - t0 - TDMA_COMMON_US - (n + 1u) * g) / n;
     if (w > 0xffffu)
         w = 0xffffu;                        /* Allocation Block Duration — u16, мкс (9.4.2.131) */

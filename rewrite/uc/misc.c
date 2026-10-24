@@ -4,6 +4,7 @@
 #include "../include/bitfield.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 
 
 #include "evt17.h"
@@ -200,7 +201,7 @@ void peer_masks_update_sta_bit(struct fsched_peer_ctx *p, u32 sta, u32 set)
      * вход из ucode_cmd_0x47_handler). Пир по qid sta — в active_mask или из неё; снятие
      * текущего пира откладывается до конца слота (fixed_sched_read_slot_id). */
     u32 idx = sta_find_by_byte(p, sta);
-    if (idx >= 8)
+    if (idx >= SPARRAW_MAX_STA)
         uc_assert((u32)__builtin_return_address(0), 0x1584);
     if (set != 0) {
         p->active_mask |= (u8)(1u << (idx & 31));
@@ -401,7 +402,7 @@ void peer_slots_scan_by_masks(u32 a)
     u8 r6 = 0xff;                               /* idle_mask (≡ 0xff: PS вырезан) */
     u8 r14 = mac_mon_report.bcons_atim_fail_vec;
 
-    for (u32 r1 = 0; r1 < 8; r1++) {
+    for (u32 r1 = 0; r1 < SPARRAW_MAX_STA; r1++) {
         int clear_9c = 0;
         if (sta_slot_ok_cnt[r1] == 0) {
             u8 r5 = maint_sta_mask;

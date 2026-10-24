@@ -137,7 +137,7 @@ void dashboard_bf_results(const struct lmac_evt_bf_done *e, struct conn *conn)
         return;
     }
     u32 cid = conn->cid;
-    if ((s32)cid >= 8) {
+    if ((s32)cid >= (s32)SPARRAW_MAX_STA) {
         fw_log_emit1(0x15, 0x1018110, cid);
         return;
     }

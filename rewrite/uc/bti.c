@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "../include/sta_max.h"
 #include "abft.h"
 /* Условия Discovery Mode (abft.h) — отдельными функциями, чтобы не менять код rx_flow_handle_frame на пути ответа. */
 __attribute__((noinline)) u32 abft_discovery_ok_call(void) { return abft_discovery_ok(); }
@@ -270,7 +271,7 @@ u32 abft_resp_parse_fdbk(struct sls_peer_rec *dst)
     if (arc_core_rd(38) & (1u << 11))
         dst->abft_sta = (arc_core_rd(38) >> 8) & 7;
     else
-        dst->abft_sta = 8;
+        dst->abft_sta = SPARRAW_PEER_UNKNOWN;
     return 1;
 }
 
@@ -572,7 +573,7 @@ void aw_worker_collect_awake_peers(struct aw_win_s *w)
             u32 sector = sta_get_sweep_byte(bit, (u32)&out);
             r14 &= ~(1u << bit);                 /* bclr r14,r14,r15 (delay) */
             if (out != 0) {                      /* match */
-                if (sector >= 8)                 /* brge r13,0x8 (r13 беззнаков.) */
+                if (sector >= SPARRAW_MAX_STA)   /* brge r13,0x8 (r13 беззнаков.) */
                     uc_assert((u32)__builtin_return_address(0), 0x141f);
                 u32 m = 1u << sector;
                 w->pend_b[0] |= m;
@@ -598,7 +599,7 @@ void aw_worker_collect_awake_peers(struct aw_win_s *w)
             u32 rr = ((w4 >> 16) & 0x1ff) | (1u << 8);   /* bmsk 0x8 + bset 0x8 */
             w4 = ror32((ror32(w4, 16) & 0xfffffe00u) | rr, 16);
         }
-        aw_peer_stats[8] += 1;
+        aw_peer_stats[SPARRAW_PEER_UNKNOWN] += 1;
     }
 
     /* L_927bd0 */
@@ -1198,7 +1199,10 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                 u32 fss = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
                 if (dl > -(s32)(5 * ABFT_CLK_PER_US) && dl < (s32)(5 * ABFT_CLK_PER_US) && fss >= ABFT_SS_FRAMES_PER_SLOT) {
                     if (bcn_rx.abft_go != 0) {       /* как bti_tx_program_bi2_regs, без квитирования r54.7 */
-                        uc_mac_cmd((u32)((s32)ABFT_STA_STD_GP1_CLK + dl - (s32)g0off) | 0x50000000u);
+                        /* не меньше 1 такта, как в bti_tx_program_bi2_regs: при dl < −(899 − g0off) (≈ −3,85 мкс,
+                         * внутри окна ±5 мкс) значение уходило в минус → ~2^32 тактов, GP1 не срабатывал за A-BFT */
+                        s32 gp1 = (s32)ABFT_STA_STD_GP1_CLK + dl - (s32)g0off;
+                        uc_mac_cmd((u32)(gp1 > 0 ? gp1 : 1) | 0x50000000u);
                         uc_mac_cmd(0x5300070e);
                     }
                     u32 n = ((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7 & 7) + 1;
