@@ -746,15 +746,20 @@ static u32 brd_if_multi_array_init(struct brd_if *o, const u8 *data, u32 size)
 
 /* brd_if__build_tx_sector_list (0x8ddbbc): список TX-секторов из секции 3. Для каждого
  * блока (RF-модуль blk-го бита rf_vector) — начальный сектор набора модуля (rf_tbl,
- * idx 0); строки секции по 6 слов — сектора; ненулевая строка k даёт сектор
- * start + k/6, если позиция slot списка ещё свободна (0xff). Указатель строк общий для
- * всех блоков и не сбрасывается, длина — из заголовка секции (как у vendor). Пустой
- * список — ассерт 0x1562. */
+ * idx 0); строки блока по 6 слов — сектора; ненулевая строка k даёт сектор
+ * start + k/6, если позиция slot списка ещё свободна (0xff); нулевая строка — сектора нет.
+ * Пустой список — ассерт 0x1562.
+ * Ошибка vendor (исправлено): строки читались общим указателем от начала секции с длиной из
+ * заголовка, не сбрасываясь между блоками. При rf_vector 0 блоков 8 (elem_bits), а секция
+ * цельная — одна таблица на все модули (get_block_info даёт каждому блоку те же строки), и
+ * цикл уходил на 7 длин секции за её конец (и за буфер board-файла 0x2400): всё ненулевое
+ * там становилось секторами, список добивался до 0..63 при любой таблице. Теперь строки
+ * блока — из его описателя (off, len), цельная секция проходится один раз. */
 void brd_if_build_tx_sector_list(struct brd_if *o)
 {
     struct brd_section_info info;
     struct brd_block_info blk;
-    const u32 *sec, *row;
+    const u32 *row;
     u32 rfvec, b;
 
     brd_section_info_reset(&info);
@@ -762,17 +767,19 @@ void brd_if_build_tx_sector_list(struct brd_if *o)
     if (o->vt->get_section_info(o, 3, &info) == 0)
         fw_sysassert_fatal(CALLER, 0x1368);
     rfvec = info.rf_vector;
-    sec = brd_at(o, info.off);
     o->num_tx_sectors = 0;
-    row = sec + 4;
     for (b = 0; b < info.num_blocks; b++) {
         u8 start = 0, cnt = 0;
         u32 slot, k;
 
+        if (rfvec == 0 && b != 0)
+            break;
         rf_tbl_lookup_by_module(o, brd_nth_low_bit(rfvec, b), 0, &start, &cnt);
         slot = start;
-        o->vt->get_block_info(o, &info, b, &blk);
-        for (k = 0; k < ((sec[2] >> 8) & 0xfff); k += 6) {
+        if (o->vt->get_block_info(o, &info, b, &blk) == 0)
+            break;
+        row = brd_at(o, blk.off);
+        for (k = 0; k < blk.len / 4; k += 6) {
             u32 nz = 0, j;
 
             for (j = 0; j < 6; j += 2, row += 2)
