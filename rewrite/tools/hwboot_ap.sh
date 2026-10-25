@@ -1,7 +1,10 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# [KEEP=1] [IPERF=10] [NORECOV=1 REC=<dir>] [SNAP=<file>] hwboot_ap.sh <fw> [timeout_s] — тест прошивки .12 в режиме AP (PCP); роли стенда меняются:
-#   .11 (vendor fw) временно STA, .12 (тестируемый образ) — AP с SSID WL60RW; всё через uci без commit.
+# [KEEP=1] [IPERF=10] [NORECOV=1 REC=<dir>] [SNAP=<file>] [STA_FW=<fw>|vendor] hwboot_ap.sh <fw> [timeout_s] — тест прошивки .12
+#   в режиме AP (PCP); роли стенда меняются: .11 временно STA, .12 (тестируемый образ) — AP с SSID WL60RW; всё через uci без commit.
+#   Прошивка станции .11: по умолчанию тот же образ <fw> (vendor STA 6.2 к точке AP по стандарту не ассоциируется:
+#   ждёт PCP Association Ready = 1, а у AP это подполе зарезервировано, 9.3.4.2); STA_FW=vendor — vendor fw .11,
+#   STA_FW=<файл> — свой образ. В конце .11 возвращается на vendor fw (wil6210.fw.vendor-backup), если не KEEP=1.
 #   Порядок: залить fw на .12 -> .11 в STA (ищет WL60RW) -> power-cycle .12 -> AP на .12 ->
 #   ждать FW ready / станцию в `iw station dump` .12 / Connected на .11 -> ping 10.60.0.11 -> 10.60.0.12
 #   (+ iperf3 в обе стороны, если IPERF=<с>). Печатает RESULT: data|assoc|ready|noready.
@@ -19,8 +22,10 @@ TAPO=$(dirname "$0")/../../../SparRAW-tools/host/tapo_plug.py
 [ -f "$TAPO" ] || TAPO=$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)/../../SparRAW-tools/host/tapo_plug.py
 # ENC=psk2|sae KEY=<пароль>: шифрование на .12 (uci без commit; после power-cycle прежние правки теряются)
 ENCSET=""; [ -n "$ENC" ] && ENCSET="uci set wireless.default_radio0.encryption=$ENC; uci set wireless.default_radio0.key='${KEY:-SparRAW60test}';"
+STA_FW=${STA_FW:-$FW}
 restore() {
   [ -n "$KEEP" ] && return
+  [ "$STA_FW" != vendor ] && $SSH $ST 'cp /lib/firmware/wil6210.fw.vendor-backup /lib/firmware/wil6210.fw; sync' >/dev/null 2>&1
   # адрес phy0-sta0 переживает смену режима (тот же netdev станет phy0-ap0 — порт br-lan) — снять
   $SSH $ST 'killall iperf3 2>/dev/null; ip addr flush dev phy0-sta0 2>/dev/null; uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.network=lan;
     uci set wireless.default_radio0.ssid=WL60TEST; fw4 reload; wifi down; sleep 2; wifi up radio0; sleep 5;
@@ -28,6 +33,10 @@ restore() {
 }
 trap restore EXIT
 cat "$FW" | $SSH $AP 'rm -f /tmp/snap_peri.bin; cat >/lib/firmware/wil6210.fw; sync; md5sum /lib/firmware/wil6210.fw | cut -c1-12' || exit 2
+if [ "$STA_FW" != vendor ]; then
+  [ -s "$STA_FW" ] || { echo "нет файла прошивки станции: $STA_FW"; exit 2; }
+  cat "$STA_FW" | $SSH $ST 'cat >/lib/firmware/wil6210.fw; sync' || exit 2
+fi
 $SSH $ST 'killall iperf3 2>/dev/null; wifi down; sleep 2; uci set wireless.default_radio0.mode=sta; uci delete wireless.default_radio0.network;
   uci set wireless.default_radio0.ssid=WL60RW; ip addr del 10.60.0.11/24 dev br-lan; wifi up radio0' >/dev/null 2>&1
 python3 "$TAPO" 192.168.10.105 cycle 15 >/dev/null 2>&1 || { echo "power-cycle failed"; exit 2; }
