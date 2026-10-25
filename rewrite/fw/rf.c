@@ -827,6 +827,8 @@ void handle_omni_sector_info(struct rf_obj *this, const struct brd_win *bnd)
     }
 
     nrf = rf_popcount(rfs);
+    if (nrf == 0)                                   /* vendor: деление на 0 при пустой RX-маске секции */
+        return;
     this->sector_cfg_cnt = (u16)fw_divmod_signed(bnd->cnt, nrf * 6);  /* знаковое (0x8c02dc) */
     q = this->sector_cfg_cnt;
 
@@ -885,7 +887,8 @@ void handle_omni_sector_info(struct rf_obj *this, const struct brd_win *bnd)
     {
         u8 v = (u8)(fwsh_sets.n_sec[0][0] - 1);
         u32 i;
-        for (i = 0; (s32)i < (s32)vt->sector_cfg_cnt; i = (u8)(i + 1))
+        /* vendor: счётчик u8 при sector_cfg_cnt ≥ 256 — вечный цикл; запись за rf_set_ranges[0][32] при > 32 */
+        for (i = 0; i < vt->sector_cfg_cnt && i < ARRAY_SIZE(rf_set_ranges[0]); i++)
             rf_set_ranges[0][i].last = v;
     }
 }

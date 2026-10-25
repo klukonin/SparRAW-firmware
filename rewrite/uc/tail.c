@@ -1199,9 +1199,15 @@ void config_brp_rf(u32 a, u32 b)
     u32 s14 = 0;                                /* [sp+0x14]: OR только buf[2] */
     u32 buf[3] = {0, 0, 0};
     brp_pick.selected = 0;                      /* delay-слот brhs.d — всегда */
-    if (brp_pick.count >= 1) {                  /* brhs.d r0,0x1 → цикл */
+    /* исправлено (vendor): записей в brp_rank[a] не больше разрешённых подполей маски RF (brp_rank_insert берёт только
+     * их); при count больше — читались пустые записи {0,0} (подполе 0 «выбиралось»). */
+    u32 navail = 0, cnt;
+    for (u32 m = FWSH(fwsh_sets, brp_cfg_mask)[a]; m != 0; m &= m - 1)
+        navail++;
+    cnt = brp_pick.count < navail ? brp_pick.count : navail;
+    if (cnt >= 1) {                             /* brhs.d r0,0x1 → цикл */
         const struct brp_rank_ent *rk = brp_rank[a];
-        for (r14 = 0; r14 < brp_pick.count; r14++) {
+        for (r14 = 0; r14 < cnt; r14++) {
             u32 r4 = brp_snr_cfg_enable;
             u8 trn = rk[r14].idx;               /* индекс TRN-подполя (не SNR) */
             if (r4 == 0) {

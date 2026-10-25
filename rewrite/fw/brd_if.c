@@ -192,6 +192,12 @@ static u32 brd_if_multi_array_check_section(const struct brd_if *o, u32 id, u32 
         fw_log_emit2(0, 0x100a940, id, 0xa);
         return 0;
     }
+    /* vendor: метка читалась до проверки смещения (чтение за board-файлом; на Sparrow — зависание шины на
+     * отсутствующем адресе), off + size могли переполниться. Теперь граница — до чтения. */
+    if (o->size < 8 || off > o->size - 8 || size > o->size - 8 - off) {
+        fw_log_emit3(0, 0x100aa88, o->size - 8, off, size);
+        return 0;
+    }
     sec = brd_at(o, off);
     tag = sec[0];
     if (tag != pat[0] && tag != pat[1]) {
@@ -821,10 +827,15 @@ FWDATA(801fa8) const u8 rf_sets_sec_lim_tpl[2] = { 0x80, 0x20 };
  * байтов rf_sets_sec_lim_tpl (vendor: счётчик, ограниченный пределом, всегда кладётся в
  * первый байт пары [sp+4], а второй тип прибавляет второй байт [sp+5], который всегда 0 — начало второго
  * типа у всех наборов одно; повторено как есть). Набор без TX-секторов — конец; без
- * второго типа или без маски — ассерт 0x1570. *pidx — последняя использованная запись. */
-static void marlon_r_if_class_handle_rf_sets_info(struct rf_obj *rf, u32 *pidx)
+ * второго типа или без маски — ассерт 0x1570. *pidx — последняя использованная запись.
+ * Ошибки vendor (исправлено): запись и таблица диапазонов читались без сверки с числом записей порции n (чтение за
+ * порцией), число диапазонов набора n_sec[1][s] (до 255) копировалось в rf_set_ranges[s][32] без ограничения
+ * (запись до 510 Б — в соседние наборы и fixed_sched). Теперь: запись короче — пропуск, диапазонов > 32 или
+ * таблица за концом порции — ошибка 3. */
+static void marlon_r_if_class_handle_rf_sets_info(struct rf_obj *rf, u32 *pidx, u32 n)
 {
     const u8 *e = (const u8 *)&rf->chunk[*pidx];
+    const u8 *end = (const u8 *)&rf->chunk[n];
     u16 off[2];
     u8 cnt[2] = { 0, 0 };
     u8 lim[2];
@@ -832,6 +843,10 @@ static void marlon_r_if_class_handle_rf_sets_info(struct rf_obj *rf, u32 *pidx)
     const u8 *src0, *src;
     u32 mask0, nsets = 0, err = 0, s;
 
+    if (*pidx + 4 >= n) {
+        fw_log_emit2(0, 0x1570, *pidx, n);
+        return;
+    }
     memcpy_fw(fwsh_sets.set_rf_mask, e + 8, 8);
     memcpy_fw(fwsh_sets.n_sec, e + 0x10, 0x10);
     *pidx += 4;
@@ -870,6 +885,10 @@ static void marlon_r_if_class_handle_rf_sets_info(struct rf_obj *rf, u32 *pidx)
         nsets++;
         rf->tx_mask = (u8)(rf->tx_mask | m);
         n1 = fwsh_sets.n_sec[1][s];
+        if (n1 > ARRAY_SIZE(rf_set_ranges[0]) || (n1 >= 2 && src + n1 * 2 > end)) {
+            err = 3;
+            break;
+        }
         if (n1 >= 2) {
             fwsh_sets.multi_cfg = (u8)(fwsh_sets.multi_cfg | (1u << s));
             memcpy_fw(rf_set_ranges[s], src, n1 * 2);
@@ -948,7 +967,7 @@ u32 marlon_r_if_class_load_brd_parameters_section(struct rf_obj *rf, u32 per_chu
                         i += 4;
                     }
                 } else if (addr == 0x8ffffe) {
-                    marlon_r_if_class_handle_rf_sets_info(rf, &i);
+                    marlon_r_if_class_handle_rf_sets_info(rf, &i, n);
                 } else if ((addr >= BL_READY && addr < RGF_USER_CLKS_CTL_0) || addr == HW_RGF_USER_USAGE_5) {
                     MMIO32(addr) = data;
                 }

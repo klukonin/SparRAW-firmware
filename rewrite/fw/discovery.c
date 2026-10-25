@@ -284,6 +284,24 @@ __attribute__((section(".textlate"))) u32 discovery_is_ssid_approved(struct mid_
     return ret;
 }
 
+/* DMG Capabilities пира из кадра → conn.dmg_caps (17 Б, формат 802.11ad-2012; поля дальше fw не разбирает).
+ * Ошибка vendor (исправлено): копировал тело элемента длиной из кадра (до 255 Б) в 17-байтный массив записи
+ * соединения — порча следующих записей из эфира; даже элемент 802.11-2020 (22 октета, 9.4.2.127) писал 5 Б
+ * за массив. Теперь: тело короче 17 Б — элемент не принимается, длиннее — берутся первые 17. */
+__attribute__((section(".textlate"))) static void discovery_take_dmg_caps(struct conn *mid,
+                                                                          const struct rx_mgmt_ei *meta, u32 tok)
+{
+    const u8 *cap = meta->dmg_cap.body;
+    u32 len = meta->dmg_cap.len;
+
+    if (cap == 0 || len < sizeof(mid->dmg_caps))
+        return;
+    fw_log_emit3(0x2a, tok, len, cap[1], cap[1]);
+    memcpy_fw(mid->dmg_caps, cap, sizeof(mid->dmg_caps));
+    conn_set_rf_params_from_caps(mid);
+    hexdump_words(cap, sizeof(mid->dmg_caps));
+}
+
 /* discovery_handle_probe_req (0x8f2798, 436 Б): обработка probe request.
  * В PCP-режиме находит MID по SA, сохраняет Wilocity VS + DMG-caps и (если SSID
  * одобрен) отправляет probe resp. Иначе вливает событие в find-SM / логирует. */
@@ -313,16 +331,7 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_req(struct mid_
             } else {
                 set_vendor_specific_version(mid, pkt, bss_ctx);
                 discovery_init_probe_entry(mid, pkt, bss_ctx);
-                const struct rx_mgmt_ei *meta = pkt->ei;
-                const u8 *cap = meta->dmg_cap.body;
-                if (cap != 0) {
-                    u32 len = meta->dmg_cap.len;
-                    u8 b = cap[1];
-                    fw_log_emit3(0x2a, 0x1016964, len, b, b);
-                    memcpy_fw(mid->dmg_caps, cap, len);
-                    conn_set_rf_params_from_caps(mid);
-                    hexdump_words(cap, 0x11);
-                }
+                discovery_take_dmg_caps(mid, pkt->ei, 0x1016964);
                 if (discovery_is_ssid_approved(obj, pkt)) {
                     u32 payload = TX_API_alloc_tx_payload();
                     fw_log_emit1(0x2c, 0x101699c, u_schd_now());
@@ -552,22 +561,14 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_resp(struct mid
                          parse_wilocity_vs_get_flag3((u32)&bss_ctx->bss, &meta->vs_wil));
             set_vendor_specific_version(mid, pkt, bss_ctx);
             discovery_init_probe_entry(mid, pkt, bss_ctx);
-            const u8 *cap = meta->dmg_cap.body;
-            if (cap != 0) {
-                u32 len = meta->dmg_cap.len;
-                u8 b = cap[1];
-                fw_log_emit3(0x2a, 0x1016ba4, len, b, b);
-                memcpy_fw(mid->dmg_caps, cap, len);
-                conn_set_rf_params_from_caps(mid);
-                hexdump_words(cap, 0x11);
-            }
+            discovery_take_dmg_caps(mid, meta, 0x1016ba4);
         }
     } else {
         ret = (obj->find.active != 0) ? 1u : 0u;
     }
 
     const u8 *country = meta->country.body;
-    if (country != 0)
+    if (country != 0 && meta->country.len >= 3)     /* Country String — 3 октета (9.4.2.8); vendor читал без длины */
         regulatory_domain_set_country_code((u32)country[1] | ((u32)country[0] << 8));
 
     return ret;
@@ -1336,9 +1337,13 @@ static void discovery_send_rx_mgmt(struct rx_pkt *pkt)
 void discovery_rx_pkt_handler(struct mid_disc *obj, struct rx_pkt *pkt)
 {
     volatile struct mgmt_stats *cnt = &mgmt_stats;
-    rx_mgmt_prepare(pkt);
     u32 type = FC_STYPE(pkt->hdr->fc);
     u32 ok;
+    if (rx_mgmt_prepare(pkt) == 0) {                  /* усечённый кадр — отбросить (у vendor разбирался) */
+        mgmt_pkt_release(pkt);
+        mem_pool_free_thunk(pkt);
+        return;
+    }
     switch (type) {
     case 0:                                                 /* DMG-бикон */
         ok = dmg_bcon_rx_handler(obj, pkt);

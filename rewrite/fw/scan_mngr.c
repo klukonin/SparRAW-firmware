@@ -138,6 +138,13 @@ __attribute__((section(".textlate"))) void hexdump_words(const void *ptr, u32 le
     fw_log_emit1(0x20, 0x1001278, len);
     for (i = 0; i < len; i += 12) {
         const u8 *p = i + (const u8 *)ptr;
+        u8 tail[12];
+        if (len - i < 12) {                         /* vendor: последний блок читал до 11 Б за len */
+            u32 k;
+            for (k = 0; k < 12; k++)
+                tail[k] = k < len - i ? p[k] : 0;
+            p = tail;
+        }
         fw_log_emit3(0x20, 0x1001284,
                      ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | (u32)p[3],
                      ((u32)p[4] << 24) | ((u32)p[5] << 16) | ((u32)p[6] << 8) | (u32)p[7],

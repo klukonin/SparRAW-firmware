@@ -789,7 +789,7 @@ void mlme_sm_on_assoc_response(struct mlme_sm *sm, struct rx_pkt *pkt)
             fw_log_emit0(0x2a, 0x1011658);
         }
         sm->rx_pkt = pkt;
-        sm->conn->mid->aid = (u8)pkt->ei->aid;
+        sm->conn->mid->aid = (u8)(pkt->ei->aid & 0x3fffu);   /* B14–B15 — не AID (rx_pkt_handler отсеял > 254) */
         sm->conn->aid = 0;
         mgmt_pkt_release(pkt);
     }
@@ -1260,9 +1260,8 @@ void rx_pkt_handler(struct rx_pkt *pkt)
     struct mlme_sm *sm;
     (void)mid_list_by_mid_fw(pkt->info.mid);
     conn = conn_mgr_by_cid(pkt->info.cid);
-    rx_mgmt_prepare(pkt);
     sub = FC_STYPE(pkt->hdr->fc);
-    if (conn == 0) {
+    if (rx_mgmt_prepare(pkt) == 0 || conn == 0) {   /* усечённый кадр — отбросить (у vendor разбирался) */
         fw_log_emit2(0x1a, 0x10110f4, sub, pkt->info.len);
         goto drop;
     }
@@ -1297,7 +1296,12 @@ void rx_pkt_handler(struct rx_pkt *pkt)
         u32 st = sm->sm.state;
         if (sm->busy == 0 || st == 2)
             goto drop;
-        if (pkt->ei->status != 0) {
+        /* AID DMG-станции — 1..254 (9.4.1.8; 0 — AP/PCP, 255 — широковещательный). vendor брал любой: с AID 0/255
+         * станция считала SP точки / широковещательные аллокации ESE своими (rx.c ese_may_initiate). Успех с
+         * недопустимым AID — как отказ. */
+        if (pkt->ei->status != 0 || (pkt->ei->aid & 0x3fffu) == 0 || (pkt->ei->aid & 0x3fffu) > 254) {
+            if (pkt->ei->status == 0)
+                fw_log_emit1(0x1a, 0x10110f4, pkt->ei->aid);
             mlme_sm_event(sm, 5, (u32)pkt, 0, 0);
         } else {
             if (st == 1)

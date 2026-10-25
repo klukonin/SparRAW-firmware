@@ -24,4 +24,6 @@ typedef u32                size_t_unused;
 /* Обращение к объекту как к volatile (опрос из прерываний/железа/другого ядра): VOL(itx_mcs). */
 #define VOL(x) (*(volatile __typeof__(x) *)&(x))
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+
 #endif

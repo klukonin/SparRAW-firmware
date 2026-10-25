@@ -509,6 +509,12 @@ void hwd_phy_rx_sar_rssi_measure(u32 n, s32 *out)
     u32 i;
 
     fw_log_emit1(0x21, 0x101d848, n);
+    /* vendor: n из WMI_UNIT_TEST без проверки; n = 0 — деление на 0 (libgcc ARC600 крутится бесконечно), n > 0xffff —
+     * n² переполняется. Теперь такие n не меряются. */
+    if (n == 0 || n > 0xffffu) {
+        *out = 0;
+        return;
+    }
     hwd_phy_dbg_clk_enable(1);
     hwd_phy_rx_sar_cal_measurement_config(1, 0, 1, 0, n, 0);
     hwd_phy_rx_sar_measurement_start();

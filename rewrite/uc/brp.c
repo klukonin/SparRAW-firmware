@@ -188,7 +188,7 @@ void brp_pick_sector_cfg(u32 a)
         r1 = 0;
     }
     brp_pick.snr_cfg = r1;
-    u8 r0 = brp_rf_cfg.sta_sel[a];
+    u8 r0 = a < SPARRAW_MAX_STA ? brp_rf_cfg.sta_sel[a] : 0;   /* sta_sel[SPARRAW_MAX_STA]: пир 8 читал за массивом */
     if (((r0 >> 6) & 3) != 0)
         brp_pick.count = r0 & 0x3f;
     /* исправлено (vendor): count из настроек (до 63 / 255) не ограничивался — brp_rank_insert сдвигал записи за
@@ -405,7 +405,7 @@ void brp_init_flow(u32 a)
                 r15--;
                 r13 = (u8)(r13 + 1);
             } while (r15 >= 1);
-            config_brp_rf(r14, brp_ctx.resp_sta);
+            config_brp_rf(r14, r19);    /* станция инициатора; vendor брал resp_sta прошлой сессии ответчика (чужой AWV при ≥2 STA) */
             r16 = (u8)(r16 & ~(1u << r14));
         }
         rfca_access_sector_other_rf(r19);
@@ -717,7 +717,8 @@ void brp_responder_flow_enter(u32 a)
             u32 r14 = (u8)(30 - arc_norm(r17));
             for (u32 k = 0; k < 0x20; k++)
                 brp_rank_insert(r14, brp_trn_metric[r14][k], (u8)k);
-            config_brp_rf(r14, brp_ctx.resp_sta);
+            if (brp_ctx.resp_sta < SPARRAW_MAX_STA)     /* неизвестный пир: не сохранять (vendor писал brp_rf_regs[a][8] = соседний RF / lin_to_db8_32) */
+                config_brp_rf(r14, brp_ctx.resp_sta);
             r17 = (u8)(r17 & ~(1u << (r14 & 31)));
         }
         rfca_access_sector_other_rf((u8)r18);
@@ -970,7 +971,7 @@ void brp_init_reset_ctx(u32 a)
     struct bf_sta_s *e = &bf_sta[a];
     if (!(e->brp_flags & 1)) {
         brp_ctx.init_flags = r16 | (1u << 9);
-    } else if (e->peer_l_rx >= 1) {
+    } else if (e->peer_l_rx >= 1 && e->peer_l_rx <= BRP_LRX_MAX) {   /* 9.5.4: 17..31 — резерв (vendor: до 124 TRN-R) */
         brp_ctx.init_peer_req |= (1u << 2);
         bf_set32((u32)&brp_ctx.init_peer_req, 4, 5, e->peer_l_rx & 0x1f);
     }

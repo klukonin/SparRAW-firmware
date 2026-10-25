@@ -100,8 +100,11 @@ void bcn_tx_init_ss_params(volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 
     }
     if (ok == 0)
         fw_sysassert_fatal(RA(), 0x1369);
+    /* Discovery: не больше 16 маяков. vendor ставил 16 безусловно — при списке секторов board file короче 16
+     * в перебор попадали пустые позиции order[] (0xff). */
     if (w0 & 2u) {
-        cmd->ss.n_frames = 0x10;
+        if (cmd->ss.n_frames > 0x10)
+            cmd->ss.n_frames = 0x10;
         fw_log_emit0(0x20, 0x1004a74);
     }
     fw_log_emit1(0x20, 0x1004aac, cmd->ss.n_frames);

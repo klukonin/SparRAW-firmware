@@ -18,7 +18,6 @@ void get_rf_sector_params_handle(struct wmi_rf_sector_get_req *self);           
 void set_rf_sector_params_handle(struct wmi_rf_sector_set_req *self);                       /* 0x8cd14c wmi_handler_set_rf_sector_params::handle */
 void lmac_if_send_get_selected_rf_sector_index(const struct rf_sector_sel_req *self);        /* 0x8cd198 lmac_if_send_get_selected_rf_sector_index */
 void lmac_if_send_set_selected_rf_sector_index(const struct rf_sector_sel_req *self);        /* 0x8cd1c0 lmac_if_send_set_selected_rf_sector_index */
-void wmi_dbg_cmd_fff(const struct wmi_dbg_fff_cmd *cmd);                                     /* 0x8dc4d8 orig_fract */
 void wmi_beamforming_mgmt(struct wmi_mbox *mb, const void *cmd, u32 mid);                    /* 0x8dcfa8 wmi_beamforming_mgmt */
 void host_if_bf_ctrl_hal(struct wmi_mbox *mb, const void *cmd, u32 mid);                     /* 0x8dd028 host_if__bf_ctrl_hal */
 void wmi_brp_set_ant_limit(struct wmi_mbox *mb, const struct wmi_brp_set_ant_limit_cmd *cmd, u32 mid); /* 0x8dd068 wmi_brp_set_ant_limit */

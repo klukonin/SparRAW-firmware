@@ -201,7 +201,10 @@ static u32 rs_cfg_validate(const struct wmi_rs_cfg_cmd *c)
         }
     }
     v = ld32h((const u8 *)r->mcs_en_vec);
-    if ((v & ~0xfffffddfu) != 0) {                 /* bic.f r12,r12,-545 */
+    /* vendor отвергал только биты 5 и 9 (bic.f r12,r12,-545). Исправлено: MCS ≥ 13 (DMG SC MCS 0..12) индексировали
+     * таблицы uc за концом (чтение mcs_tab, запись fail_cnt в rs_cfg соседней станции, ассерт 0x1473), пустой набор
+     * MCS 1..12 — вечный цикл rs_start в uc с запрещёнными прерываниями, только MCS 0 — ассерт. */
+    if ((v & ~0xfffffddfu) != 0 || (v & ~0x1fffu) != 0 || (v & 0x1ffeu) == 0) {
         fw_log_emit1(5, 0x1006690, v);
         return 0;
     }

@@ -1825,9 +1825,6 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
             HOST_CMD_LOG(0x10079a4);
             wmi_set_ap_slot_size(mb, ((const struct wmi_echo_cmd *)body)->value);   /* {slot_size} */
             break;
-        case 0xfff:                                 /* отладочная (журнала нет) */
-            wmi_dbg_cmd_fff(body);
-            break;
         case 0xf003:                                /* WMI_SET_MAC_ADDRESS (переход 0x8ece1c) */
             HOST_CMD_LOG(0x1006ec0);
             l2mgr_set_mac_address(body, mid);

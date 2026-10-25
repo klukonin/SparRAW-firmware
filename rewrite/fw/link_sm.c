@@ -1770,7 +1770,9 @@ void find_main_sm_bcon(struct find_sm *f, struct rx_pkt *pkt)
     hexdump_words(pkt->hdr, pkt->info.len);
     memcpy_fw(e->bssid, bssid, 6);
     ei = pkt->ei;
-    if (ei != 0 && ei->ssid.len >= 1) {
+    /* SSID 0..32 октета (9.4.2.2). Ошибка vendor (исправлено): длина из маяка до 255 копировалась в ssid[32]
+     * записи dband_info — порча соседних полей и записей пула из эфира. Длиннее 32 — SSID не берётся. */
+    if (ei != 0 && ei->ssid.len >= 1 && ei->ssid.len <= sizeof(e->ssid)) {
         memcpy_fw(e->ssid, ei->ssid.body, ei->ssid.len);
         e->ssid_len = pkt->ei->ssid.len;
     }

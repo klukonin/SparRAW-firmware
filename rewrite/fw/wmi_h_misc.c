@@ -11,7 +11,7 @@
  *   0x0856 RF_XPM_READ      host_if_read_rf_xpm              (0x8e363c)
  *   0x0857 RF_XPM_WRITE     host_if_write_rf_xpm             (0x8e36cc) + цепочка записи XPM
  *   0x085d RF_PWR_ON_DELAY  wmi_rf_pwr_on_delay              (0x8e6e40)
- *   0x0fff (отладка)        wmi_dbg_cmd_fff                  (0x8dc4d8)
+ *   0x0fff (отладка vendor, бесконечная «пила» дробной частоты синтезатора — не перенесена: вешала диспетчер WMI)
  *   0xf04f PMC              wmi_pmc                          (0x8fb738)
  * и модули WMI_UNIT_TEST (0x900, диспетчер — wmi.c:wmi_ut_handler): calib_mgr_ut (7),
  * (power_mgr_ut, модуль 13 — PS вырезан).
@@ -49,61 +49,12 @@ void wmi_deep_echo(struct wmi_mbox *mb, u32 value)
     lmac_if_post_cmd(b, 2, 4, 0);
 }
 
-/* orig_fract (0x8dc4d8, 226 Б): отладочная 0xfff — бесконечная «пила» значений в
- * регистр 0x88942c вокруг текущего [0x889424] (имя «orig_fract» — из журнала vendor;
- * по смыслу — дробная часть синтезатора). Тело (u32): +4 n (в журнале «addr»), +8 шаг
- * («val»), +0xc флаги («mask»): бит 1 — проход вверх, бит 0 — вниз, биты 8.. — пауза
- * между записями (циклов по 2 nop). Начало off = max((s32)([0x889424] − n·шаг/2), 0);
- * запись k = off + k·шаг (k — 0..n−1 вверх, n−1..0 вниз). Каждые 10000 проходов —
- * журнал «iter %u». Vendor НЕ возвращается никогда (за 0x8dc5b8 снова 0x8dc54e): команда
- * подвешивает диспетчер WMI навсегда — как у vendor.
- * Пауза vendor — zero-overhead loop (lp, lp_count = пауза) из 2 nop_s; здесь — цикл C
- * с теми же 2 nop_s (длиннее на накладные расходы счётчика). При паузе 0 vendor-lp на
- * ARC600 крутится 2^32 раз (lp_count декрементируется с 0), здесь — 0 раз. */
-void wmi_dbg_cmd_fff(const struct wmi_dbg_fff_cmd *cmd)
-{
-    const volatile struct wmi_dbg_fff_cmd *c = cmd;
-    u32 n = c->addr;
-    u32 step = c->val;
-    u32 flags = c->mask;
-    u32 delay, orig, off, iter = 0;
-    s32 d;
-
-    fw_log_emit3(0, 0x1006948, n, step, flags);   /* "0xfff: addr:%08x val:%08x mask:%08x" */
-    delay = flags >> 8;
-    fw_log_emit1(0, 0x100696c, delay);             /* "delay:%u" */
-    orig = MMIO32(HW_ABIF_FS_CH1_FRAC);
-    d = (s32)(orig - ((n * step) >> 1));           /* mulu64 → MLO; lsr на 1 */
-    off = d > 0 ? (u32)d : 0;                      /* max r16,r1,0 (знаковое) */
-    fw_log_emit2(0, 0x1006978, orig, off);         /* "orig_fract:%u off:%u" */
-    for (;;) {
-        u32 i;
-        if ((flags & 2) && n >= 1) {
-            for (i = 0; i < n; i++) {
-                MMIO32(HW_ABIF_FS_CH2_FRAC) = i * step + off;
-                arc_zol_nops2(delay);       /* vendor 0x8dc566 / 0x8dc596: lp delay × 2 nop_s */
-            }
-        }
-        if ((flags & 1) && (s32)(n - 1) >= 0) {
-            s32 j = (s32)(n - 1);
-            for (i = 0; i < n; i++, j--) {
-                MMIO32(HW_ABIF_FS_CH2_FRAC) = (u32)j * step + off;
-                arc_zol_nops2(delay);       /* vendor 0x8dc566 / 0x8dc596: lp delay × 2 nop_s */
-            }
-        }
-        if (++iter >= 10000) {                     /* brlt r17,0x2710 */
-            fw_log_emit2(0, 0x1006990, iter, iter);   /* "iter %u" (оба аргумента — r17) */
-            iter = 0;
-        }
-    }
-}
-
 /* wmi_add_debug_tx_pckt (0x8e55ac, 114 Б): отладочная передача кадра данных: буфер TX,
  * соединение с cid [body+4] в MID mid; нет — журнал. Иначе флаг g_fw_2_fw_test
  * ([gp+0x1e4] = 0x800368, st.as [gp,121]) = 1 и TX_API__send_packet(conn, 0, 2, буфер,
  * len = u16 [body], retry = u16 [body+8], [body+0x14], [body+0x15], [body+0xc], 0, 0).
  * Vendor-утечка: буфер TX_API__alloc_tx_payload берётся ДО поиска соединения и при
- * «No CID» не освобождается (0x8e55b6 → 0x8e55d0..0x8e55de: free нет) — как у vendor. */
+ * «No CID» не освобождался (0x8e55b6 → 0x8e55d0..0x8e55de: free нет) — исправлено. */
 void wmi_add_debug_tx_pckt(const struct wmi_add_debug_tx_pckt_cmd *cmd, u32 mid)
 {
     u32 pl = TX_API_alloc_tx_payload();
@@ -111,6 +62,7 @@ void wmi_add_debug_tx_pckt(const struct wmi_add_debug_tx_pckt_cmd *cmd, u32 mid)
 
     if (conn == 0) {
         fw_log_emit1(0x27, 0x100ba78, cmd->cid);   /* "CMD TX DATA failed - No CID found..." */
+        TX_API_free_memory(pl);                     /* vendor не освобождал — утечка элемента TX-пула */
         return;
     }
     tx_fw2fw_test = 1;
@@ -330,8 +282,11 @@ void host_if_read_rf_xpm(struct wmi_mbox *mb, const struct wmi_rf_xpm_read_cmd *
     u32 addr = cmd->xpm_bit_address;
 
     e->status = 1;
+    /* исправлено (vendor): предел данных был tx_entry_size − 4 — без заголовка элемента пула (mbox_hdr), num_bytes
+     * 237..252 писал за элемент (затирал звено free-list соседнего, дальше — произвольная запись при выделении). */
     if (xpm_block_check_inputs(rf, addr, cmd->num_bytes, e->data_bytes,
-                               ((volatile struct wmi_mbox *)mb)->tx_entry_size - 4, 0) == 1
+                               ((volatile struct wmi_mbox *)mb)->tx_entry_size - sizeof(struct mbox_hdr)
+                               - __builtin_offsetof(struct wmi_rf_xpm_read_result_event, data_bytes), 0) == 1
         && hwf_rf_xpm_read_block(cmd->rf_id, addr, cmd->num_bytes, e->data_bytes) == 1)
         e->status = 0;
     if (e->status != 0)

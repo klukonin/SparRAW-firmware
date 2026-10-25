@@ -342,7 +342,7 @@ __attribute__((section(".textlate"))) const struct wil_vs_tlv *parse_wilocity_vs
     u32 idx = 3;
     const struct wil_vs_tlv *cur = (const struct wil_vs_tlv *)(data + 3);
     for (;;) {
-        if ((s32)idx >= (s32)len)
+        if ((s32)idx + (s32)sizeof(struct wil_vs_tlv) > (s32)len)   /* vendor: idx ≥ len — заголовок/val за телом */
             return 0;
         u32 t = (u32)(cur->type[1] << 8) | cur->type[0];
         if ((s32)(s16)(u16)t == (s32)(s16)(u16)type)

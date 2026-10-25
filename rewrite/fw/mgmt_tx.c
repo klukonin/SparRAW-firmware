@@ -179,6 +179,12 @@ __attribute__((section(".textlate"))) u8 *app_ie_walk_list(struct ie_iter *it)
     u32 total = it->blk->len_w;
     if (total == 0)
         return 0;
+    /* vendor: заголовок и тело IE не сверялись с длиной блока (IE от хоста или длина, ушедшая за блок) — чтение и
+     * копирование за блоком. IE, не помещающийся в блок, — конец списка. */
+    if (it->off + 2 > total || it->off + 2 + cur[1] > total) {
+        it->cur = 0;
+        return 0;
+    }
     u32 len = cur[1];
     u32 off = it->off + len + 2;
     it->off = off;

@@ -940,7 +940,8 @@ chk:                                            /* 0x93215c */
             rx_mac_prepare();
             txrx_state2 |= (1u << 10);
             ctx->flags &= ~1u;
-            VOL(link_stat[*sta].bf_reasons) |= 4;
+            if (*sta < SPARRAW_MAX_STA)             /* SSW от неизвестного TA: *sta = SPARRAW_PEER_UNKNOWN (vendor писал за link_stat) */
+                VOL(link_stat[*sta].bf_reasons) |= 4;
             return 0;
         }
         if (sls_rx_ssw_frame() == 0)

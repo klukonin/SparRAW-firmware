@@ -616,13 +616,17 @@ __attribute__((section(".textlate"))) u32 mid_cid_by_aid(struct mid *obj, u32 ai
     fw_log_emit1(0x2b, 0x100cfb0, aid);
     return 0;
 }
-/* ese__slot_table_add (0x8e1d38, 68 Б): вставить 12-байт слот (stride 0xc), count++. */
+/* ese__slot_table_add (0x8e1d38, 68 Б): вставить 12-байт слот (stride 0xc), count++.
+ * vendor: таблица полна — фатальный ассерт 0x11bb; путь из маяка ограничен раньше (rx.c), но WMI_SCHEDULING_SCHEME
+ * с 4+ своими аллокациями останавливал fw. Теперь лишний слот не добавляется (журнал). */
 __attribute__((section(".textlate"))) void ese_slot_table_add(struct ese_sched *obj, const void *slot)
 {
     struct ese_slot_tbl *r1 = obj->tbl;
     u32 r0 = r1->count;
-    if (r0 >= ESE_SLOTS_N)
-        fw_sysassert_fatal((void *)0, 0x11bb);
+    if (r0 >= ESE_SLOTS_N) {
+        fw_log_emit1(0, 0x11bb, r0);
+        return;
+    }
     memcpy_fw(&r1->slot[r0], slot, sizeof(struct ese_slot));
     r1->count = (u8)(r0 + 1);
 }

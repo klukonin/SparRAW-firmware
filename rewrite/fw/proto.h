@@ -1728,7 +1728,7 @@ void rx_macq_program_offload_desc_with_b4 (u8 *p, u32 b4);                      
 void rx_macq_setup (u32 cfg, u32 mode, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8);      /* macq.c */
 void rx_mgmt_action_no_ack (struct rx_pkt *pkt);                                                     /* rx.c */
 struct rx_mgmt_ei *rx_mgmt_find_free_ei (struct rx_pkt_srvs *ctx);                                   /* rx_mgmt.c */
-void rx_mgmt_prepare (struct rx_pkt *pkt);                                                           /* rx_mgmt.c */
+u32 rx_mgmt_prepare (struct rx_pkt *pkt);                                                            /* rx_mgmt.c */
 u32 rx_mgmt_prs_alloc_ei (struct rx_pkt_srvs *ctx, struct rx_pkt *pkt);                              /* rx_mgmt.c */
 u32 rx_mgmt_prs_parse (struct rx_pkt_srvs *ctx, u8 *p, struct rx_mgmt_ei *ei, s32 len, u32 subtype, u32 type); /* rx_mgmt.c */
 u32 rx_mgmt_prs_step (struct rx_pkt_srvs *ctx, u8 *p, struct rx_mgmt_ei *ei, s32 *len, u8 *cnt);     /* rx_mgmt.c */
@@ -2116,7 +2116,6 @@ void wmi_beamforming_mgmt (struct wmi_mbox *mb, const void *cmd, u32 mid);      
 void wmi_bf_control (const u8 *body, struct wmi_mbox *mb);                                           /* wmi_h_bf.c */
 void wmi_brp_set_ant_limit (struct wmi_mbox *mb, const struct wmi_brp_set_ant_limit_cmd *cmd, u32 mid); /* wmi_h_bf.c */
 void wmi_connect (const struct wmi_connect_cmd *cmd, u32 mid);                                       /* wmi_cmd.c */
-void wmi_dbg_cmd_fff (const struct wmi_dbg_fff_cmd *cmd);                                            /* wmi_h_misc.c */
 void wmi_deep_echo (struct wmi_mbox *mb, u32 value);                                                 /* wmi_h_misc.c */
 void wmi_delete_cipher_key (const struct wmi_delete_cipher_key_cmd *cmd, u32 mid);                   /* wmi_h_sta.c */
 void wmi_disconnect (u32 mid);                                                                       /* wmi_cmd.c */

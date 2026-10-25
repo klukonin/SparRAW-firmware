@@ -47,8 +47,9 @@
 /* Tguard (10.39.6.5) для двух соседних псевдостатических окон, мкс (вверх). */
 static u32 tdma_guard_us(u32 bi_us)
 {
-    u32 drift = 2u * (MAX_LOST_BEACONS + 1u) * TSF_ACC_PPM * bi_us;      /* ·10^-6 мкс */
-    u32 us = (drift + 999999u) / 1000000u;
+    /* ⌈2·(A+1)·C·D·10^-6⌉ (10.39.6.5); целая часть D в секундах отдельно — без переполнения u32 при больших BI */
+    const u32 k = 2u * (MAX_LOST_BEACONS + 1u) * TSF_ACC_PPM;
+    u32 us = (bi_us / 1000000u) * k + ((bi_us % 1000000u) * k + 999999u) / 1000000u;
     return us + 3u /* SIFS */ + 1u /* T_P 0,1 → вверх */ + 1u /* T_TR */;
 }
 

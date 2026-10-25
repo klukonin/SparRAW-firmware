@@ -126,14 +126,31 @@ __attribute__((section(".textlate"))) void stream_mgr_action(struct rx_pkt *pkt)
 {
     u32 cid = pkt->info.cid;
     const u8 *f = pkt->body + IEEE80211_HDR_LEN;
-    u32 cat = f[0], act = f[1];
+    u32 cat, act;
 
     u32 done = 0;
+
+    /* Ошибки vendor (исправлено): длина тела не проверялась (Category/Action и поля ADDBA/DELBA читались за
+     * концом короткого кадра); Block Ack Action 3..127 (резерв, табл. 9-359) — фатальный ассерт 0x1298 из эфира;
+     * кадр Block Ack обрабатывался по cid без сверки TA с адресом пира соединения. Теперь: короче Category+Action
+     * или минимального тела ADDBA Request/Response (9 октетов, 9.6.4.2–3) / DELBA (6, 9.6.4.4) — отбросить;
+     * неизвестное действие — хосту; TA ≠ пир соединения — как кадр без соединения. */
+    if (pkt->info.len < IEEE80211_HDR_LEN + 2u) {
+        mem_pool_free_thunk(pkt);
+        return;
+    }
+    cat = f[0];
+    act = f[1];
 
     switch (cat) {
     case 3: {
         struct conn *conn = conn_mgr_by_cid(cid);
-        if (conn != 0 && conn->mlme.sm.state == CONN_STATE_LINKED) {
+        if (conn != 0 && memcmp_fw(conn->peer, pkt->hdr->addr2.b, 6) != 0)
+            conn = 0;
+        if (act <= 2 && pkt->info.len < IEEE80211_HDR_LEN + (act == 2 ? 6u : 9u)) {
+            fw_log_emit2(0x2b, 0x101079c, act, pkt->info.len);
+            done = 1;
+        } else if (conn != 0 && conn->mlme.sm.state == CONN_STATE_LINKED) {
             if (act == 0)
                 stream_mgr_addba_req_handler((const struct ieee80211_addba *)f, cid);
             else if (act == 1)
@@ -141,7 +158,7 @@ __attribute__((section(".textlate"))) void stream_mgr_action(struct rx_pkt *pkt)
             else if (act == 2)
                 stream_mgr_delba_handler((const struct ieee80211_delba *)f, cid);
             else
-                fw_sysassert_fatal(__builtin_return_address(0), 0x1298);
+                break;                                  /* резерв / NDP ADDBA — хосту */
         } else if (act == 0) {
             fw_log_emit0(0x2b, 0x101079c);
             hexdump_words(pkt->body, pkt->info.len);

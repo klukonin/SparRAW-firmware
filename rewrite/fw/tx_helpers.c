@@ -64,11 +64,16 @@ struct vring_tbl_entry *vring_tbl_entry_addr(u32 idx)
     return &vring_tbl[idx];
 }
 
-/* conn_mgr__by_cid (0x8cbffc, 38 Б): соединение cid из cid_db (0 — нет). */
+/* conn_mgr__by_cid (0x8cbffc, 38 Б): соединение cid из cid_db (0 — нет).
+ * vendor: cid ≥ числа станций — фатальный ассерт 0x11c9; cid приходит и от хоста (WMI_NOTIFY_REQ, RCP_ADDBA_RESP,
+ * RCP_DELBA, VRING_CFG) — команда с неверным cid останавливала fw. Теперь — «нет соединения» (вызывающие это
+ * обрабатывают) и запись в журнал. */
 struct conn *conn_mgr_by_cid(u32 cid)
 {
-    if (cid >= SPARRAW_MAX_STA)
-        fw_sysassert_fatal((void *)0, 0x11c9u);
+    if (cid >= SPARRAW_MAX_STA) {
+        fw_log_emit1(0, 0x11c9u, cid);
+        return 0;
+    }
     return conn_mgr.cid_db[cid].conn;
 }
 

@@ -563,6 +563,10 @@ void bf_trigger_for_mid(u32 a0)
         buf[1] = 0;
         buf[2] = a0;
         bf_init_sm((u32)buf, 0);
+        /* Очередь BF полна — запрос не встал (bf_req_enqueue): снять паузу TX, иначе станция осталась бы без передачи
+         * до следующего BF, а новые триггеры идут из её же TX-путей. */
+        if (!(bf_req.pending_mask & (1u << a0)))
+            bf_resume_sta_tx(3, a0);
     }
 }
 
@@ -814,7 +818,8 @@ u32 bf_sm_dispatch_by_state(u32 sta)
         if (sta_tab[sta].fixed_link != 0) {
             sta_apply_rx_sector_and_mcs(sta);
             r = 3;
-        } else if (bf_sta[sta].peer_l_rx < 1 || (bf_sta_mask & bit)) {
+        } else if (bf_sta[sta].peer_l_rx < 1 || bf_sta[sta].peer_l_rx > BRP_LRX_MAX || (bf_sta_mask & bit)) {
+            /* L-RX из SSW-Feedback/SSW-Ack: 0..16, остальное — резерв (9.5.4); vendor брал 17..31 как запрос BRP */
             r = 3;
         } else {
             bf_sm_set_sta_state(sta, 0xa);
@@ -1121,7 +1126,8 @@ void bf_reset_sta_slot(u32 a0)
         internal_tx_clear_pending_bit(3);
     e->done_cb2 = r15->cb2;
     e->req_desc = &bf_req_desc_default;
-    VOL(link_stat[a0].bf_reasons) &= ~0x40;
+    if (a0 < SPARRAW_MAX_STA)                       /* пир SPARRAW_PEER_UNKNOWN: link_stat только на станции (vendor писал за массив) */
+        VOL(link_stat[a0].bf_reasons) &= ~0x40;
     bf_reset_sta_cnt += 1;
 }
 
@@ -1160,7 +1166,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
     if (r13 == r0) {
         bf_sta[r13].state = a1;
         bf_sta[r13].flow_status = 0;
-        if ((VOL(link_stat[r13].bf_reasons) & 0x40) != 0)
+        if (r13 < SPARRAW_MAX_STA && (VOL(link_stat[r13].bf_reasons) & 0x40) != 0)   /* vendor: link_stat[8] */
             bf_reset_sta_slot(r13);
         return 1;
     }
@@ -1181,7 +1187,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
         tbl[bf_req.head % BF_REQ_FIFO_N] = (u8)r13;
         bf_sta[r13].state = a1;
         bf_sta[r13].flow_status = 0;
-        if ((VOL(link_stat[r13].bf_reasons) & 0x40) != 0)
+        if (r13 < SPARRAW_MAX_STA && (VOL(link_stat[r13].bf_reasons) & 0x40) != 0)   /* vendor: link_stat[8] */
             bf_reset_sta_slot(r13);
         return 1;
     }

@@ -80,7 +80,13 @@ __attribute__((section(".textlate"))) s32 set_parse_ei(struct rx_pkt_srvs *ctx, 
     case 0x9e: slot = &ei->multi_band; break;               /* Multi-band */
     case 0xbe: slot = &ei->ie_be; break;
     case 0xdd:                                              /* Vendor Specific */
+        /* vendor: OUI и поля читались без проверки длины тела (чтение за элементом; 12 Б «старого» Wilocity VS
+         * уходили в наш собственный VS IE — утечка байтов буфера RX в эфир). Короткое тело — элемент не берётся. */
+        if (len < 4)
+            return 1;
         if (b[0] == 0x00 && b[1] == 0xaa && b[2] == 0x6c) {  /* Wilocity, старый формат */
+            if (len < sizeof(struct wil_vs_old))
+                return 1;
             ei_slot_set(&ei->vs_wil_old, eid, len, p);
             ei->vs_wil.body = 0;
             return 0;
@@ -106,6 +112,7 @@ __attribute__((section(".textlate"))) s32 set_parse_ei(struct rx_pkt_srvs *ctx, 
 }
 
 /* Счёт поля фиксированной части: +1 к числу полей записи, сдвиг указателя и остатка. */
+#define RX_MGMT_SHORT 2u                          /* rx_mgmt_prs_parse: кадр короче фиксированной части */
 #define PRS_FIELD(n) do { ei->nfields += 1; len -= (n); p += (n); } while (0)
 
 /* rx_mgmt_prs_step (0x8de0fc, 148 Б): фиксированная часть DMG-бикона (extension-кадр,
@@ -133,6 +140,22 @@ __attribute__((section(".textlate"))) u32 rx_mgmt_prs_step(struct rx_pkt_srvs *c
     return 1;
 }
 
+/* Минимальная длина фиксированной части тела mgmt-кадра (до IE): DMG-бикон — 20 Б (+8 Clustering Control при
+ * бите 0 BI Control, 9.3.4.2), Assoc/Reassoc Request — 4 (9.3.3.5), Response — 6 (9.3.3.6), Probe Response — 12
+ * (9.3.3.10), Disassociation — 2 (9.3.3.4). Прочие — 0. */
+static s32 rx_mgmt_fixed_len(const u8 *p, s32 len, u32 subtype, u32 type)
+{
+    if (type == 3)
+        return subtype != 0 ? 0 : (len >= 0x14 && (p[0xd] & 1u)) ? 0x1c : 0x14;
+    switch (subtype) {
+    case 0: case 2: return 4;
+    case 1: case 3: return 6;
+    case 5:         return 12;
+    case 10:        return 2;
+    default:        return 0;
+    }
+}
+
 /* 0x802c68: таблица переходов vendor rx_mgmt_prs__parse (0x8de190): ldb.x, 11 записей, цель = 0x8de1e0 + 2·запись.
  * Наш порт её не читает — объект держит образ fw_data (aligned — без добивки секции до 4 Б). */
 FWDATA(802c68) __attribute__((aligned(1))) const u8 rx_mgmt_prs_parse_jt[11] = {
@@ -143,13 +166,23 @@ FWDATA(802c68) __attribute__((aligned(1))) const u8 rx_mgmt_prs_parse_jt[11] = {
  * 802.11-заголовка) в запись ei: фиксированная часть по подтипу (таблица 0x802c68 —
  * switch ниже), затем IE до остатка < 3 Б (set_parse_ei). Возврат 1 — разобран, 0 —
  * ошибка IE (журнал и дамп кадра). Подтипы 6..9 и ≥ 11 не-extension кадра — журнал,
- * дамп и ассерт 0x10a6, затем разбор IE как у vendor. */
+ * дамп и ассерт 0x10a6, затем разбор IE как у vendor.
+ * Ошибки vendor (исправлено): фиксированная часть читалась без проверки длины кадра (усечённый кадр —
+ * Status/AID/поля маяка из байтов за его концом, остаток len уходил в минус); IE, длина которого выходит за
+ * конец кадра, всё равно заносился в ei с полной длиной — потребители копировали/читали за кадром.
+ * Теперь: кадр короче своей фиксированной части — возврат RX_MGMT_SHORT (вызывающий отбрасывает кадр);
+ * IE за концом кадра не заносится, разбор на нём заканчивается. */
 __attribute__((section(".textlate"))) u32 rx_mgmt_prs_parse(struct rx_pkt_srvs *ctx, u8 *p, struct rx_mgmt_ei *ei,
                                                             s32 len, u32 subtype, u32 type)
 {
     s32 len0 = len;
+    const u8 *p0 = p;                               /* начало тела — для дампа (vendor дампил len0 от сдвинутого p) */
     u8 cnt = 0;
     ei->nfields = 0;
+    if (len < rx_mgmt_fixed_len(p, len, subtype, type)) {
+        fw_log_emit3(0xd, 0x101405c, subtype, type, (u32)len0);
+        return RX_MGMT_SHORT;
+    }
     if (type == 3) {
         if (subtype == 0) {
             rx_mgmt_prs_step(ctx, p, ei, &len, &cnt);
@@ -204,10 +237,14 @@ __attribute__((section(".textlate"))) u32 rx_mgmt_prs_parse(struct rx_pkt_srvs *
         u32 elen = p[1];
         p += 2;
         len -= 2;
+        if ((s32)elen > len) {                          /* IE за концом кадра — не заносить */
+            fw_log_emit2(0xd, 0x10140ec, eid, elen);
+            return 0;
+        }
         if (set_parse_ei(ctx, p, ei, eid, elen, (u32)len, type) & 0x80000000u) {
             fw_log_emit3(0x2d, 0x1014094, type, subtype, (u32)len0);
             fw_log_emit3(0x2d, 0x10140c4, eid, elen, (u32)len);
-            hexdump_words(p, (u32)len0);
+            hexdump_words(p0, (u32)len0);
             return 0;
         }
         len -= (s32)elen;
@@ -271,14 +308,16 @@ u32 rx_mgmt_prs_alloc_ei(struct rx_pkt_srvs *ctx, struct rx_pkt *pkt)
     if (FC_TYPE(fc) != FC_TYPE_EXT)
         hexdump_words(buf, len);
     fc = pkt->hdr->fc;
-    rx_mgmt_prs_parse(ctx, pkt->body, pkt->ei, (s32)(pkt->info.len - hdr),
-                      FC_STYPE(fc), FC_TYPE(fc));
+    if (pkt->info.len < hdr ||
+        rx_mgmt_prs_parse(ctx, pkt->body, pkt->ei, (s32)(pkt->info.len - hdr),
+                          FC_STYPE(fc), FC_TYPE(fc)) == RX_MGMT_SHORT)
+        return 0;                                   /* усечённый кадр — отбросить (у vendor всегда 1) */
     rx_mgmt_parsed_count += 1;
     return 1;
 }
 
 /* rx_mgmt__prepare (0x8e3c3c, 12 Б): разбор кадра в таблицу записей rx_pkt_srvs. */
-__attribute__((section(".textlate"))) void rx_mgmt_prepare(struct rx_pkt *pkt)
+__attribute__((section(".textlate"))) u32 rx_mgmt_prepare(struct rx_pkt *pkt)
 {
-    rx_mgmt_prs_alloc_ei(&rx_pkt_srvs, pkt);
+    return rx_mgmt_prs_alloc_ei(&rx_pkt_srvs, pkt);
 }

@@ -456,8 +456,11 @@ void stream_sm_act_setup_done(struct stream_sm *s, u32 a0)
     if (a0 == 0) {
         u32 amsdu = s->setup.amsdu;
         fw_log_emit3(0x2b, 0x1013560, win, to, amsdu);
-        if (win == 0)
-            fw_sysassert_fatal((void *)0, 0x133e);
+        if (win == 0) {                             /* vendor: ассерт 0x133e; окно 0 сюда больше не доходит */
+            fw_log_emit2(0x2b, 0x1013594, a0, win);
+            s->ctx->vt->ba_failed(s->ctx, 0);
+            return;
+        }
         s->ctx->vt->ba_agreed(s->ctx, win, to, amsdu);
     } else {
         fw_log_emit2(0x2b, 0x1013594, a0, win);
@@ -1061,6 +1064,8 @@ void ba_setup_act_tx_failed(struct ba_setup_sm *b)
     fw_log_emit0(0x17, 0x10138c4);
 }
 
+#define BA_WIN_MAX 32u                    /* окно BA Sparrow (драйвер: WIL_MAX_AGG_WSIZE «FW/HW limit») */
+
 /* ba_setup_sm::addba_resp (0x8f0b60, 184 Б): ответ ADDBA (тело действия f): при своём
  * dialog token — согласованные окно/таймаут/amsdu; статус 0 → успех (событие 8), иначе 9. */
 void ba_setup_act_resp(struct ba_setup_sm *b, const struct ieee80211_addba_resp *r)
@@ -1075,10 +1080,17 @@ void ba_setup_act_resp(struct ba_setup_sm *b, const struct ieee80211_addba_resp 
     fw_log_emit2(0x27, 0x1013764, r->params[0] & 1u, (r->params[0] >> 1) & 1u);
     if ((s32)win < (s32)b->req_win)
         fw_log_emit2(0x27, 0x101378c, win, b->req_win);
+    /* Ошибка vendor (исправлено): Buffer Size — 10 бит (9.4.1.13), сужался в u8; ответ SUCCESS с 0/256/512/768
+     * давал окно 0 и фатальный ассерт 0x133e (из эфира). Окно передачи — не больше ответа, нашего запроса и
+     * предела железа (BA_WIN_MAX); SUCCESS с Buffer Size 0 — отказ установки. */
+    if (b->req_win != 0 && win > b->req_win)
+        win = b->req_win;
+    if (win > BA_WIN_MAX)
+        win = BA_WIN_MAX;
     b->win = (u8)win;
     b->timeout = (u16)to;
     b->amsdu = r->params[0] & 1u;
-    if (status != 0) {
+    if (status != 0 || win == 0) {
         SM_EV(b, 9, 0, 0, 0);
     } else {
         ba_setup_close_global_timer(b);
@@ -1314,15 +1326,13 @@ void stream_mgr_delba_handler(const struct ieee80211_delba *f, u32 cid)
     else
         fw_log_emit1(0x2b, 0x10105b4, cid);
     fw_log_emit1(0x2b, 0x10105e0, f->reason);
-    if (s == 0 || conn == 0) {
+    if (conn == 0) {
         fw_log_emit0(0x1b, 0x1010614);
         return;
     }
-    if (s->vr == 9) {
-        fw_log_emit0(0x2b, 0x1010644);
-        conn_disconnect(conn, 3, 3);
-        return;
-    }
+    /* DELBA от инициатора (B11 = 1) снимает сессию, где получатель — мы: TX-стрима у неё нет. vendor требовал
+     * TX-стрим по TID (иначе DELBA терялся, хост не снимал RX-reorder) и при стриме 9 рвал соединение. Теперь
+     * хосту — всегда, до проверок TX-стрима. */
     if ((f->params[1] >> 3) & 1u) {
         struct wmi_delba_event *e;
         fw_log_emit0(0x2b, 0x1010658);
@@ -1332,6 +1342,15 @@ void stream_mgr_delba_handler(const struct ieee80211_delba *f, u32 cid)
         e->reason = f->reason;
         fw_log_emit1(0x2b, 0x1010688, conn->mid->id);
         low_sme_send_evt2sw(e, 0x1826, 4, conn->mid->id, 0, 0, 0);
+        return;
+    }
+    if (s == 0) {
+        fw_log_emit0(0x1b, 0x1010614);
+        return;
+    }
+    if (s->vr == 9) {
+        fw_log_emit0(0x2b, 0x1010644);
+        conn_disconnect(conn, 3, 3);
         return;
     }
     s->ba_en = 0;
@@ -1351,6 +1370,7 @@ void wmi_rcp_addba_resp(const struct wmi_rcp_addba_resp_cmd *cmd, u32 mid)
     u32 len;
     struct wmi_rcp_addba_resp_sent_event *e;
     if (conn == 0) {
+        TX_API_free_memory(pl);                     /* vendor не освобождал — утечка элемента TX-пула */
         e = host_if_send_pair();
         e->cidxtid = cmd->cidxtid;
         e->status = 1;

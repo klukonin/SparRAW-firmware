@@ -206,6 +206,8 @@ void wmi_notify_req(struct wmi_mbox *mb, const struct wmi_notify_req_cmd *cmd)
         return;
     interval = cmd->interval_usec;
     lm = &conn->lm;                                 /* add3 r13,r0,0xe */
+    if (interval != 0 && interval < 0x11)
+        interval = 0x11;                            /* vendor: 1..16 → ассерт 0x1068 u_schd_schedule (останов fw) */
     if (interval != 0) {
         lm_if_notify_req_start(lm, interval);
         return;
