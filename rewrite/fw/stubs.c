@@ -688,6 +688,11 @@ __attribute__((section(".textlate"))) void add_bcon(struct mid *obj)
     bcon_bits_set16_s7_w3(r13->bi_ctrl, r13->abft_len & 7);
     r13->bi_ctrl[0] &= ~(1u << 1);
     memcpy_fw(r18->bi_ctrl, r13->bi_ctrl, 6);
+    /* PCP Association Ready (флаг готовности шаблона, байт 5 б4–5 → B43 в эфире): 9.3.4.2 — «reserved when transmitted
+     * by a non-PCP STA»; AP — не PCP: в эфир 0. Шаблон не меняется (assoc_ready_check_trig читает его). vendor ставил
+     * и в режиме AP; vendor STA тогда к точке не ассоциируется — сознательное соответствие стандарту. */
+    if (r13->mode == MID_MODE_AP)
+        r18->bi_ctrl[5] &= (u8)~0x30u;
     r18->mac = 0;
     r18->cfg = ((r13->state == 2) ? 1u : 0u) << 1;
     r18->bi_mode = 1;

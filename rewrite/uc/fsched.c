@@ -347,6 +347,10 @@ u32 fsched_ap_poll_station(struct fsched_peer_ctx *p)
     mtp_desc_lo = r51 & 0xf;
     mtp_desc_hi = r51 >> 4;
     u32 r1b = (arc_core_rd(43) >> 16) & 0x1f;
+    /* исправлено (vendor): MCS из MAC 5-битный (0..31), таблица fixed_sched.mcs — MCS 0..12; вне её (OFDM / LP SC)
+     * vendor читал за массивом. Берём запись MCS 1 — самую медленную SC, самые длинные сроки */
+    if (r1b >= FIXED_SCHED_MCS_N)
+        r1b = 1;
     u8 r0c = p->cur_idx;
     p->ent[r0c].cfg_idx = (u8)r1b;
     return r0c * 5;                             /* vendor: r0 = смещение записи (не используется) */

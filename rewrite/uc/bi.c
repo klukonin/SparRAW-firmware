@@ -139,10 +139,7 @@ void bi_after_enter_dti(struct bi_ctx_s *c)
 }
 
 /* bi__remaining_time_us (6.2 asm 0x92dc44): остаток NAV, max(·, 0) и знаковый min с max_us —
- * как у vendor (max/min); стоит на пути ответа (rx_send_response_frame).
- * СРОК: на медленном пути DMG DTS — через SIFS 3 мкс (802.11-2020 10.39.6.6.2), см.
- * rx_send_response_frame (rx.c): ~16 инструкций, из них чтение TSF (0x4d000005 + 3 nop); запас:
- * единицы–десятки (не замерен). Удлинять нельзя — опоздание ответа. */
+ * как у vendor (max/min). */
 u32 bi_remaining_time_us(void)
 {
     if (!(rx_nav.flags & 1u))
@@ -291,7 +288,9 @@ void bi_cfg_pack_words_78_7c(u32 a, u32 b)
     u32 r6 = bi_cfg.n_bi_abft;
     u32 r9 = bi_cfg.abft_cnt_mod;
 
-    u32 w0 = (r2c << 20) | (r7 << 19) | (r8 << 10) | (r4 << 7)
+    /* PCP Association Ready (flags б3) — только в w1 б23 = B43. исправлено (vendor): тот же флаг ставил и w0 б20 —
+     * в эфире Reserved B44 = 1 (9.3.4.2, рис. 9-77: B44–B47 Reserved) */
+    u32 w0 = (r7 << 19) | (r8 << 10) | (r4 << 7)
            | (r13 << 2) | (r15 << 1) | r14;
     bi_bcon_cfg_w0 = w0;
 

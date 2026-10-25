@@ -210,13 +210,14 @@ u32 brp_parse_request_fields(u32 a)
     u32 r13b = (rx_buf_brp_req >> 5) & 1;
     r13b <<= 1;
     r3 = (r3 & ~2) | (r14 & ~2) | r13b;
+    u32 lrx = rx_buf_brp_lrx();
     u32 r0 = 0;
-    if ((rx_buf_brp_req & 0x1f) != 0 && (r3 & 8) == 0)
+    if (lrx != 0 && (r3 & 8) == 0)
         r0 = 1;
     r0 &= 1;
     r3 = (r3 & ~4) | (r0 << 2);
     u32 sp_word = r3;
-    bf_set32((u32)&sp_word, 4, 5, rx_buf_brp_req & 0x1f);
+    bf_set32((u32)&sp_word, 4, 5, lrx);
     u32 bit = 1u << a;
     bf_sta_mask &= ~(u16)bit;
     bf_brp_req_mask |= (u16)bit;

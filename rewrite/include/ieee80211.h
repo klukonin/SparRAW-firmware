@@ -361,6 +361,11 @@ IEEE_OFF(struct rx_mgmt_ei, ssid, 0x08);
 IEEE_OFF(struct rx_mgmt_ei, rsn, 0x40);
 IEEE_OFF(struct rx_mgmt_ei, ext_sched, 0x68);
 IEEE_OFF(struct rx_mgmt_ei, dmg_params, 0x84);
+/* DMG Parameters принятого маяка: BSS Type (B0–B1, 9.4.1.46) = 3 — Infrastructure BSS (передаёт AP). */
+static inline int dmg_bss_type_is_ap(const struct rx_mgmt_ei *ei)
+{
+    return ei->dmg_params != 0 && (*ei->dmg_params & 3u) == 3u;
+}
 IEEE_OFF(struct rx_mgmt_ei, vs_wil, 0xa0);
 IEEE_OFF(struct rx_mgmt_ei, timestamp, 0xb0);
 IEEE_OFF(struct rx_mgmt_ei, listen_int, 0xc8);

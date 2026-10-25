@@ -489,7 +489,9 @@ void conn_msm_on_bcon_rx(struct conn_msm *sm, u32 a0, struct rx_pkt *pkt)
         if (pkt == 0)
             goto no_link;
         fl = pkt->ei->bi_ctrl[5];
-        if (!(fl & 8u) && !(fl & 0x30u)) {
+        /* PCP Association Ready — B43 (байт 5 б3, 9.3.4.2); vendor принимал и Reserved B44–B45 (свой флаг). Правило
+         * 11.1.3.7 — только для маяка PCP: у AP (BSS Type 3, 9.4.1.46) подполе зарезервировано и не проверяется */
+        if (!(fl & 8u) && !dmg_bss_type_is_ap(pkt->ei)) {
             fw_log_emit0(0xb, 0x1011a08);
             goto no_link;
         }

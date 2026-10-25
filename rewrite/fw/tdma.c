@@ -81,6 +81,9 @@ static void tdma_put_field(u8 *f, u32 id, u32 src, u32 dst, u32 start, u32 dur)
     for (u32 i = 0; i < ESE_FIELD_LEN; i++)
         f[i] = 0;
     f[0] = (u8)((id & 0xfu) | (1u << 4) /* CBAP */ | (1u << 7) /* pseudo-static */);
+    /* PCP Active (B10) = 1: 10.39.6.1 — AP ставит 1 во всех аллокациях ESE; 9.4.2.131 — PCP, когда он источник или
+     * назначение окна; в общем окне точка тоже принимает (энергосбережения точки нет) */
+    f[1] = (u8)(1u << (10 - 8));
     f[4] = (u8)src;
     f[5] = (u8)dst;
     f[6] = (u8)start;
@@ -178,7 +181,9 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     if (ss->built != 0 && ss->tdma_owned == 0)
         return;                             /* расписание задал хост (WMI 0xa01) — не трогать */
     u32 min = ss->ese->tdma_min_sta != 0 ? ss->ese->tdma_min_sta : TDMA_MIN_STA;
-    if (ss->ese->tdma_off != 0 || n < min) {
+    /* фиксированное расписание (WMI 0xa03) само распределяет DTI — ESE TDMA рядом с ним объявлял бы окна,
+     * которых точка не держит */
+    if (ss->ese->tdma_off != 0 || n < min || VOL(fixed_sched.enabled) != 0) {
         tdma_clear(mid);
         return;
     }

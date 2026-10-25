@@ -529,8 +529,9 @@ __attribute__((section(".textlate"))) u32 dmg_bcon_rx_handler(struct mid_disc *o
     struct mid *e = obj->mid;
     struct mid_bss *lm = &e->bss;
     u8 fl = ei->bi_ctrl[5];
-    u32 r1 = (fl >> 3) & 1u;
-    u32 r2 = (fl >> 4) & 3u;
+    /* PCP Association Ready, B43 (9.3.4.2); у AP (BSS Type 3) подполе зарезервировано — маяк AP годен всегда */
+    u32 r1 = ((fl >> 3) & 1u) | (dmg_bss_type_is_ap(ei) ? 1u : 0u);
+    u32 r2 = 0;                                     /* vendor: Reserved B44–B45 (свой флаг) как запасной признак */
     if (dashboard.cfg.special_flags & (1u << 9)) {
         r1 = 1;
         r2 = 1;

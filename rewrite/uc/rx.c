@@ -253,6 +253,14 @@ void rx_flow_accumulate_busy_time(u32 a)
 }
 
 
+/* CF-End, адресованный нам: 10.23.2.10 — в DMG BSS приём CF-End сбрасывает NAV в конце интервала Duration (от
+ * конца кадра), независимо от RA. исправлено (vendor): CF-End нам NAV не трогал (чужие CF-End — rx_update_nav_from_frame,
+ * то же правило). Duration берётся из принятого кадра (буфер приёма до следующего приёма не меняется). */
+void rx_cf_end_nav_reset(void)
+{
+    rx_nav_set_from_duration(1, 0xe4u, rx_buf_duration, (u32)rx_buf_ta);
+}
+
 /* СРОК: ответный CF-End (fc 0x00e4) должен уйти через SIFS 3 мкс после принятого CF-End с Duration ≠ 0
  * (802.11-2020 10.39.8.1; 10.3.2.3.3). Медленный путь (switch в хвосте rx_flow_handle_frame, случай 8):
  * от входа rx_flow_handle_frame — rx_get_required_response + ~30 инструкций до вызова, здесь
@@ -263,7 +271,11 @@ void rx_flow_accumulate_busy_time(u32 a)
 void rx_flow_send_imm_response(void)
 {
     /* 6.2 asm 0x93626c. */
-    tx_send_imm_response(0, 0, 0x10);
+    /* 9.3.1.6: Duration CF-End DMG — остаток последовательности усечения (i − 1)·(TXTIME(CF-End) + SIFS), т. е.
+     * Duration принятого минус TXTIME(CF-End) + SIFS; исправлено (vendor): отвечал с Duration = 0 */
+    u32 d = rx_buf_duration;
+    d = d > DMG_RESP_DUR_SUB_US(DMG_CF_END_LEN) ? d - DMG_RESP_DUR_SUB_US(DMG_CF_END_LEN) : 0u;
+    tx_send_imm_response(0, d, 0x10);
     arc_core_wr(33, 0xe4);
     tx_fifo_free -= 0x10;
     uc_mac_cmd(0x33000063);
@@ -273,30 +285,6 @@ void rx_flow_send_imm_response(void)
 }
 
 /* phy_stats_accumulate_to_shared — в tail.c; tx_send_imm_response — в tx.c. */
-
-/* СРОК: DMG DTS (fc 0x0664) в ответ на RTS при занятом NAV — через SIFS 3 мкс (802.11-2020
- * 10.39.6.6.2, 10.3.2.9, 10.3.2.3.3). Медленный путь: rx_get_required_response (ветка RTS: два
- * чтения TSF + grant_detect_step) → switch случай 7 → здесь bi_remaining_time_us (~16) до
- * tx_send_imm_response (~60). Из rx_funcs_handle_ppdu_report — ещё дольше (поиск станции,
- * mac_mode_switch_after_ppdu ~55). Как у vendor 0x936200; запас не замерен (единицы–десятки).
- * Тело (r33, 0x33000063, NAV-адрес из rx_nav.nav_ta) пишется после 0x37000020 — должно успеть до
- * передачи MPDU (аппаратный, не установлен). Срыв — поздняя команда, assert 0x26. */
-void rx_send_response_frame(void)
-{
-    /* 6.2 asm 0x936200. */
-    u32 r = bi_remaining_time_us();
-    /* 9.3.1.14: Duration DTS = NAV − (TXTIME(DMG DTS) + SIFS); vendor отдавал NAV без вычета */
-    r = r > DMG_RESP_DUR_SUB_US(DMG_DTS_LEN) ? r - DMG_RESP_DUR_SUB_US(DMG_DTS_LEN) : 0u;
-    tx_send_imm_response(0, r, 0x16);
-    arc_core_wr(33, 0x664);
-    tx_fifo_free -= 0x10;
-    uc_mac_cmd(0x33000063);
-    uc_wait_direct_tx_ready();
-    tx_fifo_write_bytes((u32)rx_nav.nav_ta, 6);
-    direct_tx_issue_cmd_33();
-    mac_mon_report.tx_dts += 1;
-}
-
 
 /* По формату это Grant Ack, а не DMG CTS: fc 0x0764 (расширение управления 7) и 7 Б тела
  * (Reserved + BF Control, 9.3.1.18); вызывается на принятый Grant (r37.10, случай 9).
@@ -331,9 +319,9 @@ void rx_handle_brp_frame(void)
         return;
     if (rx_buf_body19 != 1)
         return;
-    u8 r8 = rx_buf_brp_req;
-    if (r8 & 0x1f) {
-        sls_rx.brp_lrx = r8 & 0x1f;
+    u32 lrx = rx_buf_brp_lrx();
+    if (lrx != 0) {
+        sls_rx.brp_lrx = (u8)lrx;
         sls_rx.flags |= 0x600;
     }
     u16 r2 = ((u8 *)&rx_buf_brp_elem)[0] | (((u8 *)&rx_buf_brp_elem)[1] << 8);   /* байтами */
@@ -1029,8 +1017,10 @@ chk:                                            /* 0x93215c */
         u32 r5 = ctx->mtp_state;
         if (r5 == 0 && r16 != 1) {
             rx_mac_prepare();
-            if (arc_core_rd(37) & (1u << 16))
+            if (arc_core_rd(37) & (1u << 16)) {
                 txrx_state2 |= (1u << 9);
+                rx_cf_end_nav_reset();          /* CF-End нам без ответа (Duration 0) — ответа нет, срока нет */
+            }
             rxf.flags |= 4;
         } else {
             if (r5 == 1)
@@ -1110,8 +1100,8 @@ chk:                                            /* 0x93215c */
         ctx->flags &= ~1u;
         /* СРОК: медленный путь ответа — тот же срок SIFS 3 мкс (802.11-2020 10.3.2.3.3), но без
          * переноса записей. Случаи 1..3 уходят быстрым путём выше (при r16 ≠ 0 — в продолжение
-         * TXOP), сюда по коду не доходят; 7 (DMG DTS), 8 (CF-End), 9 (Grant Ack) — всегда здесь.
-         * Путь длиннее быстрого на ~10 инструкций до switch + вызов; запас не замерен. См. rx_send_response_frame / rx_flow_send_imm_response /
+         * TXOP), сюда по коду не доходят; 8 (CF-End), 9 (Grant Ack) — всегда здесь.
+         * Путь длиннее быстрого на ~10 инструкций до switch + вызов; запас не замерен. См. rx_flow_send_imm_response /
          * rx_send_dmg_cts. */
         switch (r5) {
         case 0:
@@ -1130,12 +1120,9 @@ chk:                                            /* 0x93215c */
             rx_resp_finish_restore_rx((u32)ctx, 5, 0);
             mac_mon_report.tx_cts += 1;
             break;
-        case 7:
-            rx_send_response_frame();
-            rx_resp_finish_restore_rx((u32)ctx, 8, 0);
-            break;
         case 8:
             rx_flow_send_imm_response();
+            rx_cf_end_nav_reset();              /* после ответа — вне срока SIFS */
             rx_resp_finish_restore_rx((u32)ctx, 3, 0);
             break;
         case 9:
@@ -1685,8 +1672,15 @@ ack_cts:   /* L_9331d0 */
         }
         if (VOL(link_stat[rxf.sta].bf_reasons) != 0)
             return 0;
-        u32 r0 = grant_detect_step(((u8 *)&ifs.sifs)[1], 0, 0);
-        return (r0 == 0) ? 7 : 3;
+        /* NAV занят. 10.3.2.9: если NAV поставил кадр самого отправителя RTS — отвечать (DMG CTS); иначе не
+         * отвечать. исправлено (vendor): отвечал DMG DTS — по 10.39.6.6 он только для назначения SP (в open SP
+         * нет), а поле NAV-SA заполнял MAC собственным адресом (заголовок 0x10 = FC, Duration, RA, TA). */
+        if (__builtin_expect(grant_detect_step(((u8 *)&ifs.sifs)[1], 0, 0) == 0, 0) &&
+            !(rx_nav.nav_ta[0] == rx_buf_ta[0] && rx_nav.nav_ta[1] == rx_buf_ta[1] && rx_nav.nav_ta[2] == rx_buf_ta[2])) {
+            txr.rts_nav_busy += 1;
+            return 0;
+        }
+        return 3;                               /* DMG CTS */
     }
 
 not_rts:   /* L_93327c */
@@ -1734,9 +1728,7 @@ not_grant:   /* L_93339c */
 }
 
 /* СРОК: разбор отчёта в фазах SLS/RTS — несколько ответов со сроком:
- *  - RTS (r37.0) → DMG DTS через SIFS 3 мкс (802.11-2020 10.39.6.6.2, 10.3.2.3.3): до
- *    rx_send_response_frame — uc_wait_event_busy, поиск станции (sta_tbl_find_by_mac ~23),
- *    mac_mode_switch_after_ppdu (~55); запас не замерен (единицы–десятки), как у vendor 0x9316cc;
+ *  - RTS (r37.0) — без ответа (DMG DTS только в SP, 10.39.6.6);
  *  - фаза 0x100000/0x200000: SSW с CDOWN = 0 (r39.15) → команды 0x37000005/0x37000002/0x3f для
  *    SSW-Feedback через MBIFS 9 мкс (10.42.2.4, 10.42.6.2, 10.3.2.3.10); до них — запись IFS = MBIFS
  *    (HW_MAC_IFS_SIFS), phy_params_snapshot (~90), sta_set_tx_sector (~38). Путь — сотни
@@ -1768,12 +1760,8 @@ void rx_funcs_handle_ppdu_report(void)
         *sta = SPARRAW_PEER_UNKNOWN;
 
     if (arc_core_rd(37) & 1) {
-        if (!(txrx_state1 & (1u << 10))) {
-            mac_mode_switch_after_ppdu(sta_tab[*sta].tx_sel);
-            rx_send_response_frame();
-            rx_resp_finish_restore_rx((u32)&bcast_ctx, 8, 0);
-            mac_set_mode_0000();
-        }
+        /* RTS в фазе SLS: исправлено (vendor) — отвечал DMG DTS без проверки NAV (только для назначения SP,
+         * 10.39.6.6; NAV-SA — собственный адрес). Ответа нет: отправитель повторит RTS после таймаута */
         *flags |= (1u << 4);
         uc_stats.ppdu_resp += 1;
     }

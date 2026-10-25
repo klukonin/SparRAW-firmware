@@ -1207,8 +1207,10 @@ static void fixed_sched_start(struct wmi_mbox *mb)
     FSCHED.enabled = 1;
     fwsh_sets.fsched_tbl = &fixed_sched;
     sched_fixed_active = 1;
-    if (mid_state_is_2_or_3(0) != 0)
+    if (mid_state_is_2_or_3(0) != 0) {
+        tdma_ap_update(mid_list_by_mid_fw(0), 0);  /* SparRAW: снять TDMA точки (fw/tdma.c) */
         add_bcon(mid_list_by_mid_fw(0));
+    }
     for (i = 8; i < 12; i++)                       /* lp_count 4, r1 от 8 */
         maintain_lt_period[i] = 0x989680;
     c = lmac_cmd_pool_alloc();

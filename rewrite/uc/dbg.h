@@ -21,8 +21,8 @@
 #define PAD_TXOP          3   /* rx: перед 0x1b001111 в rx_txop_continue (прежний UC_DBG_TXOP_PAD) */
 #define PAD_TRN_LOOP      4   /* brp: тело цикла метрик TRN */
 #define PAD_ABFT_SSW      5   /* bti: между SSW в abft_ssw_burst (сейчас не используется) */
-#define PAD_IMM_RESP      6   /* tx: перед командой в tx_send_imm_response (DMG CTS/DTS) */
-#define PAD_CTS_SWITCH    7   /* mac: mac_mode_switch_after_ppdu (CTS на RTS) */
+#define PAD_IMM_RESP      6   /* tx: перед командой в tx_send_imm_response (DMG CTS, Grant Ack, CF-End) */
+/* 7 — свободен (была mac_mode_switch_after_ppdu, путь DMG DTS) */
 #define PAD_SSWFB_ABFT    8   /* tail: direct_tx_step (SSW-Feedback в A-BFT) */
 #define PAD_D10_WRITE     9   /* rx: перед записью 0x886d10 в rx_flow_step */
 #define PAD_ABFT_SIFSCHK 10   /* bti: перед проверкой SIFS_CNT в abft_ssw_go */

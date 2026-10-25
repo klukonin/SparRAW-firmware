@@ -401,7 +401,6 @@ void mac_mode_enter_idle_seq(u32 a);                            /* mac.c */
 void mac_mode_kick(struct sls_peer_rec *a);                     /* bf.c */
 void mac_mode_program_c(struct sls_peer_rec *a);                /* tail.c */
 void mac_mode_send_direct_frame(u32 a);                         /* mac.c */
-void mac_mode_switch_after_ppdu(u32 a);                         /* mac.c */
 void mac_mode_switch_core_and_rf(u32 a);                        /* mac.c */
 void mac_mode_switch_sequence(u32 a);                           /* tail.c */
 void mac_prepare_txrx_window(struct tx_ctx_s *a, u32 b);        /* tail.c */
@@ -565,6 +564,7 @@ void rx_flow_measure_snr_select_best(void);                     /* rx.c */
 u32 rx_flow_run(void);                                          /* rx.c */
 u32 rx_flow_run_and_check_bf_abort(u32 a);                      /* rx.c */
 void rx_flow_send_imm_response(void);                           /* rx.c */
+void rx_cf_end_nav_reset(void);                                 /* rx.c */
 void rx_flow_step(struct tx_ctx_s *a, u32 b);                   /* rx.c */
 u32 rx_flow_substep_uc(struct tx_ctx_s *a);                     /* rx.c */
 void rx_funcs_handle_ppdu_report(void);                         /* rx.c */
@@ -592,7 +592,6 @@ u32 rx_ppdu_is_cts_b(void);                                     /* rx.c */
 u32 rx_program_mac_and_wait(struct tx_ctx_s *a);                /* rx.c */
 void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c);            /* rx.c */
 void rx_send_dmg_cts(void);                                     /* rx.c */
-void rx_send_response_frame(void);                              /* rx.c */
 void rx_switch_to_rx_mode(void);                                /* rx.c */
 void rx_update_nav_from_frame(u32 a);                           /* rx.c */
 u32 sched_bitmap_next_set_bit(u32 a, u32 b);                    /* rate_search.c */

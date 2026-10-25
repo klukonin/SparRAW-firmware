@@ -1223,12 +1223,14 @@ struct tx_resp_stats {
     u16  rx_wait;                   /* +0x04 +4: окон ожидания ответа (tx__send_and_await_rx_frame). */
     u16  cf_end_rx;                 /* +0x06 +6: принят CF-End с нулевой длительностью (rx_get_required_response, r37 б16). */
     u16  awaiting;                  /* +0x08 +8: флаг «ждём ответ/канал занят» (=0/1 в tx__send_and_await_rx_frame, tx_initiator_flow_f */
+    u16  rts_nav_busy;              /* +0x0a: SparRAW — RTS без ответа: NAV занят чужим обменом (rx_get_required_response, 10.3.2.9) */
 };
 _Static_assert(__builtin_offsetof(struct tx_resp_stats, imm_resp) == 0x0, "txr.imm_resp");
 _Static_assert(__builtin_offsetof(struct tx_resp_stats, submit) == 0x2, "txr.submit");
 _Static_assert(__builtin_offsetof(struct tx_resp_stats, rx_wait) == 0x4, "txr.rx_wait");
 _Static_assert(__builtin_offsetof(struct tx_resp_stats, cf_end_rx) == 0x6, "txr.cf_end_rx");
 _Static_assert(__builtin_offsetof(struct tx_resp_stats, awaiting) == 0x8, "txr.awaiting");
+_Static_assert(sizeof(struct tx_resp_stats) == 0xc, "txr: 0x80242c..0x802437");
 
 
 /* uc_mbox (0x802470). Почтовый ящик fw↔uc, 0x48 Б: кольцо событий uc→fw и кольцо команд LMAC fw→uc.
@@ -1939,6 +1941,10 @@ _Static_assert(sizeof(struct ss_timing) == 8, "ss_timing");
 #define rx_buf_body18                (*(u8 *)0x804028)   /* [в] +0x18: у action-кадра — Category (0x14 = BRP-кадр по rx__is_brp_frame/rx__handle_brp_frame; STANDARD-MAPPING: 20); у маяка — байт 1 BI Control; u16... */
 #define rx_buf_body19                (*(u8 *)0x804029)   /* [в] +0x19: Action (==1 — BRP) / байт 2 BI Control. */
 #define rx_buf_body1a                (*(u8 *)0x80402a)   /* [с] +0x1a: Dialog Token / байт 3 BI Control. */
+/* L-RX из BRP Request принятого кадра (9.5.4): 0..16, 17..31 зарезервированы — как 0 (RX-обучение не запрошено).
+ * исправлено (vendor): брал 5 бит как есть — до 124 подполей TRN-R по резервному значению. */
+#define BRP_LRX_MAX 16u
+#define rx_buf_brp_lrx() ((rx_buf_brp_req & 0x1fu) <= BRP_LRX_MAX ? (rx_buf_brp_req & 0x1fu) : 0u)
 #define rx_buf_brp_req               (*(u8 *)0x80402b)   /* [в] +0x1b: BRP Request, байт 0: &0x1f L-RX (rx__handle_brp_frame, brp__parse_request_fields) / байт 4 BI Control. */
 #define rx_buf_body1c                (*(u8 *)0x80402c)   /* [с] +0x1c: байт 5 BI Control / BRP Request. */
 #define rx_buf_bcn_dmg_params        (*(u8 *)0x80402d)   /* [в] +0x1d: DMG Parameters маяка (&3 BSS Type). */

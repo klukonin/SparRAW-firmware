@@ -574,12 +574,11 @@ void mac_program_qset_slots(void)
 }
 
 /* СРОК: переход RX→TX после принятого PPDU (ждать r40.24 cca_ppdu_comp и снятия r40.3 phy_rx_frame,
- * 0x3d000004, снимок r49, 0x02093800) на пути ответа: DMG CTS на RTS через SIFS (mac_mode_switch_after_ppdu,
- * 802.11-2020 10.3.2.9, 10.3.2.3.3: 3 мкс −0/+0,49), SSW-Feedback/SSW-Ack через MBIFS
+ * 0x3d000004, снимок r49, 0x02093800) на пути ответа: SSW-Feedback/SSW-Ack через MBIFS
  * (mac_mode_switch_core_and_rf, 10.3.2.3.10, 10.42.2.4/10.42.2.5: 9 мкс −0/+0,49); также
  * rx_switch_to_rx_mode. Быстрая ветка ~80 инструкций без ожиданий (vendor 0x92a754 ~80, тот же
  * порядок и nop); запас по коду — сотни тактов, остальное съедает ожидание конца приёма в железе.
- * Срыв: ответ позже SIFS/MBIFS — партнёр не принимает CTS/SSW-FB, повтор. */
+ * Срыв: ответ позже MBIFS — партнёр не принимает SSW-FB/SSW-Ack, повтор. */
 UC_HOT
 u32 mac_set_mode_a000(u32 a)
 {
@@ -685,29 +684,6 @@ void mac_set_chain_modes(u32 a)
     mask |= (c2 ? a : 0) << 4;
     mask |= (c3 ? a : 0) << 6;
     uc_mac_cmd((mac_chain_mask & rx_nav.ev_mask) | mask);
-}
-
-/* СРОК: DMG CTS на RTS через SIFS = 3 мкс −0/+0,49 (802.11-2020 10.3.2.9, 10.3.2.3.3) от конца RTS
- * (r37.0 в rx_funcs_handle_ppdu_report). Путь: ~19 инструкций + lp 2 × 2 nop (пауза между 0x3d000002
- * и 0x3d000100 — аппаратная, «N nop») + mac_set_mode_a000 (~80) + 6 команд (~28) ≈ 135 инструкций,
- * затем rx_send_response_frame; vendor 0x92f340 — то же. Запас: ~360 тактов из 495 на ожидание конца
- * приёма и rx_send_response_frame (не оценено). Срыв: CTS позже SIFS — RTS считается неудачным. */
-void mac_mode_switch_after_ppdu(u32 a)
-{
-    UC_PAD(PAD_CTS_SWITCH);
-    uc_mac_cmd(0x83u << 25);
-    uc_mac_cmd(0x3d000002);
-    /* vendor: mov_s r0,2; mov lp_count,r0; nop_s; lp 2 × (nop_s, nop_s) — нужна MAC между командами */
-    arc_zol_nops2(2);
-    uc_mac_cmd(0x3d000100);
-    uc_mac_cmd(0x1f006000);
-    mac_set_mode_a000(0x1f006000);   /* r0=операнд mailbox; аргумент игнорируется */
-    uc_mac_cmd(0x1f000601);
-    uc_mac_cmd(0x3c000200);
-    uc_mac_cmd(0x38000300);
-    uc_mac_cmd(0x3600003f);
-    uc_mac_cmd(0x6000103);
-    uc_mac_cmd(a | 0x3f000000);
 }
 
 void mac_mode_enter_idle_seq(u32 a)

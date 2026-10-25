@@ -1156,7 +1156,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
         return 1;
     }
 
-    u8 r0 = tbl[bf_req.head & 0x7];
+    u8 r0 = tbl[bf_req.head % BF_REQ_FIFO_N];
     if (r13 == r0) {
         bf_sta[r13].state = a1;
         bf_sta[r13].flow_status = 0;
@@ -1170,7 +1170,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
     if ((r2 & (1u << 8)) != 0) {
         u32 r3 = bf_req.pending_mask;
         if ((r3 & (1u << r13)) == 0) {      /* 0x92b290: bbit1 → пропуск */
-            u8 r3c = tbl[bf_req.head & 0x7];
+            u8 r3c = tbl[bf_req.head % BF_REQ_FIFO_N];
             if (r3c == 8)
                 r0d = 1;
         }
@@ -1178,7 +1178,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
 
     if (r0d != 0) {
         bf_req.pending_mask = (bf_req.pending_mask & ~(1u << 8)) | (1u << r13);
-        tbl[bf_req.head & 0x7] = (u8)r13;
+        tbl[bf_req.head % BF_REQ_FIFO_N] = (u8)r13;
         bf_sta[r13].state = a1;
         bf_sta[r13].flow_status = 0;
         if ((VOL(link_stat[r13].bf_reasons) & 0x40) != 0)
@@ -1186,7 +1186,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
         return 1;
     }
 
-    u8 r16 = tbl[bf_req.head & 0x7];
+    u8 r16 = tbl[bf_req.head % BF_REQ_FIFO_N];
     volatile struct bf_sta_s *e = &bf_sta[r16];   /* vendor пишет flow_status дважды (0, 0x35) */
     if (r13 == 8) {
         uc_log_emit2(0x21, 0x1000bf8, r13, r16);
@@ -1197,8 +1197,21 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
     }
 
     uc_log_emit2(0x21, 0x1000bb8, r13, r16);
+    /* исправлено (vendor): r13 уже в очереди дальше — убрать ту запись, иначе после замены головы в FIFO дубль:
+     * его обработка оставляет запись при пустой маске, и следующий bf_req_enqueue запускал BF не той станции */
+    if (bf_req.pending_mask & (1u << r13)) {
+        u32 t = bf_req.tail;
+        for (u32 i = bf_req.head + 1u; i != t; i++) {
+            if (tbl[i % BF_REQ_FIFO_N] != r13)
+                continue;
+            for (u32 k = i; k + 1u != t; k++)
+                tbl[k % BF_REQ_FIFO_N] = tbl[(k + 1u) % BF_REQ_FIFO_N];
+            bf_req.tail = t - 1u;
+            break;
+        }
+    }
     bf_req.pending_mask = (bf_req.pending_mask & ~(1u << r16)) | (1u << r13);
-    tbl[bf_req.head & 0x7] = (u8)r13;
+    tbl[bf_req.head % BF_REQ_FIFO_N] = (u8)r13;
     volatile struct bf_sta_s *f = &bf_sta[r13];
     f->state = 0xb; f->flow_status = 0; f->flow_status = 0x35;
     e->state = 0xb; e->flow_status = 0; e->flow_status = 0x35;
