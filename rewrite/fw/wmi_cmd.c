@@ -1102,12 +1102,35 @@ void mid_connect(struct mid *e, const union mac_addr *dst_mac, u32 a2)
     conn_mgr_ranking_remove(conn);
 }
 
+/* CONNECT ждёт радио (l2mgr_connect → l2mgr_connect_radio_cb) / число колбэков снятых WMI_DISCONNECT подключений,
+ * которые надо пропустить (колбэки радио — по порядку запросов; новый CONNECT мог прийти раньше колбэка снятого).
+ * Ошибка vendor (исправлено): WMI_DISCONNECT в этом окне ничего не разрывал — соединения ещё нет, событие хосту не
+ * уходило (драйвер ждал 2 с, wmi_call timeout), а отложенное подключение затем доводило ассоциацию вопреки отмене
+ * (стенд 2026-10-25: CONNECT, через 11 мс DISCONNECT — Connect через 130 мс). */
+/* Свои переменные — в промежутке между концом vendor fw_data (0x806920) и отладочной областью (0x806a00, dbg.h). */
+FWDATA(8069f0) volatile u8 l2mgr_connect_waiting_radio = 0;
+FWDATA(8069f1) volatile u8 l2mgr_connect_cancelled = 0;
+
 /* Колбэк радио-менеджера для CONNECT (vendor 0x8f188c, 96 Б; l2_mgr::connect передаёт
  * его числом 0x3188c — у нас полный адрес): радио выделено — mid__connect для mid из
  * [0x8000b8], отпустить радио (lock_free), vendor IE. arg (0) не читается. */
 void l2mgr_connect_radio_cb(struct rm_req *req, u32 arg)
 {
     (void)arg;
+    if (l2mgr_connect_cancelled) {                  /* WMI_DISCONNECT до выделения радио — подключение снято */
+        l2mgr_connect_cancelled--;
+        fw_log_emit1(0x2b, 0x100f9b4, (u32)req);
+        radio_mgr_call_method_10(req);
+        if (!l2mgr_connect_waiting_radio) {
+            /* откат l2mgr_connect как в обычном разрыве STA (mlme_sm_on_disconnect): основной канал, состояние fw,
+             * системное состояние «разрыв»; при новом CONNECT, уже ждущем радио, — его канал и состояние не трогать */
+            radio_mgr_unset_primary_channel();
+            fw_status_set_state(4);
+            sys_state_broadcast(8, 0);
+        }
+        return;
+    }
+    l2mgr_connect_waiting_radio = 0;
     struct mid *e = mid_list_by_mid_fw(l2mgr_connect_mid);
     if (e == 0)
         fw_sysassert_fatal((void *)0, 0x16c7);
@@ -1150,6 +1173,7 @@ void l2mgr_connect(const struct wmi_connect_cmd *cmd, u32 mid)
     radio_mgr_set_primary_channel(cmd->channel, ((volatile struct connect_req *)&connect_req)->chan_p1,
                                   ((volatile struct connect_req *)&connect_req)->chan_p2,
                                   pcp_bcon_interval, 1, mid & 0xff);
+    l2mgr_connect_waiting_radio = 1;
     l2mgr_connect_args(l2mgr_connect_radio_cb, 0, mid & 0xff);
 }
 
@@ -1260,6 +1284,15 @@ void l2mgr_disconnect_mid(u32 mid, u32 reason, u32 protocol)
         fw_sysassert_fatal((void *)0, 0x1533);
     l2mgr_pending_op_set(2);
     fw_log_emit3(0x2b, 0x100d600, mid, reason, protocol);
+    if (l2mgr_connect_waiting_radio && mid == l2mgr_connect_mid) {
+        /* отмена CONNECT, ещё ждущего радио: колбэк пропустить, BSS STA — в покой (иначе следующий START_SCAN идёт
+         * «scan while connected» и обрывается), хосту — событие разрыва */
+        l2mgr_connect_waiting_radio = 0;
+        l2mgr_connect_cancelled++;
+        if (e->bss.mode == 1)
+            obj_set_field4_one(&e->bss);
+        l2mgr_send_disconnect_evt(connect_req.dst_mac.b, 1, reason, mid);
+    }
     mid_list_disconnect_all(e, reason, protocol);
     lmac_if_discovery_mode_cfg(0, 3);
 }

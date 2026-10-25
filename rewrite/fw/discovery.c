@@ -389,7 +389,12 @@ __attribute__((section(".textlate"))) u32 mid_disconnect_cmd(struct mid *obj, st
                                                              u32 protocol)
 {
     u32 state = e->mlme.sm.state;
-    if (state != 2 && e->mlme.busy == 0)
+    /* исправлено (vendor): STA до ассоциации (захват линка: WAIT_FOR_BCON_RX / WAIT_FOR_LINKUP) не разрывалась —
+     * WMI_DISCONNECT терялся, событие хосту не уходило (wmi_call timeout 2 с, «is DISCONNECTING» до перезагрузки),
+     * ассоциация затем завершалась вопреки отмене. Автомат соединения OWN_DISC в этих состояниях обрабатывает. */
+    if (state != 2 && e->mlme.busy == 0 &&
+        (obj->bss.mode != 1 || e->msm.sm.state == CONN_MSM_UNRESOURCED ||
+         e->msm.sm.state > CONN_MSM_WAIT_FOR_LINKUP))
         return 0;
     fw_log_emit3(0x2b, 0x100cc1c, obj->id, e->cid, protocol);
     conn_disconnect(e, reason, protocol);

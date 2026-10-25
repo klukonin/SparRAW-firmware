@@ -381,10 +381,16 @@ void lm_sm_on_start_maintain(struct lm_sm *l)
     maintain_sm_event(&l->msm, 0, 0, 0, 0);
 }
 
-/* lm_sm__action_8e7f94 (0x8e7f94): LM_EVT_STOP_LINK в LM_STATE_WAIT_LINK — отложить. */
+/* lm_sm__action_8e7f94 (0x8e7f94): LM_EVT_STOP_LINK в LM_STATE_WAIT_LINK. vendor откладывал (stop_pending) до
+ * результата BF; исправлено: после начала разрыва результат BF не приходит (стенд 2026-10-25: WMI_DISCONNECT через
+ * 0,8 мс после запуска BF — ни BF_DONE, ни LMS_STOPPED, разрыв висит, хост — wmi_call timeout и «is DISCONNECTING»).
+ * Останов сразу, как в IDLE/CONFIGURED (LMAC 0x10, событие 3 разрыву), автомат — в IDLE: поздний BF_RESULTS там
+ * не обрабатывается (nop). */
 void lm_sm_on_stop_link_wait(struct lm_sm *l)
 {
-    l->stop_pending = 1;
+    l->stop_pending = 0;
+    l->hdr.state = 0;
+    lm_sm_on_stop_link(l);
 }
 
 /* lm_sm__action_8e7f9c (0x8e7f9c): LM_EVT_STOP_LINK — LMAC 0x10 и событие 3 разрыву. */

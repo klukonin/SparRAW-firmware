@@ -255,10 +255,12 @@ void rx_flow_accumulate_busy_time(u32 a)
 
 /* CF-End, адресованный нам: 10.23.2.10 — в DMG BSS приём CF-End сбрасывает NAV в конце интервала Duration (от
  * конца кадра), независимо от RA. исправлено (vendor): CF-End нам NAV не трогал (чужие CF-End — rx_update_nav_from_frame,
- * то же правило). Duration берётся из принятого кадра (буфер приёма до следующего приёма не меняется). */
-void rx_cf_end_nav_reset(void)
+ * то же правило). dur — от момента вызова: без ответа — Duration принятого (отсчёт от его конца); после нашего
+ * ответного CF-End — Duration ответа (принятый − TXTIME(CF-End) − SIFS): отсчёт идёт уже от конца нашей передачи,
+ * и тот же конец интервала (RXEND + Duration), а не на SIFS + TXTIME позже. */
+void rx_cf_end_nav_reset(u32 dur)
 {
-    rx_nav_set_from_duration(1, 0xe4u, rx_buf_duration, (u32)rx_buf_ta);
+    rx_nav_set_from_duration(1, 0xe4u, dur, (u32)rx_buf_ta);
 }
 
 /* СРОК: ответный CF-End (fc 0x00e4) должен уйти через SIFS 3 мкс после принятого CF-End с Duration ≠ 0
@@ -268,7 +270,7 @@ void rx_cf_end_nav_reset(void)
  * замерен, по аналогии с ACK/BA — единицы–десятки. Кадр (fc через r33 и 0x33…) пишется уже после
  * 0x37000020: заполнение должно успеть до того, как MAC начнёт передавать MPDU (аппаратный, не
  * установлен). Срыв — поздняя команда (MAC_HW_ICR б4/б5, assert 0x26, см. rx_frame_tx_resp_seq). */
-void rx_flow_send_imm_response(void)
+u32 rx_flow_send_imm_response(void)
 {
     /* 6.2 asm 0x93626c. */
     /* 9.3.1.6: Duration CF-End DMG — остаток последовательности усечения (i − 1)·(TXTIME(CF-End) + SIFS), т. е.
@@ -282,6 +284,7 @@ void rx_flow_send_imm_response(void)
     uc_wait_direct_tx_ready();
     direct_tx_issue_cmd_33();
     txr.imm_resp += 1;
+    return d;
 }
 
 /* phy_stats_accumulate_to_shared — в tail.c; tx_send_imm_response — в tx.c. */
@@ -1020,7 +1023,7 @@ chk:                                            /* 0x93215c */
             rx_mac_prepare();
             if (arc_core_rd(37) & (1u << 16)) {
                 txrx_state2 |= (1u << 9);
-                rx_cf_end_nav_reset();          /* CF-End нам без ответа (Duration 0) — ответа нет, срока нет */
+                rx_cf_end_nav_reset(rx_buf_duration);   /* CF-End нам без ответа (Duration 0) — ответа нет, срока нет */
             }
             rxf.flags |= 4;
         } else {
@@ -1122,8 +1125,7 @@ chk:                                            /* 0x93215c */
             mac_mon_report.tx_cts += 1;
             break;
         case 8:
-            rx_flow_send_imm_response();
-            rx_cf_end_nav_reset();              /* после ответа — вне срока SIFS */
+            rx_cf_end_nav_reset(rx_flow_send_imm_response());   /* NAV — после ответа, вне срока SIFS */
             rx_resp_finish_restore_rx((u32)ctx, 3, 0);
             break;
         case 9:
