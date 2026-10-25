@@ -187,8 +187,8 @@ static void lm_if_notify_req_start(struct lm_if *lm, u32 interval)
 }
 
 /* wmi__bump_cmd_counter (0x8dd4b8, 110 Б): WMI_NOTIFY_REQ_CMDID {cid u8, …,
- * interval_usec u32 @+4}. Счётчик [gp+200] по модулю 60. Нет соединения — ничего (хост
- * ждёт ответа до таймаута, как у vendor). interval = 0 — сразу событие 0x1863 (0x2c Б,
+ * interval_usec u32 @+4}. Счётчик [gp+200] по модулю 60. Нет соединения — нулевое событие (у vendor ничего:
+ * хост ждал таймаута). interval = 0 — сразу событие 0x1863 (0x2c Б,
  * mid 0) через ящик obj; иначе — периодическая статистика по таймеру, сейчас без ответа.
  * ХРУПКО: u_schd_schedule ассертит при задержке < 0x11 — interval 1..16 от хоста
  * останавливает ядро (у vendor так же, 0x8e0c6a). */
@@ -202,8 +202,17 @@ void wmi_notify_req(struct wmi_mbox *mb, const struct wmi_notify_req_cmd *cmd)
     if (c == 0x3c)
         G_NOTIFY_CNT = 0;
     conn = conn_mgr_by_cid(cmd->cid);
-    if (conn == 0)
+    if (conn == 0) {
+        /* исправлено (vendor): нет соединения — ответа не было, хост ждал таймаута (wmi_call, 100 мс на каждый CID
+         * при обходе станций). Нулевое событие: статус BF 0, драйвер такие ответы пропускает. Периодическую
+         * статистику (interval ≠ 0) для несуществующего соединения не заводим. */
+        if (cmd->interval_usec == 0) {
+            struct wmi_notify_req_done_event *e = mem_pool_alloc_locked(&mb->mb);
+            if (e != 0)
+                wmi_evt_post(mb, e, 0, 0x1863, sizeof(*e), 0, 0, 0);
+        }
         return;
+    }
     interval = cmd->interval_usec;
     lm = &conn->lm;                                 /* add3 r13,r0,0xe */
     if (interval != 0 && interval < 0x11)

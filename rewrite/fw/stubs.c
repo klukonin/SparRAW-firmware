@@ -610,7 +610,7 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
 }
 
 /* 0x8023c0: таблица переходов switch vendor remove_app_ie (0x8e2600; ldb, цель = 0x8e263a +
- * 2·запись). Порт берёт из неё номер случая (0..4 → блок IE) и переключается по нему. */
+ * 2·запись). Порт её не читает (смещения блоков — в remove_app_ie); оставлена на месте в fw_data. */
 FWDATA(8023c0) const s8 remove_app_ie_jt[5] = {
     0x00, 0x0a, 0x0d, 0x03, 0x06,
 };
@@ -624,17 +624,12 @@ __attribute__((section(".textlate"))) u32 remove_app_ie(u32 obj, u32 idx, u32 fl
         fw_sysassert_fatal((void *)0, 0x1370);
         return 0;
     }
-    s32 case_idx = remove_app_ie_jt[idx];
-    u32 r0 = 0;
-    switch (case_idx) {
-    case 0: r0 = r16 + 0x1e0; break;
-    case 1: r0 = r16 + 0x1b0; break;
-    case 2: r0 = r16; break;
-    case 3: r0 = r16 + 0x1bc; break;
-    case 4: r0 = r16 + 0x1c8; break;
-    case 5: r0 = r16 + 0x1d4; break;
-    }
-    return app_ie_remove_tlv((struct app_ies *)r0, flag);
+    /* Блок IE по idx — цели переходов vendor 0x8e263a + 2·remove_app_ie_jt[idx]: 0x1e0 (add3 0x3c), 0x1c8
+     * (add3 0x39), 0x1d4 (add 468), 0x1b0 (add3 0x36), 0x1bc (add 444). Исправлено: прежде записи таблицы
+     * (смещения переходов 0, 0x0a, 0x0d, 3, 6) читались как номера случаев — idx 1, 2, 4 давали блок по адресу 0,
+     * idx 3 — чужой блок (найдено gcc -fanalyzer; вызывается пока только с idx 0). */
+    static const u16 blk_off[5] = { 0x1e0, 0x1c8, 0x1d4, 0x1b0, 0x1bc };
+    return app_ie_remove_tlv((struct app_ies *)(r16 + blk_off[idx]), flag);
 }
 
 /* app_ie__remove_tlv (0x8e255c, 134 Б): удалить TLV из app-IE блока (сдвиг + total). */
