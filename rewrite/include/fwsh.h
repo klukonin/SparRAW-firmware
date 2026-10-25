@@ -6,9 +6,10 @@
  *    заголовок fw_stats_hdr, снимок температур, журналы калибровки (fw-only, include/sys_cfg.h,
  *    calib.h, calib_engine.h); здесь — его общая с uc часть: сводка соединений fw_stats_dash
  *    (0x853910) и опубликованный отчёт MAC_MON mac_mon_pub (0x853940, 0x80 Б).
- *  - 0x857000..0x857828 — общий блок (обнуляет crt0 fw, fw/start.S): fwsh_diag, fwq_tx_avail,
+ *  - 0x857000..0x85785c — общий блок (обнуляет crt0 fw, fw/start.S): fwsh_diag, fwq_tx_avail,
  *    ll_ctx, ese_slot_tbl, байты STA-capability, отсчёты энергии fwsh_energy, статистика PHY
- *    fwsh_phy, наборы RF fwsh_sets (результаты и шаблон FTM — только SparRAW-pro).
+ *    fwsh_phy, наборы RF fwsh_sets (результаты и шаблон FTM — только SparRAW-pro, до 0x857828),
+ *    RSSI станций fwsh_rssi (0x857828).
  *    Дальше (0x857a00..) — только uc: рейтинги секторов, link_stat (uc/dccm.h).
  *  - fixed_sched (0x847a3c) — объект fw (символ fw/fw.ld); uc читает его по указателю
  *    fwsh_sets.fsched_tbl.
