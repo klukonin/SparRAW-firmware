@@ -57,15 +57,23 @@ __attribute__((section(".textlate"))) u32 ie_push_ssid(u8 *dst, const u8 *ssid, 
     return len + 2;
 }
 
-/* ie__push_dmg_capabilities (0x8e1fd4, 28 Б): DMG capabilities IE (eid 0x94,
- * len 17); flag пишется в src[6] до копирования. Возврат 0x13. */
+/* ie__push_dmg_capabilities (0x8e1fd4, 28 Б): DMG Capabilities IE (eid 0x94); flag (AID) пишется в src[6] до
+ * копирования. vendor слал тело 17 октетов (формат 802.11ad-2012); по 802.11-2020 9.4.2.127 (рис. 9-549) — 22:
+ * за DMG AP Or PCP Capability Information идут DMG STA Beam Tracking Time Limit (2; 0 — отслеживание луча не
+ * поддерживается, 10.42.7), Extended SC MCS Capabilities (1; 0 — нет, у Sparrow SC MCS 0..12), Maximum Number Of
+ * Basic / Short A-MSDU Subframes In A-MSDU (по 1; 0 — без ограничения, табл. 9-253/9-254: A-MSDU согласуется
+ * отдельно, в ADDBA). Первые 17 октетов — src (mid_bss.dmg_cap), остальные 5 — нули. Возврат 0x18. */
+#define DMG_CAP_BODY_LEN 22u
 __attribute__((section(".textlate"))) u32 ie_push_dmg_capabilities(u8 *dst, u8 *src, u32 flag)
 {
+    u32 i;
     dst[0] = 0x94;
-    dst[1] = 0x11;
+    dst[1] = DMG_CAP_BODY_LEN;
     src[6] = (u8)flag;
-    memcpy_fw(dst + 2, src, 0x11);
-    return 0x13;
+    memcpy_fw(dst + 2, src, sizeof(struct dmg_cap));
+    for (i = 2 + sizeof(struct dmg_cap); i < 2 + DMG_CAP_BODY_LEN; i++)
+        dst[i] = 0;
+    return 2 + DMG_CAP_BODY_LEN;
 }
 
 /* ie__push_edca (0x8e1da8, 32 Б): 0x14 байт EDCA IE объекта BSS (obj+0x12: edca_12 ..

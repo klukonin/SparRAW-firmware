@@ -260,7 +260,10 @@ void bi_cfg_tick_counters(void)
         u8 n = bcn_bi.abft_idx + 1;
         bcn_bi.abft_bi_left = prev;
         bcn_bi.abft_idx = n;
-        if (n == bi_cfg.abft_cnt_mod)
+        /* A-BFT Count (B31–B36) — по модулю N A-BFT in Ant (B37–B42 = abft_cnt_mod). vendor сравнивал «==»: при модуле 0
+         * (одна RX-антенна, оба поля зарезервированы, 9.3.4.2 — передавать 0) счётчик рос до 255, заходя в B37–B38.
+         * «≥» при модуле 0 держит 0, при ненулевом — то же, что «==». */
+        if (n >= bi_cfg.abft_cnt_mod)
             bcn_bi.abft_idx = 0;
     }
     bcn_bi.abft_bi_left--;
