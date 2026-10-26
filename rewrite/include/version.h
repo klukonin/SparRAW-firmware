@@ -9,8 +9,8 @@
  * fw/fw_data.c (fw_ver_*, fw_build_*), менять вместе. */
 #define FW_VERSION_STRING "6.4.1.0-SparRAW"
 
-/* Текст записи-комментария (тип 1) сразу за заголовком образа; %s — FW_VERSION_STRING без суффикса -SparRAW. Драйвер разбирает
- * комментарии только с известной сигнатурой, остальные пропускает. */
+/* Текст записи-комментария (тип 1) сразу за заголовком образа; %s — FW_VERSION_STRING без суффикса
+ * -SparRAW. Драйвер разбирает комментарии только с известной сигнатурой, остальные пропускает. */
 #define FW_ID_STRING "SparRAW firmware %s by Evil Wireless Man, https://github.com/klukonin/SparRAW-firmware"
 
 #endif
