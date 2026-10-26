@@ -885,6 +885,12 @@ void ba_sm_send_addba_req(struct stream_sm *s, u32 token, u32 win, u32 timeout, 
         fw_sysassert_fatal((void *)0, 0x1283);
     len = 0;
     mgmt_tx_begin_frame(pl, &len, mid, ctx->conn, 0xd);
+    /* Starting Sequence Number — SN первого MSDU под соглашением (802.11-2020 9.4.1.8, 10.25.2): текущее начало
+     * окна TX MACQ стрима. Исправлено (vendor): ctx->ssn обновлялся только в ready (после ADDBA Response, при
+     * остановке vring) — запрос уходил с прежним 0, а очередь начинает с 0x800 (стенд 2026-10-26: группа 3, слово 1
+     * дескриптора = 0x800 = SN первого кадра под BA); получатель сдвигал окно костылём «1-st frame wrong sequence». */
+    if (fixed_sched.enabled == 0)
+        ctx->ssn = (u16)stream_mgr_prepare_buf30_by_id(vring_tbl_entry_addr(ctx->vr));
     len += frame_build_addba_req((struct ieee80211_addba *)(pl + len), (u8)token, win, ctx->tid, timeout,
                                  ctx->ssn, amsdu != 0);
     fw_log_emit2(0x2b, 0x10135bc, ctx->vr, ctx->tid);
