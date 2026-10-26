@@ -23,6 +23,8 @@
 #include "../include/lmac_cmd.h"
 #include "../include/fwdata.h"
 #include "../include/sys_cfg.h"
+#include "../include/sta_max.h"
+#include "../include/wmi.h"
 
 /* Шаблон LMAC-команды 0x10 (vendor 0x8014b0; образ: коды управляющих кадров 0x0e/0x0f,
  * stat_shift 0x10, txss_mode/brp_mode 1). Правит wmi_bf_control, шлёт config_lmac_bf_sm. */
@@ -264,6 +266,37 @@ void conn_mgr_link_up_evt(struct conn *conn, u32 v)
     }
 }
 
+/* НЕ vendor: уточнение причины разрыва для хоста по cid (enum wmi_sparraw_disc_reason; 0 — нет). Ставит
+ * источник отказа (остаётся первая причина), забирает mlme_sm_disconnect_ev_handle → disconnect_reason
+ * события; сброс — новое соединение и повторный поиск того же пира (scan_mngr.c). Свободный промежуток DCCM
+ * 0x806920..0x8069ff (tx_power.c, wmi_cmd.c). */
+FWDATA(806950) volatile u8 conn_disc_detail[SPARRAW_STA_SLOTS] = { 0 };
+
+void conn_disc_detail_set(u32 cid, u32 detail)
+{
+    if (cid < SPARRAW_STA_SLOTS && conn_disc_detail[cid] == 0)
+        conn_disc_detail[cid] = (u8)detail;
+}
+
+u32 conn_disc_detail_take(u32 cid)
+{
+    u32 d;
+    if (cid >= SPARRAW_STA_SLOTS)
+        return 0;
+    d = conn_disc_detail[cid];
+    conn_disc_detail[cid] = 0;
+    return d;
+}
+
+/* Все соединения записи mid (разрыв по сбою железа — vring_schd_disconnect_notify). */
+void conn_disc_detail_set_mid(struct mid *mid, u32 detail)
+{
+    u32 it;
+    iter_init(&it, &mid->conns);
+    while (list_has_items(&it))
+        conn_disc_detail_set(((struct conn *)iter_next(&it))->cid, detail);
+}
+
 /* Задача линк-апа (0x8f5e0c, 96 Б; conn_main_sm__linkup_ntf ставит её числом 0x35e0c):
  * a0 — соединение, v — 0 линк есть, 1 — нет. Инициатор без линка — разрыв MLME
  * (0x10002); иначе уведомить скан/поиск, SW TX и менеджер соединений (инициатор). */
@@ -305,6 +338,7 @@ void conn_main_sm_bcon_rx_timeout_evt(u32 a0, u32 a1)
     }
     fw_log_emit0(0x1b, 0x1011ba0);
     sm->bcon_timer = 0;
+    conn_disc_detail_set(conn->cid, WMI_SPARRAW_DISC_LINKUP_NO_BEACON);
     conn_msm_event(sm, 1, 0, 0, 0);
 }
 
@@ -493,6 +527,7 @@ void conn_msm_on_bcon_rx(struct conn_msm *sm, u32 a0, struct rx_pkt *pkt)
          * 11.1.3.7 — только для маяка PCP: у AP (BSS Type 3, 9.4.1.46) подполе зарезервировано и не проверяется */
         if (!(fl & 8u) && !dmg_bss_type_is_ap(pkt->ei)) {
             fw_log_emit0(0xb, 0x1011a08);
+            conn_disc_detail_set(conn->cid, WMI_SPARRAW_DISC_LINKUP_NOT_ASSOC_READY);
             goto no_link;
         }
     }

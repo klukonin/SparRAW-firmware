@@ -817,6 +817,29 @@ struct wmi_disconnect_event {
 };
 WMI_SIZE(struct wmi_disconnect_event, 0xa);
 
+/* disconnect_reason SparRAW (≥ 0x10; vendor — до 0x0f): уточнение, ЧТО оборвало связь, вместо общих
+ * LOST_LINK / DISCONNECT_CMD / ASSOC_FAILED. Драйвер wil6210 disconnect_reason только печатает;
+ * protocol_reason_status не меняется (в подключённом состоянии драйвер отдаёт его в cfg80211 как код
+ * причины 802.11), кроме ASSOC_REJECTED / ASSOC_BAD_AID (фаза подключения — там он только печатается). */
+enum wmi_sparraw_disc_reason {
+    WMI_SPARRAW_DISC_LINKUP_BF_FAILED       = 0x10, /* линк не поднялся: BF (SLS) не сошёлся lm_linkup_fail_max раз */
+    WMI_SPARRAW_DISC_LINKUP_NO_BEACON       = 0x11, /* линк не поднялся: маяк пира не пойман ни одним RX-сектором */
+    WMI_SPARRAW_DISC_LINKUP_NOT_ASSOC_READY = 0x12, /* линк не поднялся: PCP без Association Ready (11.1.3.7) */
+    WMI_SPARRAW_DISC_ASSOC_REJECTED         = 0x13, /* отказ в Assoc Response; proto — Status Code (9.4.1.9) */
+    WMI_SPARRAW_DISC_ASSOC_BAD_AID          = 0x14, /* Assoc Response успех, AID вне 1…254 (9.4.1.8); proto — AID */
+    WMI_SPARRAW_DISC_ASSOC_TIMEOUT          = 0x15, /* Assoc Response не пришёл в срок */
+    WMI_SPARRAW_DISC_CONNECT_REJECTED       = 0x16, /* WMI_CONNECT отвергнут fw (причина — журнал fw validate_connect) */
+    WMI_SPARRAW_DISC_LOST_LINK_BF           = 0x17, /* потеря: BF поддержания линка не сошёлся */
+    WMI_SPARRAW_DISC_LOST_LINK_TX_AGEING    = 0x18, /* потеря: очередь TX cid не продвигалась дольше порога */
+    WMI_SPARRAW_DISC_LOST_LINK_BCN_FAIL     = 0x19, /* потеря: uc — отказ маяков/ATIM cid (bcons_atim_fail_vec) */
+    WMI_SPARRAW_DISC_LOST_LINK_NO_BEACONS   = 0x1a, /* потеря: подряд BI без маяка пира выше порога */
+    WMI_SPARRAW_DISC_PEER_RESTARTED         = 0x1b, /* пир снова ищет сеть, будучи ассоциированным */
+    WMI_SPARRAW_DISC_RF_KILL                = 0x1c, /* RF выключен (rf-kill) */
+    WMI_SPARRAW_DISC_PCIE_LINK_DOWN         = 0x1d, /* PCIe link down */
+    WMI_SPARRAW_DISC_PCIE_CPL_TIMEOUT       = 0x1e, /* PCIe: таймаут completion (DPAL) */
+    WMI_SPARRAW_DISC_PCIE_DEBUG_FIFO        = 0x1f, /* PCIe: отладочный FIFO */
+};
+
 /* WMI_SCAN_COMPLETE_EVENTID (0x100a) {status}; то же одно слово — WMI_ECHO_RSP (0x1803),
  * WMI_PS_DEV_PROFILE_CFG (0x191c), WMI_GET_BASEBAND_TYPE (0x1867), WMI_PCP_FACTOR (0x191a). */
 struct wmi_word_event {

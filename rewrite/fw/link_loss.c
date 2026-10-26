@@ -14,6 +14,7 @@
 #include "../include/conn.h"
 #include "../include/link_loss.h"
 #include "../include/sys_cfg.h"
+#include "../include/wmi.h"
 
 
 /* [gp,0x240] = 0x8003c4: интервал журнала состояния детекторов (TSF, мкс). */
@@ -555,6 +556,8 @@ void tx_ppdu_ageing_timeout_detector_task(struct psvc *svc, u32 count)
             tok = 0x10149d0;
         if (tok != 0) {
             fw_log_emit1(0x1b, tok, cid);
+            conn_disc_detail_set(cid, tok == 0x1014980 ? WMI_SPARRAW_DISC_LOST_LINK_TX_AGEING
+                                                       : WMI_SPARRAW_DISC_LOST_LINK_BCN_FAIL);
             detector_log_state(&d->cid, d->log_tsf, now, VCTX(d)->idle[d->cid], traffic,
                                d->last_traffic, pending, m160, evt, r15, r21, 0);
             VCTX(d)->idle[d->cid] = 0;
@@ -598,6 +601,7 @@ static void bad_beacons_detector_handle_bcons_info(struct ll_bcn_det *det)
     if (ctx->bcn_cnt[cid] <= lim)
         return;
     fw_log_emit1(0x1b, 0x1014dd4, cid);
+    conn_disc_detail_set(o->cid, WMI_SPARRAW_DISC_LOST_LINK_NO_BEACONS);
     conn_disconnect(conn_mgr_by_cid(o->cid), 1, 1);
     bad_beacons_check_counter(det);
 }

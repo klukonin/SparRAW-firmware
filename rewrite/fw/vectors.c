@@ -17,6 +17,7 @@
 #include "../include/dbg.h"
 #include "../include/vring_schd.h"
 #include "../include/fwdata.h"
+#include "../include/wmi.h"
 
 
 /* ------------------------------------------------------------------------
@@ -444,7 +445,7 @@ static void wbe_driver_pcie_debug_isr(void)
     pcie_dbg_fifo_irq_count += 1;                 /* [gp,0x1a4] */
     wbe_driver_pcie_debug();
     fw_log_emit0(0x2f, 0x100362c);
-    u_schd_add(vring_schd_disconnect_notify, 1, 0, 2);
+    u_schd_add(vring_schd_disconnect_notify, 1, WMI_SPARRAW_DISC_PCIE_DEBUG_FIFO, 2);
 }
 
 /* (0x8c96ac, 188 Б) задача таймаута completion: журнал счётчиков 0x882d08..0x882d10;
@@ -469,7 +470,7 @@ void dpal_cpl_timeout_task(u32 a0, u32 a1)
     if (c0 == 7 && c1 == 7 && d0 < c2 && c2 == c3 && d2 < d0 && d0 == d1 && d2 >= 1
         && d2 == d3) {
         fw_log_emit0(0x1f, 0x10038f4);
-        vring_schd_disconnect_notify(1, 0);
+        vring_schd_disconnect_notify(1, WMI_SPARRAW_DISC_PCIE_CPL_TIMEOUT);
     } else {
         pcie_clear_cpl_timeout();
     }
@@ -705,7 +706,7 @@ static void wbe_driver_link_down_notif(u32 which)
         return;
     }
     fw_log_emit0(0x2f, 0x1003718);
-    u_schd_add(vring_schd_disconnect_notify, 1, 0, 2);
+    u_schd_add(vring_schd_disconnect_notify, 1, WMI_SPARRAW_DISC_PCIE_LINK_DOWN, 2);
 }
 
 /* ЭНЕРГОСБЕРЕЖЕНИЕ PCIe ВЫРЕЗАНО СОЗНАТЕЛЬНО (решение владельца, 2026-10-20; вместе с PS

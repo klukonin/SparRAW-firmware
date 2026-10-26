@@ -59,6 +59,7 @@ FWDATA(80147c) const struct maintain_rs_cfg_head maintain_rs_cfg = {
     .back_failure_mask = { 0x0010, 0x0000 },
 };
 #include "../include/fwdata.h"
+#include "../include/wmi.h"
 
 
 /* Глобалы vendor (gp = 0x800184). */
@@ -264,6 +265,7 @@ void lm_sm_on_link_lost(struct lm_sm *l)
 {
     struct lm_if *i = lm_sm_if(l);
     fw_log_emit0(0x2b, 0x1014270);
+    conn_disc_detail_set(i->conn->cid, WMI_SPARRAW_DISC_LOST_LINK_BF);
     conn_disconnect(i->conn, 1, 1);
 }
 
@@ -308,6 +310,7 @@ void lm_sm_on_linkup_fail(struct lm_sm *l)
     i = lm_sm_if(l);
     if (l->linkup_fails == lm_linkup_fail_max) {      /* ld_s [gp,0x27c] */
         l->linkup_fails = 0;
+        conn_disc_detail_set(conn_get_cid(i), WMI_SPARRAW_DISC_LINKUP_BF_FAILED);
         lm_notify_linkup(i, 1);
         l->hdr.state = 0;
     } else {

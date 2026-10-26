@@ -801,6 +801,11 @@ void mlme_sm_on_assoc_response(struct mlme_sm *sm, struct rx_pkt *pkt)
  * ASSOCIATE): таймер и радио освободить; STA — кадр отказа в [+0x2c]; разрыв (kind 5). */
 void mlme_sm_on_assoc_reject(struct mlme_sm *sm, struct rx_pkt *pkt)
 {
+    /* НЕ vendor: protocol_reason_status события — Status Code отказа AP (успех с AID вне 1…254 — AID) вместо
+     * 1: в фазе подключения драйвер его не отдаёт в cfg80211 как причину, а печатает (WMI_SPARRAW_DISC_ASSOC_*). */
+    u32 proto = 1;
+    if (pkt != 0)
+        proto = (pkt->ei->status != 0) ? pkt->ei->status : (pkt->ei->aid & 0x3fffu);
     fw_log_emit0(0x2a, 0x101168c);
     if (sm->assoc_timer != 0) {
         u_schd_cancel(sm->assoc_timer);
@@ -814,7 +819,7 @@ void mlme_sm_on_assoc_reject(struct mlme_sm *sm, struct rx_pkt *pkt)
         sm->rx_pkt = pkt;
         mgmt_pkt_release(pkt);
     }
-    mlme_notify(sm, sm->conn->cid, 1, 5, 0);
+    mlme_notify(sm, sm->conn->cid, proto, 5, 0);
 }
 
 /* mlme_sm__association_timeout_ev_handle (0x8f131c, 152 Б; ASSOC_TIMEOUT в UNASSOCIATE /
@@ -826,6 +831,7 @@ void mlme_sm_on_assoc_timeout(struct mlme_sm *sm, u32 a0, u32 a1, u32 cb)
     (void)a1;
     fw_log_emit0(0x2a, 0x1011534);
     sm->assoc_timer = 0;
+    conn_disc_detail_set(sm->conn->cid, WMI_SPARRAW_DISC_ASSOC_TIMEOUT);
     if (sm->conn->mid->bss.mode == 1) {
         mlme_sm_send_disassoc(sm, 1, (tx_done_fn)cb);   /* аргумент автомата — числом */
         mlme_notify(sm, sm->conn->cid, 1, 5, 0);
@@ -1143,8 +1149,8 @@ void mlme_sm_disconnect_ev_handle(u32 a0, u32 code)
         conn_alloc_and_link(0, 1, 0);                    /* conn__alloc_and_link__thunk_0_1_0 */
     if (conn->pbss != 0)
         l2mgr_send_pbss_leave_evt(conn);
-    else
-        l2mgr_send_disconnect_evt(conn->peer, code >> 16, reason,
+    else                                                /* уточнение причины — в старшем байте reason */
+        l2mgr_send_disconnect_evt(conn->peer, code >> 16, reason | (conn_disc_detail_take(cid) << 8),
                                   conn->mid->id);
     cnt_handler_clear_all();
     conn_mgr_link_down_evt(conn);
@@ -1300,8 +1306,13 @@ void rx_pkt_handler(struct rx_pkt *pkt)
          * станция считала SP точки / широковещательные аллокации ESE своими (rx.c ese_may_initiate). Успех с
          * недопустимым AID — как отказ. */
         if (pkt->ei->status != 0 || (pkt->ei->aid & 0x3fffu) == 0 || (pkt->ei->aid & 0x3fffu) > 254) {
-            if (pkt->ei->status == 0)
+            if (pkt->ei->status == 0) {
                 fw_log_emit1(0x1a, 0x10110f4, pkt->ei->aid);
+                conn_disc_detail_set(conn->cid, WMI_SPARRAW_DISC_ASSOC_BAD_AID);
+            } else {
+                fw_log_emit1(0x1a, 0x1011914, pkt->ei->status);    /* «assoc_status: %d» — Status Code AP */
+                conn_disc_detail_set(conn->cid, WMI_SPARRAW_DISC_ASSOC_REJECTED);
+            }
             mlme_sm_event(sm, 5, (u32)pkt, 0, 0);
         } else {
             if (st == 1)

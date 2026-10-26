@@ -11,6 +11,7 @@
 #include "../include/fwdata.h"
 #include "../include/rf_kill.h"
 #include "../include/fwdata.h"
+#include "../include/wmi.h"
 
 
 #define RF_KILL_STOP  (rf_kill_stop_stages)   /* [gp,-0xc]: этапы останова RF kill */
@@ -190,7 +191,7 @@ static void low_sme_handle_rf_kill(u32 x)
     fw_log_emit1(0x20, 0x100b874, x);
     RF_KILL_STOP |= 1;
     fw_log_emit1(0x20, 0x100b89c, RF_KILL_STOP);
-    vring_schd_disconnect_notify(x, 0);
+    vring_schd_disconnect_notify(x, WMI_SPARRAW_DISC_RF_KILL);
     RF_KILL_STOP |= 2;
     fw_log_emit1(0x20, 0x100b8e4, RF_KILL_STOP);
     l2mgr_scan_abort();

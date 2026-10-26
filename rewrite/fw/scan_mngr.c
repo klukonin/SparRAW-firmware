@@ -325,6 +325,7 @@ __attribute__((section(".textlate"))) u32 find_main_sm_bcon_lookup(struct mid *m
             mid_link_acquis_step(*out);
         (*out)->initiator = a3;
         (*out)->skip_bf = a5;
+        conn_disc_detail_take((*out)->cid);             /* НЕ vendor: новый поиск — прежнее уточнение снять */
         find_sm_start_listen(*out, (*out)->cid);
         return 1;
     }

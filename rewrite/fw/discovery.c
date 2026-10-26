@@ -16,6 +16,7 @@
 #include "../include/ieee80211.h"
 #include "../include/lmac_cmd.h"
 #include "../include/sys_cfg.h"
+#include "../include/wmi.h"
 
 
 /* low_sme__send_evt2sw (0x8e5474): событие хосту через обработчик operational-mbox
@@ -327,7 +328,7 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_req(struct mid_
             if ((dashboard.cfg.special_flags & (1u << 10)) != 0 &&
                 (mid->msm.sm.state == 5 || mid->msm.sm.state == 7)) {
                 fw_log_emit0(0x1c, 0x1016910);
-                vring_schd_disconnect_notify(0, 0);
+                vring_schd_disconnect_notify(0, WMI_SPARRAW_DISC_PEER_RESTARTED);
             } else {
                 set_vendor_specific_version(mid, pkt, bss_ctx);
                 discovery_init_probe_entry(mid, pkt, bss_ctx);
@@ -363,15 +364,17 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_req(struct mid_
 }
 
 /* vring_schd__disconnect_notify (0x8c91b8, 328 Б): для каждого vring (1 итерация)
- * mid_list_by_mid_fw → лог + mid_list_disconnect_all(ret, flag+1, 3). */
-__attribute__((section(".textlate"))) void vring_schd_disconnect_notify(u32 mid, u32 a1)
+ * mid_list_by_mid_fw → лог + mid_list_disconnect_all(ret, flag+1, 3).
+ * НЕ vendor: detail (у vendor второй аргумент не читается) — уточнение причины для хоста (enum
+ * wmi_sparraw_disc_reason): иначе сбой PCIe и rf-kill уходили как DISCONNECT_CMD — как команда хоста. */
+__attribute__((section(".textlate"))) void vring_schd_disconnect_notify(u32 mid, u32 detail)
 {
-    (void)a1;
     u32 flag = (mid != 0) ? 1u : 0u;
     for (u32 i = 0; i < 1; i++) {
         struct mid *r = mid_list_by_mid_fw(i);
         if (r != 0) {
             fw_log_emit3(0x2b, 0x100d600, i, flag + 1, 3);
+            conn_disc_detail_set_mid(r, detail);
             mid_list_disconnect_all(r, flag + 1, 3);
         }
     }
@@ -886,6 +889,7 @@ __attribute__((section(".textlate"))) void connection_init(struct conn *conn, co
     conn->mid = mid;
     memcpy_fw(conn->peer, mac, 6);
     conn->initiator = 0;
+    conn_disc_detail_take(conn->cid);                   /* НЕ vendor: уточнение причины прошлого соединения */
     conn->wvs_mode = 0;
     conn->pbss = 0;
     conn->vs_version = 1;

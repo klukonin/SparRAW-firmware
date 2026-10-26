@@ -478,6 +478,9 @@ void conn_alloc_and_link_kind1 (u32 a1, u32 mid);                               
 void conn_arm_retry_timer (struct conn *conn, u32 restart);                                          /* link_loss.c */
 void conn_check_field_50 (struct conn *conn);                                                        /* discovery.c */
 void conn_config_txss_and_sta (struct conn *conn);                                                   /* mlme.c */
+void conn_disc_detail_set (u32 cid, u32 detail);                                                     /* conn.c */
+void conn_disc_detail_set_mid (struct mid *mid, u32 detail);                                         /* conn.c */
+u32 conn_disc_detail_take (u32 cid);                                                                 /* conn.c */
 void conn_disc_sm_disassoc_sent_cb (u32 payload, u32 status, u32 a2);                                /* link_sm.c */
 void conn_disconnect (struct conn *conn, u32 reason, u32 protocol);                                  /* discovery.c */
 u32 conn_get_cid (struct lm_if *lm);                                                                 /* conn.c */
@@ -2073,7 +2076,7 @@ void vring_schd_alt_vt_suspend (struct vring_schd_if *self, u32 vr);            
 u32 vring_schd_alt_vt_time_of_pring (struct vring_schd_if *self, u32 pr);                            /* vring.c */
 u32 vring_schd_alt_vt_vring_of_pring (struct vring_schd_if *self, u32 pr);                           /* vring.c */
 void vring_schd_bind_if_free (struct vring_schd *s, struct vring_rec *e, struct pring *p);           /* vring.c */
-void vring_schd_disconnect_notify (u32 mid, u32 a1);                                                 /* discovery.c */
+void vring_schd_disconnect_notify (u32 mid, u32 detail);                                             /* discovery.c */
 void vring_schd_fill_vring_cfg (struct vring_rec *e, const struct stream_ctx *ctx, u32 prio, u32 slot, u32 bcast, u32 en); /* vring.c */
 u32 vring_schd_find_bound (struct vring_schd *s, u32 vr, struct vring_rec **entry, struct pring **pring); /* vring.c */
 void vring_schd_flush_response (u32 ring);                                                           /* lmac_evt.c */

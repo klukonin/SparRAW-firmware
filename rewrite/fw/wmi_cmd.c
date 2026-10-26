@@ -342,12 +342,18 @@ FWDATA(8023fc) const u8 l2mgr_send_disconnect_evt_jt[9] = {
 /* l2mgr__send_disconnect_evt (0x8e538c, 140 Б): WMI_DISCONNECT_EVENTID (0x1003, 10 Б)
  * {protocol_reason_status u16, bssid[6], disconnect_reason, assoc_resp_len = 0};
  * затем снять ожидающие операции 2, 1, 5. */
+/* reason: младший байт — внутренний код (таблица выше), старший — уточнение SparRAW (enum
+ * wmi_sparraw_disc_reason; 0 — нет): оно и уходит в disconnect_reason. */
 void l2mgr_send_disconnect_evt(const u8 *bssid, u32 proto_reason, u32 reason, u32 mid)
 {
     struct wmi_disconnect_event *p = host_if_send_pair();
     p->protocol_reason_status = (u16)proto_reason;
     memcpy_fw(p->bssid, bssid, 6);
+    u32 detail = (reason >> 8) & 0xffu;
+    reason &= 0xffu;
     u32 r = (reason < 9) ? l2mgr_disc_reason_map[reason] : 7;
+    if (detail != 0)
+        r = detail;
     p->disconnect_reason = (u8)r;
     p->assoc_resp_len = 0;
     fw_log_emit2(0x2b, 0x100d2b4, r, proto_reason);
@@ -1255,7 +1261,7 @@ void wmi_connect(const struct wmi_connect_cmd *cmd, u32 mid)
      * AP/STA/PCP/PBSS по 802.11: отказ тем же путём, что и неверный канал. */
     if (cmd->network_type == 0x02 || cmd->network_type == 0x04 ||
         l2mgr_validate_connect(mid, cmd->channel) == 0) {
-        l2mgr_send_disconnect_evt(cmd->bssid, 1, 6, mid);
+        l2mgr_send_disconnect_evt(cmd->bssid, 1, 6 | (WMI_SPARRAW_DISC_CONNECT_REJECTED << 8), mid);
     } else if (conn_multi_omni_count == 1) {
         l2mgr_connect_setup(cmd, mid);
         l2mgr_connect(cmd, mid);
