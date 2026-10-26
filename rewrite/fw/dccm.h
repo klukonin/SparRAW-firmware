@@ -22,10 +22,10 @@ extern u32 tx_ring_cmpl_type19_count;                /* 0x800034: [gp,-0x150]: �
 extern u32 tx_mgmt_cmpl_st5_count;                   /* 0x800038: [gp,-0x14c]: счётчик завершений mgmt со статусом 5 (кадр остаётся в pending) */
 extern volatile u32 dbg_ucode_crash;                 /* 0x800050: [gp,-0x134]: 1 — сбой ucode (вектор 6), для fw_sysassert_fatal */
 extern u32 boot_publish_id;                          /* 0x800058: [gp,-0x12c]: идентификатор для хоста (0x30201) → [board+0x2c] */
-extern u32 fw_ver_build;                             /* 0x80005c: [gp,-0x128]: версия fw: build (1000) */
+extern u32 fw_ver_build;                             /* 0x80005c: [gp,-0x128]: версия fw: build (vendor 6.2 — 1000) */
 extern u32 fw_ver_major;                             /* 0x800060: [gp,-0x124]: версия fw: major (6) */
-extern u32 fw_ver_minor;                             /* 0x800064: [gp,-0x120]: версия fw: minor (2) */
-extern u32 fw_ver_sub;                               /* 0x800068: [gp,-0x11c]: версия fw: sub (0) */
+extern u32 fw_ver_minor;                             /* 0x800064: [gp,-0x120]: версия fw: minor (vendor 6.2 — 2) */
+extern u32 fw_ver_sub;                               /* 0x800068: [gp,-0x11c]: версия fw: sub (vendor 6.2 — 0) */
 extern volatile u32 vring_pair_mode;                 /* 0x80006c: [gp,-0x118]: режим vring_schd (1 — вариант 0x804e64) */
 extern volatile u32 vring_switch_idle_th_us;         /* 0x800070: [gp,-0x114]: порог простоя vring (WMI_VRING_SWITCH_TIMING idle_th_usec) */
 extern volatile u32 vring_switch_interval_us;        /* 0x800074: [gp,-0x110]: интервал переключения vring (WMI_VRING_SWITCH_TIMING interval_usec), период таймера связи pring */

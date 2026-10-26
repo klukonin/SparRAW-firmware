@@ -67,11 +67,36 @@ Board-файл выбирается по модели, от него завис�
 
 | файл | что |
 |---|---|
+| `wil6210-6.4.1.fw` | **6.4.1.0** — прошивка `rewrite/`: код fw и uc свой (C11), от vendor 6.2.0.1000 — только данные; AP, STA, PCP/PBSS; `cd rewrite && make release` |
 | `wil6210-6.4-apsta.fw` | 6.4.0.1, вариант apsta (AP, STA, PBSS); `cd 6.4 && make release` |
 | `experimental/` | промежуточные образы и board-файлы опытов; в выпуск не входят |
 
-Образ 6.4 ставится в OpenWrt вместо `wil6210.fw` вместе с драйвером
+Образы 6.4 ставятся в OpenWrt вместо `wil6210.fw` вместе с драйвером
 из `SparRAW-driver`.
+
+### 6.4.1
+
+Установка на узел OpenWrt (board-файл — по модели, таблица выше):
+
+```sh
+scp wil6210-6.4.1.fw root@<узел>:/lib/firmware/wil6210.fw
+ssh root@<узел> 'cp /lib/firmware/wil6210-wap60g-60deg.brd /lib/firmware/wil6210.brd 2>/dev/null; wifi down; rmmod wil6210; modprobe wil6210; wifi up'
+cat /sys/kernel/debug/ieee80211/phy*/wil6210/fw_version     # 6.4.1.0
+```
+
+Сборка из исходников (нужен только тулчейн, `tools/get-toolchain.sh`) даёт тот же файл побайтово:
+`cd rewrite && make release` → `images/sparraw/wil6210-6.4.1.fw`, сверка — `sha256sum -c SHA256SUMS`.
+
+* Версия: строка заголовка образа `FW version: 6.4.1.0` (её показывают драйвер и `ethtool -i`), числа в
+  `WMI_FW_VER` и регистрах версии — 6.4.1.0, дата сборки 2026-10-26.
+* Работает: AP, STA, PCP/PBSS, сканирование, обучение луча, BRP, данные. Стенд wAP 60G ↔ wAP 60G (наш узел —
+  станция, точка — vendor 6.2), 3 загрузки из 3: ping без потерь, iperf3 к станции 960…1027 Мбит/с, от станции
+  758…779 (предел CPU хоста); собственные команды WMI — мощность TX на ходу (`WMI_SPARRAW_TX_POWER`,
+  `tools/txpower_ctl.sh`) и TDMA (`docs/WMI.md`).
+* Нет: энергосбережения (PS) и ad hoc/IBSS; скан при подключённой станции обрывается. Полный список отличий от
+  vendor — [../rewrite/FUNCTIONALITY-GAPS.md](../rewrite/FUNCTIONALITY-GAPS.md).
+* Проверено с драйвером `SparRAW-driver` (OpenWrt); интерфейс хоста — WMI vendor 6.2, ванильный драйвер на стенде
+  не проверялся.
 
 ### experimental/
 

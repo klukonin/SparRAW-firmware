@@ -19,10 +19,10 @@
 0x800038 u32          tx_mgmt_cmpl_st5_count     # [gp,-0x14c]: счётчик завершений mgmt со статусом 5 (кадр остаётся в pending)
 0x800050 volatile u32 dbg_ucode_crash            # [gp,-0x134]: 1 — сбой ucode (вектор 6), для fw_sysassert_fatal
 0x800058 u32          boot_publish_id            # [gp,-0x12c]: идентификатор для хоста (0x30201) → [board+0x2c]
-0x80005c u32          fw_ver_build               # [gp,-0x128]: версия fw: build (1000)
+0x80005c u32          fw_ver_build               # [gp,-0x128]: версия fw: build (vendor 6.2 — 1000)
 0x800060 u32          fw_ver_major               # [gp,-0x124]: версия fw: major (6)
-0x800064 u32          fw_ver_minor               # [gp,-0x120]: версия fw: minor (2)
-0x800068 u32          fw_ver_sub                 # [gp,-0x11c]: версия fw: sub (0)
+0x800064 u32          fw_ver_minor               # [gp,-0x120]: версия fw: minor (vendor 6.2 — 2)
+0x800068 u32          fw_ver_sub                 # [gp,-0x11c]: версия fw: sub (vendor 6.2 — 0)
 0x80006c volatile u32 vring_pair_mode            # [gp,-0x118]: режим vring_schd (1 — вариант 0x804e64)
 0x800070 volatile u32 vring_switch_idle_th_us    # [gp,-0x114]: порог простоя vring (WMI_VRING_SWITCH_TIMING idle_th_usec)
 0x800074 volatile u32 vring_switch_interval_us   # [gp,-0x110]: интервал переключения vring (WMI_VRING_SWITCH_TIMING interval_usec), период таймера связи pring

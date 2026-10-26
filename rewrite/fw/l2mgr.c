@@ -181,7 +181,7 @@ __attribute__((section(".textlate"))) void wmi_evt_notify_fw_ready(void *mac, u3
 {
     u8 *p = (u8 *)host_if_send_pair();
     memcpy_fw(p + 8, mac, 6);
-    *(u32 *)p = 1000;                       /* sw_version */
+    *(u32 *)p = fw_ver_build;               /* sw_version (vendor — 1000, его build) */
     p[0xf] = 0;                             /* numof_additional_mids */
     p[0x10] = hwd_rfc_read_get_result();    /* rfc_read_calib_result */
     fw_log_emit3(0x2b, 0x100f7e4, 0 /* OOB — только SparRAW-pro */, *(u16 *)((u8 *)mac + 4), *(u32 *)mac);

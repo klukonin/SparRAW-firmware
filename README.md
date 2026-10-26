@@ -8,7 +8,7 @@
 | `4.1/` | FW 4.1.0.1000 | все блоки fw и ucode названы; часть блоков переписана на C/C++; образ собирается из дерева |
 | `6.2/` | FW 6.2.0.1000 | вендорская прошивка: все блоки fw и ucode названы; `make fw` даёт вендорский образ **побайтово** |
 | `6.4/` | FW 6.4.0.1 | открытая прошивка на основе 6.2: блоки на C/C++, патчи quilt к дереву 6.2, вариант `apsta` (AP, STA, PBSS); `fix` — вендорская 6.2 только с исправлениями ошибок |
-| `rewrite/` | на основе 6.2 | прошивка, переписанная на C11: код fw (ARC600) и uc (MAC-CPU) свои, от vendor 6.2 берутся только данные; AP, STA, PCP/PBSS; без энергосбережения (отличия от vendor — [rewrite/FUNCTIONALITY-GAPS.md](rewrite/FUNCTIONALITY-GAPS.md)) |
+| `rewrite/` | **6.4.1** | прошивка, переписанная на C11: код fw (ARC600) и uc (MAC-CPU) свои, от vendor 6.2 берутся только данные; AP, STA, PCP/PBSS; без энергосбережения (отличия от vendor — [rewrite/FUNCTIONALITY-GAPS.md](rewrite/FUNCTIONALITY-GAPS.md)); готовый образ — [images/sparraw/wil6210-6.4.1.fw](images/sparraw/wil6210-6.4.1.fw) |
 | `docs/` | — | документация: общие для версий темы; версионные — в `4.1/docs`, `6.2/docs` (оглавление — [docs/README.md](docs/README.md)) |
 | `images/` | — | готовые образы и board-файлы: вендорские оригиналы, наши сборки, годные для OpenWrt (см. [images/README.md](images/README.md)) |
 | `blobs/` | — | входы разбора и сборки: сегменты образов, листинги, таблицы лог-строк (см. `blobs/README.md`) |
@@ -21,9 +21,7 @@ cd 6.2 && make fw               # вендорская 6.2.0.1000 → build/wil6
 cd ../6.4 && make fw VARIANT=apsta   # → build/wil6210-6.4-apsta.fw
 make fw VARIANT=fix                  # → build/wil6210-6.2-fix.fw
 make release                         # apsta → ../images/sparraw/, fix → ../images/openwrt/fw/
-cd ../rewrite && make && python3 tools/build_fw.py --elf build/fw.elf --uc-elf build/uc.elf \
-    --vendor ../images/openwrt/fw/wil6210_6.2.0.1000.fw --out build/wil6210-rewrite.fw \
-    --objcopy ../toolchain/arc_gnu_2021.03_prebuilt_elf32_le_linux_install/bin/arc-elf32-objcopy
+cd ../rewrite && make release        # 6.4.1 → ../images/sparraw/wil6210-6.4.1.fw
 ```
 
 Проверки после любой правки дерева 6.2: `make tree && make rebuild && make fw`,

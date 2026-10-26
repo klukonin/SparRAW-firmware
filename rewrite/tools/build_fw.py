@@ -13,7 +13,7 @@
   uc_data 0x940000  (вендор)
   + прочие сегменты вендора (AGC_tbl и т.п.)
 """
-import argparse, struct, subprocess, sys, zlib
+import argparse, os, re, struct, subprocess, sys, zlib
 
 HEAD = struct.Struct('<HHI')
 FILE_HEADER = struct.Struct('<IIIII32s')
@@ -149,7 +149,7 @@ def main():
     ap.add_argument('--uc-elf', default=None, help='наш uc.elf (код uc)')
     ap.add_argument('--vendor', required=True, help='эталонный .fw (данные/uc)')
     ap.add_argument('--out', required=True)
-    ap.add_argument('--version', default='6.4.1.0-rewrite')
+    ap.add_argument('--version', default=None, help='строка версии (по умолчанию FW_VERSION_STRING из include/version.h)')
     ap.add_argument('--objcopy', default='arc-elf32-objcopy')
     ap.add_argument('--compare-uc-data', action='store_true', help='сверить наш uc_data с vendor+подменой указателей')
     ap.add_argument('--compare-fw-data', action='store_true', help='сверить наш fw_data (fw/fw_data.c) с vendor+fw_ptrmap')
@@ -162,11 +162,14 @@ def main():
     ap.add_argument('--keep-vendor-code', action='store_true',
                     help='эксперимент: оставить vendor fw_code (0x8c0000), наш .text не класть')
     a = ap.parse_args()
+    if a.version is None:
+        vh = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'include', 'version.h')).read()
+        a.version = re.search(r'#define FW_VERSION_STRING "([^"]+)"', vh).group(1)
 
     vend = parse_fw(open(a.vendor, 'rb').read())
 
     # 1) Наш код и данные из ELF.
-    import tempfile, os
+    import tempfile
     tmp = tempfile.mkdtemp()
     code = os.path.join(tmp, 'code.bin')
     data = os.path.join(tmp, 'data.bin')

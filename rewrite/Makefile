@@ -95,8 +95,20 @@ check-asm:
 	  if $(CC) $(CFLAGS) $$x -S -o - $$f 2>/dev/null | grep -qE '\bneg(_s)?\.f[[:space:]]+0,'; then \
 	    echo "ОШИБКА: $$f — neg.f 0,rX (gas закодирует приёмник r0)"; bad=1; fi; done; exit $$bad
 
+# Выпуск: образ для OpenWrt (/lib/firmware/wil6210.fw) в ../images/sparraw/. Данные и таблицы — из vendor
+# 6.2.0.1000 (../images/openwrt/fw), код fw и uc — наш. Версия — include/version.h (6.4.1.0 → wil6210-6.4.1.fw).
+VERSION     := $(shell sed -n 's/^\#define FW_VERSION_STRING "\(.*\)"/\1/p' include/version.h)
+VENDOR_FW   ?= ../images/openwrt/fw/wil6210_6.2.0.1000.fw
+RELEASE_FW  ?= ../images/sparraw/wil6210-$(basename $(VERSION)).fw
+
+release: $(BUILD)/fw.elf $(BUILD)/uc.elf
+	python3 tools/build_fw.py --elf $(BUILD)/fw.elf --uc-elf $(BUILD)/uc.elf --vendor $(VENDOR_FW) \
+	    --objcopy $(OBJCOPY) --out $(RELEASE_FW)
+	rm -f $(RELEASE_FW).ptrmap.txt
+	sha256sum $(RELEASE_FW)
+
 # clean — только результаты компиляции; снимки/логи/дампы в build/ не трогаем
 clean:
 	rm -rf $(BUILD)/uc $(BUILD)/fw $(BUILD)/uc.elf $(BUILD)/fw.elf
 
-.PHONY: all clean check-asm
+.PHONY: all clean check-asm release
