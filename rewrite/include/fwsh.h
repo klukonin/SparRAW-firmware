@@ -161,9 +161,9 @@ struct fwsh_diag {
     u32 bcn_psdu_len;                          /* 0x08: fw — длина PSDU DMG Beacon (MPDU + FCS 4 Б), TX_API_send_dband_bcon;
                                                 *       uc — TXOP BTI по TXTIME (bti.c) */
     u32 fw_assert_code;                        /* 0x0c: fw_sysassert_fatal — код */
-    u32 fw_assert_caller;                      /* 0x10: … и место вызова */
+    u32 fw_assert_caller;                      /* 0x10: … и точный адрес вызова (site; caller — в журнале) */
     u32 uc_assert_code;                        /* 0x14: uc_assert — код (fw: вектор 6, sysassert_dump_ucode_int6) */
-    u32 uc_assert_caller;                      /* 0x18: … и место вызова */
+    u32 uc_assert_caller;                      /* 0x18: … и точный адрес вызова (site, адрес ICCM uc) */
     u32 uc_wd_pm_ms[2];                        /* 0x1c: uc L2-сторож — счётчики PM (мс) до/после пересчёта */
     u32 bti_txop_fallback;                     /* 0x24: uc — TXOP BTI по r47 (vendor): длина маяка не сходится с r47 */
     struct {                                   /* 0x28: расписание ESE своей точки у станции (802.11-2020 10.39.4,

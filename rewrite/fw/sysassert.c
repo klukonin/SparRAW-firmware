@@ -30,15 +30,9 @@ static inline u32 rd_sp(void)
     return v;
 }
 
-/* blink сразу после вызова = адрес возврата этого вызова (вызываемая функция blink
- * восстанавливает). Только так и получается значение, которое vendor передаёт как
- * «blink»: в 0x8c9ba4 это адрес возврата предыдущего fw_log_emit3. */
-static inline u32 rd_blink(void)
-{
-    u32 v;
-    __asm__ volatile("mov %0,blink" : "=r"(v));
-    return v;
-}
+/* Код fw (fw/fw.ld, CODE): адреса возврата на стеке — отсюда. */
+#define FW_CODE_START   0x8c0000u
+#define FW_CODE_END     0x900000u
 
 static inline u32 rd_ilink1(void)
 {
@@ -91,8 +85,10 @@ void sysassert_dump_ucode_int6(void)
 }
 
 /* sysassert__dump_stack (0x8c9a88): стек fw от текущего sp до вершины 0x807ffc; слова,
- * похожие на адрес кода в младшем отображении ICCM (0x160..0x40000), — в журнал с их
- * адресом. sp — собственный (после пролога), как у vendor. */
+ * похожие на адрес кода, — в журнал с их адресом. sp — собственный (после пролога), как у vendor.
+ * НЕ vendor: vendor берёт слова 0x160..0x40000 — младшее отображение ICCM, в котором слинкован его код;
+ * наш код слинкован в 0x8c0000..0x900000 (fw/fw.ld), адреса возврата на стеке — оттуда, с фильтром
+ * vendor дамп был бы пуст. */
 void sysassert_dump_stack(void)
 {
     u32 top = FW_DCCM_LAST_WORD;
@@ -101,7 +97,7 @@ void sysassert_dump_stack(void)
     fw_log_emit2(0x20, 0x10013f4, p, top);
     for (; p < top; p += 4) {
         u32 v = *(volatile u32 *)p;
-        if (v < 0x160 || v > 0x40000)
+        if (v < FW_CODE_START || v >= FW_CODE_END)
             continue;
         fw_log_emit2(0x20, 0x100140c, p, v);
     }
@@ -160,26 +156,32 @@ void sysassert_debug_hold(void)
 }
 
 /* fw_sysassert_fatal (0x8c9b28). caller — у vendor blink вызывающего (r0), code — r1.
- * Наши C-вызовы передают __builtin_return_address(0) или 0. */
-void fw_sysassert_fatal(void *caller, u32 code)
+ * Наши C-вызовы передают __builtin_return_address(0) объемлющей функции (её вызывающего) или 0.
+ *
+ * НЕ vendor: место ассерта — точный адрес вызова fw_sysassert_fatal (site, его blink). Код ассерта
+ * повторяется в разных местах (0xac — десятки), а caller у половины вызовов 0 или общий для всех проверок
+ * функции — по ним место не определить. Поэтому хосту (fwsh_diag.fw_assert_caller, драйвер печатает его
+ * при «FW error») и в журнал (curr_blink) идёт site, caller — в журнал вторым (prev_blink) и в
+ * DBG_ASSERT_PC − 4. Место по site — addr2line по fw.elf. */
+void (fw_sysassert_fatal)(void *caller, u32 code)
 {
     u32 tsf[2];
+    u32 site = (u32)__builtin_return_address(0);
 
     if (dbg_assert_active != 0)            /* [gp,-0x168]: ассерт уже идёт */
         return;
     /* НЕ vendor: наша отладочная запись первого ассерта — код (младшие 16 бит) и
      * адрес возврата ((blink-0x8c0000)>>1, старшие 16) в DBG_ASSERT (include/dbg.h). */
-    *(volatile u32 *)DBG_ASSERT = (code & 0xffff) |
-        ((((u32)__builtin_return_address(0) - 0x8c0000) >> 1) << 16);
+    *(volatile u32 *)DBG_ASSERT = (code & 0xffff) | (((site - 0x8c0000) >> 1) << 16);
     /* старшая половина DBG_ASSERT теряет адреса ≥ 0x8e0000 — полный адрес отдельно */
-    *(volatile u32 *)DBG_ASSERT_PC = (u32)__builtin_return_address(0);
+    *(volatile u32 *)DBG_ASSERT_PC = site;
     *(volatile u32 *)(DBG_ASSERT_PC - 4) = (u32)caller;
     dbg_assert_active = 1;
     assert_restore_hw_for_dump();
     fw_status_set_state(0xdeaddead);               /* 0x880a44 */
     fw_status_set_assert_marker(0xdeaddead);       /* 0x880a48 */
     VOL(fwsh_diag.fw_assert_code) = code;
-    VOL(fwsh_diag.fw_assert_caller) = (u32)caller;
+    VOL(fwsh_diag.fw_assert_caller) = site;
     /* Расширенные core-регистры r33/r34: маркер 0xde01, код, маркер 0xde02 — одним
      * блоком, порядок и форма (mov с limm) как в 0x8c9b64..0x8c9b70. */
     __asm__ volatile("mov r33,0xde01\n\t"
@@ -188,15 +190,16 @@ void fw_sysassert_fatal(void *caller, u32 code)
                      :: "r"(code) : "memory");
     mac_read_tsf64(0, tsf, 0);
     fw_log_emit3(0x20, 0x10012e8, tsf[1], tsf[0], code);
-    u32 bl = rd_blink();                           /* адрес возврата emit3 (vendor r3 = blink) */
     dbg_assert_code = code;              /* [gp,0x1cc] */
     u32 lmac_crash = dbg_ucode_crash;    /* [gp,-0x134]: 1 — сбой ucode (вектор 6) */
     dbg_assert_caller = (u32)caller;       /* [gp,0x1c8] */
     dbg_assert_code2 = code;              /* [gp,0x1d0] */
+    /* «curr_blink=%X, prev_blink=%X»: vendor — caller и свой blink после emit3 (константа внутри этой
+     * функции, места не несёт); у нас — site и caller. */
     if (lmac_crash == 1)
-        fw_log_emit2(0, 0x1001318, (u32)caller, bl);
+        fw_log_emit2(0, 0x1001318, site, (u32)caller);
     else
-        fw_log_emit3(0, 0x1001350, (u32)caller, bl, code);
+        fw_log_emit3(0, 0x1001350, site, (u32)caller, code);
     fw_log_emit3(0, 0x100139c, rd_sp(), rd_ilink1(), rd_ilink2());
     if (dbg_ucode_crash == 1)
         sysassert_dump_ucode_int6();

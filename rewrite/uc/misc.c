@@ -691,9 +691,16 @@ void uc_sysassert_idle_hist(void)
     uc_log_emit1(0x20, 0x10005cc, r13[3]);
 }
 
-/* Главный assert uCode (0x926618). */
+/* Главный assert uCode (0x926618).
+ * НЕ vendor: хосту (fwsh_diag.uc_assert_caller, драйвер печатает при «FW error») — точный адрес вызова
+ * uc_assert (site, blink), а не caller: caller — адрес возврата объемлющей функции, один на все её
+ * проверки, а коды повторяются (0xac — 12 мест, по 4 в одной функции). caller — в журнал и assert_caller.
+ * Вызов в хвостовой позиции (переход, 15 мест) даёт вместо site адрес возврата объемлющей функции —
+ * барьер, как у fw (include/assert_site.h), в uc не ставится: меняет раскладку горячих функций. */
 void uc_assert(u32 caller, u32 code)
 {
+    u32 blink = (u32)__builtin_return_address(0);
+
     if (assert_active != 0)
         return;                 /* уже в assert (рекурсия) */
     assert_active = 1;
@@ -703,14 +710,13 @@ void uc_assert(u32 caller, u32 code)
     uc_log_emit3(0x20, 0x10001e8, tsf[1], tsf[0], code);
 
     FWSH(fwsh_diag, uc_assert_code) = code;
-    FWSH(fwsh_diag, uc_assert_caller) = caller;
+    FWSH(fwsh_diag, uc_assert_caller) = blink;
 
     /* метка assert в кольце MAC-команд: 0x80eeeeee, код | бит 31, ror(1) = 0x80000000 */
     uc_mac_cmd(0x80eeeeee);
     uc_mac_cmd(code | (1u << 31));
     uc_mac_cmd(0x80000000);
 
-    u32 blink = (u32)__builtin_return_address(0);
     u32 ilink1, ilink2;
     __asm__ volatile("mov %0, r29" : "=r"(ilink1));
     __asm__ volatile("mov %0, r30" : "=r"(ilink2));
