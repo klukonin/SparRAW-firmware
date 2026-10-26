@@ -162,9 +162,10 @@ def main():
     ap.add_argument('--keep-vendor-code', action='store_true',
                     help='эксперимент: оставить vendor fw_code (0x8c0000), наш .text не класть')
     a = ap.parse_args()
+    vh = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'include', 'version.h')).read()
     if a.version is None:
-        vh = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'include', 'version.h')).read()
         a.version = re.search(r'#define FW_VERSION_STRING "([^"]+)"', vh).group(1)
+    fw_id = (re.search(r'#define FW_ID_STRING "([^"]+)"', vh).group(1) % a.version.replace('-SparRAW', '')).encode() + b'\0'
 
     vend = parse_fw(open(a.vendor, 'rb').read())
 
@@ -206,6 +207,7 @@ def main():
     records = []
     # файловый заголовок (заполним позже)
     records.append(dict(type=6, flags=0, payload=FILE_HEADER.pack(FW_MAGIC, 0, 0, 1, 0, b'')))
+    records.append(dict(type=1, flags=0, payload=fw_id))      # метка: проект, автор, ссылка (include/version.h)
     if code_b:
         records.append(dict(type=2, flags=0, payload=struct.pack('<I', 0x8c0000) + code_b))
     if late_b:
@@ -299,8 +301,10 @@ def main():
     print('скопированы вендорские сегменты: %s' % [hex(x) for x in kept])
 
     # 3) Файловый заголовок: comment = "FW version: <версия>".
-    comment = ('FW version: %s' % a.version).encode() + b'\0' * 32
-    comment = comment[:32]
+    comment = ('FW version: %s' % a.version).encode()
+    if len(comment) > 31:
+        sys.exit('версия длиннее 19 символов: %r' % a.version)
+    comment += b'\0' * (32 - len(comment))
 
     body = bytearray()
     for r in records:

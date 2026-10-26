@@ -81,14 +81,16 @@ Board-файл выбирается по модели, от него завис�
 ```sh
 scp wil6210-6.4.1.fw root@<узел>:/lib/firmware/wil6210.fw
 ssh root@<узел> 'cp /lib/firmware/wil6210-wap60g-60deg.brd /lib/firmware/wil6210.brd 2>/dev/null; wifi down; rmmod wil6210; modprobe wil6210; wifi up'
-cat /sys/kernel/debug/ieee80211/phy*/wil6210/fw_version     # 6.4.1.0
+cat /sys/kernel/debug/ieee80211/phy*/wil6210/fw_version     # 6.4.1.0-SparRAW
 ```
 
 Сборка из исходников (нужен только тулчейн, `tools/get-toolchain.sh`) даёт тот же файл побайтово:
 `cd rewrite && make release` → `images/sparraw/wil6210-6.4.1.fw`, сверка — `sha256sum -c SHA256SUMS`.
 
-* Версия: строка заголовка образа `FW version: 6.4.1.0` (её показывают драйвер и `ethtool -i`), числа в
-  `WMI_FW_VER` и регистрах версии — 6.4.1.0, дата сборки 2026-10-26.
+* Версия и метка: строка заголовка образа `FW version: 6.4.1.0-SparRAW` (её показывают драйвер — «FW ver.
+  6.4.1.0-SparRAW» в журнале, `ethtool -i`, debugfs `fw_version`); запись-комментарий за заголовком —
+  `SparRAW firmware 6.4.1.0 by Evil Wireless Man, https://github.com/klukonin/SparRAW-firmware` (видна `strings`;
+  драйвер её пропускает). Числа в `WMI_FW_VER` и регистрах версии — 6.4.1.0, дата сборки 2026-10-26.
 * Работает: AP, STA, PCP/PBSS, сканирование, обучение луча, BRP, данные. Стенд wAP 60G ↔ wAP 60G (наш узел —
   станция, точка — vendor 6.2), 3 загрузки из 3: ping без потерь, iperf3 к станции 960…1027 Мбит/с, от станции
   758…779 (предел CPU хоста); собственные команды WMI — мощность TX на ходу (`WMI_SPARRAW_TX_POWER`,
