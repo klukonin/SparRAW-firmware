@@ -96,10 +96,12 @@ check-asm:
 	    echo "ОШИБКА: $$f — neg.f 0,rX (gas закодирует приёмник r0)"; bad=1; fi; done; exit $$bad
 
 # Выпуск: образ для OpenWrt (/lib/firmware/wil6210.fw) в ../images/sparraw/. Данные и таблицы — из vendor
-# 6.2.0.1000 (../images/openwrt/fw), код fw и uc — наш. Версия — include/version.h (6.4.1.0 → wil6210-6.4.1.fw).
+# 6.2.0.1000 (../images/openwrt/fw), код fw и uc — наш. Имя — по include/version.h без нулевого build:
+# 6.4.1.0 → wil6210-6.4.1.fw, 6.4.1.0-pro → wil6210-6.4.1-pro.fw.
 VERSION     := $(shell sed -n 's/^\#define FW_VERSION_STRING "\(.*\)"/\1/p' include/version.h)
+VERSION_TAG := $(shell echo '$(VERSION)' | sed 's/^\([0-9]*\.[0-9]*\.[0-9]*\)\.0\(-.*\)\{0,1\}$$/\1\2/')
 VENDOR_FW   ?= ../images/openwrt/fw/wil6210_6.2.0.1000.fw
-RELEASE_FW  ?= ../images/sparraw/wil6210-$(basename $(VERSION)).fw
+RELEASE_FW  ?= ../images/sparraw/wil6210-$(VERSION_TAG).fw
 
 release: $(BUILD)/fw.elf $(BUILD)/uc.elf
 	python3 tools/build_fw.py --elf $(BUILD)/fw.elf --uc-elf $(BUILD)/uc.elf --vendor $(VENDOR_FW) \
