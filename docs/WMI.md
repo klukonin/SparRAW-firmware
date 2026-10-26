@@ -364,6 +364,44 @@ UBNT: диспетчер 0x8de070 (задача `wmi_rx_task`), 27 пар cmd_id
 
 Настройки не сохраняются при перезагрузке прошивки.
 
+## Причины разрыва SparRAW (WMI_DISCONNECT_EVENT)
+
+Коды vendor (`disconnect_reason` 1…0x0f) сливают разные отказы: «3 DISCONNECT_CMD» — и команда хоста, и линк
+не поднялся, и сбой PCIe / rf-kill; «6 ASSOC_FAILED» — и отказ точки, и таймаут, и отказ CONNECT в fw;
+«2 LOST_LINK» — три детектора. SparRAW сообщает, что именно оборвало связь, своими кодами ≥ 0x10
+(`rewrite/include/wmi.h` `enum wmi_sparraw_disc_reason`; источник ставит уточнение для cid — `conn_disc_detail`,
+`rewrite/fw/conn.c`). `protocol_reason_status` не меняется (в подключённом состоянии драйвер передаёт его в
+cfg80211 как код причины 802.11), кроме двух кодов фазы подключения.
+
+| код | смысл | proto |
+|---|---|---|
+| 0x10 | линк не поднялся: BF (SLS) не сошёлся `lm_linkup_fail_max` раз | 1 |
+| 0x11 | линк не поднялся: маяк пира не пойман ни одним RX-сектором | 1 |
+| 0x12 | линк не поднялся: PCP без Association Ready (11.1.3.7) | 1 |
+| 0x13 | отказ точки в Assoc Response | Status Code (9.4.1.9) |
+| 0x14 | Assoc Response «успех» с AID вне 1…254 (9.4.1.8) | AID |
+| 0x15 | Assoc Response не пришёл в срок | 1 |
+| 0x16 | WMI_CONNECT отвергнут fw (какая проверка — журнал fw `validate_connect`) | 1 |
+| 0x17 | потеря связи: BF поддержания линка не сошёлся | 1 |
+| 0x18 | потеря связи: очередь TX cid не продвигалась дольше порога | 1 |
+| 0x19 | потеря связи: uc — отказ маяков/ATIM cid | 1 |
+| 0x1a | потеря связи: подряд BI без маяка пира выше порога | 1 |
+| 0x1b | пир снова ищет сеть, будучи ассоциированным | 1 |
+| 0x1c | rf-kill | 3 |
+| 0x1d / 0x1e / 0x1f | PCIe: link down / таймаут completion / отладочный FIFO | 3 |
+
+Драйвер SparRAW печатает код с названием, а при 0x13 отдаёт Status Code точки в `cfg80211_connect_result`
+(wpa_supplicant видит настоящую причину отказа). Другие драйверы `disconnect_reason` только печатают.
+
+## Фатальная ошибка: место
+
+`fw_sysassert_fatal` и `uc_assert` пишут в `fwsh_diag` (fw 0x857000, хост 0x91f000) код и **точный адрес вызова**
+(+0x0c/+0x10 fw, +0x14/+0x18 uc); адрес возврата объемлющей функции (caller) — fw 0x806a34, uc 0x8004b4 и журналы.
+Место — `addr2line` по `fw.elf` / `uc.elf`. Вызов `fw_sysassert_fatal` в хвостовой позиции не становится переходом
+(`rewrite/include/assert_site.h`); у uc таких мест 15, там вместо site — адрес возврата объемлющей функции.
+Драйвер SparRAW при «FW error» печатает код, место и caller fw и uc и PC uc (адреса mainline 0x91f020/0x91f028 у
+Sparrow — другие поля, не коды ассертов).
+
 ## Замечания
 
 * 0x863 `WMI_NOTIFY_REQ_CMDID` по скану immediate отнесён к «только UBNT», однако в
