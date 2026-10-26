@@ -165,7 +165,7 @@ def main():
     vh = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'include', 'version.h')).read()
     if a.version is None:
         a.version = re.search(r'#define FW_VERSION_STRING "([^"]+)"', vh).group(1)
-    fw_id = (re.search(r'#define FW_ID_STRING "([^"]+)"', vh).group(1) % a.version.replace('-SparRAW', '')).encode() + b'\0'
+    fw_id = (re.search(r'#define FW_ID_STRING "([^"]+)"', vh).group(1) % a.version.split('-SparRAW')[0]).encode() + b'\0'
 
     vend = parse_fw(open(a.vendor, 'rb').read())
 

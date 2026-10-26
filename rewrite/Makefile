@@ -97,9 +97,9 @@ check-asm:
 
 # Выпуск: образ для OpenWrt (/lib/firmware/wil6210.fw) в ../images/sparraw/. Данные и таблицы — из vendor
 # 6.2.0.1000 (../images/openwrt/fw), код fw и uc — наш. Имя — по include/version.h без нулевого build:
-# 6.4.1.0-SparRAW → wil6210-6.4.1.fw, 6.4.1.0-SparRAW-pro → wil6210-6.4.1-pro.fw.
+# 6.4.1.0-SparRAW → wil6210-6.4.1.fw, 6.4.1.0-SparRAW-PRO → wil6210-6.4.1-pro.fw.
 VERSION     := $(shell sed -n 's/^\#define FW_VERSION_STRING "\(.*\)"/\1/p' include/version.h)
-VERSION_TAG := $(shell echo '$(VERSION)' | sed -e 's/-SparRAW//' -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)\.0\(-.*\)\{0,1\}$$/\1\2/')
+VERSION_TAG := $(shell echo '$(VERSION)' | sed -e 's/-SparRAW//' -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)\.0\(-.*\)\{0,1\}$$/\1\2/' | tr A-Z a-z)
 VENDOR_FW   ?= ../images/openwrt/fw/wil6210_6.2.0.1000.fw
 RELEASE_FW  ?= ../images/sparraw/wil6210-$(VERSION_TAG).fw
 
