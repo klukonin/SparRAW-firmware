@@ -3178,6 +3178,10 @@ void phy_params_snapshot(u32 a, u32 b)
         snr_meas_stats_cnt_no_meas = (u16)t;
     } else {
         u32 r15b = snr_best_buf;
+        u32 sct = sls_cand.sector & 0x7fu;          /* SparRAW: SNR по секторам (fwsh_sect_snr) */
+        FWSH_AT(fwsh_sect_snr, snr, sct) = (s8)sls_cand.snr_db;
+        FWSH_AT(fwsh_sect_snr, cnt, sct) += 1;
+        FWSH(fwsh_sect_snr, seq) += 1;
         memcpy_uc(&sls.best, (void *)r15b, sizeof(sls.best));
         bf_rep.link_snr = ((struct sector_rec *)r15b)->snr_db;
         u8 r0 = snr_meas_stats_last_samples;

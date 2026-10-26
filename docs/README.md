@@ -25,7 +25,7 @@
 | [MAC-REGISTERS](MAC-REGISTERS.md) | регистры локального чтения MAC (r36…r56, MSXD_LR_RGF) |
 | [MAC-COMMANDS](MAC-COMMANDS.md) | кольцо команд MAC (core write): формат, коды, последовательности |
 | [UC-REGISTERS](UC-REGISTERS.md) | биты регистров ucode 6.2: r32…r56, AUX ядра, управляющие слова DCCM, MMIO |
-| [HW-DRIVERS](HW-DRIVERS.md) | загрузка, векторы, PCIe, питание, калибровки, температура, ABIF, board/РЧ, ToF/FTM |
+| [HW-DRIVERS](HW-DRIVERS.md) | загрузка, векторы, PCIe, питание, калибровки, температура, ABIF, board/РЧ, мощность TX, ToF/FTM |
 
 ## Прошивка (fw)
 

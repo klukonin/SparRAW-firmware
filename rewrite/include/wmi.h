@@ -698,6 +698,18 @@ struct wmi_sparraw_tdma_cfg_cmd {
 };
 WMI_SIZE(struct wmi_sparraw_tdma_cfg_cmd, 4);
 
+/* 0x0f11 — зарезервирован (SparRAW-pro); в open не обрабатывается. */
+
+/* WMI_SPARRAW_TX_POWER_CMDID (0x0f12, SparRAW): мощность TX — потолок кода TX-строк RF-таблиц усилений (fw/tx_power.c).
+ * Ответного события нет. Хост: tools/txpower_ctl.sh. */
+#define WMI_SPARRAW_TX_POWER_CMDID 0x0f12u
+#define WMI_SPARRAW_TX_POWER_BOARD 0xffu               /* значения board-файла */
+struct wmi_sparraw_tx_power_cmd {
+    u8  code;                                  /* 0x00: 0…15 или WMI_SPARRAW_TX_POWER_BOARD */
+    u8  reserved[3];                           /* 0x01 */
+};
+WMI_SIZE(struct wmi_sparraw_tx_power_cmd, 4);
+
 /* WMI_SCHEDULING_SCHEME_CMDID (0xa01; у vendor — ESE_CFG). Слот — 20 Б. */
 struct wmi_sched_scheme_slot {
     u32 tbtt_offset;                           /* 0x00 */

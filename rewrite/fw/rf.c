@@ -392,6 +392,7 @@ u32 rf_configure_role_power(struct rf_obj *this)
         fw_log_emit0(0x20, 0x100584c);
         this->role_pwr_flag = 1;
     }
+    txpwr_brd_loaded();                     /* SparRAW: мощность TX хоста (fw/tx_power.c) */
     return 0;
 }
 

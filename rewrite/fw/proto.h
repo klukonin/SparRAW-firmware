@@ -151,7 +151,6 @@ struct wmi_bcon_ctrl_cmd;
 struct wmi_bf_trig_cmd;
 struct wmi_brp_set_ant_limit_cmd;
 struct wmi_connect_cmd;
-struct wmi_dbg_fff_cmd;
 struct wmi_delete_cipher_key_cmd;
 struct wmi_disconnect_sta_cmd;
 struct wmi_fixed_scheduling_config_cmd;
@@ -193,6 +192,7 @@ struct wmi_set_sectors_cmd;
 struct wmi_set_selected_rf_sector_index_cmd;
 struct wmi_set_ssid_cmd;
 struct wmi_sparraw_tdma_cfg_cmd;
+struct wmi_sparraw_tx_power_cmd;
 struct wmi_start_scan_cmd;
 struct wmi_sw_ring_cfg;
 struct wmi_sw_tx_req_cmd;
@@ -1970,6 +1970,7 @@ void tx_ring_init (struct tx_ring *tr, u32 macq, u32 dma, u32 base, u32 size);  
 u32 tx_ring_is_full (const struct ring_idx *r);                                                      /* fwq_tx.c */
 u32 tx_ring_post_frame (struct tx_ring *tr, u32 payload, u32 len, u32 a3, u32 retry, u32 lifetime, u32 a6, u32 prio, u32 cid, u32 flags); /* fwq_tx.c */
 void tx_send_packet_step (struct ieee80211_qos_hdr *q, u32 a1, u32 cid, u32 a3);                     /* tx_api.c */
+void txpwr_brd_loaded (void);                                                                        /* tx_power.c */
 u32 txq_ptp_sw_is_fifo_idle (u32 a);                                                                 /* vring.c */
 void txq_ring_param_config_queue (struct macq_desc *d, u32 mpdu, const struct txq_ring_param *p, u32 type); /* tx_queue.c */
 void txrx_mgr_handle_dma_irq (void);                                                                 /* rx.c */
@@ -2169,6 +2170,7 @@ void wmi_set_passphrase_handler (const struct wmi_set_passphrase_cmd *cmd, u32 m
 void wmi_set_pcp_channel (const struct wmi_set_pcp_channel_cmd *cmd);                                /* wmi_h_pcp.c */
 void wmi_set_rf_sector_on (const void *cmd, struct wmi_mbox *mb);                                    /* wmi_h_bf.c */
 void wmi_sparraw_tdma_cfg (const struct wmi_sparraw_tdma_cfg_cmd *cmd, u32 mid_id);                  /* tdma.c */
+void wmi_sparraw_tx_power (const struct wmi_sparraw_tx_power_cmd *cmd);                              /* tx_power.c */
 void wmi_sw_tx_req (const struct wmi_sw_tx_req_cmd *cmd, u32 mid);                                   /* wmi_h_pcp.c */
 void wmi_temp_sense (struct wmi_mbox *mb, const struct wmi_temp_sense_cmd *cmd);                     /* wmi_h_sta.c */
 void wmi_trigger_beamforming (const struct wmi_bf_trig_cmd *cmd, u32 mid);                           /* wmi_h_bf.c */
