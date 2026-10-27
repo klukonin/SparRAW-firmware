@@ -319,13 +319,14 @@ void fw2uc_signal_wake_and_wait_ack(void)
         }
         if (ack)
             break;
-        fw_log_emit1(0, 0x1004c38, 0);
-        r14--;
+        r14--;   /* vendor писал 0x1004c38 на каждом раунде — до 1001 записи затирали кольцо журнала */
         if (r14 < 1)
             break;
     }
-    if (!ack)
+    if (!ack) {
+        fw_log_emit3(0, LS_FW(FW2UC_NO_ACK), 2, 0x3e9 - r14, MMIO32(HW_FW2UC_ICR));
         fw_sysassert_fatal((void *)0, 0x1317);
+    }
 }
 
 /* Восстановить RFC-поле после low-power (0x8dc654). */
@@ -369,13 +370,14 @@ void fw2uc_signal_halt_and_wait_ack(void)
         }
         if (ack)
             break;
-        fw_log_emit1(0, 0x1004c38, 0);
-        r14--;
+        r14--;   /* vendor писал 0x1004c38 на каждом раунде — до 1001 записи затирали кольцо журнала */
         if (r14 < 1)
             break;
     }
-    if (!ack)
+    if (!ack) {
+        fw_log_emit3(0, LS_FW(FW2UC_NO_ACK), 1, 0x3e9 - r14, MMIO32(HW_FW2UC_ICR));
         fw_sysassert_fatal((void *)0, 0x1316);
+    }
 }
 
 /* Получить calib-объект по индексу (0x8cbb84). */

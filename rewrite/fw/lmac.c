@@ -512,6 +512,7 @@ void lmac_if_ucode_event_dispatch(struct lmac_mbox *mb, u8 *evt)
     default:    /* в т. ч. 0x15/0x18/0x19/0x25 (shallow sleep, отсрочка трафика, пробуждение PCIe,
                  * UPM) — ucode их больше не шлёт: энергосбережение вырезано (см. fw/action.c
                  * psc_req_reject и fw/vectors.c pcie_pm_event_unsupported) */
+        fw_log_emit3(0, LS_FW(UC_EVT_UNKNOWN), type, tsf[1], tsf[0]);
         fw_sysassert_fatal((void *)__builtin_return_address(0), 0x47 | (1u << 12));
         break;
     }

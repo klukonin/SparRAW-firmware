@@ -1027,6 +1027,7 @@ void hwd_phy_tx_self_transmit_wait_completion(void)
     }
     return;
 timeout:
+    fw_log_emit2(0, LS_FW(SELFTX_TIMEOUT), MMIO32(PHY_TX_SELF_REMAINING) & 0xffffu, MMIO32(PHY_TX_SELF_BUSY));
     *(volatile u32 *)DBG_SELFTX_TO += 1;
     *(volatile u32 *)(DBG_SELFTX_TO + 4) = (MMIO32(PHY_TX_SELF_REMAINING) & 0xffffu) | (MMIO32(PHY_TX_SELF_BUSY) << 16);
 }

@@ -35,8 +35,8 @@ u32 hwd_rfc_read_rgf(u32 a, u32 b)
         }
         hwd_abif_rfc_divider_restart(1);
     }
-    if (r15 == 0xdeadbeef)
-        fw_log_emit2(0, 0x101e218, 5, 0xdeadbeef);
+    if (r15 == 0xdeadbeef)   /* vendor печатал константы «5 trials, 0xdeadbeef» — без регистра и RF */
+        fw_log_emit3(0, LS_FW(RFC_READ_FAILED), b, r3, MMIO32(HW_RFC_READ_VALID));
     (void)r14;
     return r15;
 }

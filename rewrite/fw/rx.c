@@ -73,8 +73,10 @@ __attribute__((section(".textlate"))) void txrx_mgr_handle_dma_irq(void)
     u32 status = hwd_dma_read_rx_tx_status();
     u32 bits = status & 0xfffu;
     txrx_dma_irq_count += 1;
-    if ((status & 0xf0000000u) || ((status >> 12) & 0xfffu))
+    if ((status & 0xf0000000u) || ((status >> 12) & 0xfffu)) {
+        fw_log_emit1(0, 0x101d4b0, status);   /* «DMA BAD Interrupt: cause = %x»; vendor — без статуса */
         fw_sysassert_fatal(0, 0x1207);
+    }
     while (bits) {
         u32 idx = 31 - (u32)__builtin_clz(bits);   /* vendor: rsub 0x1e,norm = старший бит */
         u_schd_fn cb = (vring_hw_read_status_bit(idx) == 1)
@@ -341,6 +343,7 @@ __attribute__((section(".textlate"))) void rx_api_drain_list_drain(u32 idx, u32 
             continue;
         }
         if (pkt->info.qid != 0 && pkt->info.qid != 1) {
+            fw_log_emit3(0, LS_FW(RX_BAD_QID), pkt->info.qid, pkt->info.cid, pkt->info.mid);
             fw_sysassert_fatal(0, 0x1216);
             continue;
         }

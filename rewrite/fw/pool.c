@@ -41,13 +41,15 @@ void *mem_pool_alloc_raw(struct mem_pool *p)
 {
     void *b;
     /* 8c3558: все ячейки заняты — журнал и 0 */
-    if (p->used == p->count) {
-        fw_log_emit1(0, 0x1001b90, p->used);
+    if (p->used == p->count) {   /* vendor 0x1001b90 — только used, без пула */
+        fw_log_emit3(0, LS_FW(POOL_EXHAUSTED), (u32)p, p->used, p->elem_size);
         return 0;
     }
     b = p->free_head;
-    if (!b)
+    if (!b) {   /* список свободных пуст при used < count — счётчик и список разошлись */
+        fw_log_emit3(0, LS_FW(POOL_LIST_EMPTY), (u32)p, p->used, p->count);
         return 0;
+    }
     p->free_head = *(void **)b; /* следующий свободный (обычный ld, как vendor) */
     p->used++;                         /* счётчик занятых */
     /* 8c35ca/8c36aa: выдана последняя ячейка — журнал (как в vendor-логе во время BF:
@@ -102,7 +104,7 @@ void *mem_pool_alloc_locked(struct fw_mailbox *mbox)
     u8 *cell = mem_pool_alloc_cell(&mbox->tx);
     arc_irq_restore(saved);
     if (!cell) {
-        fw_sysassert_fatal((void *)0, 0xc1);
+        fw_sysassert_fatal(__builtin_return_address(0), 0xc1);   /* caller — кто просил буфер (vendor 0) */
         return 0;
     }
     u8 *body = cell + sizeof(struct mbox_hdr);

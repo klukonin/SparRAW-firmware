@@ -406,6 +406,7 @@ __attribute__((section(".textlate"))) void hwd_phy_pwr_fw(u32 value)
     }
     if (!(value == b0 && value == b1 && value == b2)) {
         fw_log_emit0(0, 0x101d828);
+        fw_log_emit3(0, 0x101d9f0, b0, b1, b2);   /* vendor печатал биты после ассерта — недостижимо */
         fw_sysassert_fatal((void *)0, 0x1334);
     }
     if (!(value == b0 && value == b2 && value == b1))

@@ -479,8 +479,8 @@ void lmac_if_rs_done_evt(const struct lmac_evt_rs_done *e)
     memcpy_fw(&r, &e->res, 0x10);
     if (r.status == 0)
         fw_log_emit2(0x20, 0x1003fac, r.cid, r.mcs);
-    else
-        fw_log_emit0(0x10, 0x1003fc4);
+    else   /* vendor 0x1003fc4 «UNKNOWN RS END EVENT» — без cid и статуса */
+        fw_log_emit3(0x10, LS_FW(RS_DONE_FAILED), r.cid, r.status, r.mcs);
     struct conn *conn = conn_mgr_by_cid(r.cid);
     if (conn == 0)
         fw_sysassert_fatal((void *)__builtin_return_address(0), 0xcb | (1u << 12));

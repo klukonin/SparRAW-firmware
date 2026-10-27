@@ -910,8 +910,10 @@ void isr_pcie_main(void)
         pcie_pm_event_unsupported(9);
         handled = 1;
     }
-    if (!handled)
+    if (!handled) {
+        fw_log_emit1(0, LS_FW(PCIE_MAIN_UNHANDLED), cause);   /* vendor — без причины */
         fw_sysassert_fatal((void *)0, 0x11ab);
+    }
 }
 
 /* ------------------------------------------------------------------------
