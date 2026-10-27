@@ -796,7 +796,7 @@ void sm_pring_bind_vring(struct pring *p, u32 vr, u32 a2, u32 a3, u32 a4,
         if (p->conn_timer != 0)
             fw_sysassert_fatal((void *)0, 0x129f);
         if (p->slot_timer != 0)
-            fw_sysassert_fatal((void *)0, 0x12e6);
+            fw_sysassert_fatal((void *)0, 0x10e6);   /* vendor: mov_s r1,0xe6; bset_s r1,r1,0xc (0x8c4b6e); прежде 0x12e6 — код calib_engine_on_start */
         p->bound = entry;
         p->vr = (u16)vr;
         pr = stream_mgr_pring_by_index((u16)vr);
