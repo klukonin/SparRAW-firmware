@@ -72,12 +72,16 @@ __attribute__((section(".textlate"))) void wmi_vring_cfg(void *cmd_p, u32 mid)
     u32 cid = cidxtid & 0xf;
     u32 fail_tok;
 
-    if (ringid >= 0xa) {
-        fw_sysassert_fatal(0, 0x11da);
+    if (ringid >= 0xa) {   /* vendor: ассерт 0x11da */
+        wmi_reject_param(0x821, ringid, 0x14);
+        l2mgr_send_vring_cfg_done(ringid, 0, 1, mid);
         return;
     }
-    if (tid >= 7)
-        fw_sysassert_fatal(0, 0x11db);              /* vendor продолжает */
+    if (tid >= 7) {        /* vendor: ассерт 0x11db */
+        wmi_reject_param(0x821, cidxtid, 0x15);
+        l2mgr_send_vring_cfg_done(ringid, 0, 1, mid);
+        return;
+    }
     struct conn *conn = conn_mgr_by_cid(cid);
     if (conn == 0) {
         fail_tok = 0x100d994;                       /* нет соединения cid */
@@ -121,8 +125,9 @@ __attribute__((section(".textlate"))) void wmi_vring_cfg(void *cmd_p, u32 mid)
         }
         return;
     }
-    default:                                        /* в т. ч. 1 (MODIFY) */
-        fw_sysassert_fatal(0, 0x11dc);
+    default:                                        /* в т. ч. 1 (MODIFY); vendor: ассерт 0x11dc */
+        wmi_reject_param(0x821, cmd->action, 0);
+        l2mgr_send_vring_cfg_done(ringid, 0, 1, mid);
         return;
     }
 

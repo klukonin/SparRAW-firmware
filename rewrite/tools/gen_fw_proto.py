@@ -18,7 +18,7 @@ REW = os.path.dirname(HERE)
 FW = os.path.join(REW, 'fw')
 OUT = os.path.join(FW, 'proto.h')
 CFLAGS = ['-mcpu=arc600', '-std=c11', '-Os', '-ffreestanding', '-fno-builtin', '-nostdlib',
-          '-mno-sdata', '-Iinclude', '-fsyntax-only', '-include', 'fw/dccm.h']
+          '-mno-sdata', '-Iinclude', '-fsyntax-only', '-include', 'fw/dccm.h', '-include', 'include/logstr.h']
 ENT = re.compile(r'^/\* (\S+):(\d+):NF \*/ (.*?) /\*.*\*/$')
 
 

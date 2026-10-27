@@ -879,6 +879,14 @@ void mid_apply_app_ies(struct mid *e, u32 type, u32 len, u32 buf)
     mid_set_app_ie_block(&e->bss, type, len, buf);
 }
 
+/* SparRAW: неверное значение поля команды хоста — запись «wmi cmd 0x%x: invalid value %u at +0x%x» и отказ
+ * вместо фатального ассерта vendor (fw падала на значение от хоста; ответ, если драйвер его ждёт, шлёт
+ * вызывающий). */
+void wmi_reject_param(u32 cmd, u32 val, u32 off)
+{
+    fw_log_emit3(0x03, LS_FW(WMI_BAD_PARAM), cmd, val, off);
+}
+
 /* l2mgr__set_app_ie (0x8fbb90, 86 Б; переход из диспетчера 0x8ecdc8): WMI_SET_APPIE_CMDID
  * {mgmt_frm_type, reserved, ie_len u16, ie_info[]}. IE копируются в TX-буфер. */
 void l2mgr_set_app_ie(const struct wmi_set_appie_cmd *cmd, u32 mid)
@@ -886,8 +894,10 @@ void l2mgr_set_app_ie(const struct wmi_set_appie_cmd *cmd, u32 mid)
     struct mid *e = mid_list_by_mid_fw(mid);
     u32 buf = 0;
     if (cmd->ie_len != 0) {
-        if (cmd->ie_len > 1024)
-            fw_sysassert_fatal((void *)0, 0x11e6);
+        if (cmd->ie_len > 1024) {   /* vendor: ассерт 0x11e6; драйвер длину IE не ограничивает */
+            wmi_reject_param(0x3f, cmd->ie_len, 2);
+            return;
+        }
         buf = TX_API_alloc_tx_payload();
         memcpy_fw((void *)buf, cmd->ie_info, cmd->ie_len);
     }

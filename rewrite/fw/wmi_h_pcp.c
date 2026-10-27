@@ -93,8 +93,8 @@ static void stream_mgr_add_bcast_vring(struct stream_ctx *ctx, const struct wmi_
 
 /* wmi_bcast_vring_cfg (0x8fb4e0, 184 Б): WMI_BCAST_VRING_CFG (0x822). Тело: +0 action
  * (0 — add, 2 — delete), +4 tx_sw_ring {ring_mem_base, ring_size +0xc, max_mpdu_size
- * +0xe}, +0x10 ringid, +0x11 encap_trans_type. ringid ≥ 10 — ассерт 0x11f6, action 1 и
- * прочие — ассерт 0x11d1 (оба — выход). Нет записи mid — ассерт 0x16c0 (vendor идёт
+ * +0xe}, +0x10 ringid, +0x11 encap_trans_type. ringid ≥ 10 и action 1 / прочие — отказ с журналом и
+ * VRING_CFG_DONE (1) (vendor: ассерты 0x11f6, 0x11d1). Нет записи mid — ассерт 0x16c0 (vendor идёт
  * дальше с нулём). */
 void wmi_bcast_vring_cfg(const struct wmi_bcast_vring_cfg_cmd *cmd, u32 mid)
 {
@@ -103,8 +103,9 @@ void wmi_bcast_vring_cfg(const struct wmi_bcast_vring_cfg_cmd *cmd, u32 mid)
     struct stream_ctx *ctx;
     struct mid *e;
 
-    if (vr >= 0xa) {
-        fw_sysassert_fatal(RA(), 0x11f6);
+    if (vr >= 0xa) {   /* vendor: ассерт 0x11f6 */
+        wmi_reject_param(0x822, vr, 0x10);
+        l2mgr_send_vring_cfg_done(vr, 0, 1, mid);
         return;
     }
     act = cmd->action;
@@ -112,8 +113,9 @@ void wmi_bcast_vring_cfg(const struct wmi_bcast_vring_cfg_cmd *cmd, u32 mid)
         stream_mgr_delete_vring(vr);
         return;
     }
-    if (act != 0) {
-        fw_sysassert_fatal(RA(), 0x11d1);
+    if (act != 0) {   /* vendor: ассерт 0x11d1 */
+        wmi_reject_param(0x822, act, 0);
+        l2mgr_send_vring_cfg_done(vr, 0, 1, mid);
         return;
     }
     fw_log_emit1(0x2b, 0x100db88, vr);
@@ -131,12 +133,14 @@ void wmi_bcast_vring_cfg(const struct wmi_bcast_vring_cfg_cmd *cmd, u32 mid)
 
 /* ======================= PCP channel / factor (0x829 / 0x82a / 0x91b) ======================= */
 
-/* wmi_set_pcp_channel (0x8fbcc4, 40 Б): [0x803b80] = channel (≥ 4 — ассерт 0x11df,
- * vendor всё равно пишет). */
+/* wmi_set_pcp_channel (0x8fbcc4, 40 Б): [0x803b80] = channel (≥ 4 — отказ с журналом;
+ * vendor — ассерт 0x11df и запись). */
 void wmi_set_pcp_channel(const struct wmi_set_pcp_channel_cmd *cmd)
 {
-    if (cmd->channel >= 4)
-        fw_sysassert_fatal(RA(), 0x11df);
+    if (cmd->channel >= 4) {   /* vendor: ассерт 0x11df и запись всё равно */
+        wmi_reject_param(0x829, cmd->channel, 0);
+        return;
+    }
     dashboard.pcp_channel = cmd->channel;
 }
 

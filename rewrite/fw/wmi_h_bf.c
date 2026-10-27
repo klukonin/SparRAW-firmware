@@ -133,7 +133,7 @@ void host_if_set_sectors_hal(struct wmi_mbox *mb, const struct wmi_set_sectors_c
 
 /* wmi_trigger_beamforming_cmdid (0x8fc11c, 122 Б): тип [0] (u32): 0 — по MAC пира
  * ([0xc], 6 Б) найти запись mid-списка и lmac_if_trigger_bf(её cid, 0); 1 — по cid [4]:
- * lmac_if_trigger_bf(cid, 1); 2 — ассерт 0x11e0 (0x8f << 5). Ответа хосту нет.
+ * lmac_if_trigger_bf(cid, 1); иное — отказ с журналом (vendor: 2 — ассерт 0x11e0). Ответа хосту нет.
  * mid-список берётся до разбора типа (vendor: всегда). */
 void wmi_trigger_beamforming(const struct wmi_bf_trig_cmd *cmd, u32 mid)
 {
@@ -154,9 +154,8 @@ void wmi_trigger_beamforming(const struct wmi_bf_trig_cmd *cmd, u32 mid)
         if (cmd->cid >= SPARRAW_MAX_STA)        /* исправлено (vendor): cid без проверки → uc bf_init_sm за массивами */
             return;
         lmac_if_trigger_bf(cmd->cid, 1);
-    } else if (t == 2) {
-        /* vendor: mov.eq r0,blink — blink здесь уже от bl mid_list__by_mid_fw */
-        fw_sysassert_fatal(caller(), 0x8f << 5);
+    } else {   /* vendor: t == 2 — ассерт 0x11e0, прочие — молча */
+        wmi_reject_param(0x83a, t, 0);
     }
 }
 

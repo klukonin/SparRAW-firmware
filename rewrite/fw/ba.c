@@ -673,8 +673,10 @@ FWDATA(802bb4) const struct {
 void stream_mgr_ba_disable(u32 vr)
 {
     struct stream_ctx *s = stream_by_vr[vr];
-    if (s == 0)
-        fw_sysassert_fatal((void *)0, 0x128c);
+    if (s == 0) {   /* гонка с разрывом (как BA_EN); vendor: ассерт 0x128c */
+        fw_log_emit1(0x1b, LS_FW(BA_DIS_NO_STREAM), vr);
+        return;
+    }
     s->ba_en = 0;
     ba_sm_evt_type(s, 1, 0x25, 1, 0);
 }
@@ -699,8 +701,10 @@ void vring_ba_en_race_check(u32 vr, u32 agg, u32 timeout, u32 amsdu)
 void wmi_vring_ba_dis(const u8 *cmd, u32 mid)
 {
     (void)mid;
-    if (cmd[0] >= 0xa)
-        fw_sysassert_fatal((void *)0, 0x11de);
+    if (cmd[0] >= 0xa) {   /* vendor: ассерт 0x11de */
+        wmi_reject_param(0x824, cmd[0], 0);
+        return;
+    }
     stream_mgr_ba_disable(cmd[0]);
 }
 
@@ -708,8 +712,10 @@ void wmi_vring_ba_dis(const u8 *cmd, u32 mid)
 void wmi_vring_ba_en(const struct wmi_vring_ba_en_cmd *cmd, u32 mid)
 {
     (void)mid;
-    if (cmd->ringid >= 0xa)
-        fw_sysassert_fatal((void *)0, 0x11dd);
+    if (cmd->ringid >= 0xa) {   /* vendor: ассерт 0x11dd */
+        wmi_reject_param(0x823, cmd->ringid, 0);
+        return;
+    }
     vring_ba_en_race_check(cmd->ringid, cmd->agg_max_wsize, cmd->ba_timeout, cmd->amsdu);
 }
 
@@ -1415,6 +1421,10 @@ void wmi_rcp_delba(const struct wmi_rcp_delba_cmd *cmd, u32 mid)
         fw_sysassert_fatal((void *)0, 0x106f);
     tid = cmd->cidxtid >> 4;
     conn = conn_mgr_by_cid(cmd->cidxtid & 0xfu);
+    if (conn == 0) {   /* гонка с разрывом: соединения уже нет; vendor — ассерт 0x1072 после выделения буфера */
+        fw_log_emit1(0x1b, LS_FW(RCP_DELBA_NO_CONN), cmd->cidxtid & 0xfu);
+        return;
+    }
     pl = TX_API_alloc_tx_payload();
     if (pl == 0)
         fw_sysassert_fatal((void *)0, 0x1070);

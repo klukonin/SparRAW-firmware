@@ -2159,6 +2159,7 @@ void wmi_prio_tx_sectors_set_default_cfg (struct wmi_mbox *mb, const struct wmi_
 void wmi_pxmt_range_cfg (const u8 *body, u32 mid);                                                   /* wmi_h_misc.c */
 void wmi_rcp_addba_resp (const struct wmi_rcp_addba_resp_cmd *cmd, u32 mid);                         /* ba.c */
 void wmi_rcp_delba (const struct wmi_rcp_delba_cmd *cmd, u32 mid);                                   /* ba.c */
+void wmi_reject_param (u32 cmd, u32 val, u32 off);                                                   /* wmi_cmd.c */
 void wmi_rf_bringup_extra (void);                                                                    /* wmi.c */
 void wmi_rf_pwr_on_delay (struct wmi_mbox *mb, const struct wmi_rf_pwr_on_delay_cmd *cmd, u32 mid);  /* wmi_h_misc.c */
 void wmi_rs_cfg (struct wmi_mbox *mb, const struct wmi_rs_cfg_cmd *cmd, u32 mid);                    /* wmi_h_bf.c */

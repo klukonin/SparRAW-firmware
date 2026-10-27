@@ -94,7 +94,7 @@ void wmi_pxmt_range_cfg(const u8 *body, u32 mid)
 
 /* low_sme::wmi_rf_mgmt_cmd_handler (0x8ec9e8, 84 Б): rf_mgmt_type [body]: 0 — событие
  * W_DISABLE (1) автомату rf_mgmt_sm с аргументом 1 (программный kill), 1 — W_ENABLE (0)
- * с аргументом 1, 2 — только статус хосту (WMI 0x1853); иное — ассерт 0x107c. */
+ * с аргументом 1, 2 — только статус хосту (WMI 0x1853); иное — vendor ассерт 0x107c, SparRAW — отказ (журнал) и статус. */
 void low_sme_wmi_rf_mgmt_cmd_handler(const struct wmi_rf_mgmt_cmd *cmd)
 {
     u32 t = cmd->rf_mgmt_type;
@@ -110,8 +110,9 @@ void low_sme_wmi_rf_mgmt_cmd_handler(const struct wmi_rf_mgmt_cmd *cmd)
     case 2:
         low_sme_send_rf_mgmt_status();
         break;
-    default:
-        fw_sysassert_fatal(caller(), 0x107c);
+    default:   /* vendor: ассерт 0x107c */
+        wmi_reject_param(0x853, t, 0);
+        low_sme_send_rf_mgmt_status();
         break;
     }
 }
