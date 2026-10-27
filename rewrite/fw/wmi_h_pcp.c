@@ -1008,8 +1008,9 @@ static void handle_packet_args(u8 *dst, u16 *lenp, struct mid *e, u8 *src, u32 l
  * (handle_packet__args), автомату MLME соединения — событие 0xa (payload);
  * Disassociation — событие 0xc. Затем кадр уходит через SW_TX_MGMT.
  * Ошибка vendor: нет соединения с dst или другой подтип — выход без освобождения кадра и
- * без SW_TX_COMPLETE хосту (payload теряется; 0x8f3bdc / 0x8f3be8 → 0x8f3c96). Оставлено
- * как у vendor (sw_tx_req зовёт только с подтипами 1 / 0xa). */
+ * без SW_TX_COMPLETE хосту (payload терялся, драйвер ждал события 2 с; 0x8f3bdc / 0x8f3be8 → 0x8f3c96).
+ * Соединения нет при гонке с уходом станции (кадр хоста к уже отключённой) — SparRAW: кадр освобождается,
+ * хосту SW_TX_COMPLETE (1). */
 static void handle_packet_splitmac(const struct wmi_sw_tx_req_cmd *cmd, u32 payload, u32 len, u32 mid)
 {
     u16 nlen = 0;                                   /* sth.aw r15,[sp,-4] */
@@ -1021,6 +1022,8 @@ static void handle_packet_splitmac(const struct wmi_sw_tx_req_cmd *cmd, u32 payl
     conn = mid_list_find_by(e, cmd->dst_mac);
     if (conn == 0) {
         fw_log_emit2(0x1b, 0x100dcd0, cmd->dst_mac_hi, cmd->dst_mac_lo);
+        TX_API_free_memory(payload);
+        l2mgr_send_sw_tx_complete(1, mid);
         return;
     }
     sub = (*(u16 *)payload >> 4) & 0xfu;
@@ -1036,8 +1039,11 @@ static void handle_packet_splitmac(const struct wmi_sw_tx_req_cmd *cmd, u32 payl
         sw_tx_mgmt_send_packet(cmd->dst_mac, mid, payload, len, l2mgr_send_sw_tx_complete);
         return;
     }
-    if (sub != 0xa)
+    if (sub != 0xa) {   /* недостижимо: wmi_sw_tx_req зовёт только с подтипами 1 / 0xa */
+        TX_API_free_memory(payload);
+        l2mgr_send_sw_tx_complete(1, mid);
         return;
+    }
     fw_log_emit0(0x2b, 0x100dd18);
     fw_log_emit2(0x1b, 0x100dd38, cmd->dst_mac_hi, cmd->dst_mac_lo);
     sw_tx_mgmt_send_packet(cmd->dst_mac, mid, payload, len, l2mgr_send_sw_tx_complete);
