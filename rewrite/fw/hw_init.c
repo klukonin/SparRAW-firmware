@@ -157,60 +157,56 @@ void hw_personality_detect(void)
     MMIO32(BL_MAGIC) = r0;   /* [0x880a3c+0x7c] hw_personality (в hw.h — BL_MAGIC) */
 }
 
-/* cnt_handler__clear_all (0x8f6424): команды очистки счётчиков MAC в 0x887008 с опросом
- * готовности (биты 30/31). Опросы — zero-overhead lp: lp_count = N+1 итераций, счётчик
- * неудач стартует с N и уменьшается на каждой неудачной итерации; «таймаут» — счётчик == 0
- * ПОСЛЕ цикла. Особенность vendor (сохранена): если неудачны все N+1 итераций, счётчик = -1
- * (≠ 0) и таймаут не замечается; срабатывает лишь при ровно N неудачах и успехе на
- * последней. Фаза 1 при «таймауте» повторяет команду (+1 к счётчику [0x8003d8] = [gp,149]
- * .as) и только после второго «таймаута» — сисассерт 0x1187. Сисассерты 0x1187..0x1189
- * у vendor продолжают выполнение (b_s назад в следующую фазу). */
-static u32 cnt_poll_both(u32 n)
+/* SparRAW: ожидание бита регистра с пределом (want = 1 — установлен, 0 — снят). vendor ждал готовности
+ * железа без предела — при зависшем блоке fw висела молча. Таймаут — запись с адресом, значением и маской,
+ * возврат 0; что делать дальше, решает вызывающий (отказ или ассерт 0x3002 — место видно хосту). */
+u32 hw_poll_bit(u32 addr, u32 mask, u32 want)
 {
-    u32 left = n;
-    u32 i;
+    u32 n;
 
-    for (i = 0; i < n + 1; i++) {
-        if ((MMIO32(HW_MAC_CNT_CTRL) & (1u << 30)) && (MMIO32(HW_MAC_CNT_CTRL) & (1u << 31)))
-            break;                          /* два отдельных чтения, как vendor */
-        left--;
-    }
-    return left;
+    for (n = 0; n < HW_POLL_MAX; n++)
+        if (((MMIO32(addr) & mask) != 0) == (want != 0))
+            return 1;
+    fw_log_emit3(0, LS_FW(HW_POLL_TIMEOUT), addr, MMIO32(addr), mask);
+    return 0;
 }
 
-static u32 cnt_poll_bit(u32 bit, u32 n)
+/* cnt_handler__clear_all (0x8f6424): команды очистки счётчиков MAC в 0x887008 с опросом
+ * готовности (биты 30/31) — до N+1 опросов. Баг vendor (lp со счётчиком неудач, проверка «== 0» после
+ * цикла): настоящий таймаут (все N+1 опросов неудачны, счётчик −1) не замечался, а успех ровно на последнем
+ * опросе считался таймаутом. SparRAW: таймаут — неудача всех опросов; фаза 1 повторяет команду (+1 к
+ * [0x8003d8]), повторный таймаут и таймауты фаз 2/3 — запись в журнал (фаза, регистр) и дальше: vendor на
+ * настоящем таймауте тоже продолжал, а ассерты 0x1187..0x1189 на этом пути не нужны — счётчики не критичны. */
+static u32 cnt_poll(u32 mask, u32 n)
 {
-    u32 left = n;
     u32 i;
 
-    for (i = 0; i < n + 1; i++) {
-        if (MMIO32(HW_MAC_CNT_CTRL) & (1u << bit))
-            break;
-        left--;
-    }
-    return left;
+    for (i = 0; i < n + 1; i++)
+        if ((MMIO32(HW_MAC_CNT_CTRL) & mask) == mask)
+            return 1;
+    return 0;
 }
 
 void cnt_handler_clear_all(void)
 {
     /* Фаза 1: 0x3d8000, ждём биты 30 и 31. */
     MMIO32(HW_MAC_CNT_CTRL) = 0x3d8000;
-    if (cnt_poll_both(1000) == 0) {
+    if (!cnt_poll(3u << 30, 1000)) {
         mac_cnt_clear_retry_count += 1;    /* [gp,596]: счётчик повторов */
         MMIO32(HW_MAC_CNT_CTRL) = 0x3d8000; /* r1 = 0x7b << 15 */
-        if (cnt_poll_both(1000) == 0)
-            fw_sysassert_fatal(__builtin_return_address(0), 0x1187);
+        if (!cnt_poll(3u << 30, 1000))
+            fw_log_emit2(0, LS_FW(MAC_CNT_CLEAR_TIMEOUT), 1, MMIO32(HW_MAC_CNT_CTRL));
     }
 
     /* Фаза 2: 0x2a4000, ждём бит 31. */
     MMIO32(HW_MAC_CNT_CTRL) = 0x2a4000;
-    if (cnt_poll_bit(31, 10000) == 0)
-        fw_sysassert_fatal(__builtin_return_address(0), 0x1188);
+    if (!cnt_poll(1u << 31, 10000))
+        fw_log_emit2(0, LS_FW(MAC_CNT_CLEAR_TIMEOUT), 2, MMIO32(HW_MAC_CNT_CTRL));
 
     /* Фаза 3: 0x1a2000, ждём бит 30. */
     MMIO32(HW_MAC_CNT_CTRL) = 0x1a2000;
-    if (cnt_poll_bit(30, 10000) == 0)
-        fw_sysassert_fatal(__builtin_return_address(0), 0x1189);
+    if (!cnt_poll(1u << 30, 10000))
+        fw_log_emit2(0, LS_FW(MAC_CNT_CLEAR_TIMEOUT), 3, MMIO32(HW_MAC_CNT_CTRL));
 }
 
 /* sdp_gpio__boot_init (0x8f8384): сброс GPIO → пустая задержка (lp 800 × 2 nop_s) →

@@ -81,8 +81,10 @@ u32 hwd_spi_read(u32 offset, u32 len, void *buf)
     MMIO32(HW_SPI_FLASH_ADDR) = offset;
     MMIO32(HW_SPI_FLASH_CMD) = len | 0x3030000u;
     MMIO32(HW_SPI_FLASH_CTRL) = 0xc0000000u;
-    while (MMIO32(HW_SPI_FLASH_CTRL) & (1u << 29))
-        ;
+    if (!hw_poll_bit(HW_SPI_FLASH_CTRL, 1u << 29, 0)) {   /* vendor ждал без предела */
+        hwd_spi_release_lock();
+        return 0;
+    }
 
     /* Выгрузка слов из FIFO 0x8800a8. */
     u8 *dst = (u8 *)buf;

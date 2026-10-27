@@ -233,6 +233,9 @@
 #define PHY_TX_ATTEN_VAL         0x884134u  /* [7:0] tx_atten_val_i, [15:8] tx_atten_val_q (UT 0x40e … */
 #define PHY_SAR_MEAS_CTL         0x885000u  /* управление онлайн- и SAR-измерениями: бит 0 = вкл., бит 6 = пуск … */
 #define PHY_SAR_MEAS_STATUS      0x885004u  /* бит 12 = онлайн-измерение готово (UT 0x41d/0x436), бит 13 = SAR-замер … */
+/* SparRAW: предел опросов готовности железа (hw_poll_bit, fw/hw_init.c) — 2^25 чтений, на порядки больше
+ * штатного ожидания (единицы–сотни опросов). */
+#define HW_POLL_MAX              0x2000000u
 #define RFC_TX_POWER_TBL         0x8891b4u  /* массив из 13 регистров (0x8891b4..0x8891e4). При set_low_gain=0 … */
 #define RFC_READ_HYST            0x8892b4u  /* регистр гистерезиса чтения RFC: калибровка пишет в биты [2:1] … */
 #define ABIF_SENSOR_BGAP_CTRL    0x889364u  /* датчик температуры и bandgap: бит 0 bgap_ctrl, биты 1..2 … */

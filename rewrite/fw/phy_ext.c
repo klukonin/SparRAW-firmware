@@ -82,12 +82,12 @@ void hwd_phy_online_gain_measurement_read(u32 idx, u16 *out)
     out[1] = (u16)(w & 0x7ffu);
 }
 
-/* hwd_phy__online_measurement_completed (0x8d1de0, 14 Б): ждать бит 12 0x885004 —
- * без предела, как vendor (bbit0 на себя). */
+/* hwd_phy__online_measurement_completed (0x8d1de0, 14 Б): ждать бит 12 0x885004. vendor ждал без
+ * предела (bbit0 на себя); SparRAW — предел, таймаут — журнал и ассерт 0x3002. */
 void hwd_phy_online_measurement_completed(void)
 {
-    while (!(MMIO32(PHY_SAR_MEAS_STATUS) & (1u << 12)))
-        ;
+    if (!hw_poll_bit(PHY_SAR_MEAS_STATUS, 1u << 12, 1))
+        fw_sysassert_fatal(__builtin_return_address(0), 0x3002);
 }
 
 /* hwd_phy__online_measurement_config (0x8d1df0, 66 Б): длина окна 2^a5 (64 бита:

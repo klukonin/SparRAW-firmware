@@ -36,7 +36,8 @@ __attribute__((section(".textlate"))) void mac_parser_write_rule(const struct pr
     MMIO32(HW_PRS_TBL_B_DATA1) = buf->w[1];
     MMIO32(HW_PRS_TBL_B_CTRL) = 0x40000000u;
     arc_sync();
-    while (MMIO32(HW_PRS_TBL_B_CTRL) & (1u << 29)) { }
+    if (!hw_poll_bit(HW_PRS_TBL_B_CTRL, 1u << 29, 0))   /* vendor ждал без предела */
+        fw_sysassert_fatal(__builtin_return_address(0), 0x3002);
 }
 
 /* mac_parser__pack_rule_halfword(buf, val): 0x886278/0x88627c/0x886280/0x886284. */
@@ -51,7 +52,8 @@ __attribute__((section(".textlate"))) void mac_parser_pack_rule_halfword(const s
     MMIO32(HW_PRS_TBL_A_DATA1) = buf->w[1];
     MMIO32(HW_PRS_TBL_A_CTRL) = 0x40000000u;
     arc_sync();
-    while (MMIO32(HW_PRS_TBL_A_CTRL) & (1u << 29)) { }
+    if (!hw_poll_bit(HW_PRS_TBL_A_CTRL, 1u << 29, 0))   /* vendor ждал без предела */
+        fw_sysassert_fatal(__builtin_return_address(0), 0x3002);
 }
 
 /* mac_parser__build_wildcard_rule (0x8dfac8): правило-«джокер» для cid.
@@ -313,7 +315,8 @@ __attribute__((section(".textlate"))) void mac_filter_write_entries(u32 a, u32 b
         MMIO32(HW_PRS_TBL_A_ADDR) = b;
         MMIO32(HW_PRS_TBL_A_CTRL) = 0x40000000u;
         arc_sync();
-        while (MMIO32(HW_PRS_TBL_A_CTRL) & (1u << 29)) { }
+        if (!hw_poll_bit(HW_PRS_TBL_A_CTRL, 1u << 29, 0))
+            fw_sysassert_fatal(__builtin_return_address(0), 0x3002);
     }
 }
 
