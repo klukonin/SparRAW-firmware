@@ -7,3 +7,5 @@ X(CALIB_UT_BAD_ENGINE, "calib_mgr_ut: engine index %u out of range (engines %u),
 X(WMI_BAD_PARAM, "wmi cmd 0x%x: invalid value %u at +0x%x, rejected")
 X(BA_DIS_NO_STREAM, "WMI_VRING_BA_DIS for vring %u without a stream (after disconnect), ignored")
 X(RCP_DELBA_NO_CONN, "WMI_RCP_DELBA for cid %u without a connection (after disconnect), ignored")
+X(WMI_NOT_SUPPORTED, "---->> [HOST CMD] WMI_COMMAND_NOT_SUPPORTED_EVENT command 0x%x subtype 0x%x mid %u")
+X(WMI_NO_VIF, "wmi cmd 0x%x: mid %u has no VIF in fw, not supported")

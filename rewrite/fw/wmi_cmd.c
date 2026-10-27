@@ -126,7 +126,7 @@ void mbox_drain_debug(u32 a0, u32 a1)
  * {mid, cmd_id, reason}. */
 void wmi_evt_send_command_not_supported(struct wmi_mbox *mb, u32 cmd_id, u32 reason, u32 mid)
 {
-    fw_log_emit2(0, 0x10060cc, cmd_id, reason);
+    fw_log_emit3(0, LS_FW(WMI_NOT_SUPPORTED), cmd_id, reason, mid);   /* vendor 0x10060cc — без mid */
     struct wmi_command_not_supported_event *p = mem_pool_alloc_locked(&mb->mb);
     p->mid = (u8)mid;
     p->command_id = (u16)cmd_id;
@@ -1520,6 +1520,7 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
      * (mid_list_by_mid_fw → 0: WMI_SET_SSID, SET_PASSPHRASE, ESE_CFG, …). Такая команда — «не поддерживается»;
      * WMI_PORT_ALLOCATE (0x911) берёт mid из тела и создаёт запись — её пропускаем. */
     if (handled == 0 && hdr->id != 0x911 && mid_list_by_mid_fw(mid) == 0) {
+        fw_log_emit2(0, LS_FW(WMI_NO_VIF), hdr->id, mid);
         wmi_evt_send_command_not_supported(mb, hdr->id, 0, mid);
         handled = 1;
     }
