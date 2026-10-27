@@ -1,0 +1,24 @@
+# Описание стенда для pytest (tests/README.md). Скопировать в tests/stand.toml (вне git) и поправить адреса.
+# Два узла OpenWrt с wil6210 (Sparrow) по ssh без пароля (ключ), питание — розетки Tapo (SparRAW-tools/host/tapo_plug.py).
+
+[dut]                         # тестируемый узел: на него заливается проверяемый образ
+host = "root@192.0.2.12"
+mac = "02:00:00:00:00:12"     # MAC радио dut (точка снимает его зависшую запись перед загрузкой)
+ip = "10.60.0.12"             # адрес в радиоканале
+power = { kind = "tapo", addr = "192.0.2.105" }
+
+[peer]                        # партнёр: обычно точка доступа на своей прошивке
+host = "root@192.0.2.11"
+ip = "10.60.0.11"
+ssid = "SPARRAW-STAND"        # SSID точки peer
+fw_backup = "/lib/firmware/wil6210.fw.backup"   # своя прошивка peer — вернуть после теста AP
+power = { kind = "tapo", addr = "192.0.2.104" }
+
+[tools]
+tapo = "../../SparRAW-tools/host/tapo_plug.py"  # относительно rewrite/
+
+[test]
+ap_ssid = "SPARRAW-AP-TEST"   # SSID точки dut в тесте AP
+iperf_s = 8
+min_up_mbps = 500             # пороги пропускной способности
+min_down_mbps = 500

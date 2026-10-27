@@ -13,9 +13,15 @@ import os, re, struct, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
 import logstr
-_IMG = sys.argv[sys.argv.index('--fw') + 1] if '--fw' in sys.argv else None
-S = logstr.merged(open(os.path.join(HERE, '..', '..', '..', '6.2', 'ref', 'strings-fw.bin'), 'rb').read(),
-                  'fw', _IMG)
+VENDOR_STRINGS = os.path.join(HERE, '..', '..', '..', '6.2', 'ref', 'strings-fw.bin')
+
+
+def load_strings(image=None):
+    """Таблица строк: vendor + свои SparRAW (из образа image или из include/logstr_fw.def)."""
+    return logstr.merged(open(VENDOR_STRINGS, 'rb').read(), 'fw', image)
+
+
+S = None   # таблица по умолчанию — загружается при первом decode() без tab
 
 
 def st(o):
@@ -24,7 +30,13 @@ def st(o):
     return S[o:o + 200].split(b'\0')[0].decode('latin1')
 
 
-def decode(P, base=0x843900, n=0x1000):
+def decode(P, base=0x843900, n=0x1000, tab=None):
+    """[(время, строка)] из снимка blob_fw_peri; tab — таблица строк (load_strings), по умолчанию из .def."""
+    global S
+    if tab is not None:
+        S = tab
+    elif S is None:
+        S = load_strings()
     w = struct.unpack_from('<%dI' % (n // 4), P, base - 0x840000)
     out, i = [], 1
     while i < len(w):
@@ -49,11 +61,19 @@ def decode(P, base=0x843900, n=0x1000):
     return out
 
 
+def chrono(recs):
+    """Записи в хронологическом порядке: кольцо переполняется — после записи с наибольшим временем самые старые."""
+    if not recs:
+        return recs
+    k = max(range(len(recs)), key=lambda j: recs[j][0])
+    return recs[k + 1:] + recs[:k + 1]
+
+
 if __name__ == '__main__':
-    recs = decode(open(sys.argv[1], 'rb').read())   # argv[1] — снимок blob_fw_peri
-    if '--raw' not in sys.argv and recs:
-        k = max(range(len(recs)), key=lambda j: recs[j][0])
-        recs = recs[k + 1:] + recs[:k + 1]
+    img = sys.argv[sys.argv.index('--fw') + 1] if '--fw' in sys.argv else None
+    recs = decode(open(sys.argv[1], 'rb').read(), tab=load_strings(img))   # argv[1] — снимок blob_fw_peri
+    if '--raw' not in sys.argv:
+        recs = chrono(recs)
     for _, line in recs:
         if not line.endswith('0x0x0'):
             print(line)
