@@ -1630,7 +1630,7 @@ void l2mgr_send_listen_started(u32 status, u32 mid)
     u8 *p = (u8 *)host_if_send_pair();
     memset0_words(p, 4);
     p[0] = (u8)status;
-    fw_log_emit1(0x2b, 0x100e0e8, mid);
+    fw_log_emit2(0x2b, LS_FW(LISTEN_STARTED_EVT), mid, status);   /* vendor 0x100e0e8 — без статуса */
     low_sme_send_evt2sw(p, 0x1914, 4, mid, 0, 0, 0);
 }
 

@@ -383,8 +383,8 @@ void l2mgr_start_discovery(u32 mid)
 /* l2_mgr::wmi_cmd_handler_start_listen (0x8fbd3c, 84 Б; переход 0x8ec3e4). Нет записи
  * mid — ассерт 0x16c2 (vendor идёт дальше). PCP/AP запись ([e+0x9c]) или mid в
  * состоянии 2 — отказ: журнал и LISTEN_STARTED.
- * Особенность vendor: при отказе статус 0 (как успех), у START_SEARCH — 1 (bl.d с
- * mov_s r0,0 в 0x8fbd62 против mov_s r0,0x1 в 0x8fbdb6); оставлено как у vendor. */
+ * Баг vendor: при отказе статус 0 (как успех), у START_SEARCH — 1 (bl.d с mov_s r0,0 в 0x8fbd62 против
+ * mov_s r0,0x1 в 0x8fbdb6): драйвер (p2p) считал прослушивание начатым. SparRAW — статус 1. */
 void l2mgr_start_listen(u32 mid)
 {
     struct mid *e = mid_list_by_mid_fw(mid);
@@ -393,7 +393,7 @@ void l2mgr_start_listen(u32 mid)
         fw_sysassert_fatal(RA(), 0x16c2);
     if (e->bss.is_go != 0 || mid_list_any_in_state2() != 0) {
         fw_log_emit0(0x2b, 0x100e128);
-        l2mgr_send_listen_started(0, e->id);
+        l2mgr_send_listen_started(1, e->id);
         return;
     }
     sys_state_broadcast(0xd, 0);
