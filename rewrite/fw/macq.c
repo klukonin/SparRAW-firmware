@@ -37,8 +37,7 @@ __attribute__((section(".textlate"))) u32 bits_set32_s0_w12(u32 w, u32 v) { retu
 __attribute__((section(".textlate"))) void macq_desc_wait_window_free(void)
 {
     if (macq_flag() == 0) {
-        while (MMIO32(HW_QDESC_WIN_CTRL) & (1u << 0x1f)) {
-        }
+        HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1f);   /* vendor — без предела */
     }
 }
 
@@ -86,8 +85,7 @@ __attribute__((section(".textlate"))) void macq_desc_write(const void *desc, u32
 
             MMIO32(HW_QDESC_WIN_CTRL) = (macq_flag() == 0) ? 0xc0000000u : 0x40000000u;
             arc_sync();
-            while (MMIO32(HW_QDESC_WIN_CTRL) & (1u << 0x1d)) {
-            }
+            HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1d);
 
             cnt++;
             a7--;
@@ -146,8 +144,7 @@ __attribute__((section(".textlate"))) void macq_desc_write_type6(const void *des
         MMIO32(HW_QDESC_WIN_DATA0 + i * 4) = w[i];
     MMIO32(HW_QDESC_WIN_CTRL) = (macq_flag() == 0) ? 0xc0000000u : 0x40000000u;
     arc_sync();
-    while (MMIO32(HW_QDESC_WIN_CTRL) & (1u << 0x1d)) {
-    }
+    HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1d);
     macq_desc_release_window();
 }
 

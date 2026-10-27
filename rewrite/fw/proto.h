@@ -763,6 +763,7 @@ void hw_personality_detect (void);                                              
 u32 hw_personality_read_strap (u32 i);                                                               /* hw_init.c */
 void hw_pll_mode_switch (u32 on, u32 arg);                                                           /* power_halt.c */
 u32 hw_poll_bit (u32 addr, u32 mask, u32 want);                                                      /* hw_init.c */
+void hw_poll_fail (u32 addr, u32 mask);                                                              /* hw_init.c */
 void hw_sysapi_channel_estimation (u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 timeout, u32 ctx0, u32 ctx1); /* phy_ext.c */
 u32 hw_sysapi_force_mcs (u32 a, u32 b, u32 c);                                                       /* sysapi_stats.c */
 void hw_sysapi_get_beamforming_statistics (struct wmi_mbox *mb, const struct ut_cmd *cmd);           /* sysapi_stats.c */

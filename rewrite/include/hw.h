@@ -236,6 +236,18 @@
 /* SparRAW: предел опросов готовности железа (hw_poll_bit, fw/hw_init.c) — 2^25 чтений, на порядки больше
  * штатного ожидания (единицы–сотни опросов). */
 #define HW_POLL_MAX              0x2000000u
+/* Ожидание «пока бит mask регистра addr установлен» с пределом HW_POLL_MAX для путей со сроком (окно
+ * дескрипторов MACQ, общее с uc): в цикле лишь декремент счётчика, таймаут — hw_poll_fail (журнал и
+ * ассерт 0x3002 с адресом места, fw/hw_init.c) вне цикла. ХРУПКО: опросы внутри удержания окна —
+ * после правки сверять дизассемблер цикла (лишние такты удлиняют ожидание uc). */
+#define HW_POLL_WHILE_SET(addr, mask) do {                                   \
+        u32 hw_poll_n_ = HW_POLL_MAX;                                       \
+        while (MMIO32(addr) & (mask))                                       \
+            if (--hw_poll_n_ == 0) {                                        \
+                hw_poll_fail((addr), (mask));                               \
+                break;                                                      \
+            }                                                               \
+    } while (0)
 #define RFC_TX_POWER_TBL         0x8891b4u  /* массив из 13 регистров (0x8891b4..0x8891e4). При set_low_gain=0 … */
 #define RFC_READ_HYST            0x8892b4u  /* регистр гистерезиса чтения RFC: калибровка пишет в биты [2:1] … */
 #define ABIF_SENSOR_BGAP_CTRL    0x889364u  /* датчик температуры и bandgap: бит 0 bgap_ctrl, биты 1..2 … */

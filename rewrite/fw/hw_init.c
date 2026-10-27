@@ -171,6 +171,14 @@ u32 hw_poll_bit(u32 addr, u32 mask, u32 want)
     return 0;
 }
 
+/* Таймаут HW_POLL_WHILE_SET (include/hw.h): запись и ассерт 0x3002; caller — место опроса. Отдельной
+ * функцией, чтобы цикл опроса оставался коротким. */
+__attribute__((noinline, cold)) void hw_poll_fail(u32 addr, u32 mask)
+{
+    fw_log_emit3(0, LS_FW(HW_POLL_TIMEOUT), addr, MMIO32(addr), mask);
+    fw_sysassert_fatal(__builtin_return_address(0), 0x3002);
+}
+
 /* cnt_handler__clear_all (0x8f6424): команды очистки счётчиков MAC в 0x887008 с опросом
  * готовности (биты 30/31) — до N+1 опросов. Баг vendor (lp со счётчиком неудач, проверка «== 0» после
  * цикла): настоящий таймаут (все N+1 опросов неудачны, счётчик −1) не замечался, а успех ровно на последнем

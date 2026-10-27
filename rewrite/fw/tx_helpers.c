@@ -239,8 +239,7 @@ void mac_filter_write_one(const u32 *mac, u32 n, u32 idx)
     MMIO32(HW_PRS_TBL_A_DATA0) = *mac;
     MMIO32(HW_PRS_TBL_A_CTRL) = 0x40000000u;
     arc_sync();
-    while (MMIO32(HW_PRS_TBL_A_CTRL) & (1u << 29)) {
-    }
+    HW_POLL_WHILE_SET(HW_PRS_TBL_A_CTRL, 1u << 29);   /* vendor — без предела */
 }
 
 /* install_key__parse_flags (0x8df9a4, 68 Б): правило ключа i соединения k. Слово правила
@@ -277,7 +276,7 @@ void macq_desc_read(void *d,u32 b,u32 c,u32 count,u32 e)
             /* Порт-баг (исправлен 2026-10-20): чтение было без volatile — gcc читал регистр
              * один раз и крутился на ветке (бит 29 при первом чтении → вечный цикл); vendor
              * 0x8c5178: ld r0,[r2,8]; bbit1 r0,29 — перечитывает каждую итерацию. */
-            while (MMIO32(HW_QDESC_WIN_CTRL) & (1u << 29)) {}
+            HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 29);
             u32 r1 = (count == 2) ? 2u : 4u;
             for (u32 i = 0; i < r1; i++)
                 dst[i] = MMIO32(HW_QDESC_WIN_DATA0 + i * 4);
@@ -325,7 +324,7 @@ void macq_desc_read_typed(void *d,u32 b,u32 c,u32 dd,u32 e,u32 f,u32 g)
             MMIO32(HW_QDESC_WIN_ADDR) = sp0;
             MMIO32(HW_QDESC_WIN_CTRL) = (sched_fixed_active == 0) ? 0xc0000000u : 0x40000000u;
             arc_sync();
-            while (MMIO32(HW_QDESC_WIN_CTRL) & (1u << 29)) {}
+            HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 29);
             for (u32 i = 0; i < g; i++)
                 dst[i] = MMIO32(HW_QDESC_WIN_DATA0 + i * 4);
             dst += g;
