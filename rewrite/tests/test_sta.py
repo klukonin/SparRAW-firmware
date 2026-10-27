@@ -16,7 +16,7 @@ def test_fw_ready_with_image_version(sta, fw_blob):
 
 
 def test_no_fw_error_after_connect(sta):
-    assert sta.dut.fw_errors() == 0, re.findall(r'.*Firmware error.*', sta.dut.dmesg())
+    assert sta.dut.fw_errors() == 0, re.findall(r'.*Firmware error.*', sta.dut.dmesg_new())
 
 
 def test_ping(sta):

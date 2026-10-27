@@ -55,18 +55,44 @@ class Node:
         self.host = cfg['host']
         self.cfg = cfg
         self.tools = tools
+        self.on_recover = None     # колбэк стенда: узел перезагружен — роль потеряна
+        self.recoveries = 0
+        self.dmesg_mark = 0        # время ядра (dmesg) начала роли: ошибки FW считаются после него
+
+    def _ssh(self, cmd, timeout, input=None):
+        """ssh с самовосстановлением: узел не отвечает (ssh 255 или зависание) — power-cycle через розетку и повтор."""
+        for attempt in (0, 1):
+            try:
+                r = subprocess.run(['ssh'] + SSH_OPTS + [self.host, cmd], capture_output=True, timeout=timeout,
+                                   input=input)
+                if r.returncode != 255:
+                    return r
+                why = 'ssh: %s' % r.stderr.decode('utf-8', 'replace').strip()[-120:]
+            except subprocess.TimeoutExpired:
+                why = 'зависание %d с' % timeout
+            if attempt == 0:
+                self.recover(why)
+        raise StandError('%s: не отвечает и после перезагрузки (%s)' % (self.name, why))
+
+    def recover(self, why):
+        sys.stderr.write('\n[стенд] %s: %s — перезагрузка по питанию\n' % (self.name, why))
+        self.recoveries += 1
+        self.power_cycle()
+        time.sleep(25)
+        self.wait_alive()
+        self.dmesg_mark = 0
+        if self.on_recover:
+            self.on_recover(self)
 
     def run(self, cmd, timeout=60, check=True, input=None):
-        r = subprocess.run(['ssh'] + SSH_OPTS + [self.host, cmd], capture_output=True, timeout=timeout,
-                           input=input)
+        r = self._ssh(cmd, timeout, input)
         if check and r.returncode != 0:
             raise StandError('%s: «%s» → %d: %s' % (self.name, cmd[:80], r.returncode,
                                                      r.stderr.decode('utf-8', 'replace')[-300:]))
         return r.stdout.decode('utf-8', 'replace')
 
     def runb(self, cmd, timeout=60):
-        r = subprocess.run(['ssh'] + SSH_OPTS + [self.host, cmd], capture_output=True, timeout=timeout)
-        return r.stdout
+        return self._ssh(cmd, timeout).stdout
 
     def put(self, data, path):
         self.run('cat > %s; sync' % shlex.quote(path), input=data, timeout=120)
@@ -112,8 +138,22 @@ class Node:
     def dmesg(self):
         return self.run('dmesg', check=False)
 
+    @staticmethod
+    def _ktime(line):
+        m = re.match(r'\[\s*(\d+\.\d+)\]', line)
+        return float(m.group(1)) if m else None
+
+    def mark(self):
+        """Отметка начала роли (время ядра последней строки dmesg): дальше dmesg_new()/fw_errors() — только новые
+        строки. По времени, не по числу строк: кольцо dmesg долгоживущего узла заполнено и сдвигается."""
+        ts = [t for t in map(self._ktime, self.dmesg().splitlines()) if t is not None]
+        self.dmesg_mark = ts[-1] if ts else 0
+
+    def dmesg_new(self):
+        return '\n'.join(l for l in self.dmesg().splitlines() if (self._ktime(l) or 0) > self.dmesg_mark)
+
     def fw_errors(self):
-        return len(re.findall(r'error detected|Firmware error', self.dmesg()))
+        return len(re.findall(r'error detected|Firmware error', self.dmesg_new()))
 
     def wmi_send(self, cmdid, payload=b'', mid=0):
         """Команда WMI через debugfs wmi_send драйвера (заголовок: mid, rsv, id, timestamp)."""
@@ -160,6 +200,16 @@ class Stand:
         self.peer_fw = open(peer_fw_path, 'rb').read() if peer_fw_path else self.fw
         self.role = None
         self.peer_dirty = False
+        for n in (self.dut, self.peer):
+            n.on_recover = self._node_recovered
+
+    def _node_recovered(self, node):
+        """Узел перезагружен по питанию — роль стенда потеряна (следующая фикстура роли загрузит её заново).
+        peer после перезагрузки поднимается со своим сохранённым режимом и залитым файлом прошивки — его точку
+        (прошивка fw_backup, SSID, адрес) надо восстановить."""
+        self.role = None
+        if node is self.peer:
+            self.peer_dirty = True
 
     # --- общие шаги ---
     def _peer_restore_ap(self):
@@ -177,7 +227,7 @@ class Stand:
 
     def _dut_boot(self):
         d = self.dut
-        d.put(self.fw, '/lib/firmware/wil6210.fw')
+        d.put(self.fw, '/lib/firmware/wil6210.fw')   # завис — _ssh перезагрузит узел и повторит
         d.power_cycle()
         time.sleep(25)
         d.wait_alive()
@@ -208,6 +258,7 @@ class Stand:
               % c['ssid'], check=False)
         if not self._wait(d, "dmesg | grep -m1 'FW ready after'", 60):
             raise StandError('dut: FW не готова')
+        p.mark()
         self.role = 'sta'
         self.connected = self._wait(d, 'iw dev %s link 2>/dev/null | grep Connected' % (d.iface() or 'x'), timeout)
         if self.connected:
@@ -230,6 +281,7 @@ class Stand:
               % ap_ssid, check=False)
         if not self._wait(d, "dmesg | grep -m1 'FW ready after'", 60):
             raise StandError('dut: FW не готова')
+        p.mark()
         self.role = 'ap'
         self.connected = self._wait(d, 'iw dev %s station dump 2>/dev/null | grep Station' % (d.iface() or 'x'), timeout)
         if self.connected:

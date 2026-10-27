@@ -51,6 +51,7 @@ def stand(request, fw_path):
     import tomllib
     cfg = tomllib.load(open(cfg_path, 'rb'))
     s = standlib.Stand(cfg, fw_path, request.config.getoption('--ko'), request.config.getoption('--peer-fw'))
+    request.session.__dict__['_sparraw_stand'] = s
     yield s
     s.teardown()
 
@@ -114,3 +115,23 @@ def pytest_collection_modifyitems(config, items):
     for it in items:
         if 'known_issue' in it.keywords:
             it.add_marker(pytest.mark.xfail(reason='известная открытая проблема', strict=False))
+
+
+_STAND = []
+
+
+@pytest.fixture(scope='session', autouse=True)
+def _remember_stand(request):
+    yield
+    s = request.session.__dict__.get('_sparraw_stand')
+    if s:
+        _STAND.append(s)
+
+
+def pytest_terminal_summary(terminalreporter):
+    """Сводка самовосстановления: узел переставал отвечать и был перезагружен по питанию."""
+    for s in _STAND:
+        rec = ['%s ×%d' % (n.name, n.recoveries) for n in (s.dut, s.peer) if n.recoveries]
+        if rec:
+            terminalreporter.write_line('стенд: перезагрузка по питанию (узел не отвечал): ' + ', '.join(rec),
+                                        yellow=True)
