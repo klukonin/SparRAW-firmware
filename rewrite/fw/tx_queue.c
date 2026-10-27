@@ -125,7 +125,7 @@ void tx_queue_mgr_create_queue(u32 count, u32 first, u32 a2, u32 a3, u32 a4, u32
 {
     struct vring_tbl_entry *e = &vring_tbl[first];
     if (mode == 4)
-        fw_sysassert_fatal((void *)0, 0x128d);
+        fw_sysassert_fatal((void *)0, 0x108d);   /* vendor 0x8d99f8: mov_s r1,0x8d; bset_s r1,r1,0xc; прежде 0x128d */
     for (u32 i = first; i < first + count; i++, e++) {
         u32 t = 0, b;
         e->macq = (u8)i;

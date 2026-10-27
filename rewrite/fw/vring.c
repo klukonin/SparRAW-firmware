@@ -583,7 +583,7 @@ void sm_pring_state_step(struct pring *p)
     macq_hw_disable_queue_fw(p->id);
     pring_stop_count += 1;
     if (p->stop_timer != 0)
-        fw_sysassert_fatal((void *)0, 0x12e8);
+        fw_sysassert_fatal((void *)0, 0x10e8);   /* vendor 0x8ea72a: mov_s r1,0xe8; bset_s r1,r1,0xc; прежде 0x12e8 */
     p->stop_timer = u_schd_schedule(sm_pring_timeout_task, p->id, 0, 1,
                                     pring_stop_timeout, 0, 0);
     vring_reg_write_locked_3c(1u << bit, 1);
@@ -735,7 +735,7 @@ void sm_pring_slot_optimized(struct pring *p, struct vring_rec *e)
 {
     u32 cnt = mac_tx_cnt_delta_88_net_of_20();
     if (p->slot_timer == 0)
-        fw_sysassert_fatal((void *)0, 0x12e7);
+        fw_sysassert_fatal((void *)0, 0x10e7);   /* vendor 0x8ea2e4: mov_s r1,0xe7; bset_s r1,r1,0xc; прежде 0x12e7 — код basic_calib estimation_alg */
     p->slot_timer = 0;
     if (cnt != p->tx_cnt)
         return;
