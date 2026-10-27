@@ -3,3 +3,4 @@
  * на запись (build_fw.py и декодеры читают файл регулярным выражением). Новые — в конец: порядок задаёт
  * токены, но образ всегда несёт свою таблицу, поэтому перестановка допустима. Аргументов — не больше 3. */
 X(FW_LOGSTR_RESERVED, "fw: SparRAW log strings")
+X(CALIB_UT_BAD_ENGINE, "calib_mgr_ut: engine index %u out of range (engines %u), ignored")

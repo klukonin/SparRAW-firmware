@@ -583,7 +583,8 @@ void calib_mngr_engine_step(struct calib_engine *eng, u32 mask, u32 periodic, u3
 /* calib_mngr__engine_start (0x8ca25c, 116 Б): только на ASIC. Движок idx (автомат
  * calib_mngr.eng[idx], mul64 idx,68) свободен (байт состояния 0) — запуск
  * (calib_mngr__engine_step); занят — журнал с именем движка (строка — указатель
- * calib_engine_names[idx], ld.as). На FPGA — ничего. Зовут WMI_UNIT_TEST calib_mgr_ut
+ * calib_engine_names[idx], ld.as). На FPGA — ничего. idx вне движков — запись в журнал и отказ
+ * (vendor читал за концом calib_mngr.eng[] и calib_engine_names[]). Зовут WMI_UNIT_TEST calib_mgr_ut
  * (wmi_h_misc.c) и calib__start_scheme4 (wmi_h_bf.c). */
 void calib_mngr_engine_start(u32 idx, u32 mask, u32 periodic, u32 nfrag, u32 pause,
                              calib_done_fn cb, u32 cb_a0, u32 cb_a1)
@@ -591,6 +592,10 @@ void calib_mngr_engine_start(u32 idx, u32 mask, u32 periodic, u32 nfrag, u32 pau
     struct calib_engine *sm;
     if (platform_is_asic() == 0)
         return;
+    if (idx >= CALIB_ENG_NUM) {   /* SparRAW: idx приходит от хоста (UT calib_mgr_ut) — vendor не проверял */
+        fw_log_emit2(0x06, LS_FW(CALIB_UT_BAD_ENGINE), idx, CALIB_ENG_NUM);
+        return;
+    }
     sm = &calib_mngr.eng[idx];
     if (sm->hdr.state == CE_ST_IDLE)
         calib_mngr_engine_step(sm, mask, periodic, nfrag, pause, cb, cb_a0, cb_a1);
