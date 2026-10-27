@@ -15,6 +15,8 @@
 """
 import argparse, os, re, struct, subprocess, sys, zlib
 
+import logstr
+
 HEAD = struct.Struct('<HHI')
 FILE_HEADER = struct.Struct('<IIIII32s')
 FW_MAGIC = 0x36323130  # "0621"
@@ -208,6 +210,10 @@ def main():
     # файловый заголовок (заполним позже)
     records.append(dict(type=6, flags=0, payload=FILE_HEADER.pack(FW_MAGIC, 0, 0, 1, 0, b'')))
     records.append(dict(type=1, flags=0, payload=fw_id))      # метка: проект, автор, ссылка (include/version.h)
+    if a.elf:   # свои строки журнала (include/logstr.h): декодер берёт их из образа
+        records.append(dict(type=1, flags=0, payload=logstr.record('fw')))
+    if a.uc_elf and not a.no_uc:
+        records.append(dict(type=1, flags=0, payload=logstr.record('uc')))
     if code_b:
         records.append(dict(type=2, flags=0, payload=struct.pack('<I', 0x8c0000) + code_b))
     if late_b:

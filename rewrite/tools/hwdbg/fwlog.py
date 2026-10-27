@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""fwlog.py <fw_peri.bin> [--raw] — журнал fw 6.2 из кольца 0x843900 (blob_fw_peri).
+"""fwlog.py <fw_peri.bin> [--raw] [--fw <образ.fw>] — журнал fw 6.2 из кольца 0x843900 (blob_fw_peri).
 
-Запись: заголовок (биты 31..28 = 0xa/0xb, 27..26 — число аргументов, 19..0 — смещение строки
-в таблице строк 6.2/ref/strings-fw.bin), слово времени, аргументы. Кольцо переполняется —
-вывод по умолчанию в хронологическом порядке (после записи с наибольшим временем идут
-самые старые). --raw — в порядке буфера.
+Запись: заголовок (биты 31..28 = 0xa/0xb, 27..26 — число аргументов, 25..18 — старший байт TSF,
+17..0 — смещение строки), слово времени, аргументы. Строки: таблица vendor 6.2/ref/strings-fw.bin
+и свои SparRAW с 0x30000 (include/logstr_fw.def; с --fw — из записи образа, для чужой сборки).
+Кольцо переполняется — вывод по умолчанию в хронологическом порядке (после записи с наибольшим
+временем идут самые старые). --raw — в порядке буфера.
 """
 import os, re, struct, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-S = open(os.path.join(HERE, '..', '..', '..', '6.2', 'ref', 'strings-fw.bin'), 'rb').read()
+sys.path.insert(0, os.path.join(HERE, '..'))
+import logstr
+_IMG = sys.argv[sys.argv.index('--fw') + 1] if '--fw' in sys.argv else None
+S = logstr.merged(open(os.path.join(HERE, '..', '..', '..', '6.2', 'ref', 'strings-fw.bin'), 'rb').read(),
+                  'fw', _IMG)
 
 
 def st(o):
@@ -26,10 +31,10 @@ def decode(P, base=0x843900, n=0x1000):
         h = w[i]
         if (h >> 28) in (0xa, 0xb) and i + 1 < len(w):
             na = (h >> 26) & 3
-            fmt = st(h & 0xfffff) or '?'
+            fmt = st(h & 0x3ffff) or '?'
             aa = []
             for a in w[i + 2:i + 2 + na]:
-                aa.append(st(a - 0x1000000) if 0x1000000 <= a < 0x1030000 and st(a - 0x1000000) else a)
+                aa.append(st(a - 0x1000000) if 0x1000000 <= a < 0x1040000 and st(a - 0x1000000) else a)
             try:
                 txt = fmt.replace('%s', '%r')
                 txt = re.sub(r'%[0-9lu]*[dux]', '%s', txt)
@@ -45,7 +50,7 @@ def decode(P, base=0x843900, n=0x1000):
 
 
 if __name__ == '__main__':
-    recs = decode(open(sys.argv[1], 'rb').read())
+    recs = decode(open(sys.argv[1], 'rb').read())   # argv[1] — снимок blob_fw_peri
     if '--raw' not in sys.argv and recs:
         k = max(range(len(recs)), key=lambda j: recs[j][0])
         recs = recs[k + 1:] + recs[:k + 1]

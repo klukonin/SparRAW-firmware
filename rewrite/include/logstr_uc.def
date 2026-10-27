@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+ * Строки журнала uc SparRAW (include/logstr.h): X(ИМЯ, "формат"), токен LS_UC(ИМЯ). Правила — как в
+ * logstr_fw.def. */
+X(UC_LOGSTR_RESERVED, "uc: SparRAW log strings")
