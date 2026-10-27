@@ -698,7 +698,7 @@ struct bcn_rx_s {
     s32  metric;                        /* +0x10 метрика лучшего маяка (r40 [10:0] со знаком) */
     u16  bssid[3];                      /* +0x14 */
     u8 _pad1[2];
-    u16  x1c;                           /* +0x1c ++ в bti (смысл не установлен) */
+    u16  abft_gp0_late_cnt;             /* +0x1c: A-BFT станции пропущен — GP0 взведён поздно (после окна GP2, r54.8); bti.c */
     u8   bcn_sent;                      /* +0x1e свой маяк отправлен в этом BI */
     u8   abft_go;                       /* +0x1f решено отвечать в A-BFT */
     u16  abft_ok_cnt;                   /* +0x20 A-BFT ответчик: получен SSW-Feedback */
@@ -713,7 +713,7 @@ struct bcn_rx_s {
 };
 _Static_assert(sizeof(struct bcn_rx_s) == 0x30, "bcn_rx");
 _Static_assert(__builtin_offsetof(struct bcn_rx_s, metric) == 0x10, "bcn_rx.metric");
-_Static_assert(__builtin_offsetof(struct bcn_rx_s, x1c) == 0x1c, "bcn_rx.x1c");
+_Static_assert(__builtin_offsetof(struct bcn_rx_s, abft_gp0_late_cnt) == 0x1c, "bcn_rx.abft_gp0_late_cnt");
 _Static_assert(__builtin_offsetof(struct bcn_rx_s, abft_skip_mode) == 0x24, "bcn_rx.abft_skip_mode");
 
 /* Поле FSS (байт 1 BI Control, биты 2..5). */

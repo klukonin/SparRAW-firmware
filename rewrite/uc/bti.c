@@ -313,7 +313,7 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
     if (c->kind == 1) {
         /* Вход в BTI с пути приёма (l1_task_phase_of → rx_flow → автомат BI, аргумент 1): маяк уже
          * разобран rx_flow, GP2 (0x284 от конца его приёма) давно кончился — vendor взводил GP0 по
-         * этому маяку и отказывался по r54.8 на каждом маяке BTI (стенд: bcn_rx.x1c = 64 = число маяков,
+         * этому маяку и отказывался по r54.8 на каждом маяке BTI (стенд: bcn_rx.abft_gp0_late_cnt = 64 = число маяков,
          * GP_CLK2 = 0 при отказе; так же и в vendor-коде — путь тот же). Стандартно: конец BTI — по
          * Duration маяка, принятого так, что GP0 взведён в окне GP2. Поэтому GP2 перевзводится на конец
          * следующего принятого кадра и следующий маяк BTI ловится в bti_bi2_event_step, как при входе по
@@ -352,7 +352,7 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
         bti_cnt.x04 = 0;                            /* t маяка нет — без поправки по последнему маяку */
     }
     if (st != 1) {
-        bcn_rx.x1c += 1;
+        bcn_rx.abft_gp0_late_cnt += 1;
         c->status = 4;
         return;
     }
