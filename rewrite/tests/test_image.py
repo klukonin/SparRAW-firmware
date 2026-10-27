@@ -51,15 +51,16 @@ def test_version_string(fw_blob):
     assert re.fullmatch(r'\d+\.\d+\.\d+\.\d+-SparRAW(-PRO)?', v), 'версия не в формате SparRAW: %r' % v
 
 
-def test_marking_record(fw_blob):
+def test_marking_record(fw_blob, check):
     """Метка проекта и автора — запись-комментарий (include/version.h FW_ID_STRING)."""
     marks = [p for t, _, p in standlib.fw_records(fw_blob) if t == TYPE_COMMENT and b'Evil Wireless Man' in p]
     assert marks, 'нет записи-метки SparRAW'
     pro = standlib.fw_is_pro(fw_blob)
-    assert (b'SparRAW PRO firmware' in marks[0]) == pro, marks[0][:80]
+    check.is_true((b'SparRAW PRO firmware' in marks[0]) == pro, 'метка не соответствует версии: %r' % marks[0][:80])
+    check.is_true(b'https://' in marks[0] or pro, 'в метке открытой версии нет ссылки на репозиторий')
 
 
-def test_data_records_in_known_regions(fw_blob):
+def test_data_records_in_known_regions(fw_blob, check):
     seen = {}
     for t, _, p in standlib.fw_records(fw_blob):
         if t != TYPE_DATA:
@@ -67,10 +68,10 @@ def test_data_records_in_known_regions(fw_blob):
         addr = struct.unpack_from('<I', p, 0)[0]
         end = addr + len(p) - 4
         reg = [n for n, a, b in REGIONS if a <= addr and end <= b]
-        assert reg, 'запись данных 0x%x..0x%x вне известных областей' % (addr, end)
-        seen[reg[0]] = seen.get(reg[0], 0) + 1
+        if check.is_true(reg, 'запись данных 0x%x..0x%x вне известных областей' % (addr, end)):
+            seen[reg[0]] = seen.get(reg[0], 0) + 1
     for need in ('fw_code', 'fw_data', 'uc_code', 'uc_data'):
-        assert need in seen, 'нет сегмента %s' % need
+        check.is_true(need in seen, 'нет сегмента %s' % need)
 
 
 def test_no_overlapping_data(fw_blob):

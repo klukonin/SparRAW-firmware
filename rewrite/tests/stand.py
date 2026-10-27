@@ -213,10 +213,16 @@ class Stand:
 
     # --- общие шаги ---
     def _peer_restore_ap(self):
-        """peer — снова точка на своей прошивке (fw_backup), SSID стенда, адрес и сервер iperf3."""
+        """peer — снова точка на своей прошивке (fw_backup), SSID стенда, адрес и сервер iperf3. После роли станции
+        на тестируемом образе — через перезагрузку по питанию: перезапуска wifi мало (станция dut потом раз за
+        разом не слышала маяк точки, «link up: no beacon from peer»)."""
         p, c = self.peer, self.cfg['peer']
         if self.peer_dirty and c.get('fw_backup'):
             p.run('cp %s /lib/firmware/wil6210.fw; sync' % c['fw_backup'], check=False)
+        if self.peer_dirty and 'power' in c:
+            p.power_cycle()
+            time.sleep(25)
+            p.wait_alive()
         p.run("killall iperf3 2>/dev/null; for i in $(iw dev | sed -n 's/.*Interface //p'); do ip addr flush dev $i; done; "
               "uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.network=lan; "
               "uci set wireless.default_radio0.ssid=%s; fw4 reload; wifi down; sleep 2; wifi up radio0; sleep 5; "
@@ -305,6 +311,11 @@ class Stand:
         except Exception:
             pass
         return False
+
+    def ensure_booted(self, role):
+        """Узлы загружены в роли role (связь может не установиться)."""
+        if self.role != role:
+            (self.boot_sta if role == 'sta' else self.boot_ap)()
 
     def ensure(self, role):
         """Стенд в роли role со связью; иначе — загрузка в эту роль (предыдущий тест мог оборвать связь)."""

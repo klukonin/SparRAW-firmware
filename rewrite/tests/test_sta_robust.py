@@ -18,12 +18,12 @@ BAD = [
 
 @pytest.mark.parametrize('cmd,body,expect', BAD, ids=['ba_dis_ring12', 'pcp_channel7', 'bf_trig5', 'rf_mgmt9',
                                                       'ba_dis_nostream'])
-def test_bad_wmi_rejected(sta, fw_path, cmd, body, expect):
+def test_bad_wmi_rejected(sta, fw_path, check, cmd, body, expect):
     sta.dut.wmi_send(cmd, body)
     import time; time.sleep(0.5)
     log = sta.dut.fw_log(fw_path)
-    assert any(expect in l for l in log[-60:]), 'нет записи «%s» в журнале fw' % expect
-    assert sta.dut.fw_errors() == 0
+    check.is_true(any(expect in l for l in log[-60:]), 'нет записи «%s» в журнале fw' % expect)
+    check.is_true(sta.dut.fw_errors() == 0, 'ошибка FW после команды 0x%x' % cmd)
 
 
 def test_silent_rssi_table0_does_not_crash(sta):
@@ -41,6 +41,7 @@ def test_ut_calib_bad_engine(sta, fw_path):
     assert any('engine index 0x9 out of range' in l for l in log[-40:])
 
 
-def test_link_alive_after_bad_commands(sta):
-    assert sta.dut.fw_errors() == 0
-    assert sta.ping(10) >= 9
+def test_link_alive_after_bad_commands(sta, check):
+    check.is_true(sta.dut.fw_errors() == 0, 'ошибка FW после неверных команд')
+    got = sta.ping(10)
+    check.is_true(got >= 9, 'ping %d/10' % got)

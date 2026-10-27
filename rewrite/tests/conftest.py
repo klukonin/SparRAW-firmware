@@ -57,6 +57,13 @@ def stand(request, fw_path):
 
 
 @pytest.fixture
+def sta_booted(stand):
+    """dut загружен в роли станции (связь не обязательна — её проверяет test_boot)."""
+    stand.ensure_booted('sta')
+    return stand
+
+
+@pytest.fixture
 def sta(stand):
     """Стенд в роли «dut — станция», связь установлена."""
     if not stand.ensure('sta'):
@@ -102,7 +109,7 @@ def pytest_runtest_makereport(item, call):
         pass
 
 
-ORDER = ['test_image', 'test_sta', 'test_ftm', 'test_sta_robust', 'test_ap']
+ORDER = ['test_image', 'test_boot', 'test_sta', 'test_ftm', 'test_sta_robust', 'test_ap']
 
 
 def pytest_collection_modifyitems(config, items):

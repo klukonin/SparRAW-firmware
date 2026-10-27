@@ -1,18 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""dut — станция у точки peer: загрузка, подключение, данные, пропускная способность, журнал без фатальных ошибок."""
+"""dut — станция у точки peer (версии и подключение — test_boot): данные, пропускная способность, журнал fw."""
 import re
 import pytest
 
-import stand as standlib
-
 pytestmark = [pytest.mark.stand, pytest.mark.sta]
-
-
-def test_fw_ready_with_image_version(sta, fw_blob):
-    v = standlib.fw_version(fw_blob)
-    m = re.findall(r'FW ver\. (\S+)\(', sta.dut.dmesg())
-    assert m, 'нет wmi_evt_ready в dmesg'
-    assert m[-1] == v, 'загружена прошивка %s, проверяется %s' % (m[-1], v)
 
 
 def test_no_fw_error_after_connect(sta):
