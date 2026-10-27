@@ -3,7 +3,8 @@
  *
  * Запись журнала хранит не текст, а токен 0x1000000 + смещение строки в таблице строк; таблица vendor
  * (6.2/ref/strings-fw.bin, 0x20c64 Б; uc — 0x32c0 Б) нашего текста не содержит. Свои строки — в
- * include/logstr_fw.def и logstr_uc.def по одной записи X(ИМЯ, "формат"); токен — LS_FW(ИМЯ) / LS_UC(ИМЯ):
+ * include/logstr_fw.def и logstr_uc.def по одной записи X(ИМЯ, "формат") (в SparRAW-pro — ещё logstr_fw_pro.def,
+ * за открытыми); токен — LS_FW(ИМЯ) / LS_UC(ИМЯ):
  * база + offsetof в структуре из тех же записей (char[sizeof строки] подряд, без выравнивания), то есть
  * ровно смещение строки в таблице, которую tools/build_fw.py собирает из того же .def и кладёт в образ
  * записью-комментарием (магия LOGSTR_MAGIC_FW / _UC, u32 база, строки через \0). Декодеры
@@ -25,6 +26,9 @@
 #define X(name, s) char name[sizeof(s)];
 struct logstr_fw {
 #include "logstr_fw.def"
+#if __has_include("logstr_fw_pro.def")
+#include "logstr_fw_pro.def"               /* строки SparRAW-pro — отдельным файлом, чтобы слияния open не конфликтовали */
+#endif
 };
 struct logstr_uc {
 #include "logstr_uc.def"

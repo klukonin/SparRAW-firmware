@@ -25,6 +25,9 @@ def parse_def(text):
 def table(which, inc=INC):
     """(база, байты таблицы) из include/logstr_<which>.def."""
     items = parse_def(open(os.path.join(inc, 'logstr_%s.def' % which)).read())
+    pro = os.path.join(inc, 'logstr_%s_pro.def' % which)   # строки SparRAW-pro идут за открытыми (include/logstr.h)
+    if os.path.exists(pro):
+        items += parse_def(open(pro).read())
     return BASE[which], b''.join(s + b'\0' for _, s in items)
 
 
