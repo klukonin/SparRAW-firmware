@@ -841,8 +841,9 @@ void wmi_bf_control(const u8 *body, struct wmi_mbox *mb)
 
 /* calib__start_scheme4 (0x8e6fd4, 112 Б): таблица 1 — calib_silent_rssi_tbl (0x800408) = 0x800d04
  * (calib_srssi_temp_tbl[1])
- * (таблица высокой мощности, rf_cfg__load_800d04); таблица 0 — ассерт 0x1588 (и
- * продолжение без записи). Затем движок 4: [obj+0xd0] = число RF платы, [obj+0x50] = 0,
+ * (таблица высокой мощности, rf_cfg__load_800d04); таблица 0 — у vendor фатальный ассерт 0x1588, хотя
+ * wmi_set_active_silent_rssi_table принимает 0 как допустимое: WMI_SET_ACTIVE_SILENT_RSSI_TABLE(0) ронял fw.
+ * SparRAW: 0 — таблица по умолчанию calib_srssi_temp_tbl[0] (начальное значение указателя, fw/calib.c). Затем движок 4: [obj+0xd0] = число RF платы, [obj+0x50] = 0,
  * периодический запуск, фрагментов = число RF, пауза 1. Маска движка — слово с полем
  * 20..31 = r1 = 0 (calib__bits_set32_s20_w12 с r1 = 0 после st_s r1,[sp,0]), т. е. 0 —
  * так у vendor (0x8e7012..0x8e701a). */
@@ -851,8 +852,8 @@ static void calib_start_scheme4(struct calib_silent_rssi *o, u32 table)
     /* volatile: порядок записей calib_count / tbl_rewrite — как у vendor (0x8e7010..0x8e701a). */
     volatile struct calib_silent_rssi *obj = o;
     u32 m, n, w;
-    if (table == 0)
-        fw_sysassert_fatal(caller(), 0x1588);
+    if (table == 0)   /* SparRAW: возврат к таблице по умолчанию; vendor — ассерт 0x1588 */
+        calib_silent_rssi_tbl = (u8 *)&calib_srssi_temp_tbl[0];
     else if (table == 1)
         calib_silent_rssi_tbl = (u8 *)&calib_srssi_temp_tbl[1];   /* таблица высокой мощности */
     m = rf_cfg_get_rf_mask_45e(&rf_obj);
