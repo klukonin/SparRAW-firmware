@@ -55,9 +55,10 @@ def fresh_snapshot():
     return OBJDIR
 
 HEAD = struct.Struct('<HHI')
-# rx_flow_handle_frame сам отправляет продолжение TXOP и возвращает 1 (uc/rx.c rx_txop_continue),
-# rx_flow_run это учитывает; vendor-обработчик void (в r0 мусор) — по отдельности не менять.
-PAIRS = [('rx_flow_run', 'rx_flow_handle_frame')]
+# rx_flow_handle_frame и rx_flow_step сами отправляют продолжение TXOP и возвращают 1 (uc/rx.c
+# rx_txop_continue), rx_flow_run это учитывает; vendor-функции void (в r0 мусор) — по отдельности
+# не менять (одна группа: выбор любой тянет все три).
+PAIRS = [('rx_flow_run', 'rx_flow_handle_frame', 'rx_flow_step')]
 
 
 def fw_segment(fw, addr):

@@ -420,8 +420,6 @@ def test_sifs_response_command(uc, kind):
     check('sifs_resp_' + kind, w, n, sifs_budget(w, n, kind), src)
 
 
-@risk('rx_flow_step → rx_txop_continue: r42.14 → 0x1b001111', 607, 692,
-      'B = 417·W/n + 12, m1-paths P0.2; стенд: +20 nop — отказ fw, uc/rx.c:386')
 def test_txop_continue_after_ack(uc):
     """Держатель TXOP принял Ack (режим 1 txrx_state2) → следующий кадр TXOP через SIFS (10.23.2.8, 10.29.3): от конца
     кадра (r42.14) до запроса в MTP 0x1b001111 в rx_txop_continue (путь rx_flow_step → rx_dispatch_by_g_8005f8; m1-paths

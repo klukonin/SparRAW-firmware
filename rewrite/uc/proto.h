@@ -567,7 +567,7 @@ u32 rx_flow_run(void);                                          /* rx.c */
 u32 rx_flow_run_and_check_bf_abort(u32 a);                      /* rx.c */
 u32 rx_flow_send_imm_response(void);                            /* rx.c */
 void rx_cf_end_nav_reset(u32 dur);                              /* rx.c */
-void rx_flow_step(struct tx_ctx_s *a, u32 b);                   /* rx.c */
+u32 rx_flow_step(struct tx_ctx_s *a, u32 b);                    /* rx.c */
 u32 rx_flow_substep_uc(struct tx_ctx_s *a);                     /* rx.c */
 void rx_funcs_handle_ppdu_report(void);                         /* rx.c */
 s32 rx_funcs_record_level_8020f8_8020fc(u32 a);                 /* util.c */

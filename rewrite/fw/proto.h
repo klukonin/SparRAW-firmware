@@ -2151,6 +2151,7 @@ void wmi_host_cmd_dispatch (struct wmi_mbox *mb, u8 *cmd);                      
 void wmi_link_maintain_cfg_read (const struct wmi_link_maintain_cfg_read_cmd *cmd);                  /* wmi_h_sta.c */
 void wmi_link_maintain_cfg_write (const struct wmi_link_maintain_cfg_write_cmd *cmd);                /* wmi_h_sta.c */
 void wmi_mac_addr_req (u32 mid, struct wmi_mbox *mb);                                                /* wmi_h_sta.c */
+u32 wmi_network_type_ok (u32 nt);                                                                    /* wmi_cmd.c */
 void wmi_notify_req (struct wmi_mbox *mb, const struct wmi_notify_req_cmd *cmd);                     /* wmi_h_sta.c */
 void wmi_pcp_start (const struct wmi_pcp_start_cmd *cmd, u32 mid);                                   /* wmi_h_pcp.c */
 void wmi_pmc (const struct wmi_pmc_cmd *cmd);                                                        /* wmi_h_misc.c */
@@ -2162,7 +2163,6 @@ void wmi_pxmt_range_cfg (const u8 *body, u32 mid);                              
 void wmi_rcp_addba_resp (const struct wmi_rcp_addba_resp_cmd *cmd, u32 mid);                         /* ba.c */
 void wmi_rcp_delba (const struct wmi_rcp_delba_cmd *cmd, u32 mid);                                   /* ba.c */
 void wmi_reject_param (u32 cmd, u32 val, u32 off);                                                   /* wmi_cmd.c */
-u32 wmi_network_type_ok (u32 nt);                                                                     /* wmi_cmd.c */
 void wmi_rf_bringup_extra (void);                                                                    /* wmi.c */
 void wmi_rf_pwr_on_delay (struct wmi_mbox *mb, const struct wmi_rf_pwr_on_delay_cmd *cmd, u32 mid);  /* wmi_h_misc.c */
 void wmi_rs_cfg (struct wmi_mbox *mb, const struct wmi_rs_cfg_cmd *cmd, u32 mid);                    /* wmi_h_bf.c */

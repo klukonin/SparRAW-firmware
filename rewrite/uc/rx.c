@@ -20,6 +20,33 @@ static inline __attribute__((always_inline)) void uc_mac_sel(u32 sel)
     uc_mac_cmd(g | MAC_CMD_STATUS_SEL | sel);
 }
 
+/* Поля sta_tab[i] (шаг 80) / rs_state[i] (шаг 12) сдвигами, как у vendor (add2/add1 + asl /
+ * ld.as), а не mul64: на ARC600 mul64 многотактный и чтение mlo ждёт результата (-Os выбирал
+ * mul64; пути со сроком P0.2 и RD). */
+static inline __attribute__((always_inline)) u32 rx_sta_tx_sel(u32 i)
+{
+    u32 r;
+    __asm__ volatile("add2 %0,%1,%1\n\tasl %0,%0,4\n\tld %0,[%0,%2]"
+                     : "=&r"(r) : "r"(i), "i"((u32)&sta_tab[0].tx_sel) : "memory");
+    return r;
+}
+/* rs_stats[i].mcs_try (шаг 0x2c) — тело mtp_queue_byte_by_index (rate_search.c) без вызова. */
+static inline __attribute__((always_inline)) u32 rx_rs_mcs_try(u32 i)
+{
+    u32 r;
+    __asm__ volatile("add2 %0,%1,%1\n\tadd1 %0,%1,%0\n\tadd2 %0,%2,%0\n\tldb %0,[%0,%3]"
+                     : "=&r"(r) : "r"(i), "i"((u32)rs_stats), "i"(__builtin_offsetof(struct rs_sta_stats, mcs_try))
+                     : "memory");
+    return r;
+}
+static inline __attribute__((always_inline)) u32 rx_rs_active(u32 i)
+{
+    u32 r;
+    __asm__ volatile("add1 %0,%1,%1\n\tld.as %0,[%2,%0]"
+                     : "=&r"(r) : "r"(i), "i"((u32)&rs_state[0].active) : "memory");
+    return r;
+}
+
 /* 3×nop_s после MAC-команды до чтения регистров ядра (r40/r42…) — группа vendor. */
 static inline __attribute__((always_inline)) void uc_nop3(void)
 {
@@ -386,11 +413,11 @@ u32 rx_flow_substep_uc(struct tx_ctx_s *a)
 /* --- Крупные функции RX (структурные порты: поток + stub подвызовов) --- */
 
 /* Продолжение TXOP (vendor 0x9314a0..0x931668, хвост rx_flow_run): запрос в MTP следующей передачи
- * (с ответом BA/ACK при RD), 0x37000020, разрешение на передачу.
- * ХРУПКО: срок — SIFS от конца принятого кадра; запас у vendor и у нас — единицы инструкций.
- * Стенд 2026-10-21 (UC_PAD(PAD_TXOP), tools/stand_tests/pad_sweep.sh, STA, ping + iperf 20 с):
- * +4 и +16 nop — 4 из 4 без сбоев; +20, +24, +28, +32, +64 — отказ fw при ассоциации 10 из 10
- * (FWERR, коды assert 0/0). Запас нынешнего кода — 16–19 инструкций.
+ * (с ответом BA/ACK при RD), 0x37000020, разрешение на передачу. Копии: rx_flow_run (from_step 0),
+ * RD-ветка rx_flow_handle_frame (0) и конец rx_flow_step (1 — с отложенными записями).
+ * ХРУПКО: срок — SIFS от конца принятого кадра; запас у vendor и у нас — единицы инструкций
+ * (P0.2 на железе 2026-10-21: +16 nop перед 0x1b001111 — норма, +20 — FWERR, коды assert 0/0; после
+ * переделки rx_flow_step путь короче на 67 инструкций по эмулятору — запас заново мерить pad_sweep).
  * Железо 2026-10-18: +4 nop перед 0x1b001111 (UC_DBG_TXOP_PAD=4) — наш uc 9 из 9 загрузок
  * (с нашим fw и с vendor fw) — assert uc 0x26/0x6000 через ~10 с iperf up, MAC_HW_ICR б5 (поздняя
  * команда); vendor с тем же сдвигом — 1 сбой из 3. Срабатывает ветка RD: кадр данных AP в нашем
@@ -403,14 +430,18 @@ u32 rx_flow_substep_uc(struct tx_ctx_s *a)
  * следующий кадр TXOP держателя — через SIFS после Ack/BlockAck (10.23.2.8); aSIFSTime 3 мкс
  * (Table 20-30), допуск DMG −0 %/+10 %×(aSlotTime − aAirPropagationTime) ≈ +0,49 мкс ≈ 80 тактов
  * (10.3.2.3.3). Сюда ведут и rx_flow_step (держатель TXOP принял Ack/BA), и RD-ветка обработчика. */
-static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx_s *ctx)
+/* В копии из rx_flow_step (-Os) — вставки без mul64 и вызова; в копиях rx_flow_run /
+ * rx_flow_handle_frame (O2) gcc и так строит add1 + ld.as — там код прежний. */
+#define RX_TXOP_RS_ACTIVE(i) (from_step ? rx_rs_active(i) : rs_state[i].active)
+#define RX_TXOP_MCS_TRY(i)   (from_step ? rx_rs_mcs_try(i) : (u32)mtp_queue_byte_by_index(i))
+static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx_s *ctx, int from_step)
 {
     u32 a, b;
     if (__builtin_expect(txrx_state2 & (1u << 30), 0)) {   /* раскладка: ветка RD/обычная — прямым ходом */
         a = (ctx->qid << 16) | 4;
         b = 0;
-        if (rs_state[ctx->sta].active != 0)
-            b = ((u32)mtp_queue_byte_by_index(ctx->sta) << 8) | 3;
+        if (RX_TXOP_RS_ACTIVE(ctx->sta) != 0)
+            b = (RX_TXOP_MCS_TRY(ctx->sta) << 8) | 3;
     } else {
         u32 m = ctx->mtp_state;
         a = ctx->qid << 16;
@@ -422,8 +453,8 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
         } else {
             a |= 1;
         }
-        if ((txrx_state1 & 2) && rs_state[ctx->sta].active != 0)
-            b |= ((u32)mtp_queue_byte_by_index(ctx->sta) << 8) | 3;
+        if ((txrx_state1 & 2) && RX_TXOP_RS_ACTIVE(ctx->sta) != 0)
+            b |= (RX_TXOP_MCS_TRY(ctx->sta) << 8) | 3;
     }
     UC_PAD(PAD_TXOP);   /* стресс запаса: uc/dbg.h (прежде UC_DBG_TXOP_PAD) */
     uc_mac_cmd(0x1b001111);
@@ -438,6 +469,13 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
     u32 mcs = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());
     uc_mac_cmd((mcs << 4) | 0x3e000000);
     uc_mac_cmd(0x37000020);
+    if (from_step) {
+        /* Отложенное из rx_flow_step (r13 = 1): записи флагов (MAC их не читает; до 0x1b001111
+         * стоили ~9 инструкций) — до чтения ctx->flags ниже, итог тот же; метка входа 0xeeee0b. */
+        rxf.flags |= 2u;
+        ctx->flags |= 1u;
+        uc_mac_cmd(0xeeee0b);
+    }
     VOL(uc_stats.tx_start) += 1;
     u32 r8 = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_tx << 24);
     abif_dvs_rf_ctrl_shadow = r8;
@@ -621,8 +659,10 @@ busy:
         if (busy_acct.busy_start_tsf != 0)
             rx_flow_accumulate_busy_time(busy_acct.busy_start_tsf);
     }
-    busy_acct.busy_start_tsf = 0;
+    /* busy_acct.busy_start_tsf = 0 (vendor здесь) — в каждой ветке ниже; на ветке «кадр принят» —
+     * после rx_flow_step / rx_flow_handle_frame (срок SIFS): до выхода её никто не читает. */
     if (ok == 0 && res == 1) {
+        busy_acct.busy_start_tsf = 0;
         uc_mac_cmd(0xeeee06);
         ppdu_evt_cnt += 1;
         VOL(uc_stats.rx_arm) += 1;
@@ -632,6 +672,7 @@ busy:
         goto noframe;
     }
     if (res == 0) {
+        busy_acct.busy_start_tsf = 0;
 noframe:                                        /* 0x931244 */
         if (((mac_rx_rep2() & MAC_RX_REP2_SSW) || (mac_rx_rep3() & MAC_RX_REP3_MY_BSS_BEACON)) &&
             (mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN) && (mac_evt1() & MAC_EVT1_PPDU_REPORT))
@@ -659,19 +700,22 @@ noframe:                                        /* 0x931244 */
         } else if (f & 2) {
             uc_mac_sel(MAC_SEL_REM_TIME);
             uc_nop3();
-            rx_flow_step(ctx, mac_status_sel() & MAC_REM_TIME);
+            txop_sent = rx_flow_step(ctx, mac_status_sel() & MAC_REM_TIME);
         } else {
             txop_sent = rx_flow_handle_frame(ctx);
-            if (!txop_sent && (txrx_state2 & 0x3001000))
+            if (!txop_sent && (txrx_state2 & 0x3001000)) {
+                busy_acct.busy_start_tsf = 0;
                 return 0;
+            }
         }
     }
+    busy_acct.busy_start_tsf = 0;
     r13 = 0;
     if (!txop_sent) {
         if (rx_ppdu_report_seen != 0)
             goto done;
         if (ctx->flags & 1)
-            rx_txop_continue(ctx);
+            rx_txop_continue(ctx, 0);
     }
     rx_nav_update((rxf.flags >> 1) & 1, mac_rx_rep1(), mac_rx_rep2(), mac_rx_rep3());
 done:
@@ -1112,7 +1156,7 @@ chk:                                            /* 0x93215c */
              * Условия — те же, что rx_flow_run проверяет после возврата. */
             if ((txrx_state2 & 0x3001000) || rx_ppdu_report_seen != 0 || !(ctx->flags & 1))
                 return 0;
-            rx_txop_continue(ctx);
+            rx_txop_continue(ctx, 0);
             return 1;
         }
         ctx->flags &= ~1u;
@@ -1405,13 +1449,16 @@ u32 rx_funcs_rx_flow(void)
     return ret;
 }
 
-/* СРОК: путь держателя TXOP от принятого Ack/BlockAck (или ответа RD) до продолжения TXOP
- * (rx_txop_continue в rx_flow_run) — следующий кадр через SIFS 3 мкс (802.11-2020 10.23.2.8,
- * 10.29.3, 10.3.2.3.3). Вся функция на этом пути: ~330 инструкций кода (998 Б против 1080 Б у
- * vendor 0x931acc), основной проход оценочно 100–150 + rx_dispatch_by_g_8005f8 (с возможным
- * ожиданием BAP) + rx_end_switch_to_tx; запас общий с rx_txop_continue (ХРУПКО: +4 nop там
- * уже ломают RD-ветку) — единицы. */
-void rx_flow_step(struct tx_ctx_s *a, u32 b)
+/* СРОК (ХРУПКО): путь держателя TXOP от принятого Ack/BlockAck (или ответа RD) до продолжения TXOP —
+ * следующий кадр через SIFS 3 мкс (802.11-2020 10.23.2.8, 10.29.3, 10.3.2.3.3). Путь P0.2: конец
+ * кадра (r49 в rx_flow_run) → rx_flow_step → rx_end_switch_to_tx/mac_switch_rx_to_tx →
+ * rx_dispatch_by_g_8005f8 → 0x4d/r55/0x886d10 → 0x14/0x37/0x3f → rx_txop_continue (отсюда, без
+ * возврата в rx_flow_run) → 0x1b001111. Железо 2026-10-21 (до переделки): +20 nop перед 0x1b001111 —
+ * FWERR при ассоциации, +16 — норма, т. е. запас 16–19 инструкций. Эмулятор (timing/m1-paths, P0.2,
+ * медиана/макс): vendor 409/417, было 418/423, стало 351/358 (−67) — записи флагов, метка 0xeeee0b,
+ * busy_acct отложены за 0x1b001111; mac_switch_rx_to_tx и rx_dispatch_by_g_8005f8 без пролога; без
+ * mul64 и вызова mtp_queue_byte_by_index. Не добавлять код до 0x1b001111 без замера. */
+u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
 {
     /* 6.2 asm 0x931acc. */
     struct tx_ctx_s *r15 = a;
@@ -1426,7 +1473,8 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
     if (dti_qset_mode == 1)
         sends_pmc_mark_aaab02(&fsched_peers, b);
 
-    uc_mac_cmd(0xeeee0b);
+    /* Метка 0xeeee0b (MAC: NOP 0x00, только журнал) — у vendor здесь; у нас на выходе (в
+     * продолжении TXOP — после 0x37000020, иначе — перед возвратом): до 0x1b001111 не нужна. */
 
     u32 r11c = r15->x1c;
     if (r16 > r11c) {
@@ -1474,8 +1522,12 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
         rx_end_switch_to_tx();
 
     if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
+        /* Счётчик читается один раз (запись — после команды: MAC его не читает); `or limm`
+         * вставкой — -Os строил 0x32000000 тремя bset_s (как у vendor: or r3,r3,0x32000000). */
+        u32 c = rx_buf_toggle_cnt, v;
+        __asm__("or %0,%1,0x32000000" : "=r"(v) : "r"(c & 1));
+        uc_mac_cmd(v);
+        rx_buf_toggle_cnt = c + 1;
     }
 
     /* L_931c5c */
@@ -1517,7 +1569,7 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
             }
         }
         r15->mtp_state = r11;
-        r14 = sta_tab[r15->sta].tx_sel;
+        r14 = rx_sta_tx_sel(r15->sta);
         if (qid_agg_mask & r10)
             txrx_state2 |= (1u << 30);
     } else {
@@ -1540,11 +1592,14 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
         }
     }
 
-    /* L_931e18 */
-    r11 = r13 & 1;
-    r5 = r11 << 1;          /* vendor L_931e18: 2-операндный `asl r5,r11` = сдвиг на 1 */
-    rxf.flags = r5 | (rxf.flags & ~2u);
-    r15->flags = (r13 & 1) | (r15->flags & ~1u);
+    /* L_931e18. При r13 = 1 записи флагов (rxf.flags б1, r15->flags б0 = 1) отложены за 0x1b001111
+     * (rx_txop_continue(…, 1)) или в конец ветки — MAC их не читает. */
+    if (r13 != 1) {
+        r11 = r13 & 1;
+        r5 = r11 << 1;      /* vendor L_931e18: 2-операндный `asl r5,r11` = сдвиг на 1 */
+        rxf.flags = r5 | (rxf.flags & ~2u);
+        r15->flags = (r13 & 1) | (r15->flags & ~1u);
+    }
 
     /* Продолжение TXOP после ответа партнёра — через SIFS (802.11-2020 10.23.2.8). 0x886d10 —
      * самый ранний момент старта ответа RX→TX {такты, мкс}; пишем ровно SIFS (ifs.sifs, 3 мкс).
@@ -1560,7 +1615,18 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
         uc_mac_cmd(0x37000005);
         uc_mac_cmd(0x37000002);
         uc_mac_cmd(r14 | 0x3f000000);
+        /* Продолжение TXOP — сразу отсюда, без эпилога и проверок rx_flow_run (как в
+         * rx_flow_handle_frame). Условия rx_flow_run: rx_ppdu_report_seen = 0 и r15->flags б0 —
+         * последний здесь = r13 = 1. */
+        if (rx_ppdu_report_seen == 0) {
+            rx_txop_continue(r15, 1);
+            return 1;
+        }
+        rxf.flags |= 2u;
+        r15->flags |= 1u;
     }
+    uc_mac_cmd(0xeeee0b);
+    return 0;
 }
 
 /* СРОК: вызывается из rx_flow_handle_frame до запроса ответа в MTP — вся функция в сроке SIFS
@@ -1909,87 +1975,92 @@ out:
 /* СРОК: вызывается из rx_flow_step — на пути держателя TXOP от Ack/BlockAck до следующего кадра
  * через SIFS 3 мкс (802.11-2020 10.23.2.8, 10.3.2.3.3). Режимы 1/2 при mac_cmd31_mode ждут
  * r53.bap_tx_update_ind с таймаутом GP 0x23010003 (assert 0x3b) — время ожидания задаёт BAP;
- * код вокруг как у vendor 0x9333fc. Запас общий с rx_txop_continue: единицы. */
+ * порядок чтений и команд как у vendor 0x9333fc. Режим 1 (Ack): 24 инструкции (было 38, vendor 32) —
+ * листовая функция; запас общий с rx_txop_continue (см. rx_flow_step). */
+/* Ожидание BAP r53.bap_tx_update_ind (таймаут — GP 0x23010003, assert 0x3b) и квитанция 0x1c000001
+ * (vendor 0x933436…/0x9334f8…, одинаковые блоки режимов 1/2). Встроено в обе ветки; uc_assert —
+ * UC_ASSERT_LEAF (адрес возврата rx_dispatch_by_g_8005f8 = blink: до блока вызовов нет). */
+static inline __attribute__((always_inline)) void rx_dispatch_bap_sync(void)
+{
+    if (!(mac_bap_if() & MAC_BAP_TX_UPDATE)) {
+        uc_mac_cmd(0x23010003);
+        uc_mac_cmd(0x2000200);
+        arc_nops_nop(2);
+        while (!(mac_evt1() & MAC_EVT1_GP_TIMERS) && !(mac_bap_if() & MAC_BAP_TX_UPDATE))
+            ;
+        if (mac_evt1() & MAC_EVT1_GP_TIMERS)
+            UC_ASSERT_LEAF(0x3b);
+    }
+    bap_tx_up_status = mac_bap_if() & MAC_BAP_TX_UP_STATUS;
+    uc_mac_cmd(0x1c000001);
+}
+
+/* Режим 2 (ждём BlockAck) — отдельной функцией (хвостовой переход): только здесь вызов
+ * bap_q_avail_check, остальные режимы остаются без пролога. r14 = r38[24:20]. */
+static __attribute__((noinline)) u32 rx_dispatch_mode2(u32 r14)
+{
+    /* L_9334f8 */
+    if (!(mac_rx_rep1() & MAC_RX_REP1_BACK))
+        return 0;
+    if (mac_rx_rep3() & MAC_RX_REP3_RD)
+        return 0;
+    if (!(mac_rx_rep3() & MAC_RX_REP3_BAP_EN))
+        return 0;
+    if (mac_cmd31_mode != 0)
+        rx_dispatch_bap_sync();
+    if (bap_tx_up_status != 0)
+        return 0;
+    u32 r1 = MAC_BAP_NUM_TX_PKTS_OF(mac_bap_if());
+    u32 r3 = MAC_BAP_NUM_NOACK_OF(mac_bap_if());
+    ba_stats.tx_pkts += r1;
+    ba_stats.non_acked += r3;
+    ba_stats.ba_cnt += 1;
+    if (r14 >= 1)
+        ba_stats.active = 1;
+    u32 r7 = rs_state[rxf.sta].active;
+    if (r7 != 0)
+        bap_q_avail_check(rxf.sta, r1, r3);
+    if (!(txrx_state2 & (1u << 30)))
+        return 1;                           /* vendor: L_9336c8 — r0 = r13 (= 1 с L_933592) */
+    struct tx_ctx_s *r9 = tx_ctx_pool.cur;
+    u32 r2v = r9->qid;
+    /* vendor 0x93362e: bclr r8,r8,r2 (r2 = [cur+4] = qid) — сброс БИТА qid.
+     * Порт-баг (исправлен 2026-10-19): было `&= ~r2v` — маска чистилась значением qid:
+     * при qid 0 бит не сбрасывался никогда, при других — гасился чужой бит. Бит qid в
+     * qid_agg_mask после первого BA не снимался, и txop_initiator_open_txop_flow
+     * (L_93a314: r14 = 1 при бите qid) открывал КАЖДЫЙ TXOP через RTS (txrx_state2 б2,
+     * ждём CTS) вместо chan_access → лишние CTS-ожидания → cts_fail → BF-триггер б2. */
+    qid_agg_mask &= ~(1u << (r2v & 31));
+    txrx_state2 &= ~(1u << 30);
+    return 1;
+}
+
 u32 rx_dispatch_by_g_8005f8(void)
 {
-    /* 6.2 asm 0x9333fc. */
+    /* 6.2 asm 0x9333fc. Ветки — цепочкой сравнений (самая частая на пути P0.2 — режим 1, Ack)
+     * вместо таблицы switch; режим 2 — rx_dispatch_mode2. Порядок чтений r36/r38/r53 и команд
+     * внутри веток — как у vendor. */
     u32 r2 = txrx_state2;
     if (!(r2 & (1u << 8)))
         return 0;
     u32 mode = r2 & 0x1f;
     u32 r14 = MAC_RX_REP3_RX_MCS_OF(mac_rx_rep3());
 
-    switch (mode) {
-    case 1: {   /* L_933436 */
+    if (mode == 1) {   /* L_933436 */
         if (!(mac_rx_rep1() & MAC_RX_REP1_IMM_ACK))
             return 0;
         if (mac_rx_rep3() & MAC_RX_REP3_RD)
             return 0;
-        if ((mac_rx_rep3() & MAC_RX_REP3_BAP_EN) && mac_cmd31_mode != 0) {
-            if (!(mac_bap_if() & MAC_BAP_TX_UPDATE)) {
-                uc_mac_cmd(0x23010003);
-                uc_mac_cmd(0x2000200);
-                arc_nops_nop(2);
-                while (!(mac_evt1() & MAC_EVT1_GP_TIMERS) && !(mac_bap_if() & MAC_BAP_TX_UPDATE))
-                    ;
-                if (mac_evt1() & MAC_EVT1_GP_TIMERS)
-                    uc_assert((u32)__builtin_return_address(0), 0x3b);
-            }
-            bap_tx_up_status = mac_bap_if() & MAC_BAP_TX_UP_STATUS;
-            uc_mac_cmd(0x1c000001);
-        }
+        if ((mac_rx_rep3() & MAC_RX_REP3_BAP_EN) && mac_cmd31_mode != 0)
+            rx_dispatch_bap_sync();
         if (r14 >= 1)
             ba_stats.active = 1;
         rx_ack_rcvd = 1;
         return 1;
     }
-    case 2: {   /* L_9334f8 */
-        if (!(mac_rx_rep1() & MAC_RX_REP1_BACK))
-            return 0;
-        if (mac_rx_rep3() & MAC_RX_REP3_RD)
-            return 0;
-        if (!(mac_rx_rep3() & MAC_RX_REP3_BAP_EN))
-            return 0;
-        if (mac_cmd31_mode != 0) {
-            if (!(mac_bap_if() & MAC_BAP_TX_UPDATE)) {
-                uc_mac_cmd(0x23010003);
-                uc_mac_cmd(0x2000200);
-                arc_nops_nop(2);
-                while (!(mac_evt1() & MAC_EVT1_GP_TIMERS) && !(mac_bap_if() & MAC_BAP_TX_UPDATE))
-                    ;
-                if (mac_evt1() & MAC_EVT1_GP_TIMERS)
-                    uc_assert((u32)__builtin_return_address(0), 0x3b);
-            }
-            bap_tx_up_status = mac_bap_if() & MAC_BAP_TX_UP_STATUS;
-            uc_mac_cmd(0x1c000001);
-        }
-        if (bap_tx_up_status != 0)
-            return 0;
-        u32 r1 = MAC_BAP_NUM_TX_PKTS_OF(mac_bap_if());
-        u32 r3 = MAC_BAP_NUM_NOACK_OF(mac_bap_if());
-        ba_stats.tx_pkts += r1;
-        ba_stats.non_acked += r3;
-        ba_stats.ba_cnt += 1;
-        if (r14 >= 1)
-            ba_stats.active = 1;
-        u32 r7 = rs_state[rxf.sta].active;
-        if (r7 != 0)
-            bap_q_avail_check(rxf.sta, r1, r3);
-        if (!(txrx_state2 & (1u << 30)))
-            return 1;                           /* vendor: L_9336c8 — r0 = r13 (= 1 с L_933592) */
-        struct tx_ctx_s *r9 = tx_ctx_pool.cur;
-        u32 r2v = r9->qid;
-        /* vendor 0x93362e: bclr r8,r8,r2 (r2 = [cur+4] = qid) — сброс БИТА qid.
-         * Порт-баг (исправлен 2026-10-19): было `&= ~r2v` — маска чистилась значением qid:
-         * при qid 0 бит не сбрасывался никогда, при других — гасился чужой бит. Бит qid в
-         * qid_agg_mask после первого BA не снимался, и txop_initiator_open_txop_flow
-         * (L_93a314: r14 = 1 при бите qid) открывал КАЖДЫЙ TXOP через RTS (txrx_state2 б2,
-         * ждём CTS) вместо chan_access → лишние CTS-ожидания → cts_fail → BF-триггер б2. */
-        qid_agg_mask &= ~(1u << (r2v & 31));
-        txrx_state2 &= ~(1u << 30);
-        return 1;
-    }
-    case 4: {   /* L_933658 */
+    if (mode == 2)
+        return rx_dispatch_mode2(r14);
+    if (mode == 4) {   /* L_933658 */
         if (!(mac_rx_rep2() & MAC_RX_REP2_CTS))
             return 0;
         struct tx_ctx_s *r4 = tx_ctx_pool.cur;
@@ -1998,10 +2069,9 @@ u32 rx_dispatch_by_g_8005f8(void)
         uc_mac_cmd(0x20000400);
         return 1;
     }
-    case 16:    /* L_933698: лишнее чтение r36 (mov r3,r36), затем как 8 */
+    if (mode == 16)    /* L_933698: лишнее чтение r36 (mov r3,r36), затем как 8 */
         (void)mac_rx_rep1();
-        /* fallthrough */
-    case 8: {   /* L_93369c */
+    if (mode == 8 || mode == 16) {   /* L_93369c */
         if (mac_rx_rep3() & MAC_RX_REP3_RD)
             return 0;
         struct tx_ctx_s *r3 = tx_ctx_pool.cur;
@@ -2009,9 +2079,7 @@ u32 rx_dispatch_by_g_8005f8(void)
             return 0;
         return 1;
     }
-    default:
-        return 0;
-    }
+    return 0;
 }
 
 
