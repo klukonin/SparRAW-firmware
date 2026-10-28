@@ -2,7 +2,7 @@
 """Вход станции в BTI с пути приёма (bti_transmitter_bi2_flow, kind = 1): маяк уже разобран, uc ждёт следующий маяк
 этого BTI, чтобы вовремя взвести A-BFT. Живучесть: ожидание ограничено концом BTI — Duration маяка (9.3.4.2: время до
 конца BTI); в BTI в эфире только маяки. Без срока станция ждала маяк следующего BI и отбрасывала кадры DTI (RTS, BRP,
-данные) — стенд 2026-10-28: шторм CTS, провал BRP, «lost link: no beacons» (notes/stale-conn/FINDINGS.md)."""
+данные) — стенд 2026-10-28: шторм CTS, провал BRP, «lost link: no beacons»."""
 import pytest
 
 BI_CTX = 0x802f44                   # struct bi_ctx_s: +0 kind, +4 status

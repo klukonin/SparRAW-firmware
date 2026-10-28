@@ -1454,7 +1454,7 @@ u32 rx_funcs_rx_flow(void)
  * кадра (r49 в rx_flow_run) → rx_flow_step → rx_end_switch_to_tx/mac_switch_rx_to_tx →
  * rx_dispatch_by_g_8005f8 → 0x4d/r55/0x886d10 → 0x14/0x37/0x3f → rx_txop_continue (отсюда, без
  * возврата в rx_flow_run) → 0x1b001111. Железо 2026-10-21 (до переделки): +20 nop перед 0x1b001111 —
- * FWERR при ассоциации, +16 — норма, т. е. запас 16–19 инструкций. Эмулятор (timing/m1-paths, P0.2,
+ * FWERR при ассоциации, +16 — норма, т. е. запас 16–19 инструкций. Эмулятор (P0.2,
  * медиана/макс): vendor 409/417, было 418/423, стало 351/358 (−67) — записи флагов, метка 0xeeee0b,
  * busy_acct отложены за 0x1b001111; mac_switch_rx_to_tx и rx_dispatch_by_g_8005f8 без пролога; без
  * mul64 и вызова mtp_queue_byte_by_index. Не добавлять код до 0x1b001111 без замера. */

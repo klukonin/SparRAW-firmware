@@ -319,7 +319,7 @@ void bti_transmitter_bi2_flow(struct bi_ctx_s *c)
          * 2026-10-28, чередование 3+3 (и 2 ранее) — с ним первый BRP после ассоциации проваливался во всех загрузках,
          * шторм CTS и разрывы «lost link: no beacons» в 2 из 3; без него 5 из 5 чисто. Ограничение перевзвода
          * временем BTI или состоянием «до ассоциации» не помогло (2 из 3 с разрывами) — портит связь сам ответ в
-         * A-BFT этого пути (bti_bi2_track_best_metric → abft_responder_fast); причина — задача notes/TASKS.md. */
+         * A-BFT этого пути (bti_bi2_track_best_metric → abft_responder_fast); причина не найдена. */
     } else if (bti_bi2_event_step(c) == 0) {
         return;
     }
