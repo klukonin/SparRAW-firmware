@@ -97,11 +97,11 @@ u32 itx_wait_ack(void)
 {
     uc_mac_cmd(0x2011000);
     for (;;) {
-        uc_wait_event1_or_event4(1u << 12, 0x40, 0);
-        if (arc_core_rd(42) & (1u << 12)) {
+        uc_wait_event1_or_event4(MAC_EVT1_RX_FRAME, MAC_EVT4_GP0_END, 0);
+        if (mac_evt1() & MAC_EVT1_RX_FRAME) {
             if (rx_ppdu_is_ack() != 0)
                 return 1;
-        } else if (arc_core_rd(54) & (1u << 6)) {
+        } else if (mac_evt4() & MAC_EVT4_GP0_END) {
             return 0;
         }
     }
@@ -111,11 +111,11 @@ u32 itx_wait_cts_b(void)
 {
     uc_mac_cmd(0x2011000);
     for (;;) {
-        uc_wait_event1_or_event4(1u << 12, 0x40, 0);
-        if (arc_core_rd(42) & (1u << 12)) {
+        uc_wait_event1_or_event4(MAC_EVT1_RX_FRAME, MAC_EVT4_GP0_END, 0);
+        if (mac_evt1() & MAC_EVT1_RX_FRAME) {
             if (rx_ppdu_is_cts_b() != 0)
                 return 1;
-        } else if (arc_core_rd(54) & (1u << 6)) {
+        } else if (mac_evt4() & MAC_EVT4_GP0_END) {
             return 0;
         }
     }
@@ -175,16 +175,16 @@ void tx_initiator_reset_slot_counters(u32 a)
 u32 tx_submit_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 {
     mac_program_tx_result_ctx_uc(a->qid, b, c);
-    while (!(arc_core_rd(43) & (1u << 31)))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    { u32 _r51 = arc_core_rd(51); mtp_desc_lo = _r51 & 0xf; mtp_desc_hi = _r51 >> 4; }
-    while (!(arc_core_rd(45) & (1u << 31)))
+    { u32 _r51 = mac_mtp_desc(); mtp_desc_lo = _r51 & 0xf; mtp_desc_hi = _r51 >> 4; }
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     if (c == 1) {
         d |= (1u << 15) | (1u << 27) | (1u << 28);
         uc_mac_cmd(d);
     }
-    return (((u8)arc_core_rd(45) & a->ack_mask) != 0) ? 1 : 0;
+    return (((u8)mac_mtp_perm() & a->ack_mask) != 0) ? 1 : 0;
 }
 
 
@@ -263,10 +263,10 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
 {
     uc_mac_cmd(0x2011000);
     for (;;) {
-        uc_wait_event1_or_event4(1u << 12, 0x40, 0);
-        if (arc_core_rd(42) & (1u << 12)) {
+        uc_wait_event1_or_event4(MAC_EVT1_RX_FRAME, MAC_EVT4_GP0_END, 0);
+        if (mac_evt1() & MAC_EVT1_RX_FRAME) {
             /* кадр принят */
-            uc_wait_event_busy(1u << 16, 0);
+            uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
             if (rx_buf_toggle_dis == 0) {   /* ldb [gp,-0xf2] */
                 u32 v = (rx_buf_toggle_cnt & 1) | (1u << 25) | (1u << 28) | (1u << 29);
                 uc_mac_cmd(v);
@@ -275,8 +275,8 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
             ppdu_evt_cnt += 1;                    /* ld_s [gp,0x50] → st.as [gp,0x14]: 0x800578 */   /* st.as [gp,0x14] / ld [gp,0x50] */
             uc_stats.rx_arm = uc_stats.rx_arm + 1;   /* [0x8022c8 + 0x3c] */
             uc_mac_cmd(0x20d2000);
-            return arc_core_rd(37) & 0x10000;
-        } else if (arc_core_rd(54) & (1u << 6)) {
+            return mac_rx_rep2() & MAC_RX_REP2_CF_END;
+        } else if (mac_evt4() & MAC_EVT4_GP0_END) {
             return 1;   /* таймаут */
         }
     }
@@ -398,7 +398,7 @@ void tx_send_imm_response(u32 a, u32 b, u32 c)
     mac_program_tx_with_rate(a);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd(0x18001000);
 }
@@ -467,8 +467,8 @@ u32 tx_slot_pick_queue(u32 a, u32 b)
     uc_mac_cmd(r0 | 0x1d000000);
     arc_nops(3);
 
-    u32 r13 = (arc_core_rd(41) >> 8) & 0xf;
-    u32 r15 = (arc_core_rd(41) >> 16) & 0x1f;
+    u32 r13 = MAC_QSEL_LOWEST_QSET_OF(mac_queue_sel());
+    u32 r15 = MAC_QSEL_QID_OF(mac_queue_sel());
     *(u32 *)a = r15;                                    /* st_s — слово */
 
     u32 r14 = r13 - 1;
@@ -517,7 +517,7 @@ void tx_slot_dispatch(u32 a)   /* 6.2 asm 0x938e34 */
         return;
     }
     mac_select_all_sectors_and_wait();
-    if (arc_core_rd(42) & (1u << 14)) {
+    if (mac_evt1() & MAC_EVT1_BUSY2) {
         txrx_state2 = 0x800;        /* st.as 0x800,[gp,0x34] */
         uc_stats.txop_fail += 1;           /* [0x8022c8 + 4] */
         mac_mon_report.fs_evt14_cnt += 1;           /* [0x8010b0 + 0x44] */
@@ -576,7 +576,7 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
     mac_select_all_sectors_and_wait();
     mac_cmd_29000001();
     if (!mac_cca_ok()) {
-        while (!(arc_core_rd(45) & (1u << 31)))
+        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
         uc_mac_cmd(0x29000002);
         rx_mode_configure(3, sta);
@@ -585,7 +585,7 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
     mac_program_rx_window(5, r13, rate);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd(0x18001000);
     struct sta_entry *r1 = &sta_tab[sta];
@@ -598,7 +598,7 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
     mac_sel_shadow = cfg | (1u << 18);
     uc_mac_cmd(cfg | 0x1d040000);
     arc_nops(3);
-    if (!(arc_core_rd(47) & 0x70))                  /* bic.f -113 = &0x70 */
+    if (!(mac_txctl_sel() & 0x70))                  /* bic.f -113 = &0x70 */
         uc_assert((u32)__builtin_return_address(0), 0x133b);
     mac_set_rf_chain_state(1, rf_cfg ? rf_chain_word : sta_tab[sta].rx_sel);
     tx_fifo_free -= 6;
@@ -606,7 +606,7 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
     uc_wait_direct_tx_ready();
     tx_fifo_write_bytes(desc + 0x10, len - 0x10);
     direct_tx_issue_cmd_33();
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
     return 1;
 }
 
@@ -623,10 +623,10 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
         uc_mac_cmd(mac_evt_en_shadow | 0x27004000);
         uc_mac_cmd(0x2004000);
         arc_nops(3);
-        uc_sleep_until_event(1u << 14, 0xa);
-        if (!(arc_core_rd(42) & (1u << 14)))
+        uc_sleep_until_event(MAC_EVT1_BUSY2, 0xa);
+        if (!(mac_evt1() & MAC_EVT1_BUSY2))
             uc_assert((u32)__builtin_return_address(0), 0x92);
-        uc_spin_until_event(1u << 15);
+        uc_spin_until_event(MAC_EVT1_TX_END);
     }
     u32 v = ((sta_tab[sta].flags >> 1) & 1) ^ 1;   /* ldw; lsr; bxor bit0 */
     u32 r16 = (v ? 0x17 : 0x22) + 4;
@@ -636,7 +636,7 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
         mac_sel_shadow = r0 | (1u << 12) | (1u << 13);
         uc_mac_cmd(r0 | 0x1d003000);
         arc_nops(3);
-        if ((u32)(u16)(u16)arc_core_rd(40) <= r16 || (arc_core_rd(42) & (1u << 7)))
+        if ((u32)(u16)(u16)mac_status_sel() <= r16 || (mac_evt1() & MAC_EVT1_TXOP))
             goto cf_end_done;
     }
     txr.awaiting = 1;
@@ -656,11 +656,11 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
     uc_mac_cmd(mac_evt_en_shadow | 0x27004000);
     uc_mac_cmd(0x2004000);
     arc_nops(3);
-    uc_sleep_until_event(1u << 14, 0xa);
+    uc_sleep_until_event(MAC_EVT1_BUSY2, 0xa);
     gp0_arm_usec_b(r18);
-    if (!(arc_core_rd(42) & (1u << 14)))
+    if (!(mac_evt1() & MAC_EVT1_BUSY2))
         uc_assert((u32)__builtin_return_address(0), 0xaa);
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
 cf_end_done:   /* L_924ba4 */
     if (b != 0 || txr.awaiting != 0) {
         mac_set_rf_chain_state(1, sta_tab[sta].rx_sel);
@@ -680,7 +680,7 @@ cf_end_done:   /* L_924ba4 */
         u32 r = tx_await_rx_or_timeout();
         rx_mode_configure(2, 0xff);
         if (r != 0) {
-            uc_spin_until_event(0x80);
+            uc_spin_until_event(MAC_EVT1_TXOP);
             if (rx_resp_wait_en != 0) {
                 uc_mac_cmd(0x1f000601);
                 fsched_rx_resp_seen = 1;
@@ -974,10 +974,10 @@ void internal_tx_flow_sm2(u32 a)
     uc_mac_cmd(0x14000007);
     direct_tx_program_cmd34(0x10, 0x10);
     mac_program_tx_with_rate(0);
-    while (!(arc_core_rd(43) & (1u << 31)))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    { u32 _r51 = arc_core_rd(51); mtp_desc_lo = _r51 & 0xf; mtp_desc_hi = _r51 >> 4; }
-    while (!(arc_core_rd(45) & (1u << 31)))
+    { u32 _r51 = mac_mtp_desc(); mtp_desc_lo = _r51 & 0xf; mtp_desc_hi = _r51 >> 4; }
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     direct_tx_send_after_delay(sta, 0xb, 0);
     u32 r0 = mac_sel_shadow & 0xffff0fff;
@@ -1007,7 +1007,7 @@ void internal_tx_flow_sm2(u32 a)
             gp0_arm_usec_b(0xc);
             uc_mac_cmd(0x2008000);
             uc_mac_cmd(0x19000001);
-            while (!(arc_core_rd(45) & (1u << 31)))
+            while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
                 ;
             uc_mac_cmd(0x18000000);             /* vendor: 0x18000400 в UPM-doze — PS вырезан */
             mac_evt_enable_bit_sync_b(6);
@@ -1051,7 +1051,7 @@ void internal_tx_flow_sm2(u32 a)
         }
         handle_bf_triggers(sta, 0);             /* r0 = [sp,0] = sta, r1 = 0 (0x939478) */
     } else {
-        while (!(arc_core_rd(45) & (1u << 31)))
+        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
         uc_mac_cmd(0x29000002);
         VOL(link_stat[sta].ka_cca_busy) += 1;

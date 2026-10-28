@@ -60,16 +60,16 @@ void mac_set_rf_chain_state_with_sta_sector(void)
     mac_set_rf_chain_state(1, rf_chain_word);
 }
 
-/* СРОК: выход по r42.16 (ppdu_report_event) или r40.24 (cca_ppdu_comp) в приёмном потоке (rx.c) —
+/* СРОК: выход по MAC_EVT1_PPDU_REPORT (ppdu_report_event) или MAC_PHYSIG_CCA_PPDU_COMP (cca_ppdu_comp) в приёмном потоке (rx.c) —
  * опрос 6 инструкций на проход (vendor 0x93675c: 5), без ограничения; задержка реакции — единицы
  * инструкций. Срыв: зависание приёмного потока, если не придёт ни одно событие. */
 void mac_wait_event_r42_or_r40(u32 a, u32 b)
 {
     /* 0x93675c: tst r42,r0 / tst r40,r1 — core-регистры MAC, не aux. */
     for (;;) {
-        if (arc_core_rd(42) & a)
+        if (mac_evt1() & a)
             return;
-        if (arc_core_rd(40) & b)
+        if (mac_status_sel() & b)
             return;
     }
 }
@@ -289,7 +289,7 @@ void mac_select_all_sectors_and_wait(void)
     uc_mac_cmd(r1);
     uc_mac_cmd(0x2004002);
     arc_nops(3);
-    uc_wait_event_busy(0x4002, 0);
+    uc_wait_event_busy(MAC_EVT1_SLOT | MAC_EVT1_BUSY2, 0);
 }
 
 void mac_program_4f_52(u32 a, u32 b)
@@ -309,8 +309,8 @@ void macq_hw_sync_dma_wptr(u32 a, u32 q, u32 dma)
 }
 
 
-/* СРОК: 0x27 (разрешение события) → 0x02004000 → 3 nop → ждать r42.14 (busy2_event — подтверждение)
- * без ограничения; MAC должен обновить r42.14 до первого опроса (аппаратный, ~3 такта): между mov r32
+/* СРОК: 0x27 (разрешение события) → 0x02004000 → 3 nop → ждать MAC_EVT1_BUSY2 (busy2_event — подтверждение)
+ * без ограничения; MAC должен обновить MAC_EVT1_BUSY2 до первого опроса (аппаратный, ~3 такта): между mov r32
  * и опросом 5 инструкций + переход (vendor 0x9361bc/0x936544 так же); запас — единицы инструкций.
  * Срыв: устаревший бит 14 — выход до применения маски; молчание MAC — зависание. То же в _b. */
 void mac_evt_enable_bit_sync(u32 a)
@@ -320,7 +320,7 @@ void mac_evt_enable_bit_sync(u32 a)
     uc_mac_cmd(r1);
     uc_mac_cmd(0x2004000);
     arc_nops(3);
-    uc_spin_until_event(1u << 14);
+    uc_spin_until_event(MAC_EVT1_BUSY2);
 }
 
 /* 0x936544 */
@@ -329,7 +329,7 @@ void mac_evt_enable_bit_sync_b(u32 a)
     uc_mac_cmd(mac_evt_en_shadow | ((1u << a) << 8) | 0x27000000);   /* ld.as [gp,-18] */
     uc_mac_cmd(0x2004000);
     arc_nops(3);
-    uc_spin_until_event(1u << 14);
+    uc_spin_until_event(MAC_EVT1_BUSY2);
 }
 
 void mac_program_tx_common(void)
@@ -373,7 +373,7 @@ void mac_program_tx_with_qid(u32 qid)
     arc_nops(3);
 }
 
-/* СРОК: при r40[2:0] = 5 MAC должен подтвердить смену режима (r42.14) за тайм-аут 0xa GP-таймера
+/* СРОК: при r40[2:0] = 5 MAC должен подтвердить смену режима (MAC_EVT1_BUSY2) за тайм-аут 0xa GP-таймера
  * (uc_wait_two_events → uc_wait_event_busy, 0x23010000|0xa) — иначе assert 0x3f (аппаратный).
  * Паузы выборки r40 (5 инструкций) и после ожидания (3 nop) — как vendor 0x93e0dc; запас не оценён. */
 void mac_set_mode_0000(void)
@@ -383,16 +383,16 @@ void mac_set_mode_0000(void)
     mac_sel_shadow = r0;
     uc_mac_cmd(r0 | 0x1d000000);
     arc_nops(3);
-    if ((arc_core_rd(40) & 7) != 5)
+    if ((mac_status_sel() & MAC_BIFS_IDLE_DETECT) != 5)
         return;
     uc_wait_two_events(5, 5, 0xa);
     arc_nops(3);
-    if (!(arc_core_rd(42) & (1u << 14)))
+    if (!(mac_evt1() & MAC_EVT1_BUSY2))
         uc_assert((u32)__builtin_return_address(0), 0x3f);
 }
-/* СРОК: 0x49000040 квитирует r54.6 (gp0_end_ind), и уже через ~8 инструкций (вызов
- * uc_wait_event1_or_event4) r54.6 опрашивается снова — без паузы, как vendor 0x93e084; запас —
- * единицы инструкций (аппаратная задержка квитирования не измерена). Срыв: устаревший r54.6 —
+/* СРОК: 0x49000040 квитирует MAC_EVT4_GP0_END (gp0_end_ind), и уже через ~8 инструкций (вызов
+ * uc_wait_event1_or_event4) MAC_EVT4_GP0_END опрашивается снова — без паузы, как vendor 0x93e084; запас —
+ * единицы инструкций (аппаратная задержка квитирования не измерена). Срыв: устаревший MAC_EVT4_GP0_END —
  * ложный возврат 0 (тайм-аут вместо busy2). */
 u32 mac_arm_events_0xc00(void)
 {
@@ -401,10 +401,10 @@ u32 mac_arm_events_0xc00(void)
     uc_mac_cmd(0x2004000);
     uc_mac_cmd(0x49000040);
     for (;;) {
-        uc_wait_event1_or_event4(1u << 14, 0x40, 0);
-        if (arc_core_rd(42) & (1u << 14))
+        uc_wait_event1_or_event4(MAC_EVT1_BUSY2, MAC_EVT4_GP0_END, 0);
+        if (mac_evt1() & MAC_EVT1_BUSY2)
             return 1;
-        if (arc_core_rd(54) & (1u << 6))
+        if (mac_evt4() & MAC_EVT4_GP0_END)
             return 0;
     }
 }
@@ -473,20 +473,20 @@ void macq_hw_disable_queue(u32 q)
     MMIO32((raw >> 3) & ~3u) &= ~(1u << (raw & 0x1f));
     arc_sync();
 }
-/* СРОК: запрос MTP 0x1b/0x16/0x17 → 3 инструкции (2×nop + mov 0,0, vendor 0x92dafc) → ждать r45.31
+/* СРОК: запрос MTP 0x1b/0x16/0x17 → 3 инструкции (2×nop + mov 0,0, vendor 0x92dafc) → ждать MAC_MTP_PERM_VALID
  * без ограничения (аппаратный: до обработки запроса r45 держит прошлый ответ с valid = 1). Запас —
  * единицы инструкций. Срыв: «пустота» очереди по прошлому запросу или зависание uc. */
 u32 macq_probe_empty(u32 q)
 {
-    /* 0x92dab8: r45.1 = 1 — очередь пуста (vendor mtp_queue__release_mgmt пишет
-     * «MTP Queue is empty»), возврат !r45.1 = 1 — очередь НЕ пуста. */
+    /* 0x92dab8: MAC_MTP_PERM_Q_EMPTY = 1 — очередь пуста (vendor mtp_queue__release_mgmt пишет
+     * «MTP Queue is empty»), возврат !MAC_MTP_PERM_Q_EMPTY = 1 — очередь НЕ пуста. */
     uc_mac_cmd(0x1b001111);
     uc_mac_cmd(((q << 16) | 1) | 0x16000000);
     uc_mac_cmd(0x17000000);
     arc_nops_nop(2);   /* vendor L_92dafc: 2×nop + mov 0,0 */
-    while (!(arc_core_rd(45) & 0x80000000u))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
-    return ((arc_core_rd(45) >> 1) ^ 1) & 1;
+    return MAC_MTP_PERM_Q_EMPTY_OF(mac_mtp_perm()) ^ 1;
 }
 void mac_qset_reset_masks(void)
 {
@@ -521,7 +521,7 @@ void mac_mode_send_direct_frame(u32 a)
 }
 
 /* СРОК: RX-сектор/AWV пира (0x3a/0x3b/слово с б30) должен встать до приёма ответа Ack/BA/CTS через
- * SIFS = 3 мкс (802.11-2020 10.3.2.3.3, Table 20-30) после конца своей передачи (r42.15 в
+ * SIFS = 3 мкс (802.11-2020 10.3.2.3.3, Table 20-30) после конца своей передачи (MAC_EVT1_TX_END в
  * tx_send_and_await_rx_frame, brp.c). Путь: выход из uc_spin_until_event ~3 + вызов + 7 команд ≈
  * 30 инструкций (vendor 0x92f42c ≈ 38 с millicode-прологом); запас по коду — сотни тактов из 495,
  * время исполнения 0x3b/0x40 в RFC не известно. Срыв: ответ принимается прежним сектором — потеря
@@ -573,7 +573,7 @@ void mac_program_qset_slots(void)
     uc_mac_cmd((mac_chain_mask & rx_nav.ev_mask) | 0x80000aa);
 }
 
-/* СРОК: переход RX→TX после принятого PPDU (ждать r40.24 cca_ppdu_comp и снятия r40.3 phy_rx_frame,
+/* СРОК: переход RX→TX после принятого PPDU (ждать MAC_PHYSIG_CCA_PPDU_COMP и снятия MAC_PHYSIG_PHY_RX_FRAME,
  * 0x3d000004, снимок r49, 0x02093800) на пути ответа: SSW-Feedback/SSW-Ack через MBIFS
  * (mac_mode_switch_core_and_rf, 10.3.2.3.10, 10.42.2.4/10.42.2.5: 9 мкс −0/+0,49); также
  * rx_switch_to_rx_mode. Быстрая ветка ~80 инструкций без ожиданий (vendor 0x92a754 ~80, тот же
@@ -592,22 +592,22 @@ u32 mac_set_mode_a000(u32 a)
     mac_sel_shadow = g | 0xa000;
     uc_mac_cmd(g | 0x1d00a000);
     NOP3();
-    if (((arc_core_rd(49) >> 16) & 0xf) < 6) {
+    if (MAC_EE2_PHY_STATE_OF(mac_evt_eng2()) < 6) {
         VOL(uc_wait_marker) = 0xff2f;   /* метка ожидания: gcc выкидывал запись как мёртвую */
-        while (!(arc_core_rd(40) & (1u << 24)))
+        while (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
             ;
         VOL(uc_wait_marker) = 0;
         arc_nops_mb(1);   /* vendor L_92a7c2: 1×nop */
-        u32 r13 = arc_core_rd(40);
-        while (arc_core_rd(40) & (1u << 3))
+        u32 r13 = mac_status_sel();
+        while (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME)
             ;
         arc_nop_mb();   /* vendor L_92a7d0: пустой слот */
         uc_mac_cmd(0x3d000004);
         NOP3();
-        r49_snap = arc_core_rd(49);
-        if (arc_core_rd(40) & (1u << 3))
+        r49_snap = mac_evt_eng2();
+        if (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME)
             uc_assert((u32)__builtin_return_address(0), 147);
-        if (!(arc_core_rd(40) & (1u << 24)))
+        if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
             uc_assert((u32)__builtin_return_address(0), 148);
         uc_mac_cmd(0x2093800);
         mac_a000_fast = 1;
@@ -615,28 +615,28 @@ u32 mac_set_mode_a000(u32 a)
         mac_sel_shadow = g | 0xa000;
         uc_mac_cmd(g | 0x1d00a000);
         NOP2M();   /* vendor L_92a84c: 2×nop + mov 0,0 */
-        ppdu_evt_cnt = (arc_core_rd(40) >> 8) & 0x3f;
-        if (r13 & (1u << 3))
+        ppdu_evt_cnt = MAC_PHYSIG_PPDU_EVT_CNT_OF(mac_status_sel());
+        if (r13 & MAC_PHYSIG_PHY_RX_FRAME)
             mac_a000_fast_cnt += 1;
         return 1;
     }
     mac_a000_waited = 1;
     for (;;) {
-        u32 r2 = (arc_core_rd(49) >> 16) & 0xf;
+        u32 r2 = MAC_EE2_PHY_STATE_OF(mac_evt_eng2());
         if (r2 < 6 || r2 >= 0xe)
             break;
     }
     VOL(uc_wait_marker) = 0xff30;   /* метка ожидания: gcc выкидывал запись как мёртвую */
-    while (!(arc_core_rd(40) & (1u << 24)))
+    while (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
         ;
     VOL(uc_wait_marker) = 0;
     arc_nops_mb(1);   /* vendor L_92a8c2: 1×nop */
-    while (arc_core_rd(40) & (1u << 3))
+    while (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME)
         ;
     NOP2M();   /* vendor L_92a8cc: 2×nop + mov 0,0 */
     uc_mac_cmd(0x3d000004);
     NOP2M();   /* vendor L_92a8e8: 2×nop + mov 0,0 */
-    if (!(arc_core_rd(40) & (1u << 24)) || (arc_core_rd(40) & (1u << 3)))   /* bbit0 24 → assert; bbit0 3 → мимо */
+    if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP) || (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME))   /* bbit0 24 → assert; bbit0 3 → мимо */
         uc_assert((u32)__builtin_return_address(0), 141);
     uc_mac_cmd(0x2093800);
     mac_a000_fast = 0;
@@ -644,7 +644,7 @@ u32 mac_set_mode_a000(u32 a)
     mac_sel_shadow = g | 0xa000;
     uc_mac_cmd(g | 0x1d00a000);
     NOP3();
-    ppdu_evt_cnt = (arc_core_rd(40) >> 8) & 0x3f;
+    ppdu_evt_cnt = MAC_PHYSIG_PPDU_EVT_CNT_OF(mac_status_sel());
     mac_a000_slow_cnt += 1;
     return 0;
 #undef NOP3
@@ -652,7 +652,7 @@ u32 mac_set_mode_a000(u32 a)
 }
 
 /* СРОК: RX→TX для SSW-Feedback/SSW-Ack через MBIFS = 9 мкс −0/+0,49 (802.11-2020 10.3.2.3.10,
- * 10.42.2.4, 10.42.2.5) после последнего SSW (r39.15 CDOWN = 0; txss.c, tail.c). Путь:
+ * 10.42.2.4, 10.42.2.5) после последнего SSW (MAC_RX_MISC_ZERO_CDOWN CDOWN = 0; txss.c, tail.c). Путь:
  * mac_set_mode_a000 (~80) + mac_rf_switch_cmd1f (ожидание idle_detect = 5 без ограничения) + 7 команд
  * (~28); vendor 0x92e0e4 — тот же состав; запас по коду — около тысячи тактов из 1485, ожидания
  * железа не ограничены. Срыв: SSW-FB/SSW-Ack позже MBIFS — SLS не завершается, повтор. */
@@ -675,10 +675,10 @@ void mac_set_chain_modes(u32 a)
     mac_sel_shadow = r0;
     uc_mac_cmd(r0 | 0x1d000000);
     arc_nops(3);
-    u32 c0 = ((arc_core_rd(40) >> 16) & 0xf) <= 2;
-    u32 c1 = ((arc_core_rd(40) >> 20) & 0xf) <= 2;
-    u32 c2 = ((arc_core_rd(40) >> 24) & 0xf) <= 2;
-    u32 c3 = (arc_core_rd(40) >> 28) <= 2;
+    u32 c0 = MAC_BIFS_REM_SLOT_AC1_OF(mac_status_sel()) <= 2;
+    u32 c1 = MAC_BIFS_REM_SLOT_AC2_OF(mac_status_sel()) <= 2;
+    u32 c2 = MAC_BIFS_REM_SLOT_AC3_OF(mac_status_sel()) <= 2;
+    u32 c3 = MAC_BIFS_REM_SLOT_AC4_OF(mac_status_sel()) <= 2;
     u32 mask = (c0 ? a : 0) | (1u << 27);
     mask |= (c1 ? a : 0) << 2;
     mask |= (c2 ? a : 0) << 4;
@@ -717,7 +717,7 @@ u32 uc_spin_until_event(u32 mask)
 {
     u32 v;
     do {
-        v = arc_core_rd(42);                    /* 0x9366dc: tst r42,r0 */
+        v = mac_evt1();                    /* 0x9366dc: tst r42,r0 */
     } while (!(v & mask));
     return mask;                                /* r0 не меняется */
 }

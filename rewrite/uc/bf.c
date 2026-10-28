@@ -49,14 +49,14 @@ void bi_tx_check_idle_and_start_uc(u32 a)
     arc_nops(3);
     u32 r13;
     do {
-        r13 = arc_core_rd(40);
-        u32 n0 = (arc_core_rd(40) >> 16) & 0xf;
-        u32 n2 = (arc_core_rd(40) >> 20) & 0xf;
-        u32 n1 = (arc_core_rd(40) >> 24) & 0xf;
-        u32 n3 = arc_core_rd(40) >> 28;
+        r13 = mac_status_sel();
+        u32 n0 = MAC_BIFS_REM_SLOT_AC1_OF(mac_status_sel());
+        u32 n2 = MAC_BIFS_REM_SLOT_AC2_OF(mac_status_sel());
+        u32 n1 = MAC_BIFS_REM_SLOT_AC3_OF(mac_status_sel());
+        u32 n3 = MAC_BIFS_REM_SLOT_AC4_OF(mac_status_sel());
         if (n0 == 0 || n2 == 0 || n1 == 0 || n3 == 0)   /* цепочка cmp.ne: Z = «хотя бы один 0» */
             uc_mac_cmd(0x1f000601);
-    } while (r13 != arc_core_rd(40));
+    } while (r13 != mac_status_sel());
     mac_set_chain_modes(a);
 }
 void mac_publish_masks(void)
@@ -82,8 +82,8 @@ void mac_mode_kick(struct sls_peer_rec *a)
         uc_mac_cmd(0x38000200);
     }
     for (;;) {                                  /* L_92c05c */
-        uc_spin_until_event4(0x140);
-        if (arc_core_rd(54) & (1u << 6)) {
+        uc_spin_until_event4(MAC_EVT4_GP0_END | MAC_EVT4_GP2_END);
+        if (mac_evt4() & MAC_EVT4_GP0_END) {
             mac_ifs_restore_sifs();             /* bl.d L_92bfc0 — и выход */
             return;
         }
@@ -93,7 +93,7 @@ void mac_mode_kick(struct sls_peer_rec *a)
 }
 void uc_spin_until_event4_r0_100(void)
 {
-    uc_spin_until_event4(0x100);
+    uc_spin_until_event4(MAC_EVT4_GP2_END);
 }
 void txss_init_flow(u32 a)
 {
@@ -1135,7 +1135,7 @@ void bf_reset_sta_slot(u32 a0)
  * 9 мкс = MBIFS между BTI и A-BFT, 802.11-2020 10.3.2.3.10, 10.42.5) − a0 — отсчёт от момента
  * команды 0x5400070e, а не от конца маяка. Вызывающий (bti.c) компенсирует задержку «конец
  * маяка → эта команда» фиксированными 4 мкс (a0 = (4 − Duration)·0xa5, GP0 = (Duration − 4)·0xa5).
- * Здесь ~25 инструкций (mul64, без деления); весь путь от r42.12 — в bti.c. Запас: не оценён;
+ * Здесь ~25 инструкций (mul64, без деления); весь путь от MAC_EVT1_RX_FRAME — в bti.c. Запас: не оценён;
  * отклонение нашего пути от vendor-ских ~4 мкс сдвигает границы A-BFT станции на ту же величину. */
 void bf_gpc_program_mac_by_mode_b(u32 a0)
 {

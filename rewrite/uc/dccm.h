@@ -267,7 +267,7 @@ _Static_assert(__builtin_offsetof(struct g800610_s, b11) == 0x11, "g800610.b11")
 /* busy_acct (0x800634). Учёт занятости канала: база r13=0x800634 в l1_task_entry; +0xc busy_gap_us и +0xd adc_gain_thresh уже названы (data.c: « */
 struct busy_acct_s {
     u32  sig_start_tsf;             /* +0x00 TSF, когда сигнал АЦП в диапазоне (phy_signal_gain_adc_in_range); при сбросе, если прошло  */
-    u32  busy_start_tsf;            /* +0x04 TSF события r42.б19 (l1_task_main_step/step_fixed_sched); rx_flow_run → rx_flow_accumulate */
+    u32  busy_start_tsf;            /* +0x04 TSF события MAC_EVT1_BUSY (l1_task_main_step/step_fixed_sched); rx_flow_run → rx_flow_accumulate */
     u32  last_end_tsf;              /* +0x08 Конец предыдущего busy-интервала; склейка, если промежуток ≤ busy_gap_us (rx_flow_accumula */
 };
 _Static_assert(__builtin_offsetof(struct busy_acct_s, sig_start_tsf) == 0x0, "busy_acct.sig_start_tsf");
@@ -698,7 +698,7 @@ struct bcn_rx_s {
     s32  metric;                        /* +0x10 метрика лучшего маяка (r40 [10:0] со знаком) */
     u16  bssid[3];                      /* +0x14 */
     u8 _pad1[2];
-    u16  abft_gp0_late_cnt;             /* +0x1c: A-BFT станции пропущен — GP0 взведён поздно (после окна GP2, r54.8); bti.c */
+    u16  abft_gp0_late_cnt;             /* +0x1c: A-BFT станции пропущен — GP0 взведён поздно (после окна GP2, MAC_EVT4_GP2_END); bti.c */
     u8   bcn_sent;                      /* +0x1e свой маяк отправлен в этом BI */
     u8   abft_go;                       /* +0x1f решено отвечать в A-BFT */
     u16  abft_ok_cnt;                   /* +0x20 A-BFT ответчик: получен SSW-Feedback */
@@ -936,7 +936,7 @@ _Static_assert(sizeof(struct qset_slot_s) == 4, "qset_slot");
 /* brp_stats (0x801e94). Счётчики/снимки BRP 0x801e94..0x801ef3. Vendor адресует хвост от второй базы 0x801ed4 (= +0x40); единый объект: элемент  */
 struct brp_stats_s {
     u8   meas_started;              /* +0x00 +0: cnt[0]++ при запуске измерения (brp_program_and_measure) */
-    u8   meas_timeout;              /* +0x01 +1: нет r54.1 (метрика не пришла), vendor 0x9237de */
+    u8   meas_timeout;              /* +0x01 +1: нет MAC_EVT4_RXSS_BF_METRIC (метрика не пришла), vendor 0x9237de */
     u8   meas_not_ready;            /* +0x02 +2: r49 б13 не взведён на входе */
     u8 _pad0[1];
     u32  trn_copy[8][2];            /* +0x04 копия brp_ctx.trn_bits[rf] после измерения */
@@ -946,7 +946,7 @@ struct brp_stats_s {
     u16  init_req_noresp;           /* +0x4e +0x4e (0x801ed4+0xe): 3 попытки обмена запросом без ответа (brp_init_exchange_request, brp */
     u16  init_trn_ok;               /* +0x50 +0x50 (+0x10): успешная тренировка инициатора; инкремент в двух местах подряд (transaction */
     u16  init_meas_fail;            /* +0x52 +0x52 (+0x12): 10 неудачных измерений подряд (brp.c 306) */
-    u16  init_timeout10;            /* +0x54 +0x54 (+0x14): 10 таймаутов r54.6 (brp.c 332) */
+    u16  init_timeout10;            /* +0x54 +0x54 (+0x14): 10 таймаутов MAC_EVT4_GP0_END (brp.c 332) */
     u16  init_timeout_idle;         /* +0x56 +0x56 (+0x16): таймаут при снятом б0 init_flags (brp.c 324) */
     u16  resp_start;                /* +0x58 +0x58 (+0x18): запуски ответчика (brp_init_ctx, brp.c 1000) */
     u16  resp_rf_done;              /* +0x5a +0x5a (+0x1a): завершённые RF-модули ответчика (brp_rf_module_done, brp.c 133) */
@@ -1737,7 +1737,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define fsched_log_idx               (*(u8 *)0x80043a)   /* [в] Индекс записи журнала fsched_log 0x8007d4 (+4·idx), ++ в l1_fixed_sched_*_sm, 0 при ≥16; аргумент rx_flow_run_and_check_bf_abort. NAMES-EXTRA («Инд... */
 #define qh_dma_open                  (*(u8 *)0x80043b)   /* [с] sched_cfg_merge_update ставит 1 (если 0); qh_write_while_dma_open_check при ≠0 считает «QH Write while DMA is open» (счётчик 0x80070f) и сбрасывает... */
 #define abft_gp0_periods             (*(u8 *)0x800443)   /* [с] bti_arm_period_gp0: число целых периодов, прошедших до программирования (цикл вычитания) — stb [gp,-0xe5]; abft_responder_fast вычитает (n+... */
-#define mac_cmd31_mode               (*(u8 *)0x800444)   /* [с] Аргумент a последней MAC-команды 0x31 (mac_select_rf_module_cmd31: 0x31000000|a<<4|sta<<9); ≠0 включает ожидание BAP (r53.0, команды 0x23010003/0x2... */
+#define mac_cmd31_mode               (*(u8 *)0x800444)   /* [с] Аргумент a последней MAC-команды 0x31 (mac_select_rf_module_cmd31: 0x31000000|a<<4|sta<<9); ≠0 включает ожидание BAP (MAC_BAP_TX_UPDATE, команды 0x23010003/0x2... */
 #define rx_last_mcs                  (*(u8 *)0x800447)   /* [в] r38[24:20] received_mcs последнего кадра (rx_flow_handle_frame); ≥2 и RS не включён → событие rs_started (rx_funcs_rx_flow). UC-REGISTERS §2 r38. */
 #define aw_tx_peer_mask              (*(u8 *)0x800448)   /* [с] Битовая карта станций (<8), которым была передача в слоте фикс. расписания (fixed_sched_run_tx_slot при 0x8006c0≠0); aw_worker_collect_awake_peers ... */
 #define fsched_enabled               (*(u8 *)0x800449)   /* [в] Фиксированное расписание включено: LMAC 0x3e (fixed_sched__start) ставит 1 вместе с 0x80044a; проверяют bi_manager_step_a, bti beacon sweep, l1_tas... */
@@ -1793,7 +1793,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define rx_resp_ctx8                 (*(u32 *)0x800538)   /* [н] Значение для ctx[8] / frame+8 при ответе типа 2 (qid в 0x800564 или RD от известной станции): rx_flow_step, rx_get_required_response, tx_mtp_queue_... */
 #define rx_wait_start_tsf            (*(u32 *)0x80053c)   /* [в] TSF начала ожидания ответа (rx_flow_handle_frame, rx_program_mac_and_wait, rx_resp_finish_restore_rx, fsched_ap_start_slot); rx_funcs_rx_flow: TSF ... */
 #define rx_on_tsf                    (*(u32 *)0x800540)   /* [с] TSF при сбросе BI-защёлки (bi_latch_tsf_and_reset, LMAC 0x03 / RX ON) и при link lost; ucode_cmd_0x01_handler вычисляет прошедшее время. NAMES-EXTR... */
-#define rx_bap_rx_up                 (*(u32 *)0x800544)   /* [с] rx_get_required_response: r53.б5 bap_rx_up_status (после ожидания bap_rx_update_ind) либо 0/1 по ветке пира; ==1 → разбор ответа по BAP. */
+#define rx_bap_rx_up                 (*(u32 *)0x800544)   /* [с] rx_get_required_response: MAC_BAP_RX_UP_STATUS (после ожидания MAC_BAP_RX_UPDATE) либо 0/1 по ветке пира; ==1 → разбор ответа по BAP. */
 #define short_txop_en                (*(u32 *)0x800548)   /* [с] Байт +4 LMAC 0x1e (ucode_cmd_selective_neighbor_cfg, vendor 0x93cc12 st.as [gp,8]); txop_apply_limits_regs при ≠0 сдвигает предел TXOP на txop_limi... */
 #define calib_gain_ofs               (*(u8 *)0x80054c)   /* [с] LMAC 0x16: memcpy 4 Б (байт +0xb4 калибровочного объекта fw); читается байтом: rx_mode_configure прибавляет к усилению (клип 0x3f, phy_set_88306c_f... */
 #define res_vote_mask                (*(u32 *)0x800550)   /* [в] uc_res_vote_acquire/release: маска голосов за ресурс (бит на причину: 2 — keep-alive, 4 — FTM); первый голос снимает qset 4..6 (0x8004ac &= ~0x70),... */
@@ -1803,13 +1803,13 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define snr_best_buf                 (*(u32 *)0x800560)   /* [с] Указатель на буфер лучшего измерения SNR (0x80212c или 0x802204 по сравнению с 0x802130) — rx_flow_measure_snr_select_best; phy_params_snapshot чит... */
 #define txop_qid_mask                (*(u32 *)0x800564)   /* [с] Маска qid станции на время TXOP (tx_sta_run_txop: OR в 0x8004c8 и обратно; LMAC 0x08 снимает бит); при бите qid ответ типа 2 с ctx[8]=[0x800538]. U... */
 #define rx_ack_rcvd                  (*(u32 *)0x800568)   /* [с] rx_dispatch_by_g_8005f8 (режим 1 — ACK) ставит 1; rx_nav_update при ≠0 и r37.б9 переходит в RD (б3), сбрасывает; rx_flow_run обнуляет. */
-#define rx_cts_rf_restore            (*(u32 *)0x80056c)   /* [н] rx_nav_update ставит 1 при ожидании CTS (режим 4) и r37.б1; тогда rx_resp_finish_restore_rx / rx_program_mac_and_wait / tx_mtp_queue_gate / txop_in... */
+#define rx_cts_rf_restore            (*(u32 *)0x80056c)   /* [н] rx_nav_update ставит 1 при ожидании CTS (режим 4) и MAC_RX_REP2_CTS; тогда rx_resp_finish_restore_rx / rx_program_mac_and_wait / tx_mtp_queue_gate / txop_in... */
 #define itx_ka_pending               (*(u32 *)0x800570)   /* [с] Маска станций с ожидающей внутренней передачей keep-alive (keep_alive_arm_slot; check_idle(2)); itx_rr_pick_pending_b, aw_worker (OR в вектор), пуб... */
 #define rx_flow_noevt_cnt            (*(u32 *)0x800574)   /* [н] rx_flow_run: ++ на раннем выходе (трасса 0xeeee04). Только счётчик. */
 #define ppdu_evt_cnt                 (*(u32 *)0x800578)   /* [в] Тень r40[13:8] ppdu_event_counter: ++ при каждом взводе приёма (rx_arm_window*, rx_ppdu_is_*, abft, bti); mac_set_mode_a000 перечитывает; rx_flow_r... */
 #define rx_listen_active             (*(u32 *)0x800588)   /* [с] rx_listen_set_flag_and_stamp_tsf ставит 1, uc_pm_enter_idle — 0; проверяют l1_task_main_step (assert 0x28), fixed_sched_run_tx_slot, background_bi_... */
 #define bg_task_running              (*(u32 *)0x80058c)   /* [в] Выполняемая фоновая задача: background_task_dispatch обнуляет, затем ставит бит выбранной (из bg_task_mask & bg_task_pending). UC-REGISTERS §4.3. */
-#define mac_a000_fast_cnt            (*(u32 *)0x800590)   /* [н] mac_set_mode_a000: ++ на быстром пути, если r40.б3 был поднят. */
+#define mac_a000_fast_cnt            (*(u32 *)0x800590)   /* [н] mac_set_mode_a000: ++ на быстром пути, если MAC_PHYSIG_PHY_RX_FRAME был поднят. */
 #define mac_a000_slow_cnt            (*(u32 *)0x800594)   /* [н] mac_set_mode_a000: ++ на пути с ожиданием стадии BRP. */
 #define g_800598                     (*(u32 *)0x800598)   /* [н] bti_bi2_event_step и bti_bi2_track_best_metric сравнивают (≠0) с rx_mode_flags.б0 (режим SLS). Только чтение, писатель вне uc. */
 #define bti_kind_nonzero             (*(u32 *)0x80059c)   /* [с] bti_prepare_sweep_set: 0 — свой маяк (kind 0: 0x802f14=1, mac_cmd_0f_step), 1 — иначе. 6.4: g_bti_kind_nonzero. Только запись в нашем коде. */
@@ -1830,7 +1830,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define mtp_desc_hi                  (*(u32 *)0x80060c)   /* [в] r51 >> 4; <<14 в ту же команду 0x19. UC-REGISTERS §4.5. */
 #define l2_wd_fired                  (*(u32 *)0x800624)   /* [в] l2_handle_watchdog ставит 1; l1_task_main_step / l1_task_step_fixed_sched при ≠0 обнуляют и сообщают link lost. UCODE-TASKS.md, VERSION-DIFF.md, NA... */
 #define uc_wait_marker               (*(u32 *)0x800628)   /* [в] Метка текущего ожидания для отладки (0xff2f/0xff30 в mac_set_mode_a000, 0xff31 в rx_get_required_response; 0 после выхода). volatile. */
-#define bti_busy_cancel_cnt          (*(u32 *)0x80062c)   /* [в] bti_worker_bti_transmitter_beacon_sweep_flow: ++ при отмене развёртки маяка по busy2 (r42.б14), обнуляется при успехе. BEACONING.md («счётчик 0x800... */
+#define bti_busy_cancel_cnt          (*(u32 *)0x80062c)   /* [в] bti_worker_bti_transmitter_beacon_sweep_flow: ++ при отмене развёртки маяка по busy2 (MAC_EVT1_BUSY2), обнуляется при успехе. BEACONING.md («счётчик 0x800... */
 #define rf_switch_wait_cnt           (*(u32 *)0x800630)   /* [с] mac_rf_switch_cmd1f: ++ на каждой итерации ожидания r40[2:0]==5, затем 0. UCODE-TASKS §1.3 называет 0x800630 маской фоновых задач — это 4.1 (в 6.2 ... */
 #define bf_tmo_tick                  (*(u32 *)0x800688)   /* [н] l1_task_select_by_mode: ++ при каждом вызове, пока голова кольца BF в состоянии 0x12; при таймауте (>1000 мкс) сохраняется в 0x80068c и обнуляется.... */
 #define bf_tmo_tick_last             (*(u32 *)0x80068c)   /* [н] Значение 0x800688 на момент таймаута BF-запроса. Только запись. */

@@ -104,7 +104,7 @@ void uc_spin_until_event4(u32 a)
 {
     u32 v;
     do {
-        v = arc_core_rd(54);
+        v = mac_evt4();
     } while (!(v & a));
 }
 
@@ -141,7 +141,7 @@ u32 uc_tx_is_idle(void)
 }
 
 
-/* СРОК: как mac_evt_enable_bit_sync (3 nop после 0x02004200 до опроса r42.14), но с тайм-аутом c
+/* СРОК: как mac_evt_enable_bit_sync (3 nop после 0x02004200 до опроса MAC_EVT1_BUSY2), но с тайм-аутом c
  * GP-таймера (uc_wait_event_busy); vendor 0x936594 так же; запас — единицы инструкций. */
 /* Ожидание двух событий (0x936594). */
 void uc_wait_two_events(u32 a, u32 b, u32 c)
@@ -151,7 +151,7 @@ void uc_wait_two_events(u32 a, u32 b, u32 c)
     uc_mac_cmd(mac_evt_en_shadow | v);
     uc_mac_cmd(0x2004200);
     arc_nops(3);
-    uc_wait_event_busy(1u << 14, c);
+    uc_wait_event_busy(MAC_EVT1_BUSY2, c);
 }
 
 /* СРОК: проверка r42 & a и «sleep» разделены ~16 инструкциями (тайм-аут 0x23/0x02, маска
@@ -162,7 +162,7 @@ void uc_wait_two_events(u32 a, u32 b, u32 c)
 /* Сон до события (0x93676c). */
 void uc_sleep_until_event(u32 a, u32 b)
 {
-    if (arc_core_rd(42) & a)
+    if (mac_evt1() & a)
         return;
     if (b != 0) {
         uc_mac_cmd(b | 0x23010000);
@@ -184,7 +184,7 @@ u32 uc_read_bi_sync(void)
     mac_sel_shadow = r0 | (1u << 14);
     uc_mac_cmd(r0 | 0x1d004000u);
     arc_nops(3);
-    return arc_core_rd(40) >> 31;              /* lsr r0,r40,0x1f */
+    return MAC_BI_SYNC_OF(mac_status_sel());              /* lsr r0,r40,0x1f */
 }
 
 /* Счётчик BI в окне (0x937474). */
@@ -195,7 +195,7 @@ u32 uc_bi_counter_in_window(u32 a)
     mac_sel_shadow = r2 | (1u << 14);
     uc_mac_cmd(r2 | 0x1d004000);
     arc_nops(3);
-    u32 r1 = arc_core_rd(40) & 0x3ffffff;
+    u32 r1 = mac_status_sel() & MAC_BI_COUNTER;
     bi_pos_us = r1;
     u32 r3 = bcn_bi.bi_len_us - 25;
     return !(r3 >= r1 && r1 >= 0x9c4);
@@ -277,7 +277,7 @@ void ucode_pm_stamp_tsf_slots(void)
 }
 
 /* СРОК: селектор r47[0] → 3 инструкции (2×nop + mov 0,0) → опрос DIRECT_TX_CMD_STATUS.cmd_ready
- * (r47.0) без ограничения, на пути подачи direct-TX кадра (BRP, SSW, CF-End) между командами 0x33;
+ * (MAC_DTX_CMD_READY) без ограничения, на пути подачи direct-TX кадра (BRP, SSW, CF-End) между командами 0x33;
  * vendor 0x925874 так же; запас по задержке выборки — единицы инструкций. Срыв: чтение r47 прежней
  * группы (ложная готовность) или зависание. */
 /* Ожидание готовности direct-TX (0x925874). */
@@ -289,8 +289,8 @@ void uc_wait_direct_tx_ready(void)
     arc_nops_nop(2);
     u32 v;
     do {
-        v = arc_core_rd(47);
-    } while (!(v & 1u));
+        v = mac_txctl_sel();
+    } while (!(v & MAC_DTX_CMD_READY));
 }
 
 /* Инициализация глобалов (0x92094c). */

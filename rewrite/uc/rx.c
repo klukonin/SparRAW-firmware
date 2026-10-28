@@ -81,7 +81,7 @@ void rx_listen_set_flag_and_stamp_tsf(void)
 /* 0x9228d4 */
 void rx_arm_window(void)
 {
-    uc_wait_event_busy(1u << 16, 0);
+    uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000);
         rx_buf_toggle_cnt += 1;
@@ -104,7 +104,7 @@ void rx_switch_to_rx_mode(void)
     mac_set_mode_a000(0);
     uc_mac_cmd(0x4d000000);
     arc_nops(3);
-    u32 r1 = arc_core_rd(55);
+    u32 r1 = mac_timer_sel();
     rx_sw_sifs_cnt = r1;
     if (r1 > SIFS_CNT_RESP_LATE || r1 == 0) {
         uc_mac_cmd(0x1f000601);
@@ -128,7 +128,7 @@ u32 rx_flow_run_and_check_bf_abort(u32 a)
 
 u32 rx_ppdu_is_ack(void)
 {
-    uc_wait_event_busy(1u << 16, 0);
+    uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
         u32 v = (rx_buf_toggle_cnt & 1) | 0x32000000u;
         uc_mac_cmd(v);
@@ -137,13 +137,13 @@ u32 rx_ppdu_is_ack(void)
     ppdu_evt_cnt += 1;                      /* ld_s [gp,80] / st.as [gp,20] */
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
-    return arc_core_rd(36) & 0x100;
+    return mac_rx_rep1() & MAC_RX_REP1_IMM_ACK;
 }
 
 
 u32 rx_ppdu_is_cts_b(void)
 {
-    uc_wait_event_busy(1u << 16, 0);
+    uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
         u32 v = (rx_buf_toggle_cnt & 1) | 0x32000000u;
         uc_mac_cmd(v);
@@ -152,7 +152,7 @@ u32 rx_ppdu_is_cts_b(void)
     ppdu_evt_cnt += 1;                      /* ld_s [gp,80] / st.as [gp,20] */
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
-    return arc_core_rd(37) & 2;
+    return mac_rx_rep2() & MAC_RX_REP2_CTS;
 }
 
 
@@ -162,7 +162,7 @@ u32 rx_ppdu_is_cts_b(void)
 void rx_arm_window_b(void)
 {
     /* 0x923280: как rx_arm_window_c, но без возврата r37. */
-    uc_wait_event_busy(1u << 16, 0);
+    uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000);
         rx_buf_toggle_cnt += 1;
@@ -175,7 +175,7 @@ void rx_arm_window_b(void)
 /* 0x92c568: возврат r37 & (1 << 24). */
 u32 rx_arm_window_c(void)
 {
-    uc_wait_event_busy(1u << 16, 0);
+    uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000);
         rx_buf_toggle_cnt += 1;
@@ -183,7 +183,7 @@ u32 rx_arm_window_c(void)
     ppdu_evt_cnt += 1;
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
-    return arc_core_rd(37) & 0x1000000;
+    return mac_rx_rep2() & MAC_RX_REP2_SSW;
 }
 
 void rx_mac_prepare(void)
@@ -236,7 +236,7 @@ void rx_enter_listen_mode(void)
     rx_listen_enter_cnt += 1;
     uc_wait_two_events(5, 5, 0xa);
     arc_nops(3);   /* vendor: 3×nop до чтения r42 */
-    if (!(arc_core_rd(42) & (1u << 14)))
+    if (!(mac_evt1() & MAC_EVT1_BUSY2))
         uc_assert((u32)__builtin_return_address(0), 0x10);
 }
 void rx_flow_accumulate_busy_time(u32 a)
@@ -290,7 +290,7 @@ u32 rx_flow_send_imm_response(void)
 /* phy_stats_accumulate_to_shared — в tail.c; tx_send_imm_response — в tx.c. */
 
 /* По формату это Grant Ack, а не DMG CTS: fc 0x0764 (расширение управления 7) и 7 Б тела
- * (Reserved + BF Control, 9.3.1.18); вызывается на принятый Grant (r37.10, случай 9).
+ * (Reserved + BF Control, 9.3.1.18); вызывается на принятый Grant (MAC_RX_REP2_GRANT, случай 9).
  * СРОК: Grant Ack — через SIFS 3 мкс после Grant (802.11-2020 10.39.4, 10.3.2.3.3). Медленный путь
  * через switch rx_flow_handle_frame; здесь до 0x37000020 — расчёт длительности,
  * direct_tx_init_rx_desc (~15) и tx_send_imm_response (~60); тело (7 Б) пишется после 0x37000020.
@@ -367,12 +367,12 @@ u32 rx_flow_substep_uc(struct tx_ctx_s *a)
     mac_sel_shadow = g | 0xb00;
     uc_mac_cmd(g | 0x1d000b00);
     arc_nops(3);
-    u32 r15 = arc_core_rd(41);
+    u32 r15 = mac_queue_sel();
     g = mac_sel_shadow & 0xfffff0ff;
     mac_sel_shadow = g | 0xc00;
     uc_mac_cmd(g | 0x1d000c00);
     arc_nops_nop(2);
-    u32 r13 = arc_core_rd(41) | r15;
+    u32 r13 = mac_queue_sel() | r15;
     u32 r6 = a->qid;
     if (!(r13 & (1u << r6)))
         return 1;
@@ -426,12 +426,12 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
     uc_mac_cmd(a | 0x16000000);
     uc_mac_cmd(b | 0x17000000);
     uc_nop3();
-    while (!(arc_core_rd(43) & 0x80000000u))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    u32 r51 = arc_core_rd(51);
+    u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
     mtp_desc_hi = r51 >> 4;
-    u32 mcs = (arc_core_rd(43) >> 16) & 0x1f;
+    u32 mcs = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());
     uc_mac_cmd((mcs << 4) | 0x3e000000);
     uc_mac_cmd(0x37000020);
     VOL(uc_stats.tx_start) += 1;
@@ -447,7 +447,7 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
 /* СРОК: весь путь от конца принятого кадра до вызова rx_flow_handle_frame / rx_flow_step входит
  * в срок ответа через SIFS 3 мкс (802.11-2020 10.3.2.3.3; Ack 10.3.2.11, BlockAck 10.25.3,
  * DMG CTS 10.3.2.9, RD 10.29.4). Вход при состоянии 2/3/5: от выхода из цикла ожидания
- * r42.14/r49.13 (ХРУПКО ниже) до bl rx_flow_handle_frame ~32 инструкции + латч PHY (~4)
+ * MAC_EVT1_BUSY2/MAC_EE2_BRP_ON_AIR (ХРУПКО ниже) до bl rx_flow_handle_frame ~32 инструкции + латч PHY (~4)
  * (vendor 0x9311e4…0x93146c ~38); вход при состоянии 0 (кадр уже кончился): весь пролог
  * ~50 инструкций + sls_clear_rx_state (6) + 3 команды 0x1d/0x4d с nop — как у vendor. Ветка
  * txrx_state2 б2 добавляет rx_mode_configure (~190 инструкций, 12 вызовов) и mac_load_tx_key — так
@@ -474,14 +474,14 @@ u32 rx_flow_run(void)
     uc_mac_sel(0);
     uc_nop3();
     sls_clear_rx_state();
-    st = arc_core_rd(40) & 7;
+    st = mac_status_sel() & MAC_BIFS_IDLE_DETECT;
     rx_flow_mac_state = st;
     rx_cts_rf_restore = 0;
     rx_ack_rcvd = 0;
     if (st == 5) {
         uc_mac_cmd(0x4d000000);
         uc_nop3();
-        u32 r55 = arc_core_rd(55);
+        u32 r55 = mac_timer_sel();
         st = rx_flow_mac_state;
         if (r55 >= SIFS_CNT_RX_ENTRY_LATE)
             ok = 0;
@@ -499,13 +499,13 @@ u32 rx_flow_run(void)
     }
     uc_mac_cmd(0x4d000000);
     uc_nop3();
-    rx_flow_r55_snap = arc_core_rd(55);
+    rx_flow_r55_snap = mac_timer_sel();
     uc_mac_sel(0xa000);
     uc_nop3();
     {
-        u32 r3 = arc_core_rd(40);
-        r13 = (r3 >> 8) & 0x3f;
-        if (((((r3 >> 16) & 0x3f) - r13) & 0x3f) >= 2)
+        u32 r3 = mac_status_sel();
+        r13 = MAC_PHYSIG_PPDU_EVT_CNT_OF(r3);
+        if (((MAC_PHYSIG_CCA_EVT_CNT_OF(r3) - r13) & 0x3f) >= 2)
             uc_assert((u32)__builtin_return_address(0), 68);
     }
     seq = ppdu_evt_cnt & 0x3f;
@@ -517,8 +517,8 @@ u32 rx_flow_run(void)
     if (r13 != seq) {
         ppdu_evt_cnt = r13;
         uc_mac_cmd(0x20d2000);
-        if (!(arc_core_rd(40) & (1u << 24))) {
-            mac_wait_event_r42_or_r40(1u << 16, 1u << 24);
+        if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP)) {
+            mac_wait_event_r42_or_r40(MAC_EVT1_PPDU_REPORT, MAC_PHYSIG_CCA_PPDU_COMP);
             ppdu_evt_cnt += 1;
         }
         rx_flow_noevt_cnt += 1;
@@ -529,12 +529,12 @@ u32 rx_flow_run(void)
 
     uc_mac_sel(0);
     uc_nop3();
-    uc_mac_cmd(arc_core_rd(40) & 7);
-    switch (arc_core_rd(40) & 7) {
+    uc_mac_cmd(mac_status_sel() & MAC_BIFS_IDLE_DETECT);
+    switch (mac_status_sel() & MAC_BIFS_IDLE_DETECT) {
     case 0:
         uc_mac_sel(0xa000);
         uc_nop3();
-        if (seq == ((arc_core_rd(40) >> 16) & 0x3f)) {
+        if (seq == MAC_PHYSIG_CCA_EVT_CNT_OF(mac_status_sel())) {
             u32 v = VOL(uc_stats.rx_ppdu) + 1;
             FWSH(fw_stats_dash, rx_ppdu) = v;
             VOL(uc_stats.rx_ppdu) = v;
@@ -543,7 +543,7 @@ u32 rx_flow_run(void)
         goto tail;
     case 1:
         uc_wait_two_events(1, 1, 4);
-        if ((arc_core_rd(40) & 7) != 2) {
+        if ((mac_status_sel() & MAC_BIFS_IDLE_DETECT) != 2) {
             VOL(uc_stats.rx_type_err) += 1;
             res = 0;
             uc_mac_cmd(0xeeee05);
@@ -556,9 +556,9 @@ u32 rx_flow_run(void)
         uc_mac_cmd(mac_evt_en_shadow | 0x27007300);
         uc_mac_cmd(0x2004000);
         uc_nop3();
-        uc_wait_event_busy(9u << 11, 0);
-        if (!(arc_core_rd(42) & 0x4000) && (rx_mode_flags & 2) &&
-            (arc_core_rd(40) & 7) == 2 && (MMIO32(HW_PHY_RX_STATUS_8837B0) & 2))
+        uc_wait_event_busy(MAC_EVT1_SFD_SYNC | MAC_EVT1_BUSY2, 0);
+        if (!(mac_evt1() & MAC_EVT1_BUSY2) && (rx_mode_flags & 2) &&
+            (mac_status_sel() & MAC_BIFS_IDLE_DETECT) == 2 && (MMIO32(HW_PHY_RX_STATUS_8837B0) & 2))
             rx_flow_measure_snr_select_best();
         uc_mac_sel(0xa000);
         uc_nop3();
@@ -567,16 +567,16 @@ u32 rx_flow_run(void)
         uc_nop3();
         {   /* ХРУПКО: тайминг без запаса. Как vendor: 4 инструкции на проход;
              * -Os уводил проверку r49 за дальний переход (6a30636f).
-             * Отсюда (конец кадра: r42.14 / BRP-стадия r49.13) отсчитывается SIFS до ответа
+             * Отсюда (конец кадра: MAC_EVT1_BUSY2 / BRP-стадия MAC_EE2_BRP_ON_AIR) отсчитывается SIFS до ответа
              * (802.11-2020 10.3.2.3.3); задержка выхода — до одного прохода (4 инструкции). */
             u32 t;
             __asm__ volatile("1:\tmov\t%0,r42\n\tbbit1\t%0,14,2f\n"
                              "\tmov\t%0,r49\n\tbbit0\t%0,13,1b\n2:" : "=&r"(t) :: "memory");
         }
-        (void)arc_core_rd(49);                  /* delay-слот vendor: mov r3,r49 */
+        (void)mac_evt_eng2();                  /* delay-слот vendor: mov r3,r49 */
         rx_flow_latch_phy_8014e8__930da4();
-        u32 lo = (arc_core_rd(40) >> 8) & 0x3f;
-        u32 hi = (arc_core_rd(40) >> 16) & 0x3f;
+        u32 lo = MAC_PHYSIG_PPDU_EVT_CNT_OF(mac_status_sel());
+        u32 hi = MAC_PHYSIG_CCA_EVT_CNT_OF(mac_status_sel());
         if (((hi - lo) & 0x3f) >= 2)
             uc_assert((u32)__builtin_return_address(0), 69);
         if (hi != seq)
@@ -623,14 +623,14 @@ busy:
         ppdu_evt_cnt += 1;
         VOL(uc_stats.rx_arm) += 1;
         FWSH(fwsh_diag, rx_arm) = VOL(uc_stats.rx_arm);
-        uc_spin_until_event(1u << 16);
+        uc_spin_until_event(MAC_EVT1_PPDU_REPORT);
         VOL(uc_stats.rx_no_frame) += 1;
         goto noframe;
     }
     if (res == 0) {
 noframe:                                        /* 0x931244 */
-        if (((arc_core_rd(37) & (1u << 24)) || (arc_core_rd(38) & 1)) &&
-            (arc_core_rd(39) & (1u << 15)) && (arc_core_rd(42) & (1u << 16)))
+        if (((mac_rx_rep2() & MAC_RX_REP2_SSW) || (mac_rx_rep3() & MAC_RX_REP3_MY_BSS_BEACON)) &&
+            (mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN) && (mac_evt1() & MAC_EVT1_PPDU_REPORT))
             sls_rx.flags |= 2;
         rx_mac_prepare();
         rx_nav_update(0, 0, 0, 0);
@@ -655,7 +655,7 @@ noframe:                                        /* 0x931244 */
         } else if (f & 2) {
             uc_mac_sel(0x3000);
             uc_nop3();
-            rx_flow_step(ctx, arc_core_rd(40) & 0xffff);
+            rx_flow_step(ctx, mac_status_sel() & MAC_REM_TIME);
         } else {
             txop_sent = rx_flow_handle_frame(ctx);
             if (!txop_sent && (txrx_state2 & 0x3001000))
@@ -669,7 +669,7 @@ noframe:                                        /* 0x931244 */
         if (ctx->flags & 1)
             rx_txop_continue(ctx);
     }
-    rx_nav_update((rxf.flags >> 1) & 1, arc_core_rd(36), arc_core_rd(37), arc_core_rd(38));
+    rx_nav_update((rxf.flags >> 1) & 1, mac_rx_rep1(), mac_rx_rep2(), mac_rx_rep3());
 done:
     rx_flow_hit = r13;
     VOL(uc_stats.rx_arm) += 1;
@@ -682,7 +682,7 @@ done:
  * ХРУПКО: тайминг практически без запаса. Ответ ACK/BA должен уйти в SIFS (3 мкс,
  * ~500 тактов). Наша -Os версия rx_flow_handle_frame (на 7-18 инструкций медленнее
  * до запроса) ловила assert 0x26 под iperf в каждой загрузке; чистый vendor — 0 из 3.
- * Механизм (железо, 2026-10-16, 3 сбоя): это не зависание. MTP отвечает (r43.31) за 0-1
+ * Механизм (железо, 2026-10-16, 3 сбоя): это не зависание. MTP отвечает (MAC_MTP_RESP_VALID) за 0-1
  * проход опроса; ilink2 uc на INT6 — в прямом коде через 3-6 инструкций после команды
  * 0x37000020; причина — MAC_SXD.MAC_HW_ICR (0x886e24) бит 5 (раз ещё и бит 4). MAC сам
  * поднимает INT6 на запоздавшую команду ответа, l2_task_report_error_bits -> 0x26.
@@ -695,7 +695,7 @@ done:
  * mtp_service_dispatch (0x932a88/0x932b88/0x932c74) вставлен цикл 6×(sub.f+bnz),
  * ~12-18 тактов, не ассоциируется ни разу (20 попыток в 5 загрузках); трамплин без цикла
  * (~4 инструкции) и чистый vendor — 4 из 4 без ошибок, чередуя прогоны.
- * Участок после ответа MTP (r43.31 -> 0x37000020 -> 0x2008000) так же критичен: +20..30
+ * Участок после ответа MTP (MAC_MTP_RESP_VALID -> 0x37000020 -> 0x2008000) так же критичен: +20..30
  * инструкций учёта между r43 и командами MAC — ни одной ассоциации.
  * Решение (2026-10-16): быстрый путь в rx_flow_handle_frame (O2, запрос в MTP сразу после
  * 0x3f-команды, записи ctx/0x802298/0x802294/0x800608/0x8022d4 — после 0x19000001, где uc
@@ -713,14 +713,14 @@ rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast
 {
     UC_PAD(PAD_RESP_CMD);
     mtp_service_dispatch(kind, sta, ctx->resp_ctx8, 0xff);
-    while (!(arc_core_rd(43) & 0x80000000u))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    u32 r51 = arc_core_rd(51);
+    u32 r51 = mac_mtp_desc();
     if (!fast) {
         mtp_desc_lo = r51 & 0xf;
         mtp_desc_hi = r51 >> 4;
     }
-    uc_mac_cmd((((arc_core_rd(43) >> 16) & 0x1f) << 4) | 0x3e000000);
+    uc_mac_cmd((MAC_MTP_RESP_MCS_OF(mac_mtp_resp()) << 4) | 0x3e000000);
     uc_mac_cmd(0x37000020);
     if (!fast)
         uc_stats.tx_start += 1;
@@ -741,7 +741,7 @@ rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast
         rxf.flags = (rxf.flags & ~2u) | 4;
         rxf.resp_type = resp;
     }
-    while (!(arc_core_rd(45) & 0x80000000u))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd(0x18000000);
 }
@@ -768,8 +768,8 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
     u32 r16 = 0, r18 = 0;
 
     UC_PAD(PAD_RESP_ENTRY);
-    if (!(arc_core_rd(42) & (1u << 16)))
-        uc_wait_event_busy(1u << 16, 0);
+    if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
+        uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
         rx_buf_toggle_cnt += 1;
@@ -786,10 +786,10 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
             case 5:
                 uc_mac_sel(0x5000);
                 uc_nop3();
-                m->snap_sel5 = arc_core_rd(40);
+                m->snap_sel5 = mac_status_sel();
                 uc_mac_sel(0x6000);
                 uc_nop3();
-                m->snap_sel6 = arc_core_rd(40);
+                m->snap_sel6 = mac_status_sel();
                 m->state = 1;
                 bf_pending_set_bit(0);
                 break;
@@ -799,11 +799,11 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
         }
     }
 
-    if (arc_core_rd(36) & (1u << 7)) {
+    if (mac_rx_rep1() & MAC_RX_REP1_BEACON) {
         /* 0x932098: маяк/SSW от сети */
         bti_cnt.net_bcn_rx += 1;
         uc_mac_cmd(0x49000100);
-        u32 r2 = arc_core_rd(38) & 1;
+        u32 r2 = mac_rx_rep3() & MAC_RX_REP3_MY_BSS_BEACON;
         ss->my_bss = (u8)r2;
         if (((rx_buf_body18 | (rx_buf_body19 << 8)) & 0x780) == 0) {
             ss->bi_ctrl[0] = f[23]; ss->bi_ctrl[1] = rx_buf_body18; ss->bi_ctrl[2] = rx_buf_body19; ss->bi_ctrl[3] = rx_buf_body1a;
@@ -852,9 +852,9 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
                     ss->abft_go = 1;
                     uc_mac_sel(0xd000);
                     uc_nop3();
-                    u32 r11 = arc_core_rd(40);
+                    u32 r11 = mac_status_sel();
                     local = r11;
-                    r11 = (r11 >> 9) & 0x7ff;
+                    r11 = MAC_BF_METRIC_OF(r11);
                     ss->metric = (r11 > 1023) ? r11 - 0x800 : r11;
                     ss->sector = (u8)(rx_buf_bcn_ssw >> 10);
                     ss->antenna = rx_buf_bcn_ssw_hi & 3;
@@ -896,10 +896,10 @@ chk:                                            /* 0x93215c */
     }
 
     /* 0x932070 */
-    if ((arc_core_rd(36) & (1u << 25)) && rx_is_brp_frame() != 0) {
+    if ((mac_rx_rep1() & MAC_RX_REP1_NOACK_MGMT) && rx_is_brp_frame() != 0) {
         u32 r8 = 8;
-        if (arc_core_rd(38) & (1u << 11))
-            r8 = (arc_core_rd(38) >> 8) & 7;
+        if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID)
+            r8 = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
         *sta = r8;
         uc_stats.brp_rx += 1;
         if (!(txrx_state1 & 4))
@@ -923,21 +923,21 @@ chk:                                            /* 0x93215c */
     uc_nop3();
     uc_mac_sel(0xb000);
     uc_nop3();
-    if (((arc_core_rd(37) & (1u << 16)) && rx_buf_duration != 0) ||
-        (arc_core_rd(37) & 1) || (arc_core_rd(40) & (1u << 15)))
+    if (((mac_rx_rep2() & MAC_RX_REP2_CF_END) && rx_buf_duration != 0) ||
+        (mac_rx_rep2() & MAC_RX_REP2_RTS) || (mac_status_sel() & MAC_PLCP_SIFS_RESP))
         rx_switch_to_rx_mode();
-    if (arc_core_rd(38) & (1u << 11)) {
-        *sta = (arc_core_rd(38) >> 8) & 7;
-    } else if (arc_core_rd(36) & (1u << 7)) {
+    if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) {
+        *sta = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
+    } else if (mac_rx_rep1() & MAC_RX_REP1_BEACON) {
         *sta = sta_tbl_find_by_mac((u32)rx_buf_ra);
-    } else if (arc_core_rd(36) & (1u << 6)) {
+    } else if (mac_rx_rep1() & MAC_RX_REP1_SS) {
         *sta = sta_tbl_find_by_mac((u32)rx_buf_ta);
     } else {
         *sta = SPARRAW_PEER_UNKNOWN;
         local = 0;
     }
 
-    if ((arc_core_rd(36) & (1u << 6)) || (arc_core_rd(36) & (1u << 25))) {
+    if ((mac_rx_rep1() & MAC_RX_REP1_SS) || (mac_rx_rep1() & MAC_RX_REP1_NOACK_MGMT)) {
         /* 0x93256c: SSW */
         if (!(rx_mode_flags & 1)) {
             rx_mac_prepare();
@@ -963,7 +963,9 @@ chk:                                            /* 0x93215c */
         return 0;
     }
 
-    if ((arc_core_rd(38) & 0x30006800) == 0x20000800) {
+    if ((mac_rx_rep3() & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST |
+                          MAC_RX_REP3_NEIGHBOUR | MAC_RX_REP3_FCS_OK_PART)) ==
+        (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART)) {
         /* 0x93251e: кадр данных/управления для нас (распознавание Public Action FTM —
          * только SparRAW-pro) */
         u32 s2 = *sta;
@@ -974,38 +976,38 @@ chk:                                            /* 0x93215c */
                 sel_nbr.min_sta = (u8)s2;
             }
         }
-        rx_last_mcs = (arc_core_rd(38) >> 20) & 0x1f;
+        rx_last_mcs = MAC_RX_REP3_RX_MCS_OF(mac_rx_rep3());
         ctx->mtp_state = rx_get_required_response(ctx, &local);
         u8 lvl = (u8)rx_last_mcs;
         u8 sta0 = *(u8 *)ctx;
         u32 r15 = 0;
-        if ((arc_core_rd(36) & (1u << 9)) && (arc_core_rd(38) & (1u << 12))) {
+        if ((mac_rx_rep1() & MAC_RX_REP1_BACK) && (mac_rx_rep3() & MAC_RX_REP3_BAP_EN)) {
             /* СРОК: ожидание r53.bap_tx_update_ind (таймаут — GP-таймер 0x23010003, единица не
              * установлена; при таймауте assert 0x3b) стоит до запроса ответа в MTP — каждый такт
              * ожидания идёт в срок SIFS 3 мкс (802.11-2020 10.3.2.3.3). Как у vendor 0x932726;
              * запас определяет BAP, не код. */
             if (mac_cmd31_mode != 0) {
-                if (!(arc_core_rd(53) & 1)) {
+                if (!(mac_bap_if() & MAC_BAP_TX_UPDATE)) {
                     uc_mac_cmd(0x23010003);
                     uc_mac_cmd(0x2000200);
                     uc_nop3();
-                    while (!(arc_core_rd(42) & (1u << 9)) && !(arc_core_rd(53) & 1))
+                    while (!(mac_evt1() & MAC_EVT1_GP_TIMERS) && !(mac_bap_if() & MAC_BAP_TX_UPDATE))
                         ;
-                    if (arc_core_rd(42) & (1u << 9))
+                    if (mac_evt1() & MAC_EVT1_GP_TIMERS)
                         uc_assert((u32)__builtin_return_address(0), 0x3b);
                 }
-                bap_tx_up_status = arc_core_rd(53) & 0x10;
+                bap_tx_up_status = mac_bap_if() & MAC_BAP_TX_UP_STATUS;
                 uc_mac_cmd(0x1c000001);
             }
-            u32 x = (arc_core_rd(53) >> 8) & 0x7f;
-            u32 y = (arc_core_rd(53) >> 16) & 0x7f;
+            u32 x = MAC_BAP_NUM_TX_PKTS_OF(mac_bap_if());
+            u32 y = MAC_BAP_NUM_NOACK_OF(mac_bap_if());
             ba_stats.tx_pkts += x;
             ba_stats.non_acked += y;
             ba_stats.ba_cnt += 1;
             if ((s32)(u32)(u8)lvl >= 1)
                 ba_stats.active = 1;
         }
-        if ((arc_core_rd(38) & 0x8800) == 0x8800) {
+        if ((mac_rx_rep3() & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_RD)) == (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_RD)) {
             rxf.flags |= 8;
             r15 = 1;
         }
@@ -1021,7 +1023,7 @@ chk:                                            /* 0x93215c */
         u32 r5 = ctx->mtp_state;
         if (r5 == 0 && r16 != 1) {
             rx_mac_prepare();
-            if (arc_core_rd(37) & (1u << 16)) {
+            if (mac_rx_rep2() & MAC_RX_REP2_CF_END) {
                 txrx_state2 |= (1u << 9);
                 rx_cf_end_nav_reset(rx_buf_duration);   /* CF-End нам без ответа (Duration 0) — ответа нет, срока нет */
             }
@@ -1062,7 +1064,7 @@ chk:                                            /* 0x93215c */
     } else {
         /* 0x932910 */
         rx_mac_prepare();
-        if ((arc_core_rd(38) & (1u << 30)) && ((arc_core_rd(39) >> 8) & 0x3f) == 0x33 &&
+        if ((mac_rx_rep3() & MAC_RX_REP3_FCS_OK_FULL) && MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 0x33 &&
             prs_mcast_addr[0] == f[10] && prs_mcast_addr[1] == f[11] && prs_mcast_addr[2] == f[12] &&
             prs_mcast_addr[3] == f[13] && prs_mcast_addr[4] == f[14] && prs_mcast_addr[5] == f[15]) {
             u32 s = sta_tbl_find_by_mac((u32)rx_buf_ra);
@@ -1075,12 +1077,12 @@ chk:                                            /* 0x93215c */
                 uc_stats.ra_known += 1;
                 rx_wait_start_tsf = uc_read_tsf_lo();
             }
-        } else if (arc_core_rd(38) & (1u << 28)) {
+        } else if (mac_rx_rep3() & MAC_RX_REP3_NEIGHBOUR) {
             rx_update_nav_from_frame(1);
         } else {
-            u32 r39 = arc_core_rd(39), r38 = arc_core_rd(38);
-            u32 is8 = ((arc_core_rd(39) >> 8) & 0x3f) == 8;
-            if ((r39 & 0x10) && (r38 & (1u << 14)) && is8) {
+            u32 r39 = mac_rx_misc(), r38 = mac_rx_rep3();
+            u32 is8 = MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8;
+            if ((r39 & 0x10) && (r38 & MAC_RX_REP3_BCAST) && is8) {
                 /* vendor при td_enabled — op 4 вместо op 3; отсрочка трафика (LMAC 0x27, D3 PCIe) вырезана — см. fw/vectors.c pcie_pm_event_unsupported */
                 peer_masks_apply_op(&pm_ctx, 3, (1u << *sta) << 8);
                 mac_mon_report.rx_atim += 1;
@@ -1234,12 +1236,12 @@ u32 rx_funcs_rx_flow(void)
             txop_pick_ctrl_code_by_peer(*pctx);
             u32 busy = sxd_hal_wait_slot2_busy(busy_wait_slots);
             if (qchg) {
-                while (!(arc_core_rd(43) & 0x80000000u))
+                while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
                     ;
-                u32 r51 = arc_core_rd(51);
+                u32 r51 = mac_mtp_desc();
                 mtp_desc_lo = r51 & 0xf;
                 mtp_desc_hi = r51 >> 4;
-                if (arc_core_rd(43) & (1u << 27))
+                if (mac_mtp_resp() & MAC_MTP_RESP_AGG_EN)
                     (*pctx)->flags |= (1u << 9);
                 uc_mac_cmd(0x1b010000);
             }
@@ -1278,7 +1280,7 @@ u32 rx_funcs_rx_flow(void)
                     ba_stats.no_busy_cnt += 1;
                 }
             }
-            if (arc_core_rd(42) & (1u << 7))
+            if (mac_evt1() & MAC_EVT1_TXOP)
                 *st |= (1u << 10);
         }
         /* 0x933ca8 */
@@ -1364,13 +1366,13 @@ u32 rx_funcs_rx_flow(void)
     mac_set_mode_0000();
     uc_mac_sel(0);
     uc_nop3();
-    u32 is2 = (arc_core_rd(40) & 7) == 2;
+    u32 is2 = (mac_status_sel() & MAC_BIFS_IDLE_DETECT) == 2;
     if (!(rx_mode_flags & 1))
         rx_mode_configure(2, *sta);
     if (!is2) {
         uc_mac_sel(0);
         uc_nop3();
-        if ((arc_core_rd(40) & 7) == 2)
+        if ((mac_status_sel() & MAC_BIFS_IDLE_DETECT) == 2)
             is2 = 1;
     }
     if (is2) {
@@ -1416,15 +1418,15 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
 
     u32 r11c = r15->x1c;
     if (r16 > r11c) {
-        if (!(arc_core_rd(42) & (1u << 7)))
+        if (!(mac_evt1() & MAC_EVT1_TXOP))
             r13 = 1;
     }
     r13 = (u32)(u8)(u8)r13;
     if (rx_flow_substep_uc(r15) != 1)
         r17 = r13;
 
-    if (!(arc_core_rd(42) & (1u << 16)))
-        uc_wait_event_busy(1u << 16, 0);
+    if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
+        uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
 
     struct rx_meas_ctx *r13p = &rx_meas;
     if (r13p->state == 2) {
@@ -1443,12 +1445,12 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
                     mac_sel_shadow = g | 0x5000;
                     uc_mac_cmd(g | 0x1d005000);
                     arc_nops_nop(2);
-                    rx_meas.snap_sel5 = arc_core_rd(40);
+                    rx_meas.snap_sel5 = mac_status_sel();
                     g = mac_sel_shadow & 0xffff0fff;
                     mac_sel_shadow = g | 0x6000;
                     uc_mac_cmd(g | 0x1d006000);
                     arc_nops_nop(2);
-                    rx_meas.snap_sel6 = arc_core_rd(40);
+                    rx_meas.snap_sel6 = mac_status_sel();
                     rx_meas.state = 1;
                     bf_pending_set_bit(0);
                 }
@@ -1456,7 +1458,7 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
         }
     }
 
-    if (!(arc_core_rd(38) & (1u << 15)))
+    if (!(mac_rx_rep3() & MAC_RX_REP3_RD))
         rx_switch_to_rx_mode();
 
     if (rx_buf_toggle_dis == 0) {
@@ -1465,8 +1467,8 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
     }
 
     /* L_931c5c */
-    if (arc_core_rd(38) & (1u << 11)) {
-        u32 r7 = (arc_core_rd(38) >> 8) & 7;
+    if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) {
+        u32 r7 = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
         rxf.sta = r7;
         u32 r8 = rx_mode_flags;
         if (!(r8 & 1) && !(r8 & 2)) {
@@ -1482,10 +1484,10 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
     u32 disp = rx_dispatch_by_g_8005f8();
     r13 = disp & r17;
     if (r13 == 1) {
-        if ((arc_core_rd(36) & 6) != 0 && (arc_core_rd(38) & 0x30000) == 0) {
-            r15->resp_ctx8 = (arc_core_rd(36) >> 19) & 0x1f;
+        if ((mac_rx_rep1() & (MAC_RX_REP1_QOS_DATA | MAC_RX_REP1_MGMT)) != 0 && (mac_rx_rep3() & MAC_RX_REP3_ACK_POLICY) == 0) {
+            r15->resp_ctx8 = MAC_RX_REP1_DATA_QID_OF(mac_rx_rep1());
             r10 = 1u << r15->qid;        /* asl r10,0x1,r6 */
-            if (arc_core_rd(38) & (1u << 25)) {
+            if (mac_rx_rep3() & MAC_RX_REP3_MPDU_AGG) {
                 r15->x30 = 0;
                 r11 = 2;
             } else {
@@ -1508,18 +1510,18 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
             txrx_state2 |= (1u << 30);
     } else {
         rx_mac_prepare();
-        if ((arc_core_rd(38) & (1u << 11)) &&
+        if ((mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) &&
             rxf.sta != tx_ctx_pool.cur->sta) {
             txrx_state2 |= (1u << 6);
         }
         if (r17 == 0) {
             txrx_state2 |= (1u << 10);
-            if ((arc_core_rd(42) & (1u << 7)) && rx_resp_wait_en != 0) {   /* ld.as [gp,-15] */
+            if ((mac_evt1() & MAC_EVT1_TXOP) && rx_resp_wait_en != 0) {   /* ld.as [gp,-15] */
                 fsched_rx_resp_seen = 1;                                   /* st.as [gp,-14] */
                 uc_mac_cmd(0x1f000601);
             }
         }
-        if (arc_core_rd(38) & (1u << 28)) {
+        if (mac_rx_rep3() & MAC_RX_REP3_NEIGHBOUR) {
             rx_update_nav_from_frame(1);
             r5 = txrx_state2;
             txrx_state2 = r5 | (1u << 10);
@@ -1553,7 +1555,7 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
  * 3 мкс (802.11-2020 10.3.2.3.3): QoS Data/BAR → Ack/BlockAck (10.3.2.11, 10.25.3), RTS → DMG CTS /
  * DMG DTS (10.3.2.9, 10.39.6.6.2), CF-End (10.39.8.1), Grant → Grant Ack (10.39.4). Размер 1220 Б
  * против 1468 Б у vendor 0x932e40; ветка RTS — два чтения TSF (здесь и в grant_detect_step,
- * по ~9 инструкций с командой 0x4d и nop); ветка данных — ожидание r53.3 без ограничения (ниже).
+ * по ~9 инструкций с командой 0x4d и nop); ветка данных — ожидание MAC_BAP_RX_UPDATE без ограничения (ниже).
  * Запас общий с rx_frame_tx_resp_seq: единицы. Логи uc_log_emit* — только на ветках без ответа. */
 UC_HOT
 u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out)
@@ -1572,10 +1574,10 @@ u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out)
     if (r3 >= 2)
         rx_resp_skip_cnt = r3 - 1;
 
-    if (!(arc_core_rd(36) & 6))
+    if (!(mac_rx_rep1() & (MAC_RX_REP1_QOS_DATA | MAC_RX_REP1_MGMT)))
         goto ack_cts;
 
-    u32 r4 = (arc_core_rd(38) >> 16) & 3;
+    u32 r4 = MAC_RX_REP3_ACK_POLICY_OF(mac_rx_rep3());
     if (r4 == 0)
         goto midbrp;
     if (r4 != 1)
@@ -1591,9 +1593,9 @@ midbrp:   /* L_932ecc */
             (maint_sta_mask_prev & r5))
             r14 = 1;
     }
-    frame->resp_ctx8 = (arc_core_rd(36) >> 19) & 0x1f;
+    frame->resp_ctx8 = MAC_RX_REP1_DATA_QID_OF(mac_rx_rep1());
     r14 = (u32)(u8)(u8)r14;
-    if (!(arc_core_rd(38) & (1u << 25)) && !(arc_core_rd(36) & (1u << 18)))   /* bbit1 r38.25; bbit0 r36.18 */
+    if (!(mac_rx_rep3() & MAC_RX_REP3_MPDU_AGG) && !(mac_rx_rep1() & MAC_RX_REP1_BAR))   /* bbit1 r38.25; bbit0 r36.18 */
         goto bap_rx_check;
     if (r14 != 0) {   /* L_932f30 */
         u32 tsf = uc_read_tsf_lo();
@@ -1602,22 +1604,22 @@ midbrp:   /* L_932ecc */
         uc_log_emit1(0x10, 0x1001048, tsf);
         return 0;
     }
-    /* L_932f74: vendor при r36.1 для станции из upm_vector (бит PM в принятых кадрах) отмечал
+    /* L_932f74: vendor при MAC_RX_REP1_QOS_DATA для станции из upm_vector (бит PM в принятых кадрах) отмечал
      * смену её режима PS — энергосбережение вырезано (см. fw/action.c psc_req_reject). */
     return 2;
 
 bap_rx_check:   /* L_932fd0 */
-    r17 = (((arc_core_rd(39) >> 8) & 0x3f) == 8) ? 1 : 0;
-    r16 = arc_core_rd(36);
+    r17 = (MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8) ? 1 : 0;
+    r16 = mac_rx_rep1();
     if (!(r17 || (r16 & (1u << 17)))) {
-        /* СРОК: ожидание r53.3 (BAP: приём учтён) без таймаута — на пути до Ack/BlockAck через SIFS
+        /* СРОК: ожидание MAC_BAP_RX_UPDATE (BAP: приём учтён) без таймаута — на пути до Ack/BlockAck через SIFS
          * (802.11-2020 10.3.2.3.3). Как у vendor 0x933004 (тоже без ограничения); запас задаёт BAP.
          * Если BAP не ответит — uc висит здесь (метка 0xff31 в uc_wait_marker). */
         VOL(uc_wait_marker) = 0xff31;     /* метка ожидания: gcc выкидывал запись как мёртвую */
-        while (!(arc_core_rd(53) & (1u << 3)))
+        while (!(mac_bap_if() & MAC_BAP_RX_UPDATE))
             ;
         VOL(uc_wait_marker) = 0;
-        rx_bap_rx_up = (arc_core_rd(53) & (1u << 5)) ? 1 : 0;
+        rx_bap_rx_up = (mac_bap_if() & MAC_BAP_RX_UP_STATUS) ? 1 : 0;
         uc_mac_cmd(0x1c000008);
         goto bap_rx_done;
     }
@@ -1635,7 +1637,7 @@ bap_rx_check:   /* L_932fd0 */
         if (*(u16 *)&rx_buf_body18 & (1u << 4))
             frame->flags |= (1u << 10);
         frame->x34 = 1;
-        frame->x38 = arc_core_rd(38) & 0x4000000;
+        frame->x38 = mac_rx_rep3() & MAC_RX_REP3_PWR_MGMT;
         uc_read_tsf_lo();
         /* vendor: бит PM → upm_vector станции — PS вырезан */
     }
@@ -1648,7 +1650,7 @@ bap_rx_done:   /* L_9330f8 */
             return 1;
         }
         if (!(r16 & (1u << 17))) {   /* L_93313c */
-            if (r14 != 0 && (arc_core_rd(36) & (1u << 1))) {
+            if (r14 != 0 && (mac_rx_rep1() & MAC_RX_REP1_QOS_DATA)) {
                 u32 tsf = uc_read_tsf_lo();
                 uc_log_emit3(0x10, 0x10010f0, rxf.sta,
                              maint_sta_mask, maint_sta_mask_prev);
@@ -1662,7 +1664,7 @@ bap_rx_done:   /* L_9330f8 */
     rx_resp_ackcts_cnt += 1;   /* L_9331c4 */
 
 ack_cts:   /* L_9331d0 */
-    if (!(arc_core_rd(37) & 1))
+    if (!(mac_rx_rep2() & MAC_RX_REP2_RTS))
         goto not_rts;
     {
         u32 tsf = uc_read_tsf_lo();
@@ -1687,9 +1689,9 @@ ack_cts:   /* L_9331d0 */
     }
 
 not_rts:   /* L_93327c */
-    if (!(arc_core_rd(37) & (1u << 16)))
+    if (!(mac_rx_rep2() & MAC_RX_REP2_CF_END))
         goto not_cf_end;
-    if (arc_core_rd(38) & 0x1f00000) {
+    if (mac_rx_rep3() & MAC_RX_REP3_RX_MCS) {
         sta_tab[rxf.sta].flags &= ~2u;
     }
     *out = 0;
@@ -1702,7 +1704,7 @@ not_rts:   /* L_93327c */
     return 0;
 
 not_cf_end:   /* L_933300 */
-    if (!(arc_core_rd(37) & (1u << 10)))
+    if (!(mac_rx_rep2() & MAC_RX_REP2_GRANT))
         goto not_grant;
     if (dti_qset_mode == 2) {
         u32 r3 = rxf.sta;
@@ -1722,7 +1724,7 @@ not_grant:   /* L_93339c */
         frame->resp_ctx8 = rx_resp_ctx8;
         return 2;
     }
-    if (arc_core_rd(37) & (1u << 17)) {
+    if (mac_rx_rep2() & MAC_RX_REP2_CFG1) {
         struct tx_ctx_s *r0 = tx_ctx_pool.cur;
         brp_split_id(r0->rf_word);
         uc_stats.cfg1_rx += 1;
@@ -1731,8 +1733,8 @@ not_grant:   /* L_93339c */
 }
 
 /* СРОК: разбор отчёта в фазах SLS/RTS — несколько ответов со сроком:
- *  - RTS (r37.0) — без ответа (DMG DTS только в SP, 10.39.6.6);
- *  - фаза 0x100000/0x200000: SSW с CDOWN = 0 (r39.15) → команды 0x37000005/0x37000002/0x3f для
+ *  - RTS (MAC_RX_REP2_RTS) — без ответа (DMG DTS только в SP, 10.39.6.6);
+ *  - фаза 0x100000/0x200000: SSW с CDOWN = 0 (MAC_RX_MISC_ZERO_CDOWN) → команды 0x37000005/0x37000002/0x3f для
  *    SSW-Feedback через MBIFS 9 мкс (10.42.2.4, 10.42.6.2, 10.3.2.3.10); до них — запись IFS = MBIFS
  *    (HW_MAC_IFS_SIFS), phy_params_snapshot (~90), sta_set_tx_sector (~38). Путь — сотни
  *    инструкций при сроке ~1485 тактов; запас оценочно десятки–сотни;
@@ -1748,21 +1750,21 @@ void rx_funcs_handle_ppdu_report(void)
 
     rx_ppdu_report_seen = 1;
     uc_mac_cmd(0xeeee0a);
-    uc_wait_event_busy(1u << 16, 0);
+    uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {                 /* [gp,-242] */
         uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
         rx_buf_toggle_cnt += 1;
     }
-    if (arc_core_rd(38) & (1u << 11))
-        *sta = (arc_core_rd(38) >> 8) & 7;
-    else if (arc_core_rd(36) & (1u << 7))
+    if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID)
+        *sta = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
+    else if (mac_rx_rep1() & MAC_RX_REP1_BEACON)
         *sta = sta_tbl_find_by_mac((u32)rx_buf_ra);
-    else if (arc_core_rd(36) & (1u << 6))
+    else if (mac_rx_rep1() & MAC_RX_REP1_SS)
         *sta = sta_tbl_find_by_mac((u32)rx_buf_ta);
     else
         *sta = SPARRAW_PEER_UNKNOWN;
 
-    if (arc_core_rd(37) & 1) {
+    if (mac_rx_rep2() & MAC_RX_REP2_RTS) {
         /* RTS в фазе SLS: исправлено (vendor) — отвечал DMG DTS без проверки NAV (только для назначения SP,
          * 10.39.6.6; NAV-SA — собственный адрес). Ответа нет: отправитель повторит RTS после таймаута */
         *flags |= (1u << 4);
@@ -1773,25 +1775,25 @@ void rx_funcs_handle_ppdu_report(void)
         rx_buf_ta[2] != sls.peer_mac[2])
         goto out;
 
-    if ((txrx_state2 & (1u << 21)) && (arc_core_rd(37) & (1u << 24))) {
-        if (arc_core_rd(39) & (1u << 15))
+    if ((txrx_state2 & (1u << 21)) && (mac_rx_rep2() & MAC_RX_REP2_SSW)) {
+        if (mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN)
             rx_switch_to_rx_mode();
-    } else if (arc_core_rd(36) & (1u << 6)) {
-        if (arc_core_rd(37) & (1u << 24))
+    } else if (mac_rx_rep1() & MAC_RX_REP1_SS) {
+        if (mac_rx_rep2() & MAC_RX_REP2_SSW)
             *flags |= 1;
-        else if (arc_core_rd(37) & (1u << 25))
+        else if (mac_rx_rep2() & MAC_RX_REP2_SSW_FB)
             *flags |= (1u << 2);
-        else if (arc_core_rd(37) & (1u << 26))
+        else if (mac_rx_rep2() & MAC_RX_REP2_SSW_ACK)
             *flags |= (1u << 3);
-    } else if (arc_core_rd(36) & (1u << 25)) {
+    } else if (mac_rx_rep1() & MAC_RX_REP1_NOACK_MGMT) {
         rx_handle_brp_frame();
-    } else if (arc_core_rd(37) & 1) {
+    } else if (mac_rx_rep2() & MAC_RX_REP2_RTS) {
         *flags |= (1u << 4);
     }
 
     switch (txrx_state2) {
     case 1u << 23: {             /* значение фазы, не адрес */
-        if (!(arc_core_rd(37) & (1u << 25)))
+        if (!(mac_rx_rep2() & MAC_RX_REP2_SSW_FB))
             goto out;
         rx_parse_ssw_field((u32)&sec[0], (u32)&sec[1], (u32)&lvl[0]);
         rx_switch_to_rx_mode();
@@ -1807,7 +1809,7 @@ void rx_funcs_handle_ppdu_report(void)
         return;
     }
     case 0x100000:
-        if ((arc_core_rd(37) & (1u << 24)) && mac_ifs_shadow != ifs.mbifs) {
+        if ((mac_rx_rep2() & MAC_RX_REP2_SSW) && mac_ifs_shadow != ifs.mbifs) {
             u16 v = ifs.mbifs;
             mac_ifs_shadow = v;
             MMIO32(HW_MAC_IFS_SIFS) = v | 0x1730000;
@@ -1816,7 +1818,7 @@ void rx_funcs_handle_ppdu_report(void)
         }
         /* fallthrough */
     case 0x200000: {
-        if (!(arc_core_rd(37) & (1u << 24)))
+        if (!(mac_rx_rep2() & MAC_RX_REP2_SSW))
             goto out;
         u16 b0 = rx_buf_ssw;
         u32 fl = *flags;
@@ -1825,7 +1827,7 @@ void rx_funcs_handle_ppdu_report(void)
             *flags = fl | 1;
             phy_params_snapshot((u32)&sec[0], (u32)&sec[1]);
             u32 g = txrx_state1;
-            if (arc_core_rd(39) & (1u << 15)) {
+            if (mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN) {
                 u32 s = *sta;
                 u32 r13 = sta_mode_word[s];
                 *flags |= 2;
@@ -1846,7 +1848,7 @@ void rx_funcs_handle_ppdu_report(void)
         goto out;
     }
     case 0x400000: {
-        if (!(arc_core_rd(37) & (1u << 26)))
+        if (!(mac_rx_rep2() & MAC_RX_REP2_SSW_ACK))
             goto out;
         rx_parse_ssw_field((u32)&sec[0], (u32)&sec[1], (u32)&lvl[0]);
         rx_funcs_record_level_8020f8_8020fc((u32)(s32)lvl[0]);
@@ -1903,25 +1905,25 @@ u32 rx_dispatch_by_g_8005f8(void)
     if (!(r2 & (1u << 8)))
         return 0;
     u32 mode = r2 & 0x1f;
-    u32 r14 = (arc_core_rd(38) >> 20) & 0x1f;
+    u32 r14 = MAC_RX_REP3_RX_MCS_OF(mac_rx_rep3());
 
     switch (mode) {
     case 1: {   /* L_933436 */
-        if (!(arc_core_rd(36) & (1u << 8)))
+        if (!(mac_rx_rep1() & MAC_RX_REP1_IMM_ACK))
             return 0;
-        if (arc_core_rd(38) & (1u << 15))
+        if (mac_rx_rep3() & MAC_RX_REP3_RD)
             return 0;
-        if ((arc_core_rd(38) & (1u << 12)) && mac_cmd31_mode != 0) {
-            if (!(arc_core_rd(53) & 1)) {
+        if ((mac_rx_rep3() & MAC_RX_REP3_BAP_EN) && mac_cmd31_mode != 0) {
+            if (!(mac_bap_if() & MAC_BAP_TX_UPDATE)) {
                 uc_mac_cmd(0x23010003);
                 uc_mac_cmd(0x2000200);
                 arc_nops_nop(2);
-                while (!(arc_core_rd(42) & (1u << 9)) && !(arc_core_rd(53) & 1))
+                while (!(mac_evt1() & MAC_EVT1_GP_TIMERS) && !(mac_bap_if() & MAC_BAP_TX_UPDATE))
                     ;
-                if (arc_core_rd(42) & (1u << 9))
+                if (mac_evt1() & MAC_EVT1_GP_TIMERS)
                     uc_assert((u32)__builtin_return_address(0), 0x3b);
             }
-            bap_tx_up_status = arc_core_rd(53) & 0x10;
+            bap_tx_up_status = mac_bap_if() & MAC_BAP_TX_UP_STATUS;
             uc_mac_cmd(0x1c000001);
         }
         if (r14 >= 1)
@@ -1930,29 +1932,29 @@ u32 rx_dispatch_by_g_8005f8(void)
         return 1;
     }
     case 2: {   /* L_9334f8 */
-        if (!(arc_core_rd(36) & (1u << 9)))
+        if (!(mac_rx_rep1() & MAC_RX_REP1_BACK))
             return 0;
-        if (arc_core_rd(38) & (1u << 15))
+        if (mac_rx_rep3() & MAC_RX_REP3_RD)
             return 0;
-        if (!(arc_core_rd(38) & (1u << 12)))
+        if (!(mac_rx_rep3() & MAC_RX_REP3_BAP_EN))
             return 0;
         if (mac_cmd31_mode != 0) {
-            if (!(arc_core_rd(53) & 1)) {
+            if (!(mac_bap_if() & MAC_BAP_TX_UPDATE)) {
                 uc_mac_cmd(0x23010003);
                 uc_mac_cmd(0x2000200);
                 arc_nops_nop(2);
-                while (!(arc_core_rd(42) & (1u << 9)) && !(arc_core_rd(53) & 1))
+                while (!(mac_evt1() & MAC_EVT1_GP_TIMERS) && !(mac_bap_if() & MAC_BAP_TX_UPDATE))
                     ;
-                if (arc_core_rd(42) & (1u << 9))
+                if (mac_evt1() & MAC_EVT1_GP_TIMERS)
                     uc_assert((u32)__builtin_return_address(0), 0x3b);
             }
-            bap_tx_up_status = arc_core_rd(53) & 0x10;
+            bap_tx_up_status = mac_bap_if() & MAC_BAP_TX_UP_STATUS;
             uc_mac_cmd(0x1c000001);
         }
         if (bap_tx_up_status != 0)
             return 0;
-        u32 r1 = (arc_core_rd(53) >> 8) & 0x7f;
-        u32 r3 = (arc_core_rd(53) >> 16) & 0x7f;
+        u32 r1 = MAC_BAP_NUM_TX_PKTS_OF(mac_bap_if());
+        u32 r3 = MAC_BAP_NUM_NOACK_OF(mac_bap_if());
         ba_stats.tx_pkts += r1;
         ba_stats.non_acked += r3;
         ba_stats.ba_cnt += 1;
@@ -1976,7 +1978,7 @@ u32 rx_dispatch_by_g_8005f8(void)
         return 1;
     }
     case 4: {   /* L_933658 */
-        if (!(arc_core_rd(37) & (1u << 1)))
+        if (!(mac_rx_rep2() & MAC_RX_REP2_CTS))
             return 0;
         struct tx_ctx_s *r4 = tx_ctx_pool.cur;
         u32 r1 = r4->sta;
@@ -1985,10 +1987,10 @@ u32 rx_dispatch_by_g_8005f8(void)
         return 1;
     }
     case 16:    /* L_933698: лишнее чтение r36 (mov r3,r36), затем как 8 */
-        (void)arc_core_rd(36);
+        (void)mac_rx_rep1();
         /* fallthrough */
     case 8: {   /* L_93369c */
-        if (arc_core_rd(38) & (1u << 15))
+        if (mac_rx_rep3() & MAC_RX_REP3_RD)
             return 0;
         struct tx_ctx_s *r3 = tx_ctx_pool.cur;
         if (rxf.sta != r3->sta)
@@ -2003,11 +2005,11 @@ u32 rx_dispatch_by_g_8005f8(void)
 
 /* СРОК: после ответа (Ack/BA/CTS/DTS…) РЧ надо вернуть в приём до преамбулы следующего кадра
  * партнёра, который идёт через SIFS 3 мкс после конца нашего (802.11-2020 10.3.2.3.3; после DMG CTS —
- * данные, 10.3.2.9). От tx_end_event (r42.15, uc_spin_until_event) до записи HW_ABIF_DVS_RF_CTRL =
- * rf_set_rx: mac_evt_enable_bit_sync_b (~16 инструкций + ожидание r42.14 — подтверждение команды
+ * данные, 10.3.2.9). От tx_end_event (MAC_EVT1_TX_END, uc_spin_until_event) до записи HW_ABIF_DVS_RF_CTRL =
+ * rf_set_rx: mac_evt_enable_bit_sync_b (~16 инструкций + ожидание MAC_EVT1_BUSY2 — подтверждение команды
  * MAC) + ~10 — как у vendor 0x9336d8. Запас оценочно сотни тактов (не замерен; время подтверждения
  * 0x27… не известно). Срыв — пропуск начала кадра партнёра (нет BA/повторы). Всё до ожидания
- * r42.15 (трасса 0xcac0xx, rx_mode_configure при b == 5) выполняется во время передачи ответа. */
+ * MAC_EVT1_TX_END (трасса 0xcac0xx, rx_mode_configure при b == 5) выполняется во время передачи ответа. */
 void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c)
 {
     /* 6.2 asm 0x9336d8. */
@@ -2015,9 +2017,9 @@ void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c)
     mac_sel_shadow = r1;
     uc_mac_cmd(r1 | 0x1d000000);
     arc_nops(3);
-    uc_mac_cmd((arc_core_rd(40) & 0x7) | 0xcac000);
+    uc_mac_cmd((mac_status_sel() & MAC_BIFS_IDLE_DETECT) | 0xcac000);
     uc_mac_cmd(arc_lr(uc_timer[1].count) & 0xffffff);
-    uc_mac_cmd((arc_core_rd(40) & 0x7) | 0xcac100);
+    uc_mac_cmd((mac_status_sel() & MAC_BIFS_IDLE_DETECT) | 0xcac100);
     uc_mac_cmd(arc_lr(uc_timer[1].count) & 0xffffff);
     mac_evt_enable_bit_sync_b(6);
 
@@ -2043,7 +2045,7 @@ void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c)
         if (rx_cts_rf_restore != 0)
             rx_cts_rf_restore = 0;
     }
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
     mac_evt_enable_bit_sync_b(5);
     if (flag == 1) {
         u32 r10b = abif_dvs_rf_ctrl_shadow;
@@ -2066,12 +2068,12 @@ void rx_nav_update(u32 a, u32 b, u32 c, u32 d)
 
     if (r4 == 1) {
         *st &= ~0x1fu;
-        if (((b & (1u << 8)) && ((d & (1u << 12)) || (*st & (1u << 18)))) ||
+        if (((b & MAC_RX_REP1_IMM_ACK) && ((d & MAC_RX_REP3_BAP_EN) || (*st & (1u << 18)))) ||
             (rx_ack_rcvd != 0 && (*st & (1u << 9)))) {
             *st &= ~0x1fu;
             r0->flags &= ~(1u << 1);
             r0->x20 = 0;
-            if ((txrx_state1 & (1u << 1)) && (arc_core_rd(38) & (1u << 15)))
+            if ((txrx_state1 & (1u << 1)) && (mac_rx_rep3() & MAC_RX_REP3_RD))
                 *st |= (1u << 3);
             rx_ack_rcvd = 0;
             return;
@@ -2080,7 +2082,7 @@ void rx_nav_update(u32 a, u32 b, u32 c, u32 d)
         goto prep;
     }
     if (r4 == 0x10) {
-        if (!(b & (1u << 1))) {
+        if (!(b & MAC_RX_REP1_QOS_DATA)) {
             *st |= (1u << 7);
             return;
         }
@@ -2088,12 +2090,12 @@ void rx_nav_update(u32 a, u32 b, u32 c, u32 d)
         r0->flags &= ~(1u << 1);
         r0->x20 = 0;
         if (txrx_state1 & (1u << 1))
-            (void)arc_core_rd(38);              /* vendor читает r38, обе ветви очищают биты 0..4 */
+            (void)mac_rx_rep3();              /* vendor читает r38, обе ветви очищают биты 0..4 */
         *st &= ~0x1fu;
         return;
     }
     if (r4 == 2) {
-        if (!(b & (1u << 9)) || !(d & (1u << 12))) {
+        if (!(b & MAC_RX_REP1_BACK) || !(d & MAC_RX_REP3_BAP_EN)) {
             *st &= ~0x1fu;
             mac_prepare_txrx_window(r0, 2);
             ba_stats.no_busy_cnt += 1;
@@ -2104,17 +2106,17 @@ void rx_nav_update(u32 a, u32 b, u32 c, u32 d)
             goto prep;
         r0->flags &= ~(1u << 1);
         r0->x20 = 0;
-        if ((txrx_state1 & (1u << 1)) && (arc_core_rd(38) & (1u << 15)))
+        if ((txrx_state1 & (1u << 1)) && (mac_rx_rep3() & MAC_RX_REP3_RD))
             *st |= (1u << 3);
         return;
     }
     if (r4 == 4) {
-        if (c & (1u << 1)) {
+        if (c & MAC_RX_REP2_CTS) {
             *st &= ~0x1fu;
             rx_cts_rf_restore = 1;
             return;
         }
-        if (arc_core_rd(37) & (1u << 2)) {
+        if (mac_rx_rep2() & MAC_RX_REP2_DTS) {
             rx_nav_set_from_duration(1, rx_buf_fc, rx_buf_duration, (u32)rx_buf_ta);
             uc_stats.nav_dts += 1;
             *st = (*st & ~0x1fu) | 5;
@@ -2134,7 +2136,7 @@ prep:                                           /* 0x9346d0: биты 0..4 уж�
  * когда вызов продолжает TXOP после Ack/BA (rx_handle_status_flags), следующий кадр — через SIFS
  * 3 мкс (802.11-2020 10.23.2.8). Если rx_txop_continue уже отправил (flags б5), часть пропускается.
  * Путь до 0x37000020 ~40 инструкций + ожидание r43, как у vendor; запас не замерен.
- * (2) после r42.15 (конец передачи) — mac_q_tx_ppdu (при б3) и uc_wait_one_event(6) стоят ДО
+ * (2) после MAC_EVT1_TX_END (конец передачи) — mac_q_tx_ppdu (при б3) и uc_wait_one_event(6) стоят ДО
  * записи rf_set_rx (как у vendor): РЧ должна вернуться в приём до Ack/BlockAck партнёра на наш
  * кадр, который идёт через SIFS (10.3.2.11, 10.3.2.3.3) — запас зависит от этих ожиданий, не
  * замерен; если РЧ всё ещё в TX — Ack не принят, повтор. */
@@ -2159,12 +2161,12 @@ u32 rx_program_mac_and_wait(struct tx_ctx_s *a)
         r13 |= 0x17000000;
         uc_mac_cmd(r13);
         arc_nops(3);
-        while (!(arc_core_rd(43) & (1u << 31)))
+        while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
             ;
-        u32 v51 = arc_core_rd(51);
+        u32 v51 = mac_mtp_desc();
         mtp_desc_lo = v51 & 0xf;               /* st.as [gp,56] */
         mtp_desc_hi = v51 >> 4;                /* st.as [gp,57] */
-        r13 = (arc_core_rd(43) >> 16) & 0x1f;        /* lsr r13,r43,0x10; bmsk 4 */
+        r13 = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());        /* lsr r13,r43,0x10; bmsk 4 */
         uc_mac_cmd((r13 << 4) | 0x3e000000);
         uc_mac_cmd(0x37000020);
         uc_stats.tx_start += 1;
@@ -2184,16 +2186,16 @@ u32 rx_program_mac_and_wait(struct tx_ctx_s *a)
     uc_mac_cmd(0x2004000);
     struct tx_ctx_s *p = tx_ctx_pool.cur;
     if (qid_cfg[p->qid].null_b5 != 0) {
-        if ((arc_core_rd(45) >> 5) & 1) {           /* bxor + bbit1: пропуск при бите 0 */
+        if (MAC_MTP_PERM_NULL_B5_OF(mac_mtp_perm())) {           /* bxor + bbit1: пропуск при бите 0 */
             p->flags |= 1u << 1;
             p->x20 = 0;
         }
     }
     if (!(p->flags & (1u << 8))) {
-        u32 m = (arc_core_rd(43) >> 14) & 3;
+        u32 m = MAC_MTP_RESP_ACK_POLICY_OF(mac_mtp_resp());
         if (m == 0) {
             u32 g = txrx_state2;
-            if (arc_core_rd(43) & (1u << 27))
+            if (mac_mtp_resp() & MAC_MTP_RESP_AGG_EN)
                 g |= 1u << 1;
             else
                 g |= 1u;
@@ -2204,10 +2206,10 @@ u32 rx_program_mac_and_wait(struct tx_ctx_s *a)
             p->flags |= 0xe;
         }
     }
-    if (arc_core_rd(42) & (1u << 14))
+    if (mac_evt1() & MAC_EVT1_BUSY2)
         r15 = 1;
     else
-        r15 = uc_wait_event_busy(1u << 14, 6);
+        r15 = uc_wait_event_busy(MAC_EVT1_BUSY2, 6);
 
     u32 sta = r14->sta;
     sp0 = 0;
@@ -2223,7 +2225,7 @@ u32 rx_program_mac_and_wait(struct tx_ctx_s *a)
         uc_assert((u32)__builtin_return_address(0), 0x91);   /* возвращается — дальше как обычно */
     r14->mtp_state = 0;
     r14->flags &= ~0x120u;
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
     if (r14->flags & (1u << 3))
         mac_q_tx_ppdu(r14, 0);
     uc_wait_one_event(6);
@@ -2311,8 +2313,8 @@ void rx_nav_set_from_duration(u32 a, u32 b, u32 c, u32 d)
     }
     uc_mac_cmd(0x4d000000);
     arc_nops(3);
-    u32 r55 = arc_core_rd(55);                  /* stw r55,[sp,4] — до чтения TSF */
-    u32 r1v = rx_nav.tsf_adjust + uc_read_tsf_lo() + r13 - ((r55 >> 8) & 0xff);
+    u32 r55 = mac_timer_sel();                  /* stw r55,[sp,4] — до чтения TSF */
+    u32 r1v = rx_nav.tsf_adjust + uc_read_tsf_lo() + r13 - MAC_SIFS_CNT_USEC_OF(r55);
     u32 flag = 0;
     if (((b >> 2) & 3) == 1 && ((b >> 4) & 0xf) == 0xe)
         flag = 1;
@@ -2367,7 +2369,7 @@ static u32 rx_meas_read_sample(u32 mp)
     mac_sel_shadow = g | (1u << 12) | (1u << 14) | (1u << 15);
     uc_mac_cmd(g | 0x1d00d000);
     arc_nops(3);
-    u32 r0 = (arc_core_rd(40) >> 9) & 0x7ff;
+    u32 r0 = MAC_BF_METRIC_OF(mac_status_sel());
     return (r0 > 0x3ff) ? (r0 - 0x800) : r0;
 }
 
@@ -2378,12 +2380,12 @@ static inline __attribute__((always_inline)) void rx_meas_snap_done(struct rx_me
     mac_sel_shadow = g | (1u << 12) | (1u << 14);
     uc_mac_cmd(g | 0x1d005000);
     arc_nops(3);
-    m->snap_sel5 = arc_core_rd(40);
+    m->snap_sel5 = mac_status_sel();
     g = mac_sel_shadow & 0xffff0fff;
     mac_sel_shadow = g | (1u << 13) | (1u << 14);
     uc_mac_cmd(g | 0x1d006000);
     arc_nops(3);
-    m->snap_sel6 = arc_core_rd(40);
+    m->snap_sel6 = mac_status_sel();
     m->state = 1;
     bf_pending_set_bit(0);
 }
@@ -2410,17 +2412,17 @@ void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp)
     mac_sel_shadow = g | (1u << 12) | (1u << 14);
     uc_mac_cmd(g | 0x1d005000);
     arc_nops(3);
-    m->pkt.sel5 = arc_core_rd(40);
+    m->pkt.sel5 = mac_status_sel();
     g = mac_sel_shadow & 0xffff0fff;
     mac_sel_shadow = g | (1u << 13) | (1u << 14);
     uc_mac_cmd(g | 0x1d006000);
     arc_nops(3);
-    m->pkt.sel6 = arc_core_rd(40);
+    m->pkt.sel6 = mac_status_sel();
     u32 n;
     n = arc_norm((u32)rf_modules.mask);
     m->pkt.rf_byte = rf_rx_gain_hi[0x1e - n];
     m->pkt.sector = (rf_cur_sector_word >> 8) & 0x7fff;   /* [gp,-0x2c] */
-    m->pkt.cid = (arc_core_rd(38) & (1u << 11)) ? ((arc_core_rd(38) >> 8) & 0x7) : 8;   /* r38 читается дважды */
+    m->pkt.cid = (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) ? MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3()) : 8;   /* r38 читается дважды */
     rx_meas_snap_done(m);
 }
 
@@ -2428,7 +2430,7 @@ void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp)
  * O2: 0x883830 — живой SNR текущего кадра, число отсчётов до конца кадра идёт
  * в выбор MCS (0x802208/0x800560). -Os не разворачивал 8 чтений (7 инструкций
  * между чтениями против 1–2 у vendor) — отсчётов было в ~3.4 раза меньше.
- * Выход по r42.14/r49.13 проверяется раз в 8 отсчётов: после конца кадра — до одного прохода
+ * Выход по MAC_EVT1_BUSY2/MAC_EE2_BRP_ON_AIR проверяется раз в 8 отсчётов: после конца кадра — до одного прохода
  * (~40 инструкций, 8 чтений PHY) + хвост ~30 до возврата; это время входит в путь rx_flow_run до
  * ответа через SIFS 3 мкс (802.11-2020 10.3.2.3.3). У vendor так же (8 чтений на проход). */
 __attribute__((optimize("O2")))
@@ -2446,7 +2448,7 @@ void rx_flow_measure_snr_select_best(void)
         u32 v0 = *ph & 0x7f, v1 = *ph & 0x7f, v2 = *ph & 0x7f, v3 = *ph & 0x7f;
         u32 v4 = *ph & 0x7f, v5 = *ph & 0x7f, v6 = *ph & 0x7f, v7 = *ph & 0x7f;
         u32 sum = tab[v0] + tab[v1] + tab[v2] + tab[v3] + tab[v4] + tab[v5] + tab[v6] + tab[v7];
-        if ((arc_core_rd(42) & (1u << 14)) || (arc_core_rd(49) & (1u << 13)))
+        if ((mac_evt1() & MAC_EVT1_BUSY2) || (mac_evt_eng2() & MAC_EE2_BRP_ON_AIR))
             break;
         r15 += sum;
         sp[r11] = r15;
@@ -2515,8 +2517,8 @@ u32 rx_capture_match_filter(struct rx_meas_ctx *m)
     sp[2] = rx_capture_defaults_2;
     sp[3] = rx_capture_defaults_3;
     sp[4] = rx_capture_defaults_4;
-    sp[0] = (arc_core_rd(38) & (1u << 11)) ? ((arc_core_rd(38) >> 8) & 0x7) : 8;
-    sp[3] = (arc_core_rd(38) >> 20) & 0x1f;
+    sp[0] = (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) ? MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3()) : 8;
+    sp[3] = MAC_RX_REP3_RX_MCS_OF(mac_rx_rep3());
     sp[2] = (sp[3] == 0) ? 1 : 0;               /* mov 1; sub.ne */
     sp[4] = rx_mode_flags & 1;
     struct rx_meas_filter *f = &m->filt, *g = &m->got;

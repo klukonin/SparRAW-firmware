@@ -194,7 +194,7 @@ u32 uc_read_tsf_lo(void)
     uc_mac_cmd(0x4d000005);   /* mailbox */
     arc_nops(3);
     u32 r0;
-    r0 = arc_core_rd(55);
+    r0 = mac_timer_sel();
     return r0;
 }
 /* evt_queue_take_locked — в tail.c (0x926a3c). */
@@ -265,7 +265,7 @@ void mac_evt_select_timer_group(u32 a)
 u32 uc_wait_event_busy(u32 a, u32 b)
 {
     u32 r2;
-    if (arc_core_rd(42) & a)
+    if (mac_evt1() & a)
         return 1;
     if (b == 0) {
         r2 = a;
@@ -275,7 +275,7 @@ u32 uc_wait_event_busy(u32 a, u32 b)
         r2 = a | 0x200;
         arc_nops_nop(2);   /* vendor: до опроса r42 */
     }
-    while (!(arc_core_rd(42) & r2))
+    while (!(mac_evt1() & r2))
         ;
-    return ((arc_core_rd(42) & a) != 0) ? 1 : 0;
+    return ((mac_evt1() & a) != 0) ? 1 : 0;
 }

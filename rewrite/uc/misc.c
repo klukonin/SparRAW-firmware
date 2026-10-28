@@ -76,7 +76,7 @@ void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 arg1, u32 arg2, const struct
 }
 
 /* СРОК: импульс сброса указателей TXQ (|=3, sync, &=~3, sync — ~6 инструкций, vendor 0x925a48 так
- * же; аппаратная минимальная ширина не известна), затем два запроса MTP с ожиданием r43.31/r45.31
+ * же; аппаратная минимальная ширина не известна), затем два запроса MTP с ожиданием MAC_MTP_RESP_VALID/MAC_MTP_PERM_VALID
  * без ограничения. Срыв: при молчании MAC — зависание uc. */
 /* macq_kick_queue_tx (0x925a48). */
 void macq_kick_queue_tx(u32 q, u32 b, u32 c)
@@ -102,12 +102,12 @@ void macq_kick_queue_tx(u32 q, u32 b, u32 c)
     struct tx_ctx_s *ctx = tx_ctx_alloc_next(1);
     ctx->qid = q;
     mac_program_tx_with_qid(q);
-    while (!(arc_core_rd(43) & (1u << 31)))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    u32 r51 = arc_core_rd(51);
+    u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
     mtp_desc_hi = r51 >> 4;
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
 
     /* 2-я половина (0x925afc..): addr_of_slot + kick + повторный alloc/program. */
@@ -120,12 +120,12 @@ void macq_kick_queue_tx(u32 q, u32 b, u32 c)
     ctx = tx_ctx_alloc_next(1);
     ctx->qid = q;
     mac_program_tx_with_qid(q);
-    while (!(arc_core_rd(43) & (1u << 31)))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    r51 = arc_core_rd(51);
+    r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
     mtp_desc_hi = r51 >> 4;
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
 }
 void dump_mac_buffer_bases(u32 a, u32 b)
@@ -666,7 +666,7 @@ void uc_sysassert_idle_hist(void)
     u32 *r13 = sysassert_cca_hist;
     for (u32 r14 = 0x4e20; r14 >= 1; r14--) {
         arc_nops(16);
-        u32 idx = arc_core_rd(40) & 7;
+        u32 idx = mac_status_sel() & MAC_BIFS_IDLE_DETECT;
         r15[idx] += 1;
         s32 st = (s32)uc_sysassert_read_hw_state3();
         if (st >= 3)

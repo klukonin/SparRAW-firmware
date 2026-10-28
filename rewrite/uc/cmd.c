@@ -77,7 +77,7 @@ void mac_rf_switch_cmd1f(u32 a)          /* 6.2 asm 0x92c5e4 */
     arc_nops_nop(2);   /* vendor L_92c628: 2×nop_s + mov 0,0 */
     do {
         VOL(rf_switch_wait_cnt) += 1;   /* vendor: ld/st на каждой итерации */
-    } while ((arc_core_rd(40) & 0x7) != 5);
+    } while ((mac_status_sel() & MAC_BIFS_IDLE_DETECT) != 5);
     if (a == 1)
         uc_mac_cmd(0x1f003000);
     rf_switch_wait_cnt = 0;
@@ -812,8 +812,8 @@ void ucode_cmd_0x01_handler(const struct lmac_cmd_rx_on *c)
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
     uc_mac_cmd(r0 | 0x1d00a000);
     arc_nops(3);   /* vendor: MAC обновляет r40 не сразу */
-    u32 r15 = (arc_core_rd(40) >> 8) & 0x3f;
-    u32 r13 = (arc_core_rd(40) >> 16) & 0x3f;
+    u32 r15 = MAC_PHYSIG_PPDU_EVT_CNT_OF(mac_status_sel());
+    u32 r13 = MAC_PHYSIG_CCA_EVT_CNT_OF(mac_status_sel());
     uc_mac_cmd(r13);
     uc_mac_cmd(r15);
     if (r15 != r13)
@@ -982,40 +982,40 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
         uc_mac_cmd(0x1c000006);
         uc_mac_cmd((r13b << 4) | 0x46004008);
         (uc_stats.macq_ppdu)++;
-        while (!(arc_core_rd(53) & (1u << 2)))
+        while (!(mac_bap_if() & MAC_BAP_REL_DONE))
             ;
         u32 r0b = mac_sel_shadow & 0xfff0ffff;
         mac_sel_shadow = r0b | (1u << 16);
         uc_mac_cmd(r0b | 0x1d010000);
         arc_nops(3);
-        while (arc_core_rd(47) & 1u)                /* bbit1 r47,0: ждать сброса */
+        while (mac_txctl_sel() & MAC_CNT_IF_BUSY)                /* bbit1 r47,0: ждать сброса */
             ;
         u32 r13c = r13b | (r16 << 8) | (1u << 26) | (1u << 30) | (1u << 19) | (1u << 21);
         uc_mac_cmd(r13c);
         uc_mac_cmd(0x45000001);
         uc_mac_cmd(0x460001f1);
         mac_program_tx_with_qid(r15->qid);
-        while (!(arc_core_rd(43) & (1u << 31)))
+        while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
             ;
-        u32 r51 = arc_core_rd(51);
+        u32 r51 = mac_mtp_desc();
         mtp_desc_lo = r51 & 0xf;
         mtp_desc_hi = r51 >> 4;
-        while (!(arc_core_rd(45) & (1u << 31)))
+        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
-        if (arc_core_rd(43) & (1u << 27))
+        if (mac_mtp_resp() & MAC_MTP_RESP_AGG_EN)
             ucode_cmd08_noop_hook();
         return;                                     /* vendor: b L_93b1f4, хвост не выполняется */
     } else if (r0 == 3) {
         mac_q_tx_ppdu_cmd08(c->qid, *(u8 *)cidp);
         mac_program_tx_with_qid(r15->qid);
-        while (!(arc_core_rd(43) & (1u << 31)))
+        while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
             ;
-        u32 r51 = arc_core_rd(51);
+        u32 r51 = mac_mtp_desc();
         mtp_desc_lo = r51 & 0xf;
         mtp_desc_hi = r51 >> 4;
-        while (!(arc_core_rd(45) & (1u << 31)))
+        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
-        if (c->qset == 3 && (arc_core_rd(43) & (1u << 27))) {
+        if (c->qset == 3 && (mac_mtp_resp() & MAC_MTP_RESP_AGG_EN)) {
             u32 m = qid_agg_mask;
             qid_agg_mask = m | (1u << c->qid);
         }
@@ -1028,12 +1028,12 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
         if (c->flags & (1u << 1)) {
             mac_q_tx_ppdu_cmd08(c->qid, *(u8 *)cidp);
             mac_program_tx_with_qid(r15->qid);
-            while (!(arc_core_rd(43) & (1u << 31)))
+            while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
                 ;
-            u32 r51 = arc_core_rd(51);
+            u32 r51 = mac_mtp_desc();
             mtp_desc_lo = r51 & 0xf;
             mtp_desc_hi = r51 >> 4;
-            while (!(arc_core_rd(45) & (1u << 31)))
+            while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
                 ;
         }
         if (c->qset == 3) {
@@ -1112,9 +1112,9 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
         txop_dma_bit1_pending = 1;
 }
 
-/* СРОК: порядок и паузы MTP/BAP (аппаратный): 0x1c000006 → 0x46… → ждать r53.2 (bap_rel_done_ind)
- * → селектор r47[1] → 3 nop → ждать r47.0 = 0 (counter_interface_busy) → 0x44/0x45/0x46 → запрос MTP
- * (0x1b/0x16/0x17 + 3 nop) → r43.31 → r51 → r45.31. Все ожидания без ограничения; выборка r47 —
+/* СРОК: порядок и паузы MTP/BAP (аппаратный): 0x1c000006 → 0x46… → ждать MAC_BAP_REL_DONE (bap_rel_done_ind)
+ * → селектор r47[1] → 3 nop → ждать MAC_CNT_IF_BUSY = 0 (counter_interface_busy) → 0x44/0x45/0x46 → запрос MTP
+ * (0x1b/0x16/0x17 + 3 nop) → MAC_MTP_RESP_VALID → r51 → MAC_MTP_PERM_VALID. Все ожидания без ограничения; выборка r47 —
  * 5 инструкций после mov r32 (vendor 0x937e38… так же); запас — единицы инструкций. Срыв: чтение
  * r47 прежней группы, ответ MTP прошлого запроса; при молчании MAC — зависание uc. */
 /* Общая RF-последовательность программирования (sub-cmd 1/2 в 0x0b). */
@@ -1126,24 +1126,24 @@ static void ucode_cmd_rf_program(void)
     uc_mac_cmd(0x1c000006);
     uc_mac_cmd(0x460001e8);
     (uc_stats.macq_ppdu)++;
-    while (!(arc_core_rd(53) & (1u << 2)))
+    while (!(mac_bap_if() & MAC_BAP_REL_DONE))
         ;
     u32 r0b = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = r0b | (1u << 16);
     uc_mac_cmd(r0b | 0x1d010000);
     arc_nops(3);
-    while (arc_core_rd(47) & 1u)                    /* bbit1 r47,0: ждать сброса бита 0 */
+    while (mac_txctl_sel() & MAC_CNT_IF_BUSY)                    /* bbit1 r47,0: ждать сброса бита 0 */
         ;
     uc_mac_cmd(0x4428001e);
     uc_mac_cmd(0x45000001);
     uc_mac_cmd(0x460001f1);
     mac_program_tx_with_qid(0x1e);
-    while (!(arc_core_rd(43) & (1u << 31)))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    u32 r51 = arc_core_rd(51);
+    u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
     mtp_desc_hi = r51 >> 4;
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
 }
 

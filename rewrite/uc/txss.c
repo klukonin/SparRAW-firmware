@@ -97,7 +97,7 @@ void rf_set_normal_mode(u32 a)
     }
 }
 
-/* СРОК: выбор селектора r47 (команда 0x1d03…) → чтение r47.17 не раньше чем через 3 такта
+/* СРОК: выбор селектора r47 (команда 0x1d03…) → чтение MAC_RFC_ACCESS_BUSY не раньше чем через 3 такта
  * (аппаратный: «через 3 такта результат в r40/r41/r47», MAC-COMMANDS §7.3). Путь: хвост
  * uc_mac_cmd (st.ab + bclr) + 2×nop — ровно как vendor; запас: нет/единицы тактов. Короче —
  * опрос читает старое r47, проходит мимо «mailbox занят», и команда 0x41 (сектор/AWV) теряется.
@@ -110,14 +110,14 @@ void rf_select_sector_cmd41(u32 a, u32 b)
     mac_sel_shadow = r1 | 0x30000;
     uc_mac_cmd(r1 | 0x1d030000);
     arc_nops_nop(2);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
     uc_mac_cmd(a | 0x41000000 | (b << 8) | (1u << 5));
     u32 r0 = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = r0 | 0x30000;
     uc_mac_cmd(r0 | 0x1d030000);
     arc_nops_nop(2);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
 }
 
@@ -131,14 +131,14 @@ void rf_write_sector_awv(u32 a, u32 b)
     mac_sel_shadow = r1 | 0x30000;
     uc_mac_cmd(r1 | 0x1d030000);
     arc_nops_nop(2);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
     uc_mac_cmd((a << 8) | rf_chain_cfg | 0x41000000);
     u32 r0 = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = r0 | 0x30000;
     uc_mac_cmd(r0 | 0x1d030000);
     arc_nops_nop(2);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
 }
 
@@ -469,14 +469,14 @@ void txss_store_sector_ranking(u32 a, u32 b)
  * 0x8021e0 б1 (sls_rx_ssw_frame, последний кадр ISS) в txss_resp_wait_iss_end; действие —
  * команда 0x19…/0x18… ниже и 0x2d… в bcon_txss_sweep_step. Путь: ~150 инструкций приёма
  * последнего кадра + ~30 ожидания + здесь ~250 (txss_sweep_timing, txss_set_sweep_param с
- * копией 64 Б порядка секторов, ss_plan_next_sector — всё до пуска TX) + ожидания r42.14/r45.31;
+ * копией 64 Б порядка секторов, ss_plan_next_sector — всё до пуска TX) + ожидания MAC_EVT1_BUSY2/MAC_MTP_PERM_VALID;
  * итого ~500–600 инструкций ≈ 4–5 мкс (vendor ~то же, порт 1:1); запас: десятки–сотни
  * инструкций до 9 мкс, без учёта задержки PHY RX-end → отчёт PPDU. Срыв: RSS позже MBIFS
  * (нарушение допуска), а при опоздании > ~15–20 мкс — инициатор не укладывает RSS в окно GP0
  * (BF-ENGINE §8.2) → NO_SS_RESP_FAILURE и повтор SLS.
  * СРОК (b = 5, ISS инициатора): проба CCA (0x29000001, mac_cca_ok) → пуск ISS; между ними
  * выбор сектора/таймингов уже сделан, CCA повторно проверяет bcon_txss_sweep_step перед TX —
- * запас большой. Опросы r45.31 здесь без ограничения времени. */
+ * запас большой. Опросы MAC_MTP_PERM_VALID здесь без ограничения времени. */
 u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
 {
     /* 6.2 asm 0x93c2f8. */
@@ -522,7 +522,7 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
             v = 0x19000001;
         }
         uc_mac_cmd(v);
-        while (!(arc_core_rd(45) & (1u << 31)))
+        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
         uc_mac_cmd((txrx_state1 & 0x10) ? (0x18 << 24) : 0x18001000);
     }
@@ -566,14 +566,14 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
         u32 g = mac_sel_shadow & 0xffff0fff;
         mac_sel_shadow = g | (1u << 13) | (1u << 15);
         uc_mac_cmd(g | 0x1d00a000);
-        uc_wait_event_busy(2 | (1u << 14), 0);
+        uc_wait_event_busy(MAC_EVT1_SLOT | MAC_EVT1_BUSY2, 0);
         mac_cmd_29000001();
         if (mac_cca_ok()) {
             /* L_93c5f8: aux40 bit24 (без poll), r13 без изменений. */
             uc_mac_cmd(0x29000002);
         } else {
             /* L_93c5de: poll aux45 bit31, затем b_s L_93c644 — возврат 0 без sweep. */
-            while (!(arc_core_rd(45) & (1u << 31)))
+            while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
                 ;
             uc_mac_cmd(0x29000002);
             return 0;
@@ -629,8 +629,8 @@ u32 sls_rx_ssw_frame(void)
         return 1;
     }
     u32 idx = rxf.sta;
-    if (arc_core_rd(36) & (1u << 6)) {
-        if (arc_core_rd(37) & (1u << 24)) {
+    if (mac_rx_rep1() & MAC_RX_REP1_SS) {
+        if (mac_rx_rep2() & MAC_RX_REP2_SSW) {
             if (mac_ifs_shadow != ifs.mbifs) {
                 mac_ifs_shadow = ifs.mbifs;
                 *(volatile u32 *)HW_MAC_IFS_SIFS = ifs.mbifs | 0x1730000;
@@ -641,7 +641,7 @@ u32 sls_rx_ssw_frame(void)
                 return 1;
             sls_rx.flags |= 1;
             phy_params_snapshot((u32)&sp.sector, (u32)&sp.antenna);
-            if (!(arc_core_rd(39) & (1u << 15)))
+            if (!(mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN))
                 return 1;
             /* СРОК: последний кадр ISS (r39.zero_cdown) → начало RSS через MBIFS (802.11-2020
              * 10.42.2.2). Здесь ~60 инструкций (rx_mac_prepare, mac_mode_switch_core_and_rf с
@@ -652,7 +652,7 @@ u32 sls_rx_ssw_frame(void)
             sls_rx.flags |= 2;
             txss_rank_needed = 1;
             return 0;
-        } else if (arc_core_rd(37) & (1u << 25)) {
+        } else if (mac_rx_rep2() & MAC_RX_REP2_SSW_FB) {
             u32 r0;
             if (sls_rank_valid_mask & (1u << (idx & 31))) {
                 /* СРОК: SSW-Feedback → SSW-Ack прямо из обработчика приёма, через MBIFS (9 мкс,
@@ -671,7 +671,7 @@ u32 sls_rx_ssw_frame(void)
             }
             sls_rx.flags |= 4;
             return r0;
-        } else if (arc_core_rd(37) & (1u << 26)) {
+        } else if (mac_rx_rep2() & MAC_RX_REP2_SSW_ACK) {
             rx_parse_ssw_field((u32)&sp.sector, (u32)&sp.antenna, (u32)&sp.snr);
             rx_funcs_record_level_8020f8_8020fc((s8)sp.snr);   /* ldb.x */
             sls_rx.flags |= 8;
@@ -693,15 +693,15 @@ u32 sls_rx_ssw_frame(void)
 /* СРОК: SSW-Ack ответчика — через MBIFS (9 мкс, допуск −0/+0,49 мкс) после конца принятого
  * SSW-Feedback (802.11-2020 10.42.2.2 «responder shall begin an SSW ack procedure an MBIFS
  * following the reception of an SSW-Feedback frame», 10.3.2.3.10). Событие — r42 (приём
- * SSW-Feedback, r37.25); действие — 0x19…/0x18… и выдача кадра в FIFO
+ * SSW-Feedback, MAC_RX_REP2_SSW_FB); действие — 0x19…/0x18… и выдача кадра в FIFO
  * (rx_funcs_send_direct_frame → 0x33). Здесь ~300 инструкций до конца выдачи кадра (5 команд
- * TX-сектора/RF, сборка кадра, cmd34, tx_common, опрос r45.31 без ограничения), плюс путь приёма:
+ * TX-сектора/RF, сборка кадра, cmd34, tx_common, опрос MAC_MTP_PERM_VALID без ограничения), плюс путь приёма:
  * из txss_resp_flow — rx_flow_run + txss_resp_wait_fdbk, из sls_rx_ssw_frame — ~130 инструкций;
  * итого ≈ 450–600 ≈ 3,5–5 мкс (vendor ~то же, 107 инструкций у него против наших 103). Запас:
- * сотни инструкций до 9 мкс (задержка PHY RX-end → r42.16 не учтена). Срыв: Ack позже MBIFS;
+ * сотни инструкций до 9 мкс (задержка PHY RX-end → MAC_EVT1_PPDU_REPORT не учтена). Срыв: Ack позже MBIFS;
  * инициатор ждёт GP1 = MBIFS + TXTIME(SSW-Ack) + PIFS ≈ 35,3 мкс (tail.c, P12; vendor 0x2087 ≈ 50 мкс)
  * и повторяет SSW-Feedback (до 3 раз), затем
- * провал SLS. После TX: r42.15 → RF на приём ~15 инструкций (BRP после SLS — не раньше SIFS):
+ * провал SLS. После TX: MAC_EVT1_TX_END → RF на приём ~15 инструкций (BRP после SLS — не раньше SIFS):
  * запас большой. */
 void sls_send_ssw_ack(u32 a, u32 b)
 {
@@ -736,13 +736,13 @@ void sls_send_ssw_ack(u32 a, u32 b)
         v = 0x19000001;
     }
     uc_mac_cmd(v);
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd((txrx_state1 & 0x10) ? 0x18000000 : 0x18001000);
     rx_funcs_send_direct_frame((u32)&buf);
     mac_evt_enable_bit_sync_b(6);
     mac_set_rf_chain_state_with_sta_sector();
-    while (!(arc_core_rd(42) & (1u << 15)))
+    while (!(mac_evt1() & MAC_EVT1_TX_END))
         ;
     mac_evt_enable_bit_sync_b(5);
     r = (abif_dvs_rf_ctrl_shadow & ~(1u << 24) & ~(1u << 25)) | (rf_set_rx << 24);
@@ -965,7 +965,7 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     mac_program_rx_window(5, ri->tx_sel, ri->mcs);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
-    u32 r13 = (arc_core_rd(43) >> 26) & 1;
+    u32 r13 = MAC_MTP_RESP_RD_SUPP_OF(mac_mtp_resp());
     if (dti_qset_mode != 0) {
         u32 r = fsched_slot_f3_positive(&fsched_peers);
         r13 &= r;
@@ -1244,7 +1244,7 @@ void rfc_issue_cmd_10(u32 a)
     mac_sel_shadow = r0 | 0x30000;
     uc_mac_cmd(r0 | 0x1d030000);
     arc_nops_nop(2);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
     uc_mac_cmd(a | 0x41000010);
 }
@@ -1255,7 +1255,7 @@ u32 rfc_issue_cmd_20_uc(u32 a, u32 b)
     mac_sel_shadow = r0 | 0x30000;
     uc_mac_cmd(r0 | 0x1d030000);
     arc_nops_nop(2);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
     u32 r1 = r13 | 0x41000000 | (r14 << 8) | (1u << 5);
     uc_mac_cmd(r1);

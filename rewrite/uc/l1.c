@@ -140,7 +140,7 @@ void l1_snapshot_bi_counter(void)
     mac_sel_shadow = r4 | (1u << 14);
     uc_mac_cmd(r4 | 0x1d004000);
     arc_nops(3);
-    bi_pos_snap = arc_core_rd(40) & 0x3ffffff;
+    bi_pos_snap = mac_status_sel() & MAC_BI_COUNTER;
 }
 void l1_task_kick_and_dispatch_uc(void)
 {
@@ -185,13 +185,13 @@ void l1_enter_fixed_sched(u32 a)
 void l1_on_event4(void)
 {
     /* 0x92cd20: r54 перечитывается перед каждой проверкой. */
-    if (arc_core_rd(54) & (1u << 15)) {
+    if (mac_evt4() & MAC_EVT4_EXT_GP012_END) {
         uc_mac_cmd(0x49008000);
         l1_task_dispatch(4, 0);
-    } else if (arc_core_rd(54) & (1u << 4)) {
+    } else if (mac_evt4() & MAC_EVT4_SP0) {
         uc_mac_cmd(0x49000010);
         dti_alloc_dispatch(&bi_ctx);
-    } else if (arc_core_rd(54) & (1u << 17)) {
+    } else if (mac_evt4() & MAC_EVT4_EXT_GP6789_END) {
         uc_mac_cmd(0x49020000);                 /* таймер простоя UPM: PS вырезан, не взводится */
     } else {
         uc_assert((u32)__builtin_return_address(0), 0x2c);
@@ -200,13 +200,13 @@ void l1_on_event4(void)
 void l1_fixed_sched_event_entry(void)
 {
     /* 0x92cd94 */
-    if (arc_core_rd(54) & (1u << 15)) {
+    if (mac_evt4() & MAC_EVT4_EXT_GP012_END) {
         uc_mac_cmd(0x49008000);
         if (dti_qset_mode == 1)
             l1_fixed_sched_ap_sm(4);
         else
             l1_fixed_sched_sta_sm(4);
-    } else if (arc_core_rd(54) & (1u << 17)) {
+    } else if (mac_evt4() & MAC_EVT4_EXT_GP6789_END) {
         uc_mac_cmd(0x49020000);
     }
 }
@@ -388,27 +388,27 @@ void l1_task_entry(u32 mode)
 }
 
 /* Главный шаг L1 (0x92caf4) — портировано.
- * СРОК: путь TBTT → маяк. bi1_event (r42.4) — пробуждение до TBTT (упреждение по перезарядке 0x886d18
+ * СРОК: путь TBTT → маяк. bi1_event (MAC_EVT1_BI1) — пробуждение до TBTT (упреждение по перезарядке 0x886d18
  * ≈ 8 мкс — гипотеза, HARDWARE-BLOCKS.md); BTI начинается в TBTT (802.11-2020 10.39.2). От bi1_event до
- * ожидания slot_event (uc_wait_event_busy(0x4002) в bti_worker_bti_transmitter_beacon_sweep_flow):
+ * ожидания slot_event (uc_wait_event_busy(MAC_EVT1_SLOT | MAC_EVT1_BUSY2) в bti_worker_bti_transmitter_beacon_sweep_flow):
  * 3 трассировочные команды здесь, l1_task_dispatch(0) → bi_timing_snapshot_b (2× TSF64) → автомат BI →
  * bti_prepare_sweep_set (aw_set_new_tbtt) → развёртка (tx_ctx_alloc_next, bti_measure_frame_duration
  * с тремя спинами MTP r43/r45/r47, bi_ctrl_program_mac_bcon) ~600 инструкций + задержки MTP (vendor
  * ~ так же; aw_set_new_tbtt у нас короче — PS вырезан); запас: не установлен (единицы мкс, если
- * упреждение 8 мкс). busy_event (r42.19) проверяется раньше bi1_event: rx_flow в той же итерации
+ * упреждение 8 мкс). busy_event (MAC_EVT1_BUSY) проверяется раньше bi1_event: rx_flow в той же итерации
  * откладывает TBTT. Срыв — маяк позже TBTT (сдвиг BTI и A-BFT), при busy2 — маяк в этом BI пропущен. */
 void l1_task_main_step(void)
 {
     /* 6.2 asm 0x92caf4. */
     uc_mac_cmd(0xcafcaa);
-    uc_mac_cmd(arc_core_rd(42) & 0xffffff);
+    uc_mac_cmd(mac_evt1() & MAC_EVT1_ALL);
     uc_mac_cmd(arc_lr(uc_timer[1].count) & 0xffffff);
     if (mac_mode_sw.halted != 0)
         uc_assert((u32)__builtin_return_address(0), 0x1314);
     if (rx_on_state == 0)
         uc_assert((u32)__builtin_return_address(0), 0x27);
     for (;;) {
-        if (arc_core_rd(42) & (1u << 19)) {            /* r42 перечитывается на каждой проверке */
+        if (mac_evt1() & MAC_EVT1_BUSY) {            /* r42 перечитывается на каждой проверке */
             u32 tsf = uc_read_tsf_lo();
             busy_acct.busy_start_tsf = tsf;
             if (busy_acct.sig_start_tsf != 0) {
@@ -419,7 +419,7 @@ void l1_task_main_step(void)
             if (rx_listen_active != 1)
                 uc_assert((u32)__builtin_return_address(0), 0x28);
             l1_task_phase_of(&bi_ctx);
-        } else if (arc_core_rd(42) & (1u << 4)) {
+        } else if (mac_evt1() & MAC_EVT1_BI1) {
             if (fsched_enabled != 0) {
                 if (uc_role_ap == 1) {
                     l1_enter_fixed_sched(0);
@@ -435,7 +435,7 @@ void l1_task_main_step(void)
             }
             bi_win.tbtt_cnt += 1;
             l1_task_dispatch(0, 0);
-        } else if (arc_core_rd(42) & (1u << 18)) {
+        } else if (mac_evt1() & MAC_EVT1_BACKOFF) {
             if (busy_acct.sig_start_tsf != 0) {
                 mac_mon_report.busy_time += 0xa;
                 busy_acct.sig_start_tsf = 0;
@@ -447,7 +447,7 @@ void l1_task_main_step(void)
             l2_wd_fired = 0;
             l1_task_report_link_lost();
         }
-        if (!(arc_core_rd(42) & 0xc0010))
+        if (!(mac_evt1() & (MAC_EVT1_BI1 | MAC_EVT1_BACKOFF | MAC_EVT1_BUSY)))
             return;
     }
 }
@@ -458,7 +458,7 @@ void l1_task_step_fixed_sched(void)
 {
     do {
         u32 phase = 0;
-        if (arc_core_rd(42) & (1u << 19)) {          /* vendor перечитывает r42 на каждой проверке */
+        if (mac_evt1() & MAC_EVT1_BUSY) {          /* vendor перечитывает r42 на каждой проверке */
             u32 tsf = uc_read_tsf_lo();
             busy_acct.busy_start_tsf = tsf;
             if (busy_acct.sig_start_tsf != 0) {
@@ -467,12 +467,12 @@ void l1_task_step_fixed_sched(void)
                 busy_acct.sig_start_tsf = 0;
             }
             phase = 2;
-        } else if (arc_core_rd(42) & (1u << 4)) {
+        } else if (mac_evt1() & MAC_EVT1_BI1) {
             bi_win.tbtt_cnt += 1;
             uc_log_emit1(0x20, 0x10006dc, uc_read_tsf_lo());
             l1_task_dispatch(0, 0);
             phase = 1;
-        } else if (arc_core_rd(42) & (1u << 18)) {
+        } else if (mac_evt1() & MAC_EVT1_BACKOFF) {
             if (busy_acct.sig_start_tsf != 0) {
                 mac_mon_report.busy_time += 0xa;
                 busy_acct.sig_start_tsf = 0;
@@ -490,7 +490,7 @@ void l1_task_step_fixed_sched(void)
             else
                 l1_fixed_sched_sta_sm(phase);
         }
-    } while (arc_core_rd(42) & 0xc0010);
+    } while (mac_evt1() & (MAC_EVT1_BI1 | MAC_EVT1_BACKOFF | MAC_EVT1_BUSY));
 }
 
 /* Отчёт об ошибках L2 (0x92cdd8) — портировано. */
@@ -545,12 +545,12 @@ u32 macq_is_idle(u32 a)                     /* 6.2 asm 0x92609c */
     mac_sel_shadow = g | (1u << 8) | (1u << 9) | (1u << 11);
     uc_mac_cmd(g | 0x1d000b00);
     arc_nops(3);
-    vring_dbg.macq_busy_a = arc_core_rd(41);
+    vring_dbg.macq_busy_a = mac_queue_sel();
     g = mac_sel_shadow & 0xfffff0ff;
     mac_sel_shadow = g | (1u << 10) | (1u << 11);
     uc_mac_cmd(g | 0x1d000c00);
     arc_nops(3);
-    vring_dbg.macq_busy_b = arc_core_rd(41);
+    vring_dbg.macq_busy_b = mac_queue_sel();
     u32 bit = 1u << a;
     if ((bit & vring_dbg.macq_busy_a) || (bit & vring_dbg.macq_busy_b))
         return 0;
@@ -626,7 +626,7 @@ void fixed_sched_run_tx_slot(void)
     else
         tx_initiator_flow_fixed_scheduling(dti_qset_mode);
     if (tx_resp_sent != 0) {
-        uc_spin_until_event(0x80);
+        uc_spin_until_event(MAC_EVT1_TXOP);
         if (rx_resp_wait_en == 1 && fsched_rx_resp_seen == 0)
             uc_mac_cmd(0x1f000601);
     }

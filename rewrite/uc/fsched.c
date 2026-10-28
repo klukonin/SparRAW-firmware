@@ -252,12 +252,12 @@ u32 fsched_pick_ready_queue(u32 a)
     mac_sel_shadow = r0 | (1u << 8) | (1u << 9) | (1u << 11);
     uc_mac_cmd(r0 | 0x1d000b00);
     arc_nops(3);
-    u32 r13 = arc_core_rd(41);
+    u32 r13 = mac_queue_sel();
     r0 = mac_sel_shadow & 0xfffff0ff;
     mac_sel_shadow = r0 | (1u << 10) | (1u << 11);
     uc_mac_cmd(r0 | 0x1d000c00);
     arc_nops(3);
-    r13 |= arc_core_rd(41);
+    r13 |= mac_queue_sel();
     u32 r0b = uc_role_ap;
     if (r0b != 0) {
         u32 r1 = fsched_peer_id;
@@ -292,7 +292,7 @@ u32 fsched_tx_ctrl_frame(void)
     u32 r0 = direct_tx_send_ctrl_frame((const struct dtx_grant_req *)buf);
     if (r0 == 0)
         return 0;
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
     uc_wait_one_event(6);
     u32 r0b = abif_dvs_rf_ctrl_shadow;
     u32 r1 = rf_set_rx;
@@ -312,12 +312,12 @@ u32 fsched_pick_queue_r41(u32 a)
     mac_sel_shadow = g | (1u << 8) | (1u << 9) | (1u << 11);
     uc_mac_cmd(g | 0x1d000b00);
     arc_nops(3);
-    u32 r14 = arc_core_rd(41);
+    u32 r14 = mac_queue_sel();
     g = mac_sel_shadow & 0xfffff0ff;
     mac_sel_shadow = g | (1u << 10) | (1u << 11);
     uc_mac_cmd(g | 0x1d000c00);
     arc_nops(3);
-    u32 m = (arc_core_rd(41) | r14) & 0x3ff;
+    u32 m = (mac_queue_sel() | r14) & 0x3ff;
     if (m != 0) {
         *(u32 *)a = 30 - arc_norm(m);
         return 1;
@@ -341,12 +341,12 @@ u32 fsched_ap_poll_station(struct fsched_peer_ctx *p)
     uc_mac_cmd(r15);
     uc_mac_cmd(0x17000000);
     arc_nops(3);
-    while (!(arc_core_rd(43) & (1u << 31)))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    u32 r51 = arc_core_rd(51);
+    u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
     mtp_desc_hi = r51 >> 4;
-    u32 r1b = (arc_core_rd(43) >> 16) & 0x1f;
+    u32 r1b = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());
     /* исправлено (vendor): MCS из MAC 5-битный (0..31), таблица fixed_sched.mcs — MCS 0..12; вне её (OFDM / LP SC)
      * vendor читал за массивом. Берём запись MCS 1 — самую медленную SC, самые длинные сроки */
     if (r1b >= FIXED_SCHED_MCS_N)

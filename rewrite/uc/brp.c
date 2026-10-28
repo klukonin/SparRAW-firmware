@@ -67,13 +67,13 @@ void brp_set_tx_sector_id(u32 ptr, u32 value)
 u32 brp_is_peer_ctrl_frame(void)
 {
     /* vendor перечитывает r38 и r37 перед каждой проверкой */
-    u32 v = (arc_core_rd(38) & (1u << 11)) ? ((arc_core_rd(38) >> 8) & 7) : SPARRAW_PEER_UNKNOWN;
+    u32 v = (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) ? MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3()) : SPARRAW_PEER_UNKNOWN;
     if (brp_ctx.resp_sta != v)
         return 0;
-    if (arc_core_rd(37) & (1u << 16)) return 1;
-    if (arc_core_rd(37) & 1u) return 1;
-    if (arc_core_rd(37) & (1u << 10)) return 1;
-    if (arc_core_rd(37) & (1u << 24)) return 1;
+    if (mac_rx_rep2() & MAC_RX_REP2_CF_END) return 1;
+    if (mac_rx_rep2() & MAC_RX_REP2_RTS) return 1;
+    if (mac_rx_rep2() & MAC_RX_REP2_GRANT) return 1;
+    if (mac_rx_rep2() & MAC_RX_REP2_SSW) return 1;
     return 0;
 }
 
@@ -233,7 +233,7 @@ void brp_write_reg_pair(u32 a, u32 b)
     mac_sel_shadow = g | 0x30000;
     uc_mac_cmd(g | 0x1d030000);
     arc_nops_nop(2);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
     uc_mac_cmd((a << 8) | (rf_chain_cfg | 0x41000000));
 }
@@ -296,19 +296,19 @@ u32 brp_initiator_brp_transaction_flow(void)
         volatile u32 *m = (volatile u32 *)HW_PHY_BRP_883B78;
         *m &= ~((1u << 24) | (1u << 25));
         uc_mac_cmd(0x49000040);
-        uc_wait_event1_or_event4(0x80 | (1u << 12), 0x40, 0);
+        uc_wait_event1_or_event4(MAC_EVT1_TXOP | MAC_EVT1_RX_FRAME, MAC_EVT4_GP0_END, 0);
         brp_ctx.init_peer_req = r17;
-        /* СРОК: r42.12 (принят BRP-кадр ответчика с TRN-R) → цикл опроса метрик в
-         * brp_program_and_measure до первого TRN-подполя и пока r49.13 (BRP-стадия в эфире):
+        /* СРОК: MAC_EVT1_RX_FRAME (принят BRP-кадр ответчика с TRN-R) → цикл опроса метрик в
+         * brp_program_and_measure до первого TRN-подполя и пока MAC_EE2_BRP_ON_AIR (BRP-стадия в эфире):
          * по стандарту — AGC-поле 4N×0,18 мкс + CE 0,66 мкс (802.11-2020 20.9.2.2.5–6), где
-         * относительно этого r42.12 — не установлено. Путь ~190 инструкций: rx_arm_window (ждёт
-         * r42.16), rx_is_brp_frame, brp_parse_request_fields, вход в measure ~70 (vendor ~65:
+         * относительно этого MAC_EVT1_RX_FRAME — не установлено. Путь ~190 инструкций: rx_arm_window (ждёт
+         * MAC_EVT1_PPDU_REPORT), rx_is_brp_frame, brp_parse_request_fields, вход в measure ~70 (vendor ~65:
          * bl L_920220 + 52 до первого опроса r54). Запас: единицы–десятки (по ХРУПКО у measure:
          * +23 инструкции входа уже давали assert 4). Срыв: meas_not_ready / assert 4, failure 1 после 10 неудач. */
-        u32 r0a = arc_core_rd(42);
-        if (r0a & (1u << 12)) {
+        u32 r0a = mac_evt1();
+        if (r0a & MAC_EVT1_RX_FRAME) {
             rx_arm_window();
-            if ((arc_core_rd(36) & (1u << 25)) && rx_is_brp_frame() != 0) {
+            if ((mac_rx_rep1() & MAC_RX_REP1_NOACK_MGMT) && rx_is_brp_frame() != 0) {
                 uc_stats.brp_rx_txn = (u8)(uc_stats.brp_rx_txn + 1);
                 u32 r0b = brp_parse_request_fields(r18);
                 brp_ctx.init_peer_req = r0b;
@@ -329,14 +329,14 @@ u32 brp_initiator_brp_transaction_flow(void)
                     }
                 }
                 /* → L_922694 (нижняя проверка) */
-            } else if (arc_core_rd(37) & (1u << 24)) {   /* L_922664 */
+            } else if (mac_rx_rep2() & MAC_RX_REP2_SSW) {   /* L_922664 */
                 ret = 0;
                 uc_log_emit_snapshot(0, 0x1000ab4);
                 break;
             }
         } else {
-            r0a = arc_core_rd(54);
-            if (r0a & (1u << 6)) {
+            r0a = mac_evt4();
+            if (r0a & MAC_EVT4_GP0_END) {
                 if (!(brp_ctx.init_flags & 1u)) {
                     brp_stats.init_timeout_idle = (u16)(brp_stats.init_timeout_idle + 1);
                     uc_log_emit_snapshot(0, 0x1000b1c);
@@ -455,12 +455,12 @@ u32 brp_init_exchange_request(void)
     for (;;) {
         brp_init_tx_request();                  /* L_92293a — в каждой итерации */
         uc_mac_cmd(0x49000040);
-        uc_wait_event1_or_event4(0x80 | (1u << 12), 0x40, 0);
-        u32 r0 = arc_core_rd(42);
-        if (r0 & (1u << 12)) {
+        uc_wait_event1_or_event4(MAC_EVT1_TXOP | MAC_EVT1_RX_FRAME, MAC_EVT4_GP0_END, 0);
+        u32 r0 = mac_evt1();
+        if (r0 & MAC_EVT1_RX_FRAME) {
             rx_arm_window();
-            r0 = arc_core_rd(36);
-            if (r0 & (1u << 25)) {
+            r0 = mac_rx_rep1();
+            if (r0 & MAC_RX_REP1_NOACK_MGMT) {
                 if (rx_is_brp_frame() != 0) {
                     u8 v = (u8)(uc_stats.brp_rx_req + 1);
                     uc_stats.brp_rx_req = v;
@@ -471,13 +471,13 @@ u32 brp_init_exchange_request(void)
                     return 1;
                 }
             }
-            r0 = arc_core_rd(37);
-            if (r0 & (1u << 24))
+            r0 = mac_rx_rep2();
+            if (r0 & MAC_RX_REP2_SSW)
                 return 0;
             continue;
         }
-        r0 = arc_core_rd(54);
-        if (!(r0 & (1u << 6)))
+        r0 = mac_evt4();
+        if (!(r0 & MAC_EVT4_GP0_END))
             return 0;
         r14 = (r14 + 1) & 0xff;
         if (r14 != 3)
@@ -502,7 +502,7 @@ void brp_init_tx_request(void)
     u32 r0b;
     if (r1 & (1u << 16)) {
         uc_mac_cmd(0x2 | (1u << 25));
-        uc_spin_until_event(2);
+        uc_spin_until_event(MAC_EVT1_SLOT);
         uc_mac_cmd(0x14000100);
         r0b = sta_tab[r16].tx_sel;
         uc_mac_cmd(r15);
@@ -569,14 +569,14 @@ void brp_init_tx_request(void)
     mac_program_tx_common();
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd(0x18000000);
     mac_mode_send_direct_frame(0);
     mac_evt_enable_bit_sync_b(6);
     uc_mac_cmd(0x2013800);
     mac_set_rf_chain_state(1, rf_chain_word);
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
     uc_wait_one_event(6);
     u32 r0h = abif_dvs_rf_ctrl_shadow;
     r0h &= ~(1u << 24);
@@ -632,7 +632,7 @@ void brp_select_cfg_by_snr(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
 void brp_responder_flow_enter(u32 a)
 {
     u32 r18 = a;
-    u32 r16 = 0x1000;                                   /* маска ожидания событий */
+    u32 r16 = MAC_EVT1_RX_FRAME;                                   /* маска ожидания событий */
     u8 sp0 = (u8)(30 - arc_norm(rf_modules.cur_mask));      /* текущий RF-модуль */
     u32 r19 = popcount8(rf_modules.mask);
     u32 sp4 = (u32)rfca_get_rf_mask_uc();
@@ -651,23 +651,23 @@ void brp_responder_flow_enter(u32 a)
     uc_mac_cmd(0x80 | (1u << 25));
     for (;;) {
         brp_ctx.resp_peer_req = 0;                              /* L_922fb0 */
-        uc_wait_event1_or_event4(r16, 0x40, 0);
-        /* СРОК: r42.12 (принят BRP-кадр инициатора с TRN-R) → цикл опроса метрик в
+        uc_wait_event1_or_event4(r16, MAC_EVT4_GP0_END, 0);
+        /* СРОК: MAC_EVT1_RX_FRAME (принят BRP-кадр инициатора с TRN-R) → цикл опроса метрик в
          * brp_program_and_measure — то же окно, что у инициатора (brp_initiator_brp_transaction_flow):
          * AGC 4N×0,18 мкс + CE 0,66 мкс до первого TRN-подполя (802.11-2020 20.9.2.2.5–6). Путь
          * ~200 инструкций (rx_arm_window_b, при первом кадре ещё команда 0x80|б25, разбор, вход
-         * ~70); запас: единицы–десятки. Ветка без resp_flags б0 (спин r42.14 без ограничения) —
+         * ~70); запас: единицы–десятки. Ветка без resp_flags б0 (спин MAC_EVT1_BUSY2 без ограничения) —
          * не измеряет. */
-        if (!(arc_core_rd(42) & (1u << 12))) {
+        if (!(mac_evt1() & MAC_EVT1_RX_FRAME)) {
             break;                                      /* -> L_923100 */
         }
         rx_arm_window_b();
         if (r15 != 0) {
             uc_mac_cmd(0x80 | (1u << 25));
             r15 = 0;
-            r16 = 0x80 | (1u << 12);
+            r16 = MAC_EVT1_TXOP | MAC_EVT1_RX_FRAME;
         }
-        if (!(arc_core_rd(36) & (1u << 25)) || rx_is_brp_frame() == 0) {
+        if (!(mac_rx_rep1() & MAC_RX_REP1_NOACK_MGMT) || rx_is_brp_frame() == 0) {
             if (brp_is_peer_ctrl_frame() != 0) {        /* L_9230e2 */
                 break;
             }
@@ -683,7 +683,7 @@ void brp_responder_flow_enter(u32 a)
                     uc_mac_cmd(mac_evt_en_shadow | 0x27007300);
                     uc_mac_cmd(0x2004000);
                     arc_nops(3);
-                    uc_spin_until_event(1u << 14);
+                    uc_spin_until_event(MAC_EVT1_BUSY2);
                 } else if (brp_program_and_measure(brp_ctx.resp_sta, 0, sp0) != 0) {
                     brp_rf_module_done(sp0);
                 } else {
@@ -801,13 +801,13 @@ void brp_responder_transmission_flow(void)
     mac_program_tx_common();
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd(0x18000000);
     mac_mode_send_direct_frame(0);
     mac_evt_enable_bit_sync_b(6);
     mac_set_rf_chain_state(1, rf_chain_word);
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
     uc_wait_one_event(6);
     u32 r0f = abif_dvs_rf_ctrl_shadow;
     r0f &= ~(1u << 24);
@@ -862,7 +862,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
     u32 r15 = c;
     u32 r13;
     (void)*(struct bf_req_desc *volatile *)&bf_sta[a].req_desc;   /* vendor: мёртвая загрузка */
-    if (!(arc_core_rd(49) & (1u << 13))) {
+    if (!(mac_evt_eng2() & MAC_EE2_BRP_ON_AIR)) {
         brp_stats.meas_not_ready++;                                   /* L_9238b2 */
         return 0;
     }
@@ -887,7 +887,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
         /* ХРУПКО: метрика в r40 живёт до следующего TRN-подполя; опоздание
          * теряет индекс, и проверка ниже даёт assert 4 (гибрид vendor + лог в цикле
          * падает на первой же ассоциации). Как у vendor (L_923736..L_923748): ждать
-         * r54.1 или r49.5, перечитать r54, в следующей же инструкции взять r40 и
+         * MAC_EVT4_RXSS_BF_METRIC или MAC_EE2_BRP_DONE, перечитать r54, в следующей же инструкции взять r40 и
          * сразу отправить uc_mac_cmd(0x49000002) (на таймауте — не отправлять).
          * В C -Os уводил чтение r40 за дальний переход. */
         u32 st, r16;
@@ -897,7 +897,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
                          "\tmov\t%1,r40\n"
                          "\tmov\tr32,%2\n\tst.ab\t%2,[r25,4]\n\tbclr\tr25,r25,0xa\n3:"
                          : "=&r"(st), "=&r"(r16) : "r"(0x49000002u) : "memory");
-        if (unlikely(!(st & (1u << 1)))) {
+        if (unlikely(!(st & MAC_EVT4_RXSS_BF_METRIC))) {
             brp_stats.meas_timeout++;                               /* L_9237de */
             r13 = 0;
             break;
@@ -943,7 +943,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
     mac_sel_shadow = cfg | (1u << 16) | (1u << 17);
     uc_mac_cmd(cfg | 0x1d030000);
     arc_nops(3);
-    while (arc_core_rd(47) & (1u << 17))
+    while (mac_txctl_sel() & MAC_RFC_ACCESS_BUSY)
         ;
     brp_program_mac_sequence_uc();
     if (r13 != 0)

@@ -108,10 +108,10 @@ void uc_rssi_sample(void)
     if (n == FWSH(fwsh_rssi, last_ppdu))
         return;
     FWSH(fwsh_rssi, last_ppdu) = n;
-    u32 r38 = arc_core_rd(38);
-    if (!(r38 & (1u << 11)))
+    u32 r38 = mac_rx_rep3();
+    if (!(r38 & MAC_RX_REP3_ADDR2_VALID))
         return;
-    u32 sta = (r38 >> 8) & 7u;
+    u32 sta = MAC_RX_REP3_ADDR2_IDX_OF(r38);
     if (sta >= SPARRAW_MAX_STA)
         return;
     s32 adc = (s32)(MMIO32(HW_PHY_RX_RSSI_ADC_LOCKED) << 22) >> 22;

@@ -33,8 +33,8 @@ u32 sxd_hal_wait_slot2_busy2(u32 n)
     while (n >= 1) {
         uc_mac_cmd(0x2000100u);
         arc_nops(3);
-        uc_wait_event_busy(0x4100, 0);
-        if (arc_core_rd(42) & (1u << 14))
+        uc_wait_event_busy(MAC_EVT1_SLOT2 | MAC_EVT1_BUSY2, 0);
+        if (mac_evt1() & MAC_EVT1_BUSY2)
             return 1;
         n--;
     }
@@ -50,8 +50,8 @@ u32 sxd_hal_wait_slot2_busy(u32 n)
     while (n >= 1) {
         uc_mac_cmd(0x2000100u);
         arc_nops(3);
-        uc_wait_event_busy(0x80100, 0);
-        if (arc_core_rd(42) & (1u << 0x13))
+        uc_wait_event_busy(MAC_EVT1_SLOT2 | MAC_EVT1_BUSY, 0);
+        if (mac_evt1() & MAC_EVT1_BUSY)
             return 1;
         n--;
     }

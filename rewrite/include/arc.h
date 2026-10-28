@@ -303,10 +303,7 @@ static inline __attribute__((always_inline)) void uc_fifo_frame_tail(u32 p)
     *(volatile u32 *)0x800514 -= 1;
 }
 
-/* После mac_cmd_29000001: vendor читает r40, затем r42 (mov r1,r40; mov r0,r42);
- * канал свободен = !(r42 bit14) && (r40 bit24). */
-#define mac_cca_ok() ({ u32 _r40 = arc_core_rd(40); \
-                        !(arc_core_rd(42) & (1u << 14)) && (_r40 & (1u << 24)); })
+/* mac_cca_ok() — uc/mac_regs.h. */
 
 /* Указатель на код, который vendor хранит как 0-базовый адрес (колбэки, таблицы).
  * Символ __vcb_<адрес>: в гибриде = vendor-адрес (0-база, задаёт uc_hybrid.py),

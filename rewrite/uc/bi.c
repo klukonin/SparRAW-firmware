@@ -399,12 +399,12 @@ void bi_rx_send_response(u32 a, u32 rate, u32 b, u32 flag)
     u32 v;
     direct_tx_program_cmd34(0x16, 0x18);
     mac_program_tx_with_rate(rate);
-    while (!(arc_core_rd(43) & (1u << 31)))
+    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
-    v = arc_core_rd(51);
+    v = mac_mtp_desc();
     mtp_desc_lo = v & 0xf;
     mtp_desc_hi = v >> 4;
-    while (!(arc_core_rd(45) & (1u << 31)))
+    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd(flag ? 0x18000000 : 0x18002100);
     direct_tx_send_with_seq(a, b, flag);
@@ -436,7 +436,7 @@ u32 bi_rx_start_rx_window(u32 a, u32 b)
     if (!mac_cca_ok()) {
         uc_mac_cmd(0x29000002);
         rx_mac_prepare();
-        while (!(arc_core_rd(45) & (1u << 31)))
+        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
         /* L_9212dc */
         txrx_state2 = 0x800;
@@ -464,7 +464,7 @@ u32 bi_rx_start_rx_window(u32 a, u32 b)
     uc_mac_cmd(0x19000001);
     bi_rx_send_response(a, 0, 9, r14);
     mac_evt_enable_bit_sync_b(6);
-    uc_spin_until_event(1u << 15);
+    uc_spin_until_event(MAC_EVT1_TX_END);
     mac_mon_report.tx_atim_cnt += 1;
     uc_wait_one_event(6);
     uc_mac_cmd(0x14000000);
@@ -475,7 +475,7 @@ u32 bi_rx_start_rx_window(u32 a, u32 b)
     MMIO32(HW_ABIF_DVS_RF_CTRL) = reg;
     if (r14 != 0) {
         if (sxd_hal_wait_slot2_busy2(resp_wait_slots)) {
-            r13 = (rx_flow_run() != 0 && (arc_core_rd(36) & (1u << 8))) ? 1 : 0;
+            r13 = (rx_flow_run() != 0 && (mac_rx_rep1() & MAC_RX_REP1_IMM_ACK)) ? 1 : 0;
         } else {
             tx_pick_slot_for_peer(1, a, 0x1f);
             r13 = 0;
@@ -531,7 +531,7 @@ void bi_timing_snapshot_b(void)
     mac_sel_shadow = r2 | (1u << 14);
     uc_mac_cmd(r2 | 0x1d004000);
     arc_nops_nop(2);
-    u32 r5 = arc_core_rd(40) & 0x3ffffff;      /* bmsk r5,r40,0x19 — биты 0..25 */
+    u32 r5 = mac_status_sel() & MAC_BI_COUNTER;      /* bmsk r5,r40,0x19 — биты 0..25 */
     bi_win.bti_pos = r5;                   /* delay-слот breq.d — всегда */
     if (bi_win.bti_seen == 0) {
         bi_win.bi_len_min = ~0u;
