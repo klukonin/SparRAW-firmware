@@ -359,12 +359,40 @@ void conn_msm_arm_bcon_timer(struct conn_msm *sm)
 
 /* ---------------- действия conn_main_sm ---------------- */
 
+/* AP: после линк-апа (SLS в A-BFT) станция обязана продолжить Association Request; не прислала за
+ * CONN_ASSOC_WAIT_US — соединение снимается (исправлено, vendor: ни таймера, ни детекторов потери линка до
+ * ассоциации — запись conn, cid и запись станции uc висели до перезагрузки, переживали PCP_STOP). */
+/* Срок ожидания: станции до запроса нужны поиск бикона по RX-секторам и BF линк-апа (стенд 2026-10-28: > 4 с после
+ * SLS; 3 с mlme_assoc_timeout_ms обрывали подключение) — 10 с. */
+#define CONN_ASSOC_WAIT_US 10000000u
+
+static void conn_msm_assoc_wait_cancel(struct conn_msm *sm)
+{
+    if (sm->assoc_wait_timer != 0) {
+        u_schd_cancel(sm->assoc_wait_timer);
+        sm->assoc_wait_timer = 0;
+    }
+}
+
+static void conn_msm_assoc_wait_timeout(u32 a0, u32 a1)
+{
+    struct conn_msm *sm = (struct conn_msm *)a0;
+    (void)a1;
+    sm->assoc_wait_timer = 0;
+    if (sm->sm.state != CONN_MSM_READY_FOR_ASSOC)
+        return;
+    conn_disc_detail_set(sm->conn->cid, WMI_SPARRAW_DISC_ASSOC_TIMEOUT);
+    conn_disconnect(sm->conn, 6, 4);   /* ASSOC_FAILED; 802.11 reason 4 — Disassociated due to inactivity (9.4.1.7) */
+}
+
+
 /* conn_msm__on_own_start_link__ready_for_assoc (0x8e2aac, 32 Б; OWN_START_LINK в
  * WAIT_FOR_BCON_RX / WAIT_FOR_LINKUP / READY_FOR_ASSOC): ждать бикон пира (таймер), если
  * a1 != 0 и [0x800304] == 0; иначе сразу BCON_RX (a0 = 1 — «бикон есть»). */
 void conn_msm_on_own_start_link(struct conn_msm *sm, u32 a0, u32 a1)
 {
     (void)a0;
+    conn_msm_assoc_wait_cancel(sm);
     if (conn_skip_bcon_wait == 0 && a1 != 0)
         conn_msm_arm_bcon_timer(sm);
     else
@@ -449,7 +477,8 @@ FWDATA(802554) const struct sm_trans conn_msm_table[11][9] = {
     [CONN_MSM_EV_OWN_DISC][CONN_MSM_UNRESOURCED] = { SM_ACT(conn_main_sm_start_disc), CONN_MSM_WAIT_FOR_DISCONN },
     [CONN_MSM_EV_OWN_DISC][CONN_MSM_WAIT_FOR_BCON_RX] = { SM_ACT(conn_main_sm_start_disc), CONN_MSM_WAIT_FOR_DISCONN },
     [CONN_MSM_EV_OWN_DISC][CONN_MSM_WAIT_FOR_LINKUP] = { SM_ACT(conn_main_sm_start_disc), CONN_MSM_WAIT_FOR_DISCONN },
-    [CONN_MSM_EV_OWN_DISC][CONN_MSM_READY_FOR_ASSOC] = { SM_ACT(conn_msm_log_state), CONN_MSM_READY_FOR_ASSOC },
+    /* исправлено (vendor: только журнал — соединение без ассоциации не снималось ни хостом, ни таймером) */
+    [CONN_MSM_EV_OWN_DISC][CONN_MSM_READY_FOR_ASSOC] = { SM_ACT(conn_main_sm_start_disc), CONN_MSM_WAIT_FOR_DISCONN },
     [CONN_MSM_EV_OWN_DISC][CONN_MSM_WAIT_FOR_ASSOC_DONE] = { SM_ACT(conn_main_sm_start_disc), CONN_MSM_WAIT_FOR_DISCONN },
     [CONN_MSM_EV_OWN_DISC][CONN_MSM_ASSOCIATED] = { SM_ACT(conn_main_sm_start_disc), CONN_MSM_WAIT_FOR_DISCONN },
     [CONN_MSM_EV_OWN_DISC][CONN_MSM_WAIT_FOR_LM_START] = { SM_ACT(conn_main_sm_start_disc), CONN_MSM_WAIT_FOR_DISCONN },
@@ -554,6 +583,10 @@ void conn_main_sm_linkup_ntf(struct conn_msm *sm, u32 a0)
     maintain_ctx_set_field_9c(&sm->conn->lm, 0);
     if (a0 == 0 && sm->conn->initiator == 1)
         conn_msm_defer(sm, 3, 0, 0, 0);
+    if (a0 == 0 && sm->conn->initiator == 0) {      /* AP: ждать Assoc Request (см. conn_msm_assoc_wait_timeout) */
+        conn_msm_assoc_wait_cancel(sm);
+        sm->assoc_wait_timer = u_schd_schedule(conn_msm_assoc_wait_timeout, (u32)sm, 0, 1, CONN_ASSOC_WAIT_US, 0, 0);
+    }
     u_schd_add(conn_link_up_task, (u32)sm->conn, a0, 1);
 }
 
@@ -593,6 +626,7 @@ void conn_msm_on_assoc_done(struct conn_msm *sm)
 {
     struct conn *conn;
     u32 st;
+    conn_msm_assoc_wait_cancel(sm);
     if (sm->lm_start_req == 0) {
         sm->lm_start_req = 1;
         conn_main_sm_action_step_b(&sm->conn->lm);
@@ -714,7 +748,9 @@ void l2mgr_send_host_event(u32 mid, u32 cid)
     p[0x10] = 0;
     p[0xc] = (u8)e->network_type;
     p[0x13] = (u8)cid;
-    p[0x14] = sta ? e->aid : conn->aid;
+    /* AP с SME прошивки: conn->aid = 0, станции в Assoc Response ушёл cid + 1 (mgmt_tx_build_assoc_resp) — хосту тот же
+     * (исправлено, vendor: aid 0) */
+    p[0x14] = sta ? e->aid : (conn->aid != 0 ? conn->aid : (u8)(cid + 1u));
     p[0x11] = 0;
     p[0x10] = 0;
     p[0x12] = 0;
@@ -723,10 +759,16 @@ void l2mgr_send_host_event(u32 mid, u32 cid)
         p[0] = pkt->info.channel;
         if (dashboard.cfg.ap_sme_offload_mode == 0) {
             u32 body = pkt->info.len - IEEE80211_HDR_LEN;
-            u32 blen = body & 0xffffu;
+            /* Reassociation Request (AP): тело для хоста — в форме Assoc Request, без Current AP Address (драйвер
+             * отрезает Capability и Listen Interval и берёт остальное как элементы) */
+            u32 skip = (!sta && FC_STYPE(pkt->hdr->fc) == 2 && body >= 10) ? 6u : 0u;
+            u32 blen = (body - skip) & 0xffffu;
             u32 total = blen + 0x17;
+            body -= skip;
             if (0xf0u >= total) {                 /* l2mgr__host_evt_max_len (0x8cc3c8) */
-                memcpy_fw(p + 0x17, pkt->body, blen);
+                memcpy_fw(p + 0x17, pkt->body, 4u < blen ? 4u : blen);
+                if (blen > 4u)
+                    memcpy_fw(p + 0x17 + 4, pkt->body + 4 + skip, blen - 4);
                 if (sta)
                     p[0x12] = (u8)body;
                 else
@@ -986,8 +1028,8 @@ void conn_msm_on_disc_complete(struct conn_msm *sm, u32 a0, u32 a1)
         power_mngr_check_mode(0);
 }
 
-/* conn_main_sm__action_8df500 (0x8df500, 16 Б; BCON_RX в UNRESOURCED, OWN_DISC в
- * READY_FOR_ASSOC / WAIT_FOR_DISCONN): только журнал состояния. */
+/* conn_main_sm__action_8df500 (0x8df500, 16 Б; BCON_RX в UNRESOURCED, OWN_DISC в WAIT_FOR_DISCONN): только журнал
+ * состояния. */
 void conn_msm_log_state(struct conn_msm *sm)
 {
     fw_log_emit1(0x2b, 0x1011b40, sm->sm.state);
@@ -1011,6 +1053,7 @@ void conn_main_sm_start_disc(struct conn_msm *sm, u32 reason, u32 protocol)
         u_schd_cancel(sm->bcon_timer);
         sm->bcon_timer = 0;
     }
+    conn_msm_assoc_wait_cancel(sm);
     sys_state_broadcast_7(sm->conn);
     conn_disc_event(&sm->disc, 0, reason, protocol, 0);
 }

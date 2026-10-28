@@ -143,13 +143,21 @@ class Node:
         m = re.match(r'\[\s*(\d+\.\d+)\]', line)
         return float(m.group(1)) if m else None
 
+    def _boot_id(self):
+        return self.run('cat /proc/sys/kernel/random/boot_id', check=False).strip()
+
     def mark(self):
-        """Отметка начала роли (время ядра последней строки dmesg): дальше dmesg_new()/fw_errors() — только новые
-        строки. По времени, не по числу строк: кольцо dmesg долгоживущего узла заполнено и сдвигается."""
+        """Отметка начала роли (время ядра последней строки dmesg и идентификатор загрузки): дальше dmesg_new()/
+        fw_errors() — только новые строки. По времени, не по числу строк: кольцо dmesg долгоживущего узла заполнено и
+        сдвигается. Узел перезагрузился после отметки (другой boot_id) — новое всё: время ядра началось с нуля, и
+        сравнение по времени прятало бы ошибки новой загрузки."""
         ts = [t for t in map(self._ktime, self.dmesg().splitlines()) if t is not None]
         self.dmesg_mark = ts[-1] if ts else 0
+        self.mark_boot = self._boot_id()
 
     def dmesg_new(self):
+        if getattr(self, 'mark_boot', None) and self._boot_id() != self.mark_boot:
+            return self.dmesg()
         return '\n'.join(l for l in self.dmesg().splitlines() if (self._ktime(l) or 0) > self.dmesg_mark)
 
     def fw_errors(self):

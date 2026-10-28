@@ -146,7 +146,8 @@ struct conn_msm {
     struct conn *conn;                         /* 0x08: владелец */
     struct conn_disc_sm disc;                  /* 0x0c: автомат разрыва */
     u32 bcon_timer;                            /* 0x2c: таймер ожидания бикона */
-    u32 rsv30;                                 /* 0x30: (обнуляет конструктор) */
+    u32 assoc_wait_timer;                      /* 0x30: AP — ожидание Assoc Request после линк-апа (наше; у vendor
+                                                * не используется, обнуляет конструктор) */
     u32 lm_started;                            /* 0x34: линк-менеджер уже запущен */
     u32 lm_start_req;                          /* 0x38: запуск линк-менеджера запрошен */
     u8  bcon_tries;                            /* 0x3c: попытки ожидания бикона */
@@ -166,7 +167,8 @@ struct conn {
     u8  cid;                                   /* 0x08 */
     u8  aid;                                   /* 0x09 */
     u8  n_vrings;                              /* 0x0a: добавлено vring (stream_mgr; 0 — connection__init) */
-    u8  rsv0b;                                 /* 0x0b */
+    u8  reassoc_req;                           /* 0x0b: последний запрос станции — Reassociation Request (ответ —
+                                                * Reassociation Response, 9.3.3.8); наше, у vendor — выравнивание */
     u16 rx_sector;                             /* 0x0c: RX-сектор пира (0xffff — не выбран) */
     u8  rsv0e[2];                              /* 0x0e */
     u32 bcon_time;                             /* 0x10: время бикона / пробы (u_schd_now) */

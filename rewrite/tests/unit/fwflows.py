@@ -110,12 +110,30 @@ def uc_reply(fw, cmd):
     0x18 запись поля станции → 0x11 {sta, mode}; 0x09 запуск BF к cid → 0x06 BF_DONE (uc_send_evt_bf_done) с
     итогом fw.uc_bf_status (1 — успех, по умолчанию) и MAC пира соединения cid."""
     t, b = cmd.type, cmd.body
+    gone_cids = fw.gone[1] if getattr(fw, 'gone', None) else ()
     if t == 0x09 and len(b) >= 0xc:
         cid = struct.unpack_from('<I', b, 8)[0]
         conn = Fw(fw).conn_by_cid(cid) if cid < SPARRAW_MAX_STA else 0
         if not conn:
             return []
-        return [(0x06, bf_done(cid, fw.rbytes(conn + C_PEER, 6), getattr(fw, 'uc_bf_status', 1), 0))]
+        status = 0 if cid in gone_cids else getattr(fw, 'uc_bf_status', 1)     # пир пропал — SLS без ответа
+        return [(0x06, bf_done(cid, fw.rbytes(conn + C_PEER, 6), status, 0))]
+    if t == 0x26 and len(b) >= 1 and b[0] < SPARRAW_MAX_STA:
+        # CMD_KEEP_ALIVE_TRIGGER (uc/cmd.c keep_alive_arm_slot → uc/tx.c): пир ответил — бит снят
+        # (internal_tx_clear_pending), traffic[cid] + 1; пир пропал — Ack нет, бит cid в ll_ctx.pending_mask остаётся
+        ll, cid = fw.a('ll_ctx'), b[0]
+        if cid in gone_cids:
+            fw.w32(ll + LL_PENDING_MASK, fw.r32(ll + LL_PENDING_MASK) | (1 << cid))
+        else:
+            fw.w32(ll + LL_PENDING_MASK, fw.r32(ll + LL_PENDING_MASK) & ~(1 << cid))
+            fw.w32(ll + LL_TRAFFIC + 4 * cid, fw.r32(ll + LL_TRAFFIC + 4 * cid) + 1)
+        return []
+    if t == 0x05 and len(b) >= 0x14 and b[0xc] < SPARRAW_MAX_STA and struct.unpack_from('<I', b, 0x10)[0] == 1:
+        # запись станции выключена: у станции нет очередей — uc снимает ожидающий keep-alive (uc/tx.c,
+        # internal_tx_clear_pending при sta_tab.qid_mask_q6 == 0)
+        ll = fw.a('ll_ctx')
+        fw.w32(ll + LL_PENDING_MASK, fw.r32(ll + LL_PENDING_MASK) & ~(1 << b[0xc]))
+        return []
     if t == 0x03:
         return [(0x03, b'')]
     if t == 0x01:
@@ -149,12 +167,112 @@ def settle(fw, uc=True, tx=True, limit=50):
         if tx:
             for q in TX_QUEUES:
                 if fw.tx_pending(q):
-                    fw.tx_complete(q)
+                    if getattr(fw, 'gone', None):
+                        tx_complete_by_ra(fw, q, lambda ra: TX_NO_ACK if ra in fw.gone[0] else 0)
+                    else:
+                        fw.tx_complete(q)
                     progress = True
         fw._uc_seen = done
-        if not progress:
+        if not progress and not (getattr(fw, 'gone', None) and _bi_ticks(fw)):
             return
     raise RuntimeError('settle: нет покоя за %d шагов' % limit)
+
+
+# ---- пир пропал: с какого-то шага пир молчит (tests/unit/test_fw_peer_vanish.py) ----
+
+HW_MAC_TSF_LO, HW_MAC_TSF_HI = 0x886eb8, 0x886ebc   # include/hw.h: HW_MAC_TIMING_INDIRECT_REG_5, HW_MAC_TSF_HI
+HW_DMA_RINGS_WITH_DATA, HW_TXQ_PTP_AVAIL = 0x881c84, 0x886a24
+TX_NO_ACK = 1               # код ошибки дескриптора TX [2:0]; fw различает только 0 / не 0 (fwq_tx_long_retry_failures)
+LL_TRAFFIC, LL_PENDING_MASK = 0x120, 0x160                  # struct ll_ctx (include/fwsh.h)
+BI_US = 102400                                               # BI 100 TU (Fw.ap_start, dmg_beacon)
+M32 = 0xffffffff
+
+
+def run_tsf(fw):
+    """TSF MAC идёт вместе со временем u_schd (тик 16 мкс): детекторы потери линка (fw/link_loss.c), учёт времени
+    pring (sm_pring_notify_step) считают прошедшее по TSF. Без этого TSF стоит и ни один срок по TSF не истекает."""
+    fw.mmio_read_hook[HW_MAC_TSF_LO] = lambda fw, a: (fw.now() << 4) & M32
+    fw.mmio_read_hook[HW_MAC_TSF_HI] = lambda fw, a: (fw.now() << 4) >> 32
+
+
+class _TimedEvts(list):
+    """События WMI с временем u_schd отправки (fw.evt_time[i] — тик события fw.wmi_evts[i])."""
+    def __init__(self, fw):
+        super().__init__()
+        self._fw = fw
+        fw.evt_time = []
+
+    def append(self, e):
+        self._fw.evt_time.append(self._fw.now())
+        super().append(e)
+
+    def clear(self):
+        self._fw.evt_time.clear()
+        super().clear()
+
+
+def track_event_times(fw):
+    fw.wmi_evts = _TimedEvts(fw)
+
+
+def tx_complete_by_ra(fw, q, status_of):
+    """«Железо» завершило кадры кольца TX очереди q, код каждого — status_of(RA кадра): пропавшему пиру Ack нет."""
+    qa = fw.a(q)
+    ring = fw.r32(qa + 0x8c)
+    base, size, tail, head = (fw.r32(ring + 4 + 4 * i) for i in range(4))
+    i = tail
+    while size and i != head:
+        d = base + 0x20 * i
+        pl = fw.r32(d) | (1 << 18) | (1 << 23)            # адрес кадра (tx_ring_complete)
+        st = status_of(fw.rbytes(pl + 4, 6))
+        fw.w32(d + 0x1c, (fw.r32(d + 0x1c) & ~7) | 0x100 | (st & 7))
+        i = (i + 1) % size
+    fw.call('TX_API_handle_completed_packets', qa)
+    fw.run_tasks()
+
+
+def _bi_ticks(fw):
+    """Каждый BI uc шлёт статистику BI (событие 0x17, peer_slots_scan_by_masks); маяка пира нет —
+    mac_mon_pub.bti.detected = 0."""
+    n = 0
+    while ((fw.now() - fw.bi_next) & M32) < 0x80000000:
+        fw.bi_next = (fw.bi_next + (BI_US >> 4)) & M32
+        fw.lmac_evt(0x17)
+        n += 1
+    return n
+
+
+def peer_gone(fw, macs, cids, bf_fails=True):
+    """С этого шага пиры macs (и их cid) молчат: кадры к ним без Ack, BF к ним — неудача (uc BF_DONE статус 0),
+    keep-alive без ответа, маяков пира нет (BI без маяка). uc и MAC живы. Модель действует в settle (между шагами
+    fw.advance — between=settle)."""
+    fw.gone = (set(bytes(m) for m in macs), set(cids) if bf_fails else set())
+    fw.bi_next = (fw.now() + (BI_US >> 4)) & M32
+
+
+def peer_back(fw):
+    fw.gone = None
+
+
+def host_tx_pending(fw, vr):
+    """Хост положил данные в кольцо vr (бит vr в HW_DMA_RINGS_WITH_DATA, прерывание DMA → задача
+    vring_schd_move_ready_if_idle): vring привязывается к pring и копит время работы по TSF — вход детектора старения
+    TX. Очередь MAC в модели пуста (tx_macq_is_empty: при привязке — предусловие fw; при остановке pring —
+    неподтверждённые кадры сброшены), очереди TXQ доступны."""
+    fw.default_stubs['tx_macq_is_empty'] = 1
+    fw.mmio[HW_TXQ_PTP_AVAIL] = M32
+    fw.mmio[HW_DMA_RINGS_WITH_DATA] = fw.mmio[HW_DMA_RINGS_WITH_DATA] | (1 << vr)
+    fw.call('vring_schd_move_ready_if_idle', vr, 0)
+    fw.run_tasks()
+
+
+def scale_link_loss(fw, div):
+    """Пороги поддержания линка (ll_cfg_presets и разложенные из них ll_ctx.cfg[]): старение TX, периоды keep-alive —
+    в div раз короче (период прогона детекторов прежний). Срок разрыва масштабируется так же."""
+    ll, pre = fw.a('ll_ctx'), fw.a('ll_cfg_presets')
+    for base in [pre + 0x24 * i for i in range(4)] + [ll + 0x24 * i for i in range(SPARRAW_MAX_STA)]:
+        for off in (0x08, 0x0c, 0x10):                        # ageing_thr, ka_period_hi, ka_period_lo
+            fw.w32(base + off, fw.r32(base + off) // div)
 
 
 class Fw:
@@ -224,16 +342,16 @@ class Fw:
     def own_mac(self):
         return self.fw.rbytes(self.mid0 + 0x0a, 6)
 
-    def ap_start(self, channel=2, max_sta=8, bi=100):
-        """WMI_PCP_START (struct wmi_pcp_start_cmd): AP (network_type 0x10), без защиты; uc — RX off/on на канале;
-        PCP_STARTED хосту (таймер 30 мс)."""
+    def ap_start(self, channel=2, max_sta=SPARRAW_MAX_STA, bi=100, secure=False):
+        """WMI_PCP_START (struct wmi_pcp_start_cmd): AP (network_type 0x10), без защиты (secure — RSNA, ключи ставит
+        хост WMI_ADD_CIPHER_KEY); uc — RX off/on на канале; PCP_STARTED хосту (таймер 30 мс)."""
         fw = self.fw
         b = bytearray(0x10)
         struct.pack_into('<H', b, 0, bi)
         b[2] = max_sta
         b[0xc] = 0x10
         b[0xd] = channel
-        b[0xf] = 1                                          # disable_sec
+        b[0xf] = 0 if secure else 1                         # disable_sec
         fw.wmi(WMI_PCP_START, bytes(b))
         settle(fw)
         fw.advance(0x7530)
@@ -254,6 +372,14 @@ class Fw:
         fw.run_tasks()
         settle(fw)
         return conn
+
+    def cid_of(self, peer):
+        """cid соединения с пиром peer (None — нет)."""
+        for cid in range(SPARRAW_MAX_STA):
+            c = self.conn_by_cid(cid)
+            if c and self.fw.rbytes(c + C_PEER, 6) == bytes(peer):
+                return cid
+        return None
 
 
 # ---- состояние «покоя» соединений: имя поля → значение (сравнение с состоянием после загрузки) ----

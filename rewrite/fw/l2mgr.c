@@ -20,15 +20,18 @@
 #include "../include/macq_desc.h"
 #include "../include/fwdata.h"
 
-/* 0x801518: наборы параметров поддержания линка (link_maintain_cfg_copy). */
+/* 0x801518: наборы параметров поддержания линка (link_maintain_cfg_copy). Пороги (мкс): старение TX — 5 с, keep-alive
+ * в простое у точки (наборы 0, 1) — 1 с. Изменено (vendor: старение 60 с, keep-alive точки 30 / 5 с — пропавшая без
+ * разъединения станция числилась у точки ~90 с; длинное старение терпело сон станции, энергосбережения в SparRAW
+ * нет — очередь без продвижения 5 с = линк потерян). Хост меняет их WMI_LINK_MAINTAIN_CFG_WRITE. */
 FWDATA(801518) const struct ll_cid_cfg ll_cfg_presets[4] = {
-    { .flags = 0x3, .period = 10000, .ageing_thr = 60000000, .ka_period_hi = 30000000, .ka_period_lo = 1000000,
+    { .flags = 0x3, .period = 10000, .ageing_thr = 5000000, .ka_period_hi = 1000000, .ka_period_lo = 1000000,
       .snr_lo = 5, .snr_hi = 15, .bcn_thr = 20, .bcn_snr = -255 },
-    { .flags = 0x3, .period = 10000, .ageing_thr = 60000000, .ka_period_hi = 5000000, .ka_period_lo = 1000000,
+    { .flags = 0x3, .period = 10000, .ageing_thr = 5000000, .ka_period_hi = 1000000, .ka_period_lo = 1000000,
       .snr_lo = 5, .snr_hi = 15, .bcn_thr = 10, .bcn_snr = -255 },
-    { .flags = 0x7, .period = 10000, .ageing_thr = 60000000, .ka_period_hi = 31000000, .ka_period_lo = 1000000,
+    { .flags = 0x7, .period = 10000, .ageing_thr = 5000000, .ka_period_hi = 31000000, .ka_period_lo = 1000000,
       .snr_lo = 5, .snr_hi = 15, .bcn_thr = 20, .bcn_snr = -255 },
-    { .flags = 0x7, .period = 10000, .ageing_thr = 60000000, .ka_period_hi = 1000000, .ka_period_lo = 1000000,
+    { .flags = 0x7, .period = 10000, .ageing_thr = 5000000, .ka_period_hi = 1000000, .ka_period_lo = 1000000,
       .snr_lo = 5, .snr_hi = 15, .bcn_thr = 10, .bcn_snr = -255 },
 };
 

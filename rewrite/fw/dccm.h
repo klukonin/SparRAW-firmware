@@ -377,5 +377,6 @@ extern volatile u32 dbg_trap_arg0;                   /* 0x806a60: 0x806a60 (DBG_
 extern volatile u32 dbg_trap_arg1;                   /* 0x806a64: 0x806a64 (DBG_TRAP_ARGS+4): r1 */
 extern volatile u32 dbg_trap_arg2;                   /* 0x806a68: 0x806a68 (DBG_TRAP_ARGS+8): r2 */
 extern volatile u32 dbg_trap_arg3;                   /* 0x806a6c: 0x806a6c (DBG_TRAP_ARGS+0xc): r3 */
+extern volatile u8 mlme_reassoc_inplace_en;          /* 0x8069f6: наш — переассоциация на месте включена драйвером (mlme.c) */
 
 #endif

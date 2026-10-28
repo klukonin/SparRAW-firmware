@@ -196,6 +196,8 @@ __attribute__((section(".textlate"))) u32 rx_mgmt_prs_parse(struct rx_pkt_srvs *
             PRS_FIELD(2);
             ei->listen_int = *(u16 *)p;                     /* Listen Interval */
             PRS_FIELD(2);
+            if (subtype == 2)                               /* Current AP Address (9.3.3.7); исправлено (vendor: не */
+                PRS_FIELD(6);                               /* пропускал — элементы разбирались со сдвигом на 6 Б) */
             break;
         case 1:                                             /* Association Response */
         case 3:                                             /* Reassociation Response */

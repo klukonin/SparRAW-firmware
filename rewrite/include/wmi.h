@@ -827,7 +827,8 @@ enum wmi_sparraw_disc_reason {
     WMI_SPARRAW_DISC_LINKUP_NOT_ASSOC_READY = 0x12, /* линк не поднялся: PCP без Association Ready (11.1.3.7) */
     WMI_SPARRAW_DISC_ASSOC_REJECTED         = 0x13, /* отказ в Assoc Response; proto — Status Code (9.4.1.9) */
     WMI_SPARRAW_DISC_ASSOC_BAD_AID          = 0x14, /* Assoc Response успех, AID вне 1…254 (9.4.1.8); proto — AID */
-    WMI_SPARRAW_DISC_ASSOC_TIMEOUT          = 0x15, /* Assoc Response не пришёл в срок */
+    WMI_SPARRAW_DISC_ASSOC_TIMEOUT          = 0x15, /* ассоциация не завершилась в срок: STA — нет Assoc Response,
+                                                     * AP — после SLS станция не прислала Assoc Request */
     WMI_SPARRAW_DISC_CONNECT_REJECTED       = 0x16, /* WMI_CONNECT отвергнут fw (причина — журнал fw validate_connect) */
     WMI_SPARRAW_DISC_LOST_LINK_BF           = 0x17, /* потеря: BF поддержания линка не сошёлся */
     WMI_SPARRAW_DISC_LOST_LINK_TX_AGEING    = 0x18, /* потеря: очередь TX cid не продвигалась дольше порога */
@@ -838,6 +839,14 @@ enum wmi_sparraw_disc_reason {
     WMI_SPARRAW_DISC_PCIE_LINK_DOWN         = 0x1d, /* PCIe link down */
     WMI_SPARRAW_DISC_PCIE_CPL_TIMEOUT       = 0x1e, /* PCIe: таймаут completion (DPAL) */
     WMI_SPARRAW_DISC_PCIE_DEBUG_FIFO        = 0x1f, /* PCIe: отладочный FIFO */
+};
+
+/* WMI_REASSOC_INPLACE_CFG_CMDID (0x85b, наша; бит возможностей 28): enable ≠ 0 — точка отвечает на (Re)Association
+ * Request ассоциированной станции на месте (тот же cid/AID, 11.3.5.3/11.3.5.5) и сообщает хосту одним
+ * WMI_CONNECT_EVENT того же cid. Шлёт драйвер, который это событие обрабатывает (SparRAW-driver). Ответа нет. */
+struct wmi_reassoc_inplace_cfg_cmd {
+    u8  enable;                                /* 0x00 */
+    u8  reserved[3];                           /* 0x01 */
 };
 
 /* WMI_SCAN_COMPLETE_EVENTID (0x100a) {status}; то же одно слово — WMI_ECHO_RSP (0x1803),

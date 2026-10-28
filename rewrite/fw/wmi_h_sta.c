@@ -533,8 +533,9 @@ static void mac_read_880a00_0c(u32 *a, u32 *b, u32 *c, u32 *d)
 }
 
 /* 0x801ba4: список возможностей FW (одно слово; не const — wmi_fw_ver читает из памяти). */
-/* Бит 0 (WMI_FW_CAPABILITY_FTM) снят: FTM — только SparRAW-pro (vendor 0x305f). */
-FWDATA(801ba4) u32 fw_caps_list[1] = { 0x305e };
+/* Бит 0 (WMI_FW_CAPABILITY_FTM) снят: FTM — только SparRAW-pro (vendor 0x305f). Бит 28
+ * (WMI_FW_CAPABILITY_REASSOC_INPLACE, наш) — переассоциация на месте (mlme.c, WMI_REASSOC_INPLACE_CFG). */
+FWDATA(801ba4) u32 fw_caps_list[1] = { 0x305e | (1u << 28) };
 
 /* 0x8f3560 (16 Б): список возможностей FW — fw_caps_list (0x801ba4). */
 static void fw_caps_get(u32 *pp, u8 *pn)

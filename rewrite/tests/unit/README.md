@@ -104,11 +104,17 @@ LMAC и событий WMI — из области теста; хост «чит
 TX завершаются; `idle_state(fw)` — поля «покоя» (записи mid, база соединений, пулы, запросы радио, таймеры, стримы,
 очереди TX, счётчики станции в `ll_ctx`, флаги l2mgr), `uc_station(cmds, cid)` — что uc знает о станции по потоку
 команд. Число станций — `SPARRAW_MAX_STA` / `SPARRAW_PEER_UNKNOWN` / `SPARRAW_STA_SLOTS` из `include/sta_max.h`.
+Пир пропал: `peer_gone(fw, macs, cids)` — дальше `settle` завершает кадры к нему без Ack (`tx_complete_by_ra`), BF к
+нему — неудача, keep-alive (LMAC 0x26) без ответа, каждый BI — статистика uc 0x17 без маяка; `peer_back(fw)` — снова
+отвечает. `run_tsf(fw)` — TSF идёт со временем u_schd (без него детекторы потери линка стоят), `track_event_times(fw)`
+— время каждого события WMI (`fw.evt_time`), `host_tx_pending(fw, vr)` — данные хоста в кольце (vring → pring),
+`scale_link_loss(fw, div)` — пороги старения TX / keep-alive короче в div раз.
 
 | файл | что |
 |---|---|
 | `test_fw_harness.py` | обвязка: загрузка до WMI_READY, WMI_ECHO, mid без записи, подключение STA до порта данных, таймеры |
 | `test_fw_conn_cleanup.py` | состояние после разрыва (STA: WMI_DISCONNECT, таймаут/отказ ассоциации, разрыв во время ассоциации и до выдачи радио, Disassociation от AP, нет маяков, LINK_LOST + нет маяков, нет маяка после BF, BF линк-апа не проходит; AP: DISCONNECT_STA, Disassociation станции, WMI_DISCONNECT, PCP_STOP; BA: BA_DIS, DELBA пира, нет ADDBA Response, разрыв при BA) — равно «после загрузки», uc о станции ничего не держит, повторное подключение — те же команды uc и события хосту, что первое; счётчики `ll_ctx`; AID и окна ESE своего BSS; шторм LINK_LOST |
+| `test_fw_peer_vanish.py` | пир пропал в любой момент. AP: до Ack на Assoc Response, после ассоциации до порта, после SLS в A-BFT без Assoc Request, LINK_LOST во время BF, во время ADDBA, при согласованном BA, с данными хоста, без трафика, во время DISCONNECT_STA; `SPARRAW_MAX_STA` станций — пропала одна; PCP_STOP; станция вернулась раньше срока. STA: скан/SLS, после SLS до маяка, BF линк-апа, Assoc Request без Ack, нет Assoc Response, сразу после ассоциации, с данными, ADDBA, BA, во время WMI_DISCONNECT. Проверка: одно WMI_DISCONNECT_EVENT не позже срока из параметров fw, состояние «покоя», uc о станции ничего не держит, WMI_ECHO, следующее подключение — как первое |
 | `test_fw_wmi_validation.py` | значения хоста вне допустимых: стендовые случаи `tests/test_sta_robust.py`, кольцо ≥ `STREAM_VR_N`, tid, cid ≥ `SPARRAW_MAX_STA`, канал, длины — отказ с журналом / статусом, без записи за массивами и без передачи в uc |
 | `test_fw_wmi_fuzz.py` | каждая команда диспетчера с телом из нулей / 0xff / `SPARRAW_MAX_STA` после загрузки и при подключённой STA — без фатального ассерта, вечного опроса и обращений вне карты памяти |
 

@@ -293,7 +293,7 @@ void mgmt_tx_build_assoc_resp(u32 payload, u32 *out_len, struct mid *mid, struct
     struct mid_bss *mobj = &mid->bss;
 
     dst = payload;
-    mgmt_tx_build_mac_header(mid, (struct ieee80211_hdr *)payload, 1, conn->peer);
+    mgmt_tx_build_mac_header(mid, (struct ieee80211_hdr *)payload, conn->reassoc_req ? 3 : 1, conn->peer);
     fw_log_emit3(0x2d, 0x1013ad8, 0x18, 0, dst);
     hexdump_words((void *)dst, 0x18);
     dst += 0x18;
@@ -1252,6 +1252,70 @@ FWDATA(802540) const u8 rx_pkt_handler_jt[11] = {
     0x00, 0x67, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0x79,
 };
 
+/* ---------------- переассоциация на месте (наше) ---------------- */
+
+/* Включает драйвер (WMI_REASSOC_INPLACE_CFG): только он обрабатывает WMI_CONNECT_EVENT занятого cid; со стоковым
+ * драйвером — прежний путь (разрыв), иначе снятый ключ и открытый порт драйвера пустили бы данные открытым текстом.
+ * В промежутке 0x806920..0x8069ff (tx_power.c, l2mgr_connect_*, rx_chain_configured). */
+FWDATA(8069f6) volatile u8 mlme_reassoc_inplace_en = 0;
+
+/* TX ответа на месте: после Ack (11.3.5.5 l) — ключ станции недействителен (11.3.5.3 l, 11.3.5.5 j); при RSNA —
+ * снова «ассоциирована, ждём ключ» (conn_main_sm ASSOCIATED, mlme_sm ASSOCIATE, таймер ассоциации: новый 4-way,
+ * затем порт данных и WMI_RING_EN_EVENT как при первой ассоциации); хосту — WMI_CONNECT_EVENT того же cid (11.3.5.5 o).
+ * Без Ack или с отказом — состояние прежнее, сохранённый запрос освободить. */
+static void mlme_reassoc_tx_done_cb(u32 payload, u32 status, u32 a2)
+{
+    static const u8 zero_key[16];
+    struct conn *conn = (struct conn *)a2;
+    struct mlme_sm *sm = &conn->mlme;
+    u32 still = (sm->sm.state == MLME_ASSOCIATED &&
+                 (conn->msm.sm.state == CONN_MSM_ASSOCIATED || conn->msm.sm.state == CONN_MSM_KEY_ASSOC));
+    if (status == 0)
+        TX_API_post_tx_payload(payload, conn->mid->id);
+    else
+        TX_API_free_memory(payload);
+    sm->tx_payload = 0;
+    fw_log_emit3(0x2a, LS_FW(REASSOC_INPLACE_DONE), conn->cid, status, sm->status);
+    if (status != 0 || sm->status != 0 || !still) {
+        if (sm->rx_pkt != 0) {
+            mem_pool_free_thunk(sm->rx_pkt);
+            sm->rx_pkt = 0;
+        }
+        return;
+    }
+    lmac_if_install_key(conn->cid, 1, zero_key, 0, 0);
+    if (conn_sec_mode_not_1(conn)) {
+        conn->msm.sm.state = CONN_MSM_ASSOCIATED;
+        sm->sm.state = MLME_ASSOCIATE;
+        if (sm->assoc_timer == 0)
+            sm->assoc_timer = u_schd_schedule(mlme_assoc_timeout_cb, (u32)sm, 0, 1, mlme_assoc_timeout_ms * 1000u, 0, 0);
+    }
+    l2mgr_send_host_event(conn->mid->id, conn->cid);
+}
+
+/* (Re)Association Request ассоциированной станции (11.3.5.3 a, k, l; 11.3.5.5): ответ того же вида на месте — тот же
+ * cid и AID, BF-связь, кольца и аллокации ESE не трогаются (11.3.5.4 c, второй список); запрос проверяется как обычно
+ * (SSID), ёмкость — нет (станция уже учтена). Кадр запроса — до колбэка в mlme.rx_pkt (тело для WMI_CONNECT_EVENT). */
+static void mlme_reassoc_inplace(struct mlme_sm *sm, struct rx_pkt *pkt)
+{
+    struct conn *conn = sm->conn;
+    struct mid *mid = conn->mid;
+    u32 len = 0, st = 0;
+    if (bss_join_verify(&mid->bss, pkt->ei, FC_STYPE(pkt->hdr->fc), mid, &st) == 0)
+        st = 0x25;                                  /* как отказ mlme_sm_on_connect */
+    sm->status = (u16)st;
+    if (sm->rx_pkt != 0)
+        mem_pool_free_thunk(sm->rx_pkt);
+    mgmt_pkt_release(pkt);
+    sm->rx_pkt = pkt;
+    sm->tx_payload = TX_API_alloc_tx_payload();
+    if (sm->tx_payload == 0)
+        fw_sysassert_fatal((void *)0, 0x11f9);
+    mgmt_tx_build_assoc_resp(sm->tx_payload, &len, mid, conn);
+    fw_log_emit3(0x2a, LS_FW(REASSOC_INPLACE), conn->cid, conn->reassoc_req, st);
+    tx_api_send_mgmt_with_cb(conn, 0, 1, sm->tx_payload, len & 0xffffu, 7, 80, mlme_reassoc_tx_done_cb, 4);
+}
+
 /* rx_pkt_handler (0x8e3d08, 514 Б; таблица 0x802540): mgmt-кадры соединения cid
  * info.cid. Assoc Request (0) — AP/PCP: CONNECT (или split MAC: кадр хосту и
  * WAITFOR_CTRL_ASSOC_RES); повтор ([+0xc] и бит Retry) или соединение в разрыве — кадр
@@ -1273,7 +1337,8 @@ void rx_pkt_handler(struct rx_pkt *pkt)
     }
     sm = &conn->mlme;
     switch (sub) {
-    case 0: {                                             /* Assoc Request */
+    case 0:                                               /* Assoc Request */
+    case 2: {                                             /* Reassoc Request (9.3.3.7) — так же, ответ подтипа 3 */
         u32 disc = 0, retry = 0, st;
         fw_log_emit2(0x2a, 0x1011130, conn->cid, dashboard.cfg.ap_sme_offload_mode);
         if (conn->msm.sm.state == 8) {
@@ -1287,6 +1352,12 @@ void rx_pkt_handler(struct rx_pkt *pkt)
         st = conn->mid->bss.mode;
         if ((st != 2 && st != 3) || retry != 0 || disc != 0)
             goto drop;
+        conn->reassoc_req = (sub == 2);
+        if (mlme_reassoc_inplace_en && dashboard.cfg.ap_sme_offload_mode == 0 && sm->sm.state == MLME_ASSOCIATED &&
+            (conn->msm.sm.state == CONN_MSM_ASSOCIATED || conn->msm.sm.state == CONN_MSM_KEY_ASSOC)) {
+            mlme_reassoc_inplace(sm, pkt);
+            return;
+        }
         if (dashboard.cfg.ap_sme_offload_mode == 1) {
             fw_log_emit0(0x2a, 0x10111f4);
             low_sme_send_evt2sw(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)),
@@ -1342,9 +1413,10 @@ void rx_pkt_handler(struct rx_pkt *pkt)
         mlme_sm_event(sm, 2, (u32)pkt, 0, 0);
         return;
     default:
+        /* Reassociation Response (3) — мы Reassociation Request не шлём; прочие сюда не приходят. исправлено (vendor:
+         * ассерт 0x1200 на любой подтип кроме 0, 1, 10 — Reassociation Request станции ронял точку). */
         fw_log_emit3(0x1a, 0x10112fc, conn->cid, sub, pkt->info.len);
-        fw_sysassert_fatal((void *)0, 0x1200);
-        return;
+        goto drop;
     }
 drop:
     mgmt_pkt_release(pkt);

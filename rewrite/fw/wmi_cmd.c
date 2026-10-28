@@ -1711,6 +1711,9 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
             HOST_CMD_LOG(0x1006b18);
             host_if_write_rf_xpm(mb, body);
             break;
+        case 0x85b:                                 /* WMI_REASSOC_INPLACE_CFG (наша) */
+            mlme_reassoc_inplace_en = ((const struct wmi_reassoc_inplace_cfg_cmd *)body)->enable != 0;
+            break;
         case 0x85c:                                 /* WMI_SET_ACTIVE_SILENT_RSSI_TABLE */
             HOST_CMD_LOG(0x1007944);
             wmi_set_active_silent_rssi_table(mb, ((const struct wmi_echo_cmd *)body)->value, mid);   /* {table} */

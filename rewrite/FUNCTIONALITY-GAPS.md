@@ -199,6 +199,19 @@
   WMI_PCP_STOP при ассоциированных станциях отключает их и останавливает BSS (vendor: только журнал — маяки шли,
   WMI_PCP_STOPPED не уходил, wmi_pcp_stop драйвера — тайм-аут).
   ≥ 8 потерь связи за 4,5 с — запись в журнал, а не фатальный ассерт 0x142e (костыль vendor: падение fw по эфиру).
+- fw, поддержание линка: старение TX 5 с (vendor 60 с), keep-alive точки в простое через 1 с (vendor 30 / 5 с) —
+  пропавшая без разъединения станция снимается точкой за ~6,5 с, а не ~90 с (длинное старение у vendor терпело сон
+  станции; энергосбережения в SparRAW нет). Хост меняет пороги WMI_LINK_MAINTAIN_CFG_WRITE.
+- fw, AP: станция после SLS в A-BFT, не приславшая Association Request за 10 с, снимается (разрыв
+  ASSOC_TIMEOUT); WMI_DISCONNECT_STA снимает и такую (vendor: соединение без ассоциации висело до перезагрузки — cid,
+  запись станции uc, переживало PCP_STOP; tests/unit/test_fw_peer_vanish.py).
+- fw, AP: Reassociation Request (9.3.3.7) — разбор с Current AP Address, ответ Reassociation Response (9.3.3.8), хосту —
+  тело в форме Assoc Request (vendor: подтип 2 от станции с cid — фатальный ассерт 0x1200, элементы разбирались со
+  сдвигом на 6 Б; tests/unit/test_fw_reassoc.py).
+- fw, AP: (Re)Association Request ассоциированной станции — ответ на месте (тот же cid/AID, без Disassociation; ключ
+  станции снимается, при RSNA — снова 4-way; хосту — WMI_CONNECT_EVENT того же cid), 11.3.5.3 a, k, l / 11.3.5.5.
+  Включает драйвер WMI_REASSOC_INPLACE_CFG (0x85b, бит возможностей 28); без него — прежний путь (разрыв) —
+  vendor: запрос отбрасывался, станции — Disassociation, вход только со второй попытки.
 - fw, значения хоста (tests/unit/test_fw_wmi_validation.py, test_fw_wmi_fuzz.py): отказ WMI_BAD_PARAM с ответом
   вместо фатальных ассертов/записи за массивом vendor — cid WMI_SET_SECTORS, тип сети и канал CONNECT/PCP_START/
   BCON_CTRL (0x11ec, 0x119b), список каналов START_SCAN (> 4 — 0x1470), CFG_RX_CHAIN повторный (0x127c) и

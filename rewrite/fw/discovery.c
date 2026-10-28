@@ -396,9 +396,11 @@ __attribute__((section(".textlate"))) u32 mid_disconnect_cmd(struct mid *obj, st
     /* исправлено (vendor): STA до ассоциации (захват линка: WAIT_FOR_BCON_RX / WAIT_FOR_LINKUP) не разрывалась —
      * WMI_DISCONNECT терялся, событие хосту не уходило (wmi_call timeout 2 с, «is DISCONNECTING» до перезагрузки),
      * ассоциация затем завершалась вопреки отмене. Автомат соединения OWN_DISC в этих состояниях обрабатывает. */
+    /* исправлено (vendor): и AP-соединение после SLS без ассоциации (READY_FOR_ASSOC) — WMI_DISCONNECT_STA его снимает */
     if (state != 2 && e->mlme.busy == 0 &&
         (obj->bss.mode != 1 || e->msm.sm.state == CONN_MSM_UNRESOURCED ||
-         e->msm.sm.state > CONN_MSM_WAIT_FOR_LINKUP))
+         e->msm.sm.state > CONN_MSM_WAIT_FOR_LINKUP) &&
+        !(obj->bss.mode != 1 && e->msm.sm.state == CONN_MSM_READY_FOR_ASSOC))
         return 0;
     fw_log_emit3(0x2b, 0x100cc1c, obj->id, e->cid, protocol);
     conn_disconnect(e, reason, protocol);
@@ -950,7 +952,7 @@ __attribute__((section(".textlate"))) void obj_vt802744_ctor(struct conn_msm *a,
 {
     a->conn = conn;
     a->bcon_timer = 0;
-    a->rsv30 = 0;
+    a->assoc_wait_timer = 0;
     basic_sm_bind_descriptor(a, &conn_msm_desc);
     a->sm.trace = 1;
     disc_flush_sm_init(&a->disc, a);
@@ -1095,6 +1097,10 @@ __attribute__((section(".textlate"))) void conn_mgr_link_down_evt(struct conn *c
 {
     fw_log_emit0(0x2b, 0x100bd2c);
     conn_mgr_ranking_remove(conn);
+    if (conn->msm.assoc_wait_timer != 0) {          /* AP: ожидание Assoc Request (conn.c) */
+        u_schd_cancel(conn->msm.assoc_wait_timer);
+        conn->msm.assoc_wait_timer = 0;
+    }
     conn_abort(conn, 0);
     conn_mgr_free_cid_db_element(conn->cid);
 }

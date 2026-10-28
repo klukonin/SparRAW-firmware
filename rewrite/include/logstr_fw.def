@@ -21,3 +21,5 @@ X(FW2UC_NO_ACK, "fw->ucode signal (ICR bit %u) not acknowledged after %u rounds,
 X(HW_POLL_TIMEOUT, "hw poll timeout: reg 0x%x = 0x%x, waited for mask 0x%x")
 X(MAC_CNT_CLEAR_TIMEOUT, "MAC counters clear: phase %u not acknowledged, ctrl 0x%x")
 X(LISTEN_STARTED_EVT, "<<---- [HOST EVENT] WMI_LISTEN_STARTED_EVENTID mid %u status %u")
+X(REASSOC_INPLACE, "AP reassoc in place: cid %u reassoc_req %u status %u")
+X(REASSOC_INPLACE_DONE, "AP reassoc in place: cid %u tx status 0x%x resp status %u")

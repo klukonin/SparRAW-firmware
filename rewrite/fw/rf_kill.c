@@ -153,7 +153,7 @@ static void pcp_stop_flow(struct mid *e)
     l2mgr_send_pcp_stopped(ve->id);
 }
 
-/* Остановка PCP при живых соединениях mid: станции отключаются (Disassoc, reason 3 — DEAUTH_LEAVING, 9.4.1.7),
+/* Остановка PCP при соединениях mid (ассоциированных и ждущих Assoc Request): станции отключаются (Disassoc, reason 3 — DEAUTH_LEAVING, 9.4.1.7),
  * остановка повторяется по таймеру, пока соединения не снимутся (шаг 5 мс, предел 1 с). исправлено (vendor: при
  * ассоциированной станции только журнал — BSS не останавливался, маяки шли, WMI_PCP_STOPPED хосту не уходил
  * (wmi_pcp_stop драйвера — тайм-аут), бит 4 l2mgr_pending_ops оставался навсегда, а PCP_COUNT уже был уменьшен). */
@@ -183,7 +183,7 @@ static void l2mgr_pcp_stop_try(u32 mid, u32 tries)
     e = mid_list_by_mid_fw(mid);
     if (e == 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x16b4);
-    if (mid_list_find_by_kind(e, 1) != 0) {
+    if (e->conns.count != 0) {                     /* любые соединения: и станции после SLS без ассоциации */
         fw_log_emit0(0xb, 0x100f338);
         if (tries == 0)
             mid_list_disconnect_all(e, 2, 3);
