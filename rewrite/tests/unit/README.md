@@ -69,3 +69,51 @@ Timer1 (COUNT1, AUX 0x100) в эмуляторе идёт: такт на инс�
 | файл | что |
 |---|---|
 | `test_uc_deadlines.py` | сроки: A-BFT станции (событие слота → первый SSW, сторож SIFS_CNT → SSW, SSW → SSW через SBIFS, взвод GP0 в окне GP2, фаза GP1 поздней ветки), A-BFT AP (сетка до триггера, SSW-Feedback после сторожа), ответы через SIFS (Ack/BA/BAR/DMG CTS/CF-End/Grant Ack, продолжение TXOP, РЧ на приём после ответа), SLS через MBIFS (SSW-Ack, RSS после ISS, 64 сектора), итерация цикла метрик TRN BRP, развёртка 64 маяков через SBIFS, слот CBAP → пуск TX, калибровка модели |
+
+## fw (главное ядро): `fwemu.py`, `fwflows.py`
+
+Функции fw исполняются в том же эмуляторе прямо из `fw.elf` (фикстура `fw`; `fw_elf` собирает `<BUILD>/fw.elf`, если
+его нет в каталоге сборки). `fw.boot()` — состояние «после загрузки», как на чипе: обнулённая SRAM (crt0), начальная
+DCCM из `.fwdata.*`, статические конструкторы, `fw_main` до цикла `u_schd_run` (шаги, ждущие железо — SerDes PCIe,
+калибровка RF, — заглушки), board-файл «загружен» (32 TX-сектора), событие uc LMAC READY → WMI_READY хосту, драйвер
+поднял интерфейс (WMI_CFG_RX_CHAIN). Снимок кэшируется на сессию: свежий `fw` — копия памяти (~0,1 с).
+
+| вызов | что |
+|---|---|
+| `fw.call('fn', *args, stub={...})` | вызов до возврата; заглушка `{имя: r0 \| callable(fw, args)}` перехватывается по PC входа — и `bl`, и хвостовые `b`, и вызовы через указатель |
+| `fw.wmi(cmd, body, mid=0)` | команда хоста → `wmi_host_cmd_dispatch`, затем готовые задачи u_schd |
+| `fw.lmac_evt(type, body)` | событие uc → `lmac_if_ucode_event_dispatch` |
+| `fw.rx_pkt(frame, cid)` | буфер из настоящего `rx_ring.pool` с кадром 802.11 — для `rx_pkt_handler`, `stream_mgr_action`, `discovery_rx_pkt_handler` |
+| `fw.tx_complete(q)` | «железо» завершило кадры кольца TX очереди (DU + статус в дескрипторах, `TX_API_handle_completed_packets`) |
+| `fw.advance(us)`, `fw.fire_timer(name)` | время u_schd (`HW_SYS_TIMER_NOW`, тик 16 мкс): таймеры срабатывают по срокам через `u_schd_expire_timers`, как прерывание таймера |
+| `fw.lmac_cmds`, `fw.wmi_evts`, `fw.tx_frames`, `fw.logs` / `fw.logged('WMI_BAD_PARAM')`, `fw.rejects` | что увидели uc, хост, эфир и журнал |
+| `fw.timers()`, `fw.ready_tasks()` | взведённые таймеры и готовые задачи u_schd (имена колбэков) |
+| `fw.save()` / `fw.restore(s)` | снимок состояния — много сценариев из одной точки |
+
+Всегда перехвачены: фатальный ассерт fw (`FwAssert` с кодом и цепочкой вызовов), недопустимое событие автомата
+(`basic_sm_error_handler` → `SmError`), вечный опрос MMIO (`SpinError`, 4000 чтений одного адреса в одной точке),
+обращение вне карты памяти fw (`fw.wild`: на чипе чтение отсутствующего адреса AHB не завершается). Буферы команд
+LMAC и событий WMI — из области теста; хост «читает» события сразу — буферы кадров RX/TX возвращаются в пулы теми же
+колбэками кольца событий, что на чипе. MMIO — функциональный регистровый файл (`fw.mmio[a]`, модели готовности —
+`fw.mmio_read_hook`).
+
+`fwflows.py` — сценарии через настоящие обработчики: `Fw.sta_connect()` (WMI_CONNECT → переключение канала → BF
+новой связи → маяк пира → линк-ап (BF) → Assoc Request/Response → первый BF сопровождения → WMI_CONNECT_EVENT,
+ключ, порт данных), `ap_start()` / `ap_sta_join()` (WMI_PCP_START, BF в A-BFT, Assoc Request станции), `settle(fw)` —
+модель uc отвечает на команды LMAC по протоколу (`uc_reply`: RX off/on, снятие очереди, запись поля станции, BF), кадры
+TX завершаются; `idle_state(fw)` — поля «покоя» (записи mid, база соединений, пулы, запросы радио, таймеры, стримы,
+очереди TX, счётчики станции в `ll_ctx`, флаги l2mgr), `uc_station(cmds, cid)` — что uc знает о станции по потоку
+команд. Число станций — `SPARRAW_MAX_STA` / `SPARRAW_PEER_UNKNOWN` / `SPARRAW_STA_SLOTS` из `include/sta_max.h`.
+
+| файл | что |
+|---|---|
+| `test_fw_harness.py` | обвязка: загрузка до WMI_READY, WMI_ECHO, mid без записи, подключение STA до порта данных, таймеры |
+| `test_fw_conn_cleanup.py` | состояние после разрыва (STA: WMI_DISCONNECT, таймаут/отказ ассоциации, разрыв во время ассоциации и до выдачи радио, Disassociation от AP, нет маяков, LINK_LOST + нет маяков, нет маяка после BF, BF линк-апа не проходит; AP: DISCONNECT_STA, Disassociation станции, WMI_DISCONNECT, PCP_STOP; BA: BA_DIS, DELBA пира, нет ADDBA Response, разрыв при BA) — равно «после загрузки», uc о станции ничего не держит, повторное подключение — те же команды uc и события хосту, что первое; счётчики `ll_ctx`; AID и окна ESE своего BSS; шторм LINK_LOST |
+| `test_fw_wmi_validation.py` | значения хоста вне допустимых: стендовые случаи `tests/test_sta_robust.py`, кольцо ≥ `STREAM_VR_N`, tid, cid ≥ `SPARRAW_MAX_STA`, канал, длины — отказ с журналом / статусом, без записи за массивами и без передачи в uc |
+| `test_fw_wmi_fuzz.py` | каждая команда диспетчера с телом из нулей / 0xff / `SPARRAW_MAX_STA` после загрузки и при подключённой STA — без фатального ассерта, вечного опроса и обращений вне карты памяти |
+
+Найденный остаток или отказ — `xfail(strict=True)`: в reason — поле/путь, последствие и место в коде, где надо
+сбросить или проверить; ожидаемый фатальный ассерт проверяется по коду (`fwflows.known_fatal`, `raises=KnownFatal`) —
+другой сбой xfail не засчитывается. Ограничения: uc — модель ответов, а не исполнение `uc.elf`; ветки ASIC (калибровка,
+переключение канала в RF) выключены (`platform_is_asic() == 0`); периодические службы делают `fw.advance` медленным
+(~2,5 с эмуляции на секунду времени при соединении).

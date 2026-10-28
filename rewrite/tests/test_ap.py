@@ -13,7 +13,7 @@ def test_ap_nodes_run_image(ap, fw_blob, check):
     for n in (ap.dut, ap.peer):
         got = n.run('md5sum /lib/firmware/wil6210.fw', check=False).split()[:1]
         check.equal(got[0] if got else None, want, 'md5 прошивки на %s' % n.name)
-        ver = re.findall(r'FW ver\. (\S+?)\(', n.dmesg_new() or n.dmesg())
+        ver = re.findall(r'FW ver\. (\S+?)\(', n.dmesg())    # последняя загрузка; dmesg_new() её может не содержать
         check.is_true(ver and ver[-1] == ap_version(fw_blob), 'версия FW на %s: %s' % (n.name, ver[-1:] or None))
 
 

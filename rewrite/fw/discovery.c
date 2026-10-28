@@ -11,6 +11,7 @@
 #include "../include/link_sm.h"
 #include "../include/link_loss.h"
 #include "../include/mid.h"
+#include "../include/sched_scheme.h"
 #include "../include/stream.h"
 #include "../include/macq_desc.h"
 #include "../include/ieee80211.h"
@@ -870,8 +871,18 @@ __attribute__((section(".textlate"))) void mid_list_remove_entry(struct mid *obj
      * «scan while connected» (is_connected: 0x1), хост не переподключался. */
     if (mid_list_find_by_kind(obj, 1) == 0) {
         u32 mode = entry->mid->bss.mode;
-        if (mode != 2 && mode != 3)
+        if (mode != 2 && mode != 3) {
             obj_set_field4_one(&obj->bss);   /* add3 r0,r14,0x9 → obj+0x48 */
+            /* исправлено (vendor): AID прошлой ассоциации и таблица SP из ESE (общая с uc) жили после разрыва —
+             * новая ассоциация с другим AID по тому же маяку (отпечаток ESE совпал) таблицу не пересобирала, и STA
+             * инициировала в SP прежнего AID, т. е. чужой станции (10.36.6). */
+            obj->aid = 0;
+            if (obj->sched != 0) {
+                sched_builder_reset_alloc_list(obj->sched->ese);
+                obj->sched->ese_n = 0;
+                obj->sched->ese_hash[0] = obj->sched->ese_hash[1] = obj->sched->ese_hash[2] = 0;
+            }
+        }
     }
 }
 /* obj__set_field4_one (0x8c4ee4): состояние BSS = 1. */
@@ -1077,10 +1088,13 @@ __attribute__((section(".textlate"))) void obj_vt802f58_ctor(struct link_stats_s
 }
 __attribute__((section(".textlate"))) void obj_vt802cc4_noop_vmethod(struct maintain_sm *a) { (void)a; }
 
-/* conn_mgr__link_down_evt (0x8daae8): лог + conn_abort + free_cid_db_element. */
+/* conn_mgr__link_down_evt (0x8daae8): лог + conn_abort + free_cid_db_element. Запись соединения освобождается —
+ * её элемент списка ранжирования тоже (исправлено, vendor: после тайм-аута/отказа ассоциации и разрыва во время неё
+ * список держал указатель на свободную запись; соединение на той же записи потом в список не вставало). */
 __attribute__((section(".textlate"))) void conn_mgr_link_down_evt(struct conn *conn)
 {
     fw_log_emit0(0x2b, 0x100bd2c);
+    conn_mgr_ranking_remove(conn);
     conn_abort(conn, 0);
     conn_mgr_free_cid_db_element(conn->cid);
 }

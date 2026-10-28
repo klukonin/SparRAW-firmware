@@ -5,18 +5,19 @@
 #include "../include/arc.h"
 #include "../include/sta_max.h"
 #include "ifs.h"
+#include "abft.h"
 
 
 
 static inline s32 min_i32(s32 a, s32 b) { return a < b ? a : b; }
 
 
-/* [0x8004e4] = (g & 0xffff0fff) | sel; MAC-команда 0x1d000000 | то же (выбор группы статуса). */
+/* Выбрать регистр R40 sel (MAC_SEL_…): mac_sel_shadow с этим номером и команда MAC_CMD_STATUS_SEL с ним же. */
 static inline __attribute__((always_inline)) void uc_mac_sel(u32 sel)
 {
-    u32 g = mac_sel_shadow & 0xffff0fff;
+    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | sel;
-    uc_mac_cmd(g | 0x1d000000 | sel);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | sel);
 }
 
 /* 3×nop_s после MAC-команды до чтения регистров ядра (r40/r42…) — группа vendor. */
@@ -91,24 +92,27 @@ void rx_arm_window(void)
     uc_mac_cmd(0x2011000);
 }
 
-/* СРОК: вызывается из rx_flow_handle_frame до запроса ответа в MTP (RTS / CF-End с Duration /
+/* Переключение с приёма на передачу после конца принятого PPDU: дождаться конца приёма и перевести MAC на передачу
+ * (mac_switch_rx_to_tx), затем проверить SIFS_CNT — опоздание отменяет передачу (0x1f000601, rx_end_tx_late_cnt).
+ * Перед DMG CTS на RTS, ответным CF-End, SSW-Ack, продолжением TXOP и ответом TXSS.
+ * СРОК: вызывается из rx_flow_handle_frame до запроса ответа в MTP (RTS / CF-End с Duration /
  * бит r40.sifs_resp) — входит в путь до ответа через SIFS 3 мкс (802.11-2020 10.3.2.3.3, Table 20-30).
- * Путь ~25 инструкций + mac_set_mode_a000 (vendor 0x924fc4 — так же); запас общий с
+ * Путь ~25 инструкций + mac_switch_rx_to_tx (vendor 0x924fc4 — так же); запас общий с
  * rx_frame_tx_resp_seq: единицы. Порог SIFS_CNT > 0x500 (5 мкс) или = 0 — сторож vendor:
- * команда 0x1f000601 и счётчик rx_mode_bad_r55_cnt (полезен на стенде как счётчик опозданий;
+ * команда 0x1f000601 и счётчик rx_end_tx_late_cnt (полезен на стенде как счётчик опозданий;
  * см. docs/UC-REGISTERS.md §2.16 — отсчёт SIFS_CNT со сроком ответа не совпадает). */
 UC_HOT
-void rx_switch_to_rx_mode(void)
+void rx_end_switch_to_tx(void)
 {
     /* 6.2 asm 0x924fc4. */
-    mac_set_mode_a000(0);
+    mac_switch_rx_to_tx(0);
     uc_mac_cmd(0x4d000000);
     arc_nops(3);
     u32 r1 = mac_timer_sel();
     rx_sw_sifs_cnt = r1;
     if (r1 > SIFS_CNT_RESP_LATE || r1 == 0) {
         uc_mac_cmd(0x1f000601);
-        rx_mode_bad_r55_cnt += 1;                  /* ld_s [gp,4] (байты) / st.as [gp,1] */
+        rx_end_tx_late_cnt += 1;                  /* ld_s [gp,4] (байты) / st.as [gp,1] */
     }
 }
 
@@ -157,7 +161,7 @@ u32 rx_ppdu_is_cts_b(void)
 
 
 /* uc_wait_event_busy — в stubs.c. */
-/* mac_set_mode_a000 — в mac.c. */
+/* mac_switch_rx_to_tx — в mac.c. */
 
 void rx_arm_window_b(void)
 {
@@ -275,8 +279,7 @@ u32 rx_flow_send_imm_response(void)
     /* 6.2 asm 0x93626c. */
     /* 9.3.1.6: Duration CF-End DMG — остаток последовательности усечения (i − 1)·(TXTIME(CF-End) + SIFS), т. е.
      * Duration принятого минус TXTIME(CF-End) + SIFS; исправлено (vendor): отвечал с Duration = 0 */
-    u32 d = rx_buf_duration;
-    d = d > DMG_RESP_DUR_SUB_US(DMG_CF_END_LEN) ? d - DMG_RESP_DUR_SUB_US(DMG_CF_END_LEN) : 0u;
+    u32 d = dmg_cf_end_resp_dur_us(rx_buf_duration);
     tx_send_imm_response(0, d, 0x10);
     arc_core_wr(33, 0xe4);
     tx_fifo_free -= 0x10;
@@ -345,8 +348,9 @@ void rx_update_nav_from_frame(u32 a)
         if (rx_nav_update_en == 0)
             return;
         r3 = (u32)rx_buf_ra;
-        if (a != 0)
-            r2 = (u16)(r2 + 0x640);
+        /* исправлено (vendor): к Duration DMG Beacon прибавлял 1600 мкс (a ≠ 0) — NAV по маяку соседа = его Duration
+         * (до конца BTI, 9.3.4.2; 10.3.2.4). */
+        (void)a;
     }
     if (!(rx_mode_flags & 1u)) {
         sel_nbr.gain_snapshot = sel_nbr.cur_gain_db;
@@ -500,7 +504,7 @@ u32 rx_flow_run(void)
     uc_mac_cmd(0x4d000000);
     uc_nop3();
     rx_flow_r55_snap = mac_timer_sel();
-    uc_mac_sel(0xa000);
+    uc_mac_sel(MAC_SEL_PHY_SIGNALS);
     uc_nop3();
     {
         u32 r3 = mac_status_sel();
@@ -532,7 +536,7 @@ u32 rx_flow_run(void)
     uc_mac_cmd(mac_status_sel() & MAC_BIFS_IDLE_DETECT);
     switch (mac_status_sel() & MAC_BIFS_IDLE_DETECT) {
     case 0:
-        uc_mac_sel(0xa000);
+        uc_mac_sel(MAC_SEL_PHY_SIGNALS);
         uc_nop3();
         if (seq == MAC_PHYSIG_CCA_EVT_CNT_OF(mac_status_sel())) {
             u32 v = VOL(uc_stats.rx_ppdu) + 1;
@@ -560,7 +564,7 @@ u32 rx_flow_run(void)
         if (!(mac_evt1() & MAC_EVT1_BUSY2) && (rx_mode_flags & 2) &&
             (mac_status_sel() & MAC_BIFS_IDLE_DETECT) == 2 && (MMIO32(HW_PHY_RX_STATUS_8837B0) & 2))
             rx_flow_measure_snr_select_best();
-        uc_mac_sel(0xa000);
+        uc_mac_sel(MAC_SEL_PHY_SIGNALS);
         uc_nop3();
         uc_mac_cmd(mac_evt_en_shadow | 0x27007300);
         uc_mac_cmd(0x2004000);
@@ -653,7 +657,7 @@ noframe:                                        /* 0x931244 */
         if (f & 0x7e0) {
             rx_funcs_handle_ppdu_report();
         } else if (f & 2) {
-            uc_mac_sel(0x3000);
+            uc_mac_sel(MAC_SEL_REM_TIME);
             uc_nop3();
             rx_flow_step(ctx, mac_status_sel() & MAC_REM_TIME);
         } else {
@@ -784,10 +788,10 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
             case RX_MEAS_PLCP: rx_meas_finish_with_8830ec(m); break;
             case RX_MEAS_PKT: rx_meas_capture_frame(m, 0); break;
             case 5:
-                uc_mac_sel(0x5000);
+                uc_mac_sel(MAC_SEL_TSF_LOW);
                 uc_nop3();
                 m->snap_sel5 = mac_status_sel();
-                uc_mac_sel(0x6000);
+                uc_mac_sel(MAC_SEL_TSF_HIGH);
                 uc_nop3();
                 m->snap_sel6 = mac_status_sel();
                 m->state = 1;
@@ -811,10 +815,18 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
             u32 r3 = rx_buf_bcn_dmg_params;
             u32 r4 = (ss->bi_ctrl[1] >> 2) & 0xf;
             ss->bss_type = r3 & 3;
-            if (r4 < 4) {                       /* поле FSS < aSSFramesPerSlot (abft.h): в этом A-BFT не участвуем */
+            /* FSS < aSSFramesPerSlot (abft.h) или IsResponderTXSS = 0: в этом A-BFT не участвуем. RXSS ответчика
+             * (10.42.2.3.3) — все SSW одним выбранным сектором; мы делаем только TXSS — исправлено (vendor: шёл
+             * развёрткой секторов и в RXSS-A-BFT). */
+            if (r4 < 4) {
                 ss->abft_here = 0;
                 ss->abft_go = 0;
                 goto chk;
+            }
+            if (!(ss->bi_ctrl[1] & BCN_BIC1_IS_RESP_TXSS)) {
+                ss->abft_here = 0;              /* маяк свой: BSSID записать (ниже), A-BFT пропустить */
+                ss->abft_go = 0;
+                goto bssid;
             }
             /* 0x9321e0 */
             ss->abft_here = 1;
@@ -842,15 +854,13 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
                 ss->abft_skip_type += 1;
                 ss->abft_go = 0;
             } else {
-                u16 c = abft_cfg.relax_cnt;
-                if ((s32)c >= 1 && !((ss->bi_ctrl[0] & 3u) == 3u && abft_discovery_addressed_call())) {   /* 10.42.5.2 */
-                    abft_cfg.relax_cnt = c - 1;
+                if (!((ss->bi_ctrl[0] & 3u) == 3u && abft_discovery_addressed_call()) && abft_relax_skip()) {   /* 10.42.5.2 */
                     ss->abft_skip_relax += 1;
                     ss->abft_go = 0;
                 } else {
                     ss->abft_try += 1;
                     ss->abft_go = 1;
-                    uc_mac_sel(0xd000);
+                    uc_mac_sel(MAC_SEL_BF_METRIC);
                     uc_nop3();
                     u32 r11 = mac_status_sel();
                     local = r11;
@@ -866,10 +876,12 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
             ss->abft_go = 0;
         }
         /* 0x932144 */
+bssid: {
         const struct ieee80211_hdr *bh = (const struct ieee80211_hdr *)f;   /* у маяка addr1 = BSSID */
         ss->bssid[0] = bh->addr1.h[0];
         ss->bssid[1] = bh->addr1.h[1];
         ss->bssid[2] = bh->addr1.h[2];
+        }
 chk:                                            /* 0x93215c */
         if (r2 != 0 || ss->abft_go != 0) {
             u32 r3 = txrx_state1 & 8;
@@ -921,11 +933,11 @@ chk:                                            /* 0x93215c */
         rxf.flags = (r1 & ~0x10u) | ((r0 & 1) << 4);
     }
     uc_nop3();
-    uc_mac_sel(0xb000);
+    uc_mac_sel(MAC_SEL_PLCP_RX);
     uc_nop3();
     if (((mac_rx_rep2() & MAC_RX_REP2_CF_END) && rx_buf_duration != 0) ||
         (mac_rx_rep2() & MAC_RX_REP2_RTS) || (mac_status_sel() & MAC_PLCP_SIFS_RESP))
-        rx_switch_to_rx_mode();
+        rx_end_switch_to_tx();
     if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) {
         *sta = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
     } else if (mac_rx_rep1() & MAC_RX_REP1_BEACON) {
@@ -1397,7 +1409,7 @@ u32 rx_funcs_rx_flow(void)
  * (rx_txop_continue в rx_flow_run) — следующий кадр через SIFS 3 мкс (802.11-2020 10.23.2.8,
  * 10.29.3, 10.3.2.3.3). Вся функция на этом пути: ~330 инструкций кода (998 Б против 1080 Б у
  * vendor 0x931acc), основной проход оценочно 100–150 + rx_dispatch_by_g_8005f8 (с возможным
- * ожиданием BAP) + rx_switch_to_rx_mode; запас общий с rx_txop_continue (ХРУПКО: +4 nop там
+ * ожиданием BAP) + rx_end_switch_to_tx; запас общий с rx_txop_continue (ХРУПКО: +4 nop там
  * уже ломают RD-ветку) — единицы. */
 void rx_flow_step(struct tx_ctx_s *a, u32 b)
 {
@@ -1441,14 +1453,14 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
                 else if (r10v == 2)
                     rx_meas_capture_frame(&rx_meas, 0);
                 else if (r10v == 4) {
-                    u32 g = mac_sel_shadow & 0xffff0fff;
-                    mac_sel_shadow = g | 0x5000;
-                    uc_mac_cmd(g | 0x1d005000);
+                    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
+                    mac_sel_shadow = g | MAC_SEL_TSF_LOW;
+                    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_LOW);
                     arc_nops_nop(2);
                     rx_meas.snap_sel5 = mac_status_sel();
-                    g = mac_sel_shadow & 0xffff0fff;
-                    mac_sel_shadow = g | 0x6000;
-                    uc_mac_cmd(g | 0x1d006000);
+                    g = mac_sel_shadow & ~MAC_SEL_FIELD;
+                    mac_sel_shadow = g | MAC_SEL_TSF_HIGH;
+                    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_HIGH);
                     arc_nops_nop(2);
                     rx_meas.snap_sel6 = mac_status_sel();
                     rx_meas.state = 1;
@@ -1459,7 +1471,7 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
     }
 
     if (!(mac_rx_rep3() & MAC_RX_REP3_RD))
-        rx_switch_to_rx_mode();
+        rx_end_switch_to_tx();
 
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
@@ -1554,8 +1566,8 @@ void rx_flow_step(struct tx_ctx_s *a, u32 b)
 /* СРОК: вызывается из rx_flow_handle_frame до запроса ответа в MTP — вся функция в сроке SIFS
  * 3 мкс (802.11-2020 10.3.2.3.3): QoS Data/BAR → Ack/BlockAck (10.3.2.11, 10.25.3), RTS → DMG CTS /
  * DMG DTS (10.3.2.9, 10.39.6.6.2), CF-End (10.39.8.1), Grant → Grant Ack (10.39.4). Размер 1220 Б
- * против 1468 Б у vendor 0x932e40; ветка RTS — два чтения TSF (здесь и в grant_detect_step,
- * по ~9 инструкций с командой 0x4d и nop); ветка данных — ожидание MAC_BAP_RX_UPDATE без ограничения (ниже).
+ * против 1468 Б у vendor 0x932e40; ветка RTS — одно чтение TSF (~9 инструкций с командой 0x4d
+ * и nop; проверка NAV — grant_detect_step_at по нему же); ветка данных — ожидание MAC_BAP_RX_UPDATE без ограничения (ниже).
  * Запас общий с rx_frame_tx_resp_seq: единицы. Логи uc_log_emit* — только на ветках без ответа. */
 UC_HOT
 u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out)
@@ -1680,7 +1692,7 @@ ack_cts:   /* L_9331d0 */
         /* NAV занят. 10.3.2.9: если NAV поставил кадр самого отправителя RTS — отвечать (DMG CTS); иначе не
          * отвечать. исправлено (vendor): отвечал DMG DTS — по 10.39.6.6 он только для назначения SP (в open SP
          * нет), а поле NAV-SA заполнял MAC собственным адресом (заголовок 0x10 = FC, Duration, RA, TA). */
-        if (__builtin_expect(grant_detect_step(((u8 *)&ifs.sifs)[1], 0, 0) == 0, 0) &&
+        if (__builtin_expect(grant_detect_step_at(tsf + ((u8 *)&ifs.sifs)[1], 0, 0) == 0, 0) &&
             !(rx_nav.nav_ta[0] == rx_buf_ta[0] && rx_nav.nav_ta[1] == rx_buf_ta[1] && rx_nav.nav_ta[2] == rx_buf_ta[2])) {
             txr.rts_nav_busy += 1;
             return 0;
@@ -1738,7 +1750,7 @@ not_grant:   /* L_93339c */
  *    SSW-Feedback через MBIFS 9 мкс (10.42.2.4, 10.42.6.2, 10.3.2.3.10); до них — запись IFS = MBIFS
  *    (HW_MAC_IFS_SIFS), phy_params_snapshot (~90), sta_set_tx_sector (~38). Путь — сотни
  *    инструкций при сроке ~1485 тактов; запас оценочно десятки–сотни;
- *  - фаза 0x800000: SSW-Feedback → SSW-Ack через MBIFS (10.42.2.5) — rx_switch_to_rx_mode и
+ *  - фаза 0x800000: SSW-Feedback → SSW-Ack через MBIFS (10.42.2.5) — rx_end_switch_to_tx и
  *    sta_set_tx_sector. Срыв — инициатор не получает FB/ACK, повтор SLS. */
 void rx_funcs_handle_ppdu_report(void)
 {
@@ -1777,7 +1789,7 @@ void rx_funcs_handle_ppdu_report(void)
 
     if ((txrx_state2 & (1u << 21)) && (mac_rx_rep2() & MAC_RX_REP2_SSW)) {
         if (mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN)
-            rx_switch_to_rx_mode();
+            rx_end_switch_to_tx();
     } else if (mac_rx_rep1() & MAC_RX_REP1_SS) {
         if (mac_rx_rep2() & MAC_RX_REP2_SSW)
             *flags |= 1;
@@ -1796,7 +1808,7 @@ void rx_funcs_handle_ppdu_report(void)
         if (!(mac_rx_rep2() & MAC_RX_REP2_SSW_FB))
             goto out;
         rx_parse_ssw_field((u32)&sec[0], (u32)&sec[1], (u32)&lvl[0]);
-        rx_switch_to_rx_mode();
+        rx_end_switch_to_tx();
         rx_funcs_record_level_8020f8_8020fc((u32)(s32)lvl[0]);
         sta_set_tx_sector(*sta, sec[0], sec[1], 1);
         *flags |= (1u << 2);
@@ -1867,12 +1879,12 @@ void rx_funcs_handle_ppdu_report(void)
     case 0x4000000:
         if (!(*flags & (1u << 5)))
             goto out;
-        mac_set_mode_a000(*flags);
+        mac_switch_rx_to_tx(*flags);
         return;
     case 0x20000000:
         if (!(*flags & (1u << 10)))
             goto out;
-        mac_set_mode_a000(*flags);
+        mac_switch_rx_to_tx(*flags);
         return;
     case 0x10000000: {
         u32 fl = *flags;
@@ -1880,7 +1892,7 @@ void rx_funcs_handle_ppdu_report(void)
             goto out;
         if (!(fl & (1u << 2)))
             return;
-        mac_set_mode_a000(fl);
+        mac_switch_rx_to_tx(fl);
         return;
     }
     default:
@@ -2013,9 +2025,9 @@ u32 rx_dispatch_by_g_8005f8(void)
 void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c)
 {
     /* 6.2 asm 0x9336d8. */
-    u32 r1 = mac_sel_shadow & 0xffff0fff;
+    u32 r1 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r1;
-    uc_mac_cmd(r1 | 0x1d000000);
+    uc_mac_cmd(r1 | MAC_CMD_STATUS_SEL);
     arc_nops(3);
     uc_mac_cmd((mac_status_sel() & MAC_BIFS_IDLE_DETECT) | 0xcac000);
     uc_mac_cmd(arc_lr(uc_timer[1].count) & 0xffffff);
@@ -2300,6 +2312,10 @@ void rx_handle_status_flags(struct tx_ctx_s *a)
 void rx_nav_set_from_duration(u32 a, u32 b, u32 c, u32 d)
 {
     /* 6.2 asm 0x92dd30. */
+    /* исправлено (vendor): Duration/ID ≥ 32768 — не длительность (Table 9-9; у DMG-кадров толкования нет, 10.28.3) —
+     * NAV не ставится; vendor ставил (усекая до max_us). */
+    if (c & 0x8000u)
+        return;
     u32 r0 = (u32)(u16)MMIO32(HW_MAC_NAV_HW_VALUE);
     u32 r1 = rx_nav.max_us;
     if (r1 < r0)                                /* cmp_s r1,r0; mov.cs r0,r1 — min */
@@ -2322,17 +2338,21 @@ void rx_nav_set_from_duration(u32 a, u32 b, u32 c, u32 d)
         return;
     {
         u32 r2v = rx_nav.end_tsf;
-        if (flag == 0 && (r1v - r2v) & (1u << 31))
-            return;
         u32 r3 = rx_nav.flags;
         u32 r4 = r3;
+        /* Новый конец раньше текущего — NAV не укорачивать (10.3.2.4), но только пока NAV активен (б0): истёкший NAV
+         * равен 0, любой Duration его ставит. исправлено (vendor): сравнивал и с давно истёкшим концом — через 2^31 мкс
+         * (~36 мин) тишины знак разности переворачивался и NAV не ставился следующие ~36 мин. */
+        if (flag == 0 && (r3 & 1u) && (r1v - r2v) & (1u << 31))
+            return;
         if (r3 & 1u) {
             u32 diff = r1v - (r2v + 0x32);
             if (!(diff & (1u << 31)) && flag == 0)
                 nav_late_cnt = nav_late_cnt + 1;
         }
         u32 delta = r1v - r2v;
-        r13 = ((s32)delta < (s32)r13) ? delta : r13;   /* min — знаковый */
+        if (r3 & 1u)                                       /* учёт времени NAV — только продление активного */
+            r13 = ((s32)delta < (s32)r13) ? delta : r13;   /* min — знаковый */
         rx_nav.end_tsf = r1v;
         rx_nav.flags = r4 | 1;
         u32 st = bi_state_from_g800600();
@@ -2365,9 +2385,9 @@ static u32 rx_meas_read_sample(u32 mp)
 {
     if (mp != 0)
         return *(u32 *)mp;
-    u32 g = mac_sel_shadow & 0xffff0fff;
+    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | (1u << 12) | (1u << 14) | (1u << 15);
-    uc_mac_cmd(g | 0x1d00d000);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_BF_METRIC);
     arc_nops(3);
     u32 r0 = MAC_BF_METRIC_OF(mac_status_sel());
     return (r0 > 0x3ff) ? (r0 - 0x800) : r0;
@@ -2376,14 +2396,14 @@ static u32 rx_meas_read_sample(u32 mp)
 /* Общий хвост захвата: снимок r40 по селекторам 0x5000/0x6000, запрос снят, отчёт fw. */
 static inline __attribute__((always_inline)) void rx_meas_snap_done(struct rx_meas_ctx *m)
 {
-    u32 g = mac_sel_shadow & 0xffff0fff;
+    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | (1u << 12) | (1u << 14);
-    uc_mac_cmd(g | 0x1d005000);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_LOW);
     arc_nops(3);
     m->snap_sel5 = mac_status_sel();
-    g = mac_sel_shadow & 0xffff0fff;
+    g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | (1u << 13) | (1u << 14);
-    uc_mac_cmd(g | 0x1d006000);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_HIGH);
     arc_nops(3);
     m->snap_sel6 = mac_status_sel();
     m->state = 1;
@@ -2408,14 +2428,14 @@ void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp)
     if (s1 <= 0x7fff)
         v1 = s1;
     m->pkt.r8837dc = v1;
-    u32 g = mac_sel_shadow & 0xffff0fff;
+    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | (1u << 12) | (1u << 14);
-    uc_mac_cmd(g | 0x1d005000);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_LOW);
     arc_nops(3);
     m->pkt.sel5 = mac_status_sel();
-    g = mac_sel_shadow & 0xffff0fff;
+    g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | (1u << 13) | (1u << 14);
-    uc_mac_cmd(g | 0x1d006000);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_HIGH);
     arc_nops(3);
     m->pkt.sel6 = mac_status_sel();
     u32 n;

@@ -15,7 +15,7 @@ from test_uc_beacon_tx import CLK, SBIFS, SSW_LEN, ctrl_txtime, ss_slot_time, ss
 
 REC = 0x803e80                      # sls_peer_rec ответа (bi_ctx.rec), 0x18 Б
 SSW_TPL = 0x802b4c                  # шаблон SSW: +0 FC, +4 RA, +0x13 SSW Feedback (3 Б)
-RESP_STUBS = ['mac_set_mode_a000', 'uc_spin_until_event4', 'abft_arm_response_window', 'l1_task_dispatch',
+RESP_STUBS = ['mac_switch_rx_to_tx', 'uc_spin_until_event4', 'abft_arm_response_window', 'l1_task_dispatch',
               'abft_send_ssw_feedback', 'mac_program_tx_common', 'mac_evt_enable_bit_sync_b', 'mac_evt_enable_bit_sync',
               'tx_program_vector_rf', 'mac_set_rf_chain_state_with_sta_sector', 'uc_wait_event1_or_event4',
               'uc_evt_build_and_post_report', 'uc_assert']
@@ -103,14 +103,12 @@ def test_feedback_then_next_abfts(sta, disc):
     используются; без Discovery Mode такого правила нет — станция может отвечать в следующем же A-BFT."""
     beacon_then_respond(sta, discovery=disc)
     go = []
-    for _ in range(3):
+    for bi in range(3):                         # следующие BI (TSF + 102,4 мс): каждый — свой BTI
         zero(sta, BCN_RX + 0x1e, 2)
-        go.append(bti_path(sta, dmg_beacon(bic_encode(discovery=disc)))['abft_go'])
+        go.append(bti_path(sta, dmg_beacon(bic_encode(discovery=disc)), tsf=1_000_000 + (bi + 1) * 102_400)['abft_go'])
     assert go == ([0, 0, 1] if disc else [1, 1, 1])
 
 
-@pytest.mark.xfail(strict=True, reason='10.42.2.3.3: в A-BFT с IsResponderTXSS = 0 (responder RXSS) станция шлёт SSW '
-                                       'через разные секторы (TXSS); RXSS — все SSW через один выбранный сектор')
 @pytest.mark.parametrize('fss', [4, 15])
 def test_rxss_abft_single_sector(sta, fss):
     """10.42.5.2: IsResponderTXSS = 0 — A-BFT для responder RXSS; 10.42.2.3.3: «the responder shall transmit the number

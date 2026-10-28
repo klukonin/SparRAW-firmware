@@ -657,9 +657,9 @@ void uc_sysassert_scan_stack(u32 a)
 /* idle_hist (0x926478). */
 void uc_sysassert_idle_hist(void)
 {
-    u32 r8 = mac_sel_shadow & 0xffff0fff;
+    u32 r8 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r8;
-    uc_mac_cmd(r8 | 0x1d000000);
+    uc_mac_cmd(r8 | MAC_CMD_STATUS_SEL);
     arc_nops(3);
 
     u16 *r15 = sysassert_idle_sm_hist;
@@ -690,6 +690,27 @@ void uc_sysassert_idle_hist(void)
     uc_log_emit1(0x20, 0x10005a8, r13[2]);
     uc_log_emit1(0x20, 0x10005cc, r13[3]);
 }
+
+/* Обёртка uc_assert для UC_ASSERT_LEAF (include/arc.h): r0 = caller, r1 = code (как у uc_assert);
+ * сохраняет r2..r12 и blink — вставка сохраняет r0, r1 и свой blink сама. Только холодные ветки. */
+__asm__(
+    "\t.pushsection .text.uc_assert_keep,\"ax\",@progbits\n"
+    "\t.global uc_assert_keep\n"
+    "\t.type uc_assert_keep,@function\n"
+    "\t.p2align 2\n"
+    "uc_assert_keep:\n"
+    "\tsub_s sp,sp,48\n"
+    "\tst r2,[sp,0]\n\tst r3,[sp,4]\n\tst r4,[sp,8]\n\tst r5,[sp,12]\n"
+    "\tst r6,[sp,16]\n\tst r7,[sp,20]\n\tst r8,[sp,24]\n\tst r9,[sp,28]\n"
+    "\tst r10,[sp,32]\n\tst r11,[sp,36]\n\tst r12,[sp,40]\n\tst blink,[sp,44]\n"
+    "\tbl uc_assert\n"
+    "\tld r2,[sp,0]\n\tld r3,[sp,4]\n\tld r4,[sp,8]\n\tld r5,[sp,12]\n"
+    "\tld r6,[sp,16]\n\tld r7,[sp,20]\n\tld r8,[sp,24]\n\tld r9,[sp,28]\n"
+    "\tld r10,[sp,32]\n\tld r11,[sp,36]\n\tld r12,[sp,40]\n\tld blink,[sp,44]\n"
+    "\tj_s.d [blink]\n"
+    "\tadd_s sp,sp,48\n"
+    "\t.size uc_assert_keep,.-uc_assert_keep\n"
+    "\t.popsection\n");
 
 /* Главный assert uCode (0x926618).
  * НЕ vendor: хосту (fwsh_diag.uc_assert_caller, драйвер печатает при «FW error») — точный адрес вызова

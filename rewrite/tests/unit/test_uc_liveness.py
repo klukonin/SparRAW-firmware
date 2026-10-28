@@ -142,8 +142,10 @@ def test_brp_setup_silent_responder_gives_up(uc):
     assert [c[0] for c in uc.calls].count('brp_init_tx_request') == 3
     assert uc.r16(BRP_INIT_REQ_NORESP) == 1
     per = [v for _, v in gp.arms[0]]
-    assert per and all(0 < v <= BRPIFS + RX_START_CTRL for v in per), per
-    assert uc.t1() - t0 <= 3 * (BRPIFS + RX_START_CTRL) + 3 * PATH
+    # 10.42.6.4 b): без ответа за BRPIFS + aSlotTime транзакция кончена; + aRxPHYStartDelay до обнаружения ответа
+    lim = BRPIFS + SLOT + RX_START_CTRL
+    assert per and all(BRPIFS + RX_START_CTRL <= v <= lim for v in per), per   # ответ в пределах BRPIFS не теряется
+    assert uc.t1() - t0 <= 3 * lim + 3 * PATH
 
 
 # ---------------------------------------------------------------------------------------------------------------

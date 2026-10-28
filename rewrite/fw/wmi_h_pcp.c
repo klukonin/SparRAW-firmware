@@ -119,12 +119,20 @@ void wmi_bcast_vring_cfg(const struct wmi_bcast_vring_cfg_cmd *cmd, u32 mid)
         return;
     }
     fw_log_emit1(0x2b, 0x100db88, vr);
-    ctx = vring_ctx_alloc();
-    mpdu = cmd->vring_cfg.tx_sw_ring.max_mpdu_size;
-    fw_log_emit1(0x2b, 0x100db9c, mpdu);
     e = mid_list_by_mid_fw(mid);
     if (e == 0)
         fw_sysassert_fatal(RA(), 0x5bu << 6);       /* 0x16c0 */
+    /* кольцо уже занято (vendor: ассерт 0x1287) или BSS ещё не поднят — тип сети записи не задан (vendor: ассерт
+     * 0x11f5 в mid_type_of) — отказ */
+    u32 nt = e->network_type;                       /* типы, которые знает mid_type_of (ADHOC* — для pro) */
+    if (stream_by_vr[vr] != 0 || !(wmi_network_type_ok(nt) || nt == 0x02 || nt == 0x04)) {
+        wmi_reject_param(0x822, stream_by_vr[vr] != 0 ? vr : e->network_type, stream_by_vr[vr] != 0 ? 0x10u : 0u);
+        l2mgr_send_vring_cfg_done(vr, 0, 1, mid);
+        return;
+    }
+    ctx = vring_ctx_alloc();
+    mpdu = cmd->vring_cfg.tx_sw_ring.max_mpdu_size;
+    fw_log_emit1(0x2b, 0x100db9c, mpdu);
     init_bcast_queue(mpdu, vr);
     vring_configure_tx(ctx, vr, 0, 0, 0, cmd->vring_cfg.encap_trans_type, 0, 0, 1, (u8)mid_type_of(e),
                        mid, 1);
@@ -337,22 +345,28 @@ static void find_mngr_session_start(struct find_mngr *x)
     find_mng_listen(x);
 }
 
-/* Проверки входа в discovery (start_find_session / find_mngr__enter_*): идёт скан
- * (scan_mngr.active) — ассерт c1, BSS записи mid не в состоянии 1 — ассерт c2;
- * vendor после обоих идёт дальше. */
-static void find_enter_checks(struct mid_disc *o, u32 c1, u32 c2)
+/* Проверки входа в discovery (start_find_session / find_mngr__enter_*): идёт скан (scan_mngr.active) или BSS
+ * записи mid не в состоянии 1 (подключены / PCP) — отказ команды хоста cmd (0 — нельзя). исправлено (vendor:
+ * ассерты c1/c2 — 0x1235..0x123a, например WMI_DISCOVERY_START при подключённой STA). */
+static u32 find_enter_ok(struct mid_disc *o, u32 cmd)
 {
-    if (o->scan->active != 0)
-        fw_sysassert_fatal(RA(), c1);
-    if (o->mid->bss.state != 1)
-        fw_sysassert_fatal(RA(), c2);
+    if (o->scan->active != 0) {
+        wmi_reject_param(cmd, 1, 0);
+        return 0;
+    }
+    if (o->mid->bss.state != 1) {
+        wmi_reject_param(cmd, o->mid->bss.state, 0);
+        return 0;
+    }
+    return 1;
 }
 
 /* start_find_session (0x8f9628, 72 Б). */
 static void start_find_session(struct mid_disc *o)
 {
     fw_log_emit0(0x2c, 0x1016fec);
-    find_enter_checks(o, 0x1235, 0x1236);
+    if (!find_enter_ok(o, 0x916))
+        return;                                     /* DISCOVERY_STARTED не шлётся (у события нет статуса) */
     find_mngr_session_start(&o->find);
 }
 
@@ -360,7 +374,10 @@ static void start_find_session(struct mid_disc *o)
 static void find_mngr_enter_listen(struct mid_disc *o)
 {
     fw_log_emit0(0x2c, 0x1016fd4);
-    find_enter_checks(o, 0x1237, 0x1238);
+    if (!find_enter_ok(o, 0x914)) {
+        l2mgr_send_listen_started(1, o->mid->id);
+        return;
+    }
     find_mng_listen(&o->find);
 }
 
@@ -368,7 +385,10 @@ static void find_mngr_enter_listen(struct mid_disc *o)
 static void find_mngr_enter_search(struct mid_disc *o)
 {
     fw_log_emit0(0x2c, 0x1016fe0);
-    find_enter_checks(o, 0x1239, 0x123a);
+    if (!find_enter_ok(o, 0x915)) {
+        l2mgr_send_search_started(1, o->mid->id);
+        return;
+    }
     find_mng_search(&o->find);
 }
 
@@ -447,10 +467,11 @@ static void l2mgr_send_p2p_cfg_done(u32 status, u32 mid)
 static void find_mngr_cfg_offload(struct find_mngr *x, struct mid *e, u32 quiet, u32 ch, u32 bi,
                                   u32 mode)
 {
-    if (x->active != 0)
-        fw_sysassert_fatal(RA(), 0x1242);
-    if (bi == 0)
-        fw_sysassert_fatal(RA(), 0x1243);
+    if (x->active != 0 || bi == 0) {               /* vendor: ассерты 0x1242 / 0x1243 */
+        wmi_reject_param(0x910, bi == 0 ? 0u : 1u, bi == 0 ? 2u : 0u);
+        l2mgr_send_p2p_cfg_done(1, e->id);
+        return;
+    }
     x->mid = e;
     x->quiet = quiet;
     x->channel = (u8)ch;
@@ -555,8 +576,9 @@ static u32 l2mgr_pcp_start_flow(struct mid *e, u32 nettype, u32 abft, u32 hidden
         fw_log_emit0(0xb, 0x100cd48);
         return 1;
     }
-    if (nettype == 0x02 || nettype == 0x04) {       /* ADHOC* (IBSS) — только SparRAW-pro: отказ */
+    if (!wmi_network_type_ok(nettype)) {            /* ADHOC* (IBSS) — только SparRAW-pro; прочее — у vendor ассерт 0x11ec */
         fw_log_emit1(0xb, 0x100cd24, nettype);      /* «unknown network type» */
+        wmi_reject_param(0xf, nettype, 0xc);
         return 1;
     }
     mid_log_network_type(e, nettype);
@@ -676,6 +698,11 @@ void wmi_pcp_start(const struct wmi_pcp_start_cmd *cmd, u32 mid)
     b.is_go = cmd->is_go;
     b.abft_len = cmd->abft_len;
     b.reserved = 0;
+    if (cmd->channel >= 4) {                        /* как WMI_SET_PCP_CHANNEL; vendor не проверял (на чипе — ассерт 0x119b) */
+        wmi_reject_param(0x918, cmd->channel, 0xd);
+        send_pcp_start_status_evt(1, mid);
+        return;
+    }
     dashboard.pcp_channel = cmd->channel;
     dashboard.cfg.ap_sme_offload_mode = cmd->ap_sme_offload_mode;
     wmi_bcon_ctrl(&b, mid);

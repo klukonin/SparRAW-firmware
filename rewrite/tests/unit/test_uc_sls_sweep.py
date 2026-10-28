@@ -274,8 +274,6 @@ def test_iss_feedback_field_total_sectors(uc, n, m):
         assert (fb['res1'], fb['poll'], fb['res2']) == (0, 0, 0)
 
 
-@pytest.mark.xfail(strict=True, reason='9.5.3: Total Sectors in ISS берётся из fwsh_total_sectors (Capability), '
-                   'а не из числа секторов этой ISS (txss_ss[].n_frames) — uc/txss.c:538')
 @pytest.mark.parametrize('n,cap', [(16, 64), (8, 32), (64, 32)])
 def test_iss_total_sectors_matches_actual_sweep(uc, n, cap):
     """9.5.3: «The Total Sectors in ISS subfield indicates the total number of sectors that the initiator uses in the
@@ -332,8 +330,6 @@ def test_rss_snr_report_in_range(uc, snr_db):
     assert snr_report_db(fb_sel(fr[0]['fifo'][10:13])['snr_q']) == snr_db
 
 
-@pytest.mark.xfail(strict=True, reason='9.5.3: SNR Report не насыщается — (u8)((snr_db − 19) << 2) переполняется '
-                   'вне −13…50,75 дБ и сообщает SNR другого знака (uc/txss.c:535, тот же код в txss.c:772, tail.c:3034)')
 @pytest.mark.parametrize('snr_db', [51, 63, -14, -40])
 def test_rss_snr_report_out_of_range_saturates(uc, snr_db):
     """9.5.3: «encoded as 8-bit 2s complement value of 4×(SNR−19) … This covers from –13 dB to 50.75 dB». SNR вне

@@ -136,9 +136,9 @@ void l1_snapshot_bi_counter(void)
     u64 delta = bi_tsf_delta64(bi_win.bti_tsf[0], bi_win.bti_tsf[1]);
     u8 idx = mac_mon_slot_idx;
     mac_mon_slot[idx].bti_duration = (u32)delta;
-    u32 r4 = mac_sel_shadow & 0xffff0fff;
+    u32 r4 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r4 | (1u << 14);
-    uc_mac_cmd(r4 | 0x1d004000);
+    uc_mac_cmd(r4 | MAC_CMD_STATUS_SEL | MAC_SEL_BI_COUNTER);
     arc_nops(3);
     bi_pos_snap = mac_status_sel() & MAC_BI_COUNTER;
 }

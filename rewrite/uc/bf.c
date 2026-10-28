@@ -43,9 +43,9 @@ void rs_abort(u32 a)
 void bi_tx_check_idle_and_start_uc(u32 a)
 {
     /* 0x93696c: ждать устойчивого r40; если хоть один полубайт цепей = 0 — 0x1f000601. */
-    u32 r0 = mac_sel_shadow & 0xffff0fff;
+    u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0;
-    uc_mac_cmd(r0 | 0x1d000000);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL);
     arc_nops(3);
     u32 r13;
     do {
@@ -294,7 +294,7 @@ void rx_mode_configure(u32 a, u32 b)
 
         /* ---- L_92f618 ---- */
         if (r16 == 2)
-            (void)mac_set_mode_a000(r0);
+            (void)mac_switch_rx_to_tx(r0);
 
         if (r18 == 0) {
             /* L_92f624 */

@@ -25,7 +25,7 @@ BCAST = b'\xff' * 6
 MCAST = bytes.fromhex('01005e000001')
 ROLES = {'sta': (0, 1, 1), 'ap': (1, 2, 3), 'pcp': (1, 3, 2)}     # (uc_role_ap, режим cmd 0x1b, роль табл. 9-69)
 
-RX_STUBS = ['rx_mac_prepare', 'rx_update_nav_from_frame', 'uc_wait_event_busy', 'rx_switch_to_rx_mode',
+RX_STUBS = ['rx_mac_prepare', 'rx_update_nav_from_frame', 'uc_wait_event_busy', 'rx_end_switch_to_tx',
             'sta_tbl_find_by_mac', 'uc_log_emit_snapshot', 'uc_assert']
 BTI_STUBS = ['uc_read_tsf_lo', 'uc_wait_event_busy', 'uc_log_emit_snapshot', 'uc_assert']
 BTI_TRUE = ['uc_bi_counter_in_window', 'uc_read_bi_sync', 'bti_worker_bi2_step', 'abft_sta_arm_gp0']
@@ -90,18 +90,19 @@ def state(uc):
                 bic=int.from_bytes(uc.rbytes(BCN_RX + 2, 6), 'little'), relax=uc.r16(ABFT_CFG))
 
 
-def rx_path(uc, frame, my_bss=0):
+def rx_path(uc, frame, my_bss=0, tsf=0):
     uc.wbytes(RX_BUF, frame)
-    uc.ext.update({42: 1 << 16, 36: 1 << 7, 38: my_bss & 1, 37: 0})
+    uc.ext.update({42: 1 << 16, 36: 1 << 7, 38: my_bss & 1, 37: 0, 55: tsf})   # r55 — TSF (uc_read_tsf_lo)
     uc.call('rx_flow_handle_frame', 0x803e00, stub=stubs(uc, RX_STUBS))
     return state(uc)
 
 
-def bti_path(uc, frame, my_bss=0):
+def bti_path(uc, frame, my_bss=0, tsf=0):
     uc.wbytes(RX_BUF, frame)
     uc.ext.update({42: 1 << 12, 36: 1 << 7, 38: my_bss & 1})
     zero(uc, 0x803f00, 0x40)
     s = stubs(uc, BTI_STUBS)
+    s['uc_read_tsf_lo'] = tsf
     s.update({n: 1 for n in BTI_TRUE})
     uc.call('bti_bi2_event_step', 0x803f00, stub=s)
     return state(uc)
@@ -235,11 +236,13 @@ def run_btis(uc, path, n_btis, beacons_per_bti, bic, my_bss=0, **kw):
     """BTI подряд; в каждом маяки CDOWN k−1..0. Возврат — передаёт ли станция в A-BFT каждого BI. Как только решено
     передавать, остаток BTI ведёт путь BTI (bti_bi2_track_best_metric), решение не пересматривается."""
     out = []
-    for _ in range(n_btis):
+    for bi in range(n_btis):
         go = 0
         for cd in range(beacons_per_bti - 1, -1, -1):
             zero(uc, BCN_RX + 0x1e, 2)
-            go = path(uc, dmg_beacon(bic, cdown=cd, **kw), my_bss)['abft_go']
+            # время: BI 102,4 мс, маяки через ~16 мкс (TXTIME + SBIFS); Duration маяка — до конца BTI (9.3.4.2)
+            tsf = 1_000_000 + bi * 102_400 + (beacons_per_bti - 1 - cd) * 16
+            go = path(uc, dmg_beacon(bic, cdown=cd, duration=cd * 16 + 15, **kw), my_bss, tsf=tsf)['abft_go']
             if go or path is bti_path:          # путь BTI решает по первому маяку BTI
                 break
         out.append(go)
@@ -253,8 +256,6 @@ def test_relax_after_discovery_feedback_bti_path(sta):
     assert run_btis(sta, bti_path, 3, 16, bic_encode(discovery=1)) == [0, 0, 1]
 
 
-@pytest.mark.xfail(strict=True, reason='10.42.5.2 aMaxABFTAccessPeriod: путь приёма (rx_flow_handle_frame) считает '
-                                       'пропуск по маякам, а не по A-BFT — 2 маяка одного BTI исчерпывают пропуск')
 def test_relax_after_discovery_feedback_rx_path(sta):
     """То же для пути приёма (станция без синхронизации BI, my_bss = 0): развёртка из 16 маяков в BTI. «should not
     attempt to access the following aMaxABFTAccessPeriod A-BFT allocations» — пропускаются A-BFT (по одному на BI),
@@ -269,3 +270,12 @@ def test_relax_bypassed_when_addressed(sta, path):
     sta.w16(ABFT_CFG, 2)
     s = path(sta, dmg_beacon(bic_encode(cc=1, discovery=1), cc_field=OWN))
     assert s['abft_go'] == 1
+
+
+@pytest.mark.parametrize('resp_txss', [1, 0])
+def test_beacon_bssid_recorded_whatever_abft(sta, path, resp_txss):
+    """Решение не участвовать в A-BFT (IsResponderTXSS = 0, 10.42.2.3.3) не отменяет учёт самого маяка: BSSID
+    (9.3.4.2) записывается так же — по нему fw узнаёт маяк пира после ассоциации (иначе «link up: no beacon»)."""
+    s = path(sta, dmg_beacon(bic_encode(fss=8, is_resp_txss=resp_txss), bssid=AP))
+    assert s['abft_go'] == resp_txss
+    assert sta.rbytes(BCN_RX + 0x14, 6) == AP

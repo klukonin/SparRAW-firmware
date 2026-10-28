@@ -184,7 +184,7 @@ UCDATA(801474) u32 rx_nav_ev_mask[2] = { 0xffffffff, 0xffffffff };
 /* Разрешение NAV-флагов (rx_nav_arm_flag_if_enabled). */
 UCDATA(801482) u16 rx_nav_enable = 0x1;
 /* Предел/запас NAV, мкс (rx_nav_set_from_duration, bi_remaining_time_us). */
-UCDATA(801484) u16 rx_nav_max_us = 0x1388;
+UCDATA(801484) u16 rx_nav_max_us = 0x7fff;   /* исправлено (vendor 5000): Duration NAV — до 32767 мкс (Table 9-9) */
 /* Смысл не установлен, статически никто не читает (+8 = 0x801494 пишет ucode_cmd_selective_neighbor_cfg). */
 UCDATA(80148c) u32 g80148c = 0x1388;
 /* Смысл не установлен, статически никто не читает. */

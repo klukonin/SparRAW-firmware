@@ -295,9 +295,9 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
  * слота — коллизия с соседом, отсчитавшим отсрочку; кадр/TXOP теряется, растёт CW. */
 void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 {
-    u32 r0 = mac_sel_shadow & 0xffff0fff;
+    u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
-    uc_mac_cmd(r0 | 0x1d00a000);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     mac_select_all_sectors_and_wait();
     mac_cmd_29000001();
     if (mac_cca_ok()) {
@@ -464,7 +464,7 @@ u32 tx_slot_pick_queue(u32 a, u32 b)
     uc_mac_cmd(0xf000001);
     u32 r0 = mac_sel_shadow & 0xfffff0ff;
     mac_sel_shadow = r0;
-    uc_mac_cmd(r0 | 0x1d000000);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL);
     arc_nops(3);
 
     u32 r13 = MAC_QSEL_LOWEST_QSET_OF(mac_queue_sel());
@@ -567,9 +567,9 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
     uc_mac_cmd(fd->duration | (1u << 24) | (1u << 26) | (1u << 28));
     uc_mac_cmd(0x14000007);
     mac_program_tx_with_rate(rate);
-    u32 cfg = mac_sel_shadow & 0xffff0fff;
+    u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = cfg | (1u << 13) | (1u << 15);
-    uc_mac_cmd(cfg | 0x1d00a000);
+    uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     arc_core_wr(33, r17);                           /* mov r33,r17 */
     tx_fifo_free -= 4;
     rx_mode_configure(0, sta);
@@ -632,9 +632,9 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
     u32 r16 = (v ? 0x17 : 0x22) + 4;
     u32 r14 = (dti_qset_mode == 0) ? v : 1;
     if (c == 0) {
-        u32 r0 = mac_sel_shadow & 0xffff0fff;
+        u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = r0 | (1u << 12) | (1u << 13);
-        uc_mac_cmd(r0 | 0x1d003000);
+        uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
         arc_nops(3);
         if ((u32)(u16)(u16)mac_status_sel() <= r16 || (mac_evt1() & MAC_EVT1_TXOP))
             goto cf_end_done;
@@ -980,9 +980,9 @@ void internal_tx_flow_sm2(u32 a)
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     direct_tx_send_after_delay(sta, 0xb, 0);
-    u32 r0 = mac_sel_shadow & 0xffff0fff;
+    u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);   /* st.as [gp,-0x11] */
-    uc_mac_cmd(r0 | 0x1d00a000);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     mac_select_all_sectors_and_wait();
     mac_cmd_29000001();
     if (mac_cca_ok()) {

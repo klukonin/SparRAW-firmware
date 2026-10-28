@@ -19,10 +19,12 @@ BAD = [
 @pytest.mark.parametrize('cmd,body,expect', BAD, ids=['ba_dis_ring12', 'pcp_channel7', 'bf_trig5', 'rf_mgmt9',
                                                       'ba_dis_nostream'])
 def test_bad_wmi_rejected(sta, fw_path, check, cmd, body, expect):
+    # новая строка журнала (с меткой времени) — не «среди последних N»: переподключение может дописать сотни строк
+    before = {l for l in sta.dut.fw_log(fw_path) if expect in l}
     sta.dut.wmi_send(cmd, body)
     import time; time.sleep(0.5)
     log = sta.dut.fw_log(fw_path)
-    check.is_true(any(expect in l for l in log[-60:]), 'нет записи «%s» в журнале fw' % expect)
+    check.is_true(any(expect in l and l not in before for l in log), 'нет новой записи «%s» в журнале fw' % expect)
     check.is_true(sta.dut.fw_errors() == 0, 'ошибка FW после команды 0x%x' % cmd)
 
 
@@ -35,10 +37,12 @@ def test_silent_rssi_table0_does_not_crash(sta):
 
 def test_ut_calib_bad_engine(sta, fw_path):
     """UT calib_mgr_ut с индексом движка 9 (движков 6) — отказ, не чтение за массивом."""
+    want = 'engine index 0x9 out of range'
+    before = {l for l in sta.dut.fw_log(fw_path) if want in l}
     sta.dut.wmi_send(0x900, struct.pack('<HHI', 7, 1, 9) + b'\0' * 28)
     import time; time.sleep(0.5)
     log = sta.dut.fw_log(fw_path)
-    assert any('engine index 0x9 out of range' in l for l in log[-40:])
+    assert any(want in l and l not in before for l in log)
 
 
 def test_link_alive_after_bad_commands(sta, check):

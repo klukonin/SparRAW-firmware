@@ -153,26 +153,50 @@ static void pcp_stop_flow(struct mid *e)
     l2mgr_send_pcp_stopped(ve->id);
 }
 
+/* Остановка PCP при живых соединениях mid: станции отключаются (Disassoc, reason 3 — DEAUTH_LEAVING, 9.4.1.7),
+ * остановка повторяется по таймеру, пока соединения не снимутся (шаг 5 мс, предел 1 с). исправлено (vendor: при
+ * ассоциированной станции только журнал — BSS не останавливался, маяки шли, WMI_PCP_STOPPED хосту не уходил
+ * (wmi_pcp_stop драйвера — тайм-аут), бит 4 l2mgr_pending_ops оставался навсегда, а PCP_COUNT уже был уменьшен). */
+#define PCP_STOP_RETRY_US    5000u
+#define PCP_STOP_RETRY_MAX   200u
+
+static void l2mgr_pcp_stop_try(u32 mid, u32 tries);
+
+static void l2mgr_pcp_stop_retry_cb(u32 mid, u32 tries)
+{
+    l2mgr_pcp_stop_try(mid, tries);
+}
+
 /* l2_mgr::pcp_stop (0x8f7160, 170 Б): остановить PCP mid (счётчик PCP, состояния
- * системы 0xb/0xc, mid-соединение заново, vring кольца 1). При ещё живых соединениях
- * mid — только журнал. Нет записи mid — ассерт 0x16b4. */
+ * системы 0xb/0xc, mid-соединение заново, vring кольца 1). Нет записи mid — ассерт 0x16b4. */
 void l2mgr_pcp_stop(u32 mid)
 {
-    struct mid *e;
     l2mgr_pending_op_set(4);
+    l2mgr_pcp_stop_try(mid, 0);
+}
+
+static void l2mgr_pcp_stop_try(u32 mid, u32 tries)
+{
+    struct mid *e;
     if (mid_state_is_2_or_3(mid) == 0)
         return;
     e = mid_list_by_mid_fw(mid);
     if (e == 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x16b4);
+    if (mid_list_find_by_kind(e, 1) != 0) {
+        fw_log_emit0(0xb, 0x100f338);
+        if (tries == 0)
+            mid_list_disconnect_all(e, 2, 3);
+        if (tries < PCP_STOP_RETRY_MAX) {
+            u_schd_schedule(l2mgr_pcp_stop_retry_cb, mid, tries + 1, 1, PCP_STOP_RETRY_US, 0, 0);
+            return;
+        }
+        /* за 1 с не снялись — остановить всё равно: хосту нужен WMI_PCP_STOPPED */
+    }
     PCP_COUNT = (u8)(PCP_COUNT - 1);
     fw_log_emit1(0x2b, 0x100f2f8, PCP_COUNT);
     if (PCP_COUNT == 0)   /* l2_mgr__has_active_pcp (0x8da47c): ≤ 0 — нет */
         fw_log_emit0(0x2b, 0x100f314);
-    if (mid_list_find_by_kind(e, 1) != 0) {
-        fw_log_emit0(0xb, 0x100f338);
-        return;
-    }
     sys_state_broadcast(0xb, 0);
     pcp_stop_flow(e);
     if (mid_list_find_by_kind(e, 2) == 0)

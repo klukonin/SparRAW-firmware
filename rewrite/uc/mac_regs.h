@@ -76,6 +76,19 @@
 
 #define mac_status_sel() arc_core_rd(40)   /* R40[сел.]: BACKOFF_IFS_STATUS, BI_COUNTER, PHY_SIGNALS, … */
 
+/* Выбор регистра группы R40: команда MAC 0x1d с номером регистра в полубайте [15:12]; тот же полубайт хранит
+ * mac_sel_shadow (остальные биты команды — из него). Регистры 1, 2, 7, 8, 9, 0xc, 0xe, 0xf uc не выбирает. */
+#define MAC_CMD_STATUS_SEL        0x1d000000u   /* команда «выбрать регистр R40» */
+#define MAC_SEL_FIELD             0xf000u       /* номер регистра [15:12] */
+#define MAC_SEL_BACKOFF_IFS       0x0000u       /* BACKOFF_IFS_STATUS: idle_detect, остатки слотов AC */
+#define MAC_SEL_REM_TIME          0x3000u       /* REMAINING_TIME_RD: остаток времени */
+#define MAC_SEL_BI_COUNTER        0x4000u       /* BI_COUNTER: позиция в BI, bi_sync */
+#define MAC_SEL_TSF_LOW           0x5000u       /* TSF_LOW_R40: TSF [31:0] */
+#define MAC_SEL_TSF_HIGH          0x6000u       /* TSF_HIGH_R40: TSF [63:32] */
+#define MAC_SEL_PHY_SIGNALS       0xa000u       /* PHY_SIGNALS: cca, phy_rx_frame, счётчики PPDU/CCA, cca_ppdu_comp */
+#define MAC_SEL_PLCP_RX           0xb000u       /* PHY_PLCP_RX_SIGNALS_R40: sifs_resp */
+#define MAC_SEL_BF_METRIC         0xd000u       /* BF_METRIC_R40: метрика BF */
+
 /* сел. 0x0 BACKOFF_IFS_STATUS */
 #define MAC_BIFS_IDLE_DETECT      0x7u          /* idle_detect [2:0]: состояние среды (5 — свободна для развёртки маяка) */
 #define MAC_BIFS_REM_SLOT_AC1_OF(v) (((v) >> 16) & 0xf)  /* remaining_slot_ac1 [19:16] */
@@ -91,6 +104,7 @@
 #define MAC_PHYSIG_CCA            0x7u          /* cca [2:0] */
 #define MAC_PHYSIG_PHY_RX_FRAME   (1u << 3)     /* phy_rx_frame: идёт приём кадра */
 #define MAC_PHYSIG_PPDU_EVT_CNT_OF(v) (((v) >> 8) & 0x3f)  /* ppdu_event_counter [13:8] */
+#define mac_status_sel_shr8()     UC_CORE_LSR(40, 8)     /* одной инструкцией: & 0x3f — ppdu_event_counter */
 #define MAC_PHYSIG_CCA_EVT_CNT_OF(v)  (((v) >> 16) & 0x3f) /* cca_event_counter [21:16] */
 #define MAC_PHYSIG_CCA_PPDU_COMP  (1u << 24)    /* cca_ppdu_comp: канал свободен (вместе с !MAC_EVT1_BUSY2) */
 /* сел. 0xb PHY_PLCP_RX_SIGNALS_R40 */
@@ -181,6 +195,9 @@
 #define MAC_EE2_BRP_DONE          (1u << 5)     /* phy_rx_brp_done: конец приёма BRP */
 #define MAC_EE2_BRP_ON_AIR        (1u << 13)    /* phy_rx_brp_stage_on_air: идёт BRP-стадия */
 #define MAC_EE2_PHY_STATE_OF(v)   (((v) >> 16) & 0xf)     /* [19:16] из phy_mac_status_2_11: состояние PHY (<6 — можно переключать) */
+/* Одной инструкцией (горячие пути): состояние PHY = mac_evt_eng2_shr16() & 0xf; снимок порта в DCCM. */
+#define mac_evt_eng2_shr16()      UC_CORE_LSR(49, 16)
+#define mac_evt_eng2_store(var)   UC_CORE_ST(49, var)
 
 /* ---- r51: MTP_DESCRIPTOR_SCRATCHPAD (поля не установлены), §2.13 ---- */
 

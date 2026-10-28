@@ -429,7 +429,7 @@ static u32 lm_cfg_write(u32 type, u32 cid, const u8 *cfg)
     lm_cfg_log((const u32 *)cfg);
     if (cid == 0xffffffffu) {
         cid = 0;
-        last = 7;
+        last = SPARRAW_MAX_STA - 1;               /* все cid */
     } else {
         last = cid;
     }

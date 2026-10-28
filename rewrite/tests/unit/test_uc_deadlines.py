@@ -322,7 +322,19 @@ STA_IDX = 7                                                 # худший ин�
 TX_CTX_POOL = 0x802978
 
 
-def sifs_budget(w, n):
+# DMG CTS на RTS: путь длиннее (rx_end_switch_to_tx → mac_switch_rx_to_tx ждёт конца PPDU, cca_ppdu_comp), срок
+# аппаратного ответа отсчитывается иначе, чем у Ack — бюджет Ack к нему неприменим. B — vendor-путь CTS (эмулятор,
+# lat.py: конец кадра r49 → 0x37000020, 20 сидов, медиана 546 инстр.), на стенде работает (RTS/CTS без сбоев); точка
+# отказа сверх него не измерена — B только нижняя граница срока, без надбавки.
+# Ответный CF-End (медленный путь rx_flow_send_imm_response, тоже через rx_end_switch_to_tx) — так же по vendor-пути:
+# 436 инстр. (lat.py, r37 б16, Duration 1000).
+VENDOR_PATH_INSNS = {'cts': 546, 'cfend': 436}
+VENDOR_PATH_SRC = 'vendor-путь %s %d инстр. (эмулятор, lat.py r49 → 0x37000020), работает на стенде; точка отказа не мерена'
+
+
+def sifs_budget(w, n, kind='ack'):
+    if kind in VENDOR_PATH_INSNS:
+        return int(VENDOR_PATH_INSNS[kind] * w / n)
     return int(VENDOR_ACK_INSNS * w / n) + HW_PAD_FAIL_CLK
 
 
@@ -393,10 +405,10 @@ _SIFS_HW = 'B = 409·W/n + 12: стенд vendor Ack + 12 тактов → asser
     pytest.param('ack', marks=risk('rx_flow_run → rx_frame_tx_resp_seq: r42.14 → 0x37000020 (Ack)', 603, 682, _SIFS_HW)),
     pytest.param('ba', marks=risk('то же, BlockAck на A-MPDU', 560, 681, _SIFS_HW)),
     pytest.param('bar', marks=risk('то же, BlockAck на BAR', 562, 678, _SIFS_HW)),
-    pytest.param('cts', marks=risk('то же, DMG CTS на RTS (rx_switch_to_rx_mode + mac_set_mode_a000 и два чтения TSF на '
-                                   'пути)', 822, 680, _SIFS_HW + '; стенд rg: RTS-путь без сбоев — MAC не отмечает '
-                                   'поздний CTS, нарушение SIFS не видно')),
-    pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_flow_send_imm_response)', 692, 670, _SIFS_HW)),
+    pytest.param('cts', marks=risk('то же, DMG CTS на RTS (rx_end_switch_to_tx + mac_switch_rx_to_tx на пути; у нас на 69 '
+                                   'инстр. короче vendor)', 790, 904, VENDOR_PATH_SRC % ('DMG CTS', 546))),
+    pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_flow_send_imm_response; на 6 инстр. короче '
+                                     'vendor)', 696, 705, VENDOR_PATH_SRC % ('CF-End', 436))),
     'grant_ack'])
 def test_sifs_response_command(uc, kind):
     """Принят кадр с немедленным ответом (Ack 10.3.2.11, BlockAck 10.25.3/10.25.6, DMG CTS 10.3.2.9, CF-End 10.39.8.1,
@@ -404,7 +416,8 @@ def test_sifs_response_command(uc, kind):
     опоздании отмечает MAC_HW_ICR б4/б5 (assert 0x26, uc/rx.c:682)."""
     m, t, a, w, n = sifs_run(uc, kind)
     print(m.profile(t, a))
-    check('sifs_resp_' + kind, w, n, sifs_budget(w, n), SIFS_SRC)
+    src = VENDOR_PATH_SRC % (kind, VENDOR_PATH_INSNS[kind]) if kind in VENDOR_PATH_INSNS else SIFS_SRC
+    check('sifs_resp_' + kind, w, n, sifs_budget(w, n, kind), src)
 
 
 @risk('rx_flow_step → rx_txop_continue: r42.14 → 0x1b001111', 607, 692,

@@ -255,6 +255,30 @@ static inline void arc_irq_restore(u32 s)
 /* Горячий путь uc со сроком (SIFS): точечный O2 без millicode-пролога (__st_r13_to_r15) и с
  * 2-инструкционными циклами опроса; no-inline — вызываемые остаются вызовами (размер ICCM, eqcheck). */
 #define UC_HOT __attribute__((optimize("O2", "no-inline")))
+
+/* Чтение расширенного регистра со сдвигом одной инструкцией (vendor: `asr r3,r49,0x10`,
+ * `lsr r6,r40,0x8`) вместо mov + lsr_s. Номер регистра — через именованные обёртки uc/mac_regs.h. */
+#define UC_CORE_LSR(n, sh) ({ u32 _v; __asm__ volatile("lsr %0,r" #n "," #sh : "=r"(_v) :: "memory"); _v; })
+/* `st rN,[адрес var]` — расширенный регистр прямо в DCCM (vendor: `st.as r49,[gp,-0x23]`). */
+#define UC_CORE_ST(n, var) __asm__ volatile("st r" #n ",[%0]" :: "i"((u32)&(var)) : "memory")
+/* `st rX,[адрес var]` одной инструкцией (gcc на -O2 строил mov limm + mov_s + st_s). */
+#define UC_ST_ABS(var, v) __asm__ volatile("st %0,[%1]" :: "r"((u32)(v)), "i"((u32)&(var)) : "memory")
+
+/* Горячие пути uc со сроком: адрес возврата и uc_assert без пролога.
+ * UC_RA_NOW() — blink в текущей точке; верно только там, где после входа в функцию ещё не было
+ * вызовов (иначе blink уже затёрт).
+ * UC_ASSERT_LEAF(code) — uc_assert(blink, code) вставкой через uc_assert_keep (uc/misc.c), которая
+ * сохраняет r0..r12 и blink: для gcc это не вызов, и функция с uc_assert только на холодной ветке
+ * остаётся листовой — без push/pop blink, без копии blink через всю функцию (как с
+ * __builtin_return_address) и без callee-saved регистров для значений, живых через assert. Условия
+ * те же, что у UC_RA_NOW. Второй uc_assert после первого пуст (assert_active = 1), поэтому blink,
+ * затёртый первым, второму не важен. mlo/mhi (mul64) не сохраняются. */
+#define UC_RA_NOW() ({ u32 _ra; __asm__ volatile("mov %0,blink" : "=r"(_ra)); _ra; })
+#define UC_ASSERT_LEAF(code) __asm__ volatile( \
+        "push_s r0\n\tpush_s r1\n\tpush_s blink\n\tmov_s r0,blink\n\t" \
+        "bl.d uc_assert_keep\n\tmov r1,%0\n\t" \
+        "pop_s blink\n\tpop_s r1\n\tpop_s r0" \
+        :: "i"(code) : "lp_count", "cc", "memory")
 #define arc_core_rd(n) ({ u32 _v; __asm__ volatile("mov %0,r" #n : "=r"(_v) :: "memory"); _v; })
 #define arc_core_wr(n, v) __asm__ volatile("mov r" #n ",%0" :: "r"((u32)(v)) : "memory")
 

@@ -164,9 +164,6 @@ def test_duration_5ms(uc):
     assert w.rxend + 5000 <= nav_end(uc) < w.rxend + 5001
 
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 10.3.2.4 / Table 9-9: Duration 0..32767 мкс устанавливает NAV '
-                   'полностью; uc усекает до rx_nav.max_us = 5000 (rx.c rx_nav_set_from_duration, data.c '
-                   'rx_nav_max_us = 0x1388)')
 @pytest.mark.parametrize('dur', [5001, 20000, 32767])
 def test_long_duration_sets_full_nav(uc, dur):
     w = world(uc)
@@ -174,9 +171,6 @@ def test_long_duration_sets_full_nav(uc, dur):
     assert w.rxend + dur <= nav_end(uc) < w.rxend + dur + 1
 
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 10.28.3: Duration/ID ≥ 32768 — не длительность (Table 9-9: '
-                   'резерв/AID), у DMG-кадров толкования нет — игнорировать; uc ставит по нему NAV (усекая до 5000 мкс, '
-                   'rx.c rx_nav_set_from_duration, проверки б15 нет)')
 @pytest.mark.parametrize('dur', [0x8000, 0xc001, 0xffff])
 def test_non_duration_values_ignored(uc, dur):
     w = world(uc)
@@ -185,10 +179,6 @@ def test_non_duration_values_ignored(uc, dur):
     assert rts_answered(w, Y)
 
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 10.3.2.4: истёкший NAV равен 0 — любой Duration > 0 его ставит; uc '
-                   'сравнивает новый конец с rx_nav.end_tsf по знаку разности (rx.c rx_nav_set_from_duration), не '
-                   'глядя, активен ли NAV: через 2^31 мкс (~36 мин) после последнего NAV новый NAV не ставится '
-                   '(до следующих ~36 мин)')
 def test_nav_set_after_long_quiet_period(uc):
     w = world(uc)
     uc.w32(NAV_END, (T0 - 0x90000000) & 0xffffffff)          # последний NAV — ~40 мин назад, флаг активности снят
@@ -232,9 +222,6 @@ def test_cf_end_with_zero_duration_resets_nav_now(uc):
 
 # ---- DMG Beacon -------------------------------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 10.3.2.4 + 9.3.4.2: NAV по DMG Beacon соседа — его Duration (до '
-                   'конца BTI); uc прибавляет 1600 мкс (rx.c rx_update_nav_from_frame: «r2 + 0x640» для кадров '
-                   'Extension при a ≠ 0)')
 def test_dmg_beacon_nav_is_its_duration(uc):
     w = world(uc)
     neighbour(w, FC_DMG_BEACON, 300, X, ra=X)

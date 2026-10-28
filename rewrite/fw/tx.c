@@ -109,6 +109,12 @@ __attribute__((section(".textlate"))) void wmi_vring_cfg(void *cmd_p, u32 mid)
         u32 to_res = vc->to_resolution;
         fw_log_emit3(0x2b, 0x100da60, vc->encap_trans_type, mpdu, vc->agg_max_wsize);
         fw_log_emit3(0x2b, 0x100daa4, mac_ctrl & 1, to_res & 0x3f, (mac_ctrl >> 1) & 1);
+        if (vc->schd_params.timeslot_us == 0) {    /* vendor: ассерт 0x12b2 в vring_schd_fill_vring_cfg */
+            wmi_reject_param(0x821, 0, 4 + 0x14 + 2);
+            l2mgr_send_vring_cfg_done(ringid, 0, 1, mid);
+            wmi_vring_cfg_with_847b34(ctx);         /* вернуть ctx */
+            return;
+        }
         if (vc->agg_max_wsize == 0 && mpdu > 0x1f28) {
             fw_log_emit2(0x1b, 0x100dadc, mpdu, 0x1f28);
             l2mgr_send_vring_cfg_done(ringid, 0, 1, mid);

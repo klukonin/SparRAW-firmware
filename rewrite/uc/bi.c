@@ -424,9 +424,9 @@ u32 bi_rx_start_rx_window(u32 a, u32 b)
     u32 r15 = sta_tab[a].tx_sel;
     txrx_state2 = 0;                                   /* st.as [gp,52] */
     txrx_state1 = (1u << 13) | 2;                      /* st.as [gp,51] */
-    u32 cfg = mac_sel_shadow & 0xffff0fff;
+    u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = cfg | (1u << 13) | (1u << 15);
-    uc_mac_cmd(cfg | 0x1d00a000);
+    uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     mac_select_all_sectors_and_wait();
     mac_cmd_29000001();
     uc_mac_cmd(0x1f006000);
@@ -527,9 +527,9 @@ void bi_timing_snapshot_b(void)
 {
     bi_win.bi_len_us = bi_tsf_delta64(bi_win.bti_tsf[0], bi_win.bti_tsf[1]);
     mac_read_tsf64_uc(bi_win.bti_tsf);
-    u32 r2 = mac_sel_shadow & 0xffff0fff;
+    u32 r2 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r2 | (1u << 14);
-    uc_mac_cmd(r2 | 0x1d004000);
+    uc_mac_cmd(r2 | MAC_CMD_STATUS_SEL | MAC_SEL_BI_COUNTER);
     arc_nops_nop(2);
     u32 r5 = mac_status_sel() & MAC_BI_COUNTER;      /* bmsk r5,r40,0x19 — биты 0..25 */
     bi_win.bti_pos = r5;                   /* delay-слот breq.d — всегда */

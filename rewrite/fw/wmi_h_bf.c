@@ -28,6 +28,7 @@
 #include "../include/mbox.h"
 #include "../include/conn.h"
 #include "../include/calib_engine.h"
+#include "../include/sta_max.h"
 #include "../include/lmac_cmd.h"
 #include "../include/sys_cfg.h"
 #include "../include/sysapi_mgr.h"
@@ -123,6 +124,11 @@ void host_if_set_sectors_hal(struct wmi_mbox *mb, const struct wmi_set_sectors_c
     fw_log_emit1(0x25, 0x1006248, cmd->sector_rf[0] & 0xfu);
     fw_log_emit1(0x25, 0x1006258, (cmd->sector_rf[1] >> 4) & 0x7fffu);
     fw_log_emit1(0x25, 0x1006268, cmd->sector_rf[1] & 0xfu);
+    if (cmd->cid >= SPARRAW_MAX_STA) {                 /* исправлено (vendor: cid без проверки — uc писал запись
+                                                        * станции за таблицей, порча DCCM uc) */
+        wmi_reject_param(0x849, cmd->cid, 0);
+        return;
+    }
     w4 = cmd->sector_rf[0];
     w8 = cmd->sector_rf[1];
     bf_lmac_send_sta_cfg_05(cmd->cid, (w4 >> 4) & 0x7fffu, w4 & 0xfu,

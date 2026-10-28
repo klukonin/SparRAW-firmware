@@ -17,6 +17,16 @@ def _toolchain():
     return None
 
 
+# Тулчейн нужен уже при импорте модулей (tools/arcemu/cpu.py ищет objdump): найден — ARC_DIR для них; нет — юнит-тесты
+# не собираются (без падения всего прогона, например стендового).
+_TC = _toolchain()
+if _TC:
+    os.environ['ARC_DIR'] = _TC
+    collect_ignore_glob = []
+else:
+    collect_ignore_glob = ['test_*.py']
+
+
 def pytest_configure(config):
     config.addinivalue_line('markers', 'unit: юнит-тест без стенда (эмулятор ARC / хостовый gcc)')
 
@@ -65,6 +75,26 @@ def uc_fw(build_dir, toolchain, tmp_path_factory):
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     return out
+
+
+@pytest.fixture(scope='session')
+def fw_elf(build_dir, toolchain):
+    """fw.elf главного ядра: из каталога сборки; нет — собрать туда же (make <BUILD>/fw.elf)."""
+    elf = os.path.join(build_dir, 'fw.elf')
+    if not os.path.exists(elf):
+        env = dict(os.environ, PATH=os.path.join(toolchain, 'bin') + os.pathsep + os.environ['PATH'])
+        r = subprocess.run(['make', '-C', R, 'ARC_DIR=' + toolchain, 'BUILD=' + build_dir, '-j8', elf],
+                           capture_output=True, text=True, env=env)
+        assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    return elf
+
+
+@pytest.fixture
+def fw(fw_elf):
+    """Свежий эмулятор fw после загрузки (tests/unit/fwemu.py FW.boot): конструкторы, fw_main, LMAC READY от uc
+    (WMI_READY хосту), драйвер поднял интерфейс (WMI_CFG_RX_CHAIN). Снимок загрузки кэшируется на сессию."""
+    import fwemu
+    return fwemu.FW(fw_elf).boot()
 
 
 @pytest.fixture

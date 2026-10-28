@@ -312,6 +312,7 @@ void gp0_arm_usec_b(u32 usec);                                  /* tail.c */
 void gp_timer_arm(u32 a, u32 b, u32 c, u32 d);                  /* tail.c */
 void gp_timer_stop(u32 a);                                      /* bi.c */
 u32 grant_detect_step(u32 a, u32 b, u32 c);                     /* tail.c */
+u32 grant_detect_step_at(u32 t, u32 b, u32 c);                  /* tail.c */
 void handle_bf_triggers(u32 cid, u32 set);                      /* tail.c */
 void handle_pmc_triggers(u32 trigger, u32 param);               /* tail.c */
 void hw_bring_up_phy_dma(u32 a0, u32 a1);                       /* tail.c */
@@ -437,7 +438,8 @@ void mac_set_chain_mask_924f00(void);                           /* mac.c */
 void mac_set_chain_modes(u32 a);                                /* mac.c */
 void mac_set_cid_mcs_uc(u32 a, u32 b);                          /* mac.c */
 void mac_set_mode_0000(void);                                   /* mac.c */
-u32 mac_set_mode_a000(u32 a);                                   /* mac.c */
+u32 mac_switch_rx_to_tx(u32 a);                                   /* mac.c */
+u32 mac_switch_rx_to_tx_wait_brp(u32 ra);                             /* mac.c */
 void mac_set_rf_chain_state(u32 a, u32 b);                      /* mac.c */
 void mac_set_rf_chain_state_with_sta_sector(void);              /* mac.c */
 void mac_set_sector_arg_and_select_all(u32 a);                  /* mac.c */
@@ -592,7 +594,7 @@ u32 rx_ppdu_is_cts_b(void);                                     /* rx.c */
 u32 rx_program_mac_and_wait(struct tx_ctx_s *a);                /* rx.c */
 void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c);            /* rx.c */
 void rx_send_dmg_cts(void);                                     /* rx.c */
-void rx_switch_to_rx_mode(void);                                /* rx.c */
+void rx_end_switch_to_tx(void);                                /* rx.c */
 void rx_update_nav_from_frame(u32 a);                           /* rx.c */
 u32 sched_bitmap_next_set_bit(u32 a, u32 b);                    /* rate_search.c */
 u32 sched_bitmap_prev_set_bit(u32 a, u32 b);                    /* rate_search.c */

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* BRP (Beam Refinement Protocol) uCode. */
 #include "../include/sta_max.h"
+#include "ifs.h"
 #include "../include/types.h"
 #include "../include/bitfield.h"
 #include "../include/hw.h"
@@ -273,7 +274,7 @@ u32 brp_initiator_brp_transaction_flow(void)
     u32 *r21 = (u32 *)bf_sta[r18].req_desc;
     u32 r20 = popcount8(rf_modules.mask);
     u32 r19 = (u16)r20;
-    mac_program_4f_52(0x3a | (1u << 13), 4);
+    mac_program_4f_52(DMG_BRP_RESP_TIMEOUT_CLK, 4);   /* GP0: срок ответа BRP (ifs.h) */
     (void)uc_read_tsf_lo();                     /* bl.d L_9364c8 — MAC-команда 0x4d000005 */
     u32 r14 = 0, r16 = 0;
     u32 r17;
@@ -450,7 +451,7 @@ void brp_initiator_flow_successful_receive_training(u32 a)
 /* Обмен запросом инициатора (0x922928). */
 u32 brp_init_exchange_request(void)
 {
-    mac_program_4f_52(0x3a | (1u << 13), 4);
+    mac_program_4f_52(DMG_BRP_RESP_TIMEOUT_CLK, 4);   /* GP0: срок ответа BRP (ifs.h) */
     u32 r14 = 0;
     for (;;) {
         brp_init_tx_request();                  /* L_92293a — в каждой итерации */
@@ -492,7 +493,7 @@ void brp_init_tx_request(void)
 {
     u8 r16 = brp_ctx.init_sta;
     rfca_select_rf_uc(rf_modules.cur, 0);
-    mac_set_mode_a000(0);
+    mac_switch_rx_to_tx(0);
     u32 r1 = brp_ctx.init_flags;                    /* +0x50 */
     u32 r15 = 0x38000300;
     u32 r17 = 0x3f000000;
@@ -676,9 +677,9 @@ void brp_responder_flow_enter(u32 a)
             brp_ctx.resp_peer_req = v;
             if (v & 1) {
                 if (!(brp_ctx.resp_flags & 1)) {             /* L_923030 */
-                    u32 g = mac_sel_shadow & 0xffff0fff;
+                    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
                     mac_sel_shadow = g | (1u << 13) | (1u << 15);
-                    uc_mac_cmd(g | 0x1d00a000);
+                    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
                     arc_nops(3);
                     uc_mac_cmd(mac_evt_en_shadow | 0x27007300);
                     uc_mac_cmd(0x2004000);
@@ -747,7 +748,7 @@ void brp_responder_transmission_flow(void)
 {
     u8 r13 = brp_ctx.resp_sta;
     rfca_select_rf_uc(rf_modules.cur, 0);
-    mac_set_mode_a000(0);
+    mac_switch_rx_to_tx(0);
     mac_rf_switch_cmd1f(0);
     uc_mac_cmd(0x1f006000);
     u32 r14 = sta_tab[r13].tx_sel;
@@ -878,9 +879,9 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
     uc_mac_cmd(0x58000003);
     u32 r14 = 0, r17 = 0;
     r13 = 0;
-    u32 cfg = mac_sel_shadow & 0xffff0fff;           /* ld_s [gp,-68] */
+    u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;           /* ld_s [gp,-68] */
     mac_sel_shadow = cfg | (1u << 12) | (1u << 14) | (1u << 15);
-    uc_mac_cmd(cfg | 0x1d00d000);
+    uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_BF_METRIC);
     arc_nops(3);
     u32 r18 = 0x20;
     for (;;) {

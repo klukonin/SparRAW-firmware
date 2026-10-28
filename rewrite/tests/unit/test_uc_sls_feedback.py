@@ -25,7 +25,7 @@ SCRATCH = 0x803000                         # struct sls_peer_rec для direct_t
 
 TX_STUBS = {n: 0 for n in ('mac_evt_enable_bit_sync_b', 'mac_set_rf_chain_state_with_sta_sector', 'uc_spin_until_event',
                            'mac_program_rx_window')}
-RX_STUBS = {'uc_wait_event_busy': 0, 'rx_switch_to_rx_mode': 0, 'rx_funcs_record_level_8020f8_8020fc': 0,
+RX_STUBS = {'uc_wait_event_busy': 0, 'rx_end_switch_to_tx': 0, 'rx_funcs_record_level_8020f8_8020fc': 0,
             'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0, 'ucode_pm_set_busy_flag': 0}
 
 
@@ -157,8 +157,6 @@ def test_feedback_and_ack_to_unknown_peer(uc):
         assert f['brp']['l_rx'] == 0
 
 
-@pytest.mark.xfail(strict=True, reason='9.5.3: SNR Report не насыщается вне −13…50,75 дБ — uc/tail.c:3034 '
-                   '(SSW-Feedback), uc/txss.c:772 (SSW-Ack)')
 @pytest.mark.parametrize('kind', ['ssw_feedback', 'ssw_ack'])
 @pytest.mark.parametrize('snr_db', [63, -20])
 def test_feedback_snr_report_saturates(uc, kind, snr_db):
@@ -357,7 +355,7 @@ def abft_respond(uc, fss_field, bcn_sector=17, bcn_antenna=1, rf_chain=0, abft_l
     uc.ext[54] = lambda n, k: 0x180 if uc._ext_reads.get(43, 0) else 0
     stubs = dict(TX_STUBS, uc_spin_until_event4=0, uc_wait_event1_or_event4=0, abft_arm_response_window=0,
                  tx_ctx_alloc_next=0, tx_program_vector_rf=0, mac_evt_enable_bit_sync=0, l1_task_dispatch=0,
-                 mac_set_mode_a000=0, uc_evt_build_and_post_report=0)
+                 mac_switch_rx_to_tx=0, uc_evt_build_and_post_report=0)
     uc.call('abft_responder_fast', SCRATCH, 1, 0, stub=stubs)
     fr = tx_frames(uc)
     ssw = [ssw_field(c) for c in cmds(uc, 0x2d)]
@@ -406,8 +404,6 @@ def test_abft_responder_antenna_id(uc, rf_chain):
     assert all(s['antenna'] == rf_chain & 3 and s['rxss_len'] == 0 for s in ssw)
 
 
-@pytest.mark.xfail(strict=True, reason='9.5.1/9.2.2: в A-BFT поле SSW собирается как rf_chain_cfg << 16 — RF-цепь ≥ 4 '
-                   'попадает в RXSS Length (резерв вне CBAP) — uc/bti.c:733 (abft_ssw_burst, команда 0x2d)')
 @pytest.mark.parametrize('rf_chain', [4, 7])
 def test_abft_responder_rxss_length_reserved(uc, rf_chain):
     """9.5.1: «The RXSS Length subfield is valid only when transmitted in a CBAP and is reserved otherwise»; 9.2.2:

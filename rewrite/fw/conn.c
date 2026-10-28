@@ -261,8 +261,7 @@ void conn_mgr_link_up_evt(struct conn *conn, u32 v)
     if (v == 0) {
         conn_mgr_add_to_rinking_list(conn);
     } else {
-        conn_mgr_ranking_remove(conn);
-        conn_mgr_link_down_evt(conn);
+        conn_mgr_link_down_evt(conn);             /* убирает и из списка ранжирования */
     }
 }
 

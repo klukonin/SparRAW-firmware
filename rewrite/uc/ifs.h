@@ -31,11 +31,26 @@
 #define DMG_TXTIME_SSW_CLK      DMG_CTRL_TXTIME_CLK(DMG_SSW_LEN)       /* 2460 = 14,909 мкс */
 #define DMG_TXTIME_SSW_ACK_CLK  DMG_CTRL_TXTIME_CLK(DMG_SSW_ACK_LEN)   /* 3012 = 18,255 мкс */
 #define DMG_TXTIME_SSW_FB_CLK   DMG_CTRL_TXTIME_CLK(DMG_SSW_FB_LEN)    /* 3012 = 18,255 мкс */
-/* Duration ответов через SIFS (9.3.1.6, 9.3.1.18): Duration пира минус TXTIME(ответа) + SIFS, мкс вверх.
+/* Duration ответов через SIFS (9.3.1.6, 9.3.1.18): Duration пира минус TXTIME(ответа) + SIFS, результат вверх
+ * (9.2.5.1): для целого D ⌈D − x⌉ = D − ⌊x⌋ — вычитаемое вниз (было вверх → Duration на 1 мкс меньше, NAV соседей
+ * кончался раньше конца последовательности; tests/unit/test_uc_ifs_duration.py).
  * CF-End — FC, Duration, RA, TA, FCS = 20 Б; Grant Ack — FC, Duration, RA, TA, 7 Б тела, FCS = 27 Б. */
 #define DMG_CF_END_LEN           20u
 #define DMG_GRANT_ACK_LEN        27u
-#define DMG_RESP_DUR_SUB_US(len) ((DMG_CTRL_TXTIME_CLK(len) + DMG_SIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
+#define DMG_RESP_DUR_SUB_US(len) ((DMG_CTRL_TXTIME_CLK(len) + DMG_SIFS_CLK) / DMG_CLK_PER_US)
+/* CF-End в ответ на CF-End (9.3.1.6): принят Duration d = ⌈(i − 1)·x⌉, x = TXTIME(CF-End) + SIFS, ответ — ⌈(i − 2)·x⌉.
+ * Разность двух округлений вверх — то ⌊x⌋, то ⌈x⌉, вычитанием точно не получить: k = i − 1 восстанавливается
+ * округлением d/x (ошибка < 1 мкс при x ≈ 17 мкс). d ≤ 32767 — d·165 в 32 битах. */
+#define DMG_CF_END_X_CLK (DMG_CTRL_TXTIME_CLK(DMG_CF_END_LEN) + DMG_SIFS_CLK)
+/* Путь ответа в сроке SIFS: деления — умножением на обратное (mulu64, сдвиг 36; точность проверена перебором всех
+ * d = 0…32767). Константы — для x = 2811 тактов. */
+_Static_assert(DMG_CF_END_X_CLK == 2811u, "обратные числа dmg_cf_end_resp_dur_us — для x = 2811");
+static inline __attribute__((always_inline)) u32 dmg_cf_end_resp_dur_us(u32 d)
+{
+    u32 k = (u32)(((u64)(d * DMG_CLK_PER_US + DMG_CF_END_X_CLK / 2u) * 24446630u) >> 36);      /* ÷ 2811 */
+    return k < 2u ? 0u
+                  : (u32)(((u64)((k - 1u) * DMG_CF_END_X_CLK + DMG_CLK_PER_US - 1u) * 416481678u) >> 36);  /* ÷ 165 */
+}
 #define DMG_LBIFS_CLK    (DMG_TXTIME_SSW_CLK + 2u * DMG_SBIFS_CLK)     /* 2790 = 16,909 мкс */
 
 _Static_assert(DMG_TXTIME_SSW_CLK == 2460, "TXTIME(SSW)");
@@ -89,6 +104,12 @@ static inline __attribute__((always_inline)) u32 dmg_ctrl_txtime_clk_rt(u32 L)
 #define DMG_RX_PHY_START_DELAY_CTRL_CLK  (10u * DMG_CLK_PER_US)   /* aRxPHYStartDelay, DMG control mode */
 #define DMG_RESP_TIMEOUT_CLK     (DMG_SIFS_CLK + DMG_SLOT_CLK + DMG_RX_PHY_START_DELAY_CTRL_CLK)   /* 2970 = 18 мкс */
 #define DMG_RESP_TIMEOUT_SLOTS   ((DMG_RESP_TIMEOUT_CLK + DMG_SLOT_CLK - 1u) / DMG_SLOT_CLK)       /* 4 */
+/* Ожидание ответа BRP (10.3.2.3.9, 10.42.6.4 b): ответ начинается не позже BRPIFS (aBRPIFS 40 мкс + 10 %) после конца
+ * нашей PPDU; транзакция кончается, если за BRPIFS + aSlotTime ответа нет; + aRxPHYStartDelay до обнаружения — как
+ * AckTimeout. 44 + 5 + 10 = 59 мкс (GP0 от конца передачи запроса). Было (vendor) 8250 тактов = 50 мкс — ответ,
+ * начатый в пределах BRPIFS, обнаруживался позже срока. */
+#define DMG_BRPIFS_CLK           (44u * DMG_CLK_PER_US)
+#define DMG_BRP_RESP_TIMEOUT_CLK (DMG_BRPIFS_CLK + DMG_SLOT_CLK + DMG_RX_PHY_START_DELAY_CTRL_CLK)   /* 9735 */
 _Static_assert(DMG_RESP_TIMEOUT_SLOTS == 4u, "AckTimeout в слотах");
 /* dot11BFRetryLimit (MIB, DEFVAL 8): инициатор может повторить SSW-Feedback до этого числа раз (10.42.6.2, «may restart
  * the SSW feedback procedure up to dot11BFRetryLimit times»). vendor — 2 повтора (3 попытки). */
@@ -134,7 +155,7 @@ _Static_assert(DMG_RESP_TIMEOUT_SLOTS == 4u, "AckTimeout в слотах");
  * поздняя команда MAC; без сторожа естественный вход 2,02 мкс тоже даёт 0x26). Срок D ≈ 1,34 мкс; порог 1,19 ниже
  * последнего удачного на 0,14 мкс (> шага развёртки) — подтверждён, оставлен. */
 #define SIFS_CNT_RX_ENTRY_LATE   SIFS_CNT_CODE(1u, 32u)     /* 0x120 = 1,19 мкс */
-/* СРОК. Переключение на приём (rx_switch_to_rx_mode): опоздание — отмена 0x1f000601. Места вызова: rx_flow_handle_frame
+/* СРОК. Переключение с приёма на передачу после конца принятого PPDU (rx_end_switch_to_tx): опоздание — отмена 0x1f000601. Места вызова: rx_flow_handle_frame
  * (RTS / CF-End с Duration / sifs_resp), rx_flow_step (продолжение TXOP), rx_funcs_handle_ppdu_report (ответчик TXSS
  * и разбор SSW в BF). Естественный SIFS_CNT под TCP 1,9–2,1 мкс (95 %), 2,5–2,8 изредка, единицы 5,4 / 6,3 на 2700.
  * Замер (опыт rg, 2026-10-24; сторож снят, спин по SIFS_CNT до цели, шаг 0,1): RTS/CF-End и TXOP — цель до 8,0 мкс,

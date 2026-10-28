@@ -146,7 +146,7 @@ void rf_power_seq_and_save(u32 a)
 {
     /* 6.2 asm 0x93c888. */
     if (a != 0) {
-        mac_set_mode_a000(a);
+        mac_switch_rx_to_tx(a);
     } else {
         uc_mac_cmd(0x3d000004);
         arc_nops(3);
@@ -532,10 +532,12 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
     u32 r15fn;
     if (c != 0) {
         ssw_tpl_fb_sector = (sls.best.antenna << 6) | sls.best.sector;
-        ssw_tpl_fb_snr = (u8)((sls.best.snr_db - 0x13) << 2);
+        ssw_tpl_fb_snr = ssw_snr_report(sls.best.snr_db);
         ssw_tpl_fb_b2 = 0;
     } else {
-        u32 r4v = fwsh_total_sectors * r14 - 1;
+        /* Total Sectors in ISS (9.5.3) — секторы этой ISS (план txss_ss, может быть сокращён хостом), а не Total
+         * Number of Sectors из DMG Capabilities; исправлено (vendor: fwsh_total_sectors). */
+        u32 r4v = ss->n_frames * r14 - 1;
         u16 r5w = (u16)r4v;
         u8 r1b = fwsh_n_rx_ant;
         ssw_tpl_fb_snr = 0;
@@ -563,9 +565,9 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
         uc_mac_cmd(0x2004002);
         u32 sp8 = (u8)((r14 - 1) + ss->n_frames * r14);
         txss_set_sweep_param((u32)timing, ss, r14, 0, sp8, sp4);
-        u32 g = mac_sel_shadow & 0xffff0fff;
+        u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = g | (1u << 13) | (1u << 15);
-        uc_mac_cmd(g | 0x1d00a000);
+        uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
         uc_wait_event_busy(MAC_EVT1_SLOT | MAC_EVT1_BUSY2, 0);
         mac_cmd_29000001();
         if (mac_cca_ok()) {
@@ -645,7 +647,7 @@ u32 sls_rx_ssw_frame(void)
                 return 1;
             /* СРОК: последний кадр ISS (r39.zero_cdown) → начало RSS через MBIFS (802.11-2020
              * 10.42.2.2). Здесь ~60 инструкций (rx_mac_prepare, mac_mode_switch_core_and_rf с
-             * ожиданием PHY в mac_set_mode_a000) из ~500–600 всего пути — подробно у
+             * ожиданием PHY в mac_switch_rx_to_tx) из ~500–600 всего пути — подробно у
              * txss_program_tx_frame. Запас: десятки–сотни инструкций. */
             rx_mac_prepare();
             mac_mode_switch_core_and_rf(sta_mode_word[VOL(rxf.sta)]);   /* [0x802288] перечитывается */
@@ -664,7 +666,22 @@ u32 sls_rx_ssw_frame(void)
                 rx_parse_ssw_field((u32)&sp.sector, (u32)&sp.antenna, (u32)&sp.snr);
                 rx_funcs_record_level_8020f8_8020fc((s8)sp.snr);   /* ldb.x */
                 sta_set_tx_sector(VOL(rxf.sta), sp.sector, sp.antenna, 1);
+                /* SSW-Ack — через MBIFS после SSW-Feedback (10.42.2.2). Сюда приходит и повтор Feedback после конца
+                 * потока ответчика (10.42.6.2), когда в MAC уже SIFS; исправлено (vendor: Ack уходил при SIFS). После
+                 * передачи (sls_send_ssw_ack ждёт конца TX) — снова SIFS для ответов DTI. */
+                if (mac_ifs_shadow != ifs.mbifs) {
+                    mac_ifs_shadow = ifs.mbifs;
+                    *(volatile u32 *)HW_MAC_IFS_SIFS = ifs.mbifs | 0x1730000;
+                    arc_sync();
+                    uc_mac_cmd(0x38000200);
+                }
                 sls_send_ssw_ack(VOL(rxf.sta), 1);   /* vendor перечитывает [r13] */
+                if (mac_ifs_shadow != ifs.sifs) {
+                    mac_ifs_shadow = ifs.sifs;
+                    *(volatile u32 *)HW_MAC_IFS_SIFS = ifs.sifs | 0x1730000;
+                    arc_sync();
+                    uc_mac_cmd(0x38000200);
+                }
                 r0 = 0;
             } else {
                 r0 = 1;
@@ -769,7 +786,7 @@ void sls_build_ssw_ack(struct ssw_ack_frame *f, u32 idx, u32 flag)
     }
     f->fb_sector = (u8)val;
     f->fb_b2 = 0;
-    f->fb_snr = (u8)((sls.best.snr_db - 0x13) << 2);
+    f->fb_snr = ssw_snr_report(sls.best.snr_db);
     f->brp_req[0] = 0;
     f->brp_req[1] = 0;
     f->brp_req[2] = 0;
@@ -952,9 +969,9 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
      * при dti_qset_mode ≠ 0 ещё fsched_slot_f3_positive и декремент счётчика RD — между 0x19 и
      * 0x18 (vendor так же); запас: десятки–сотни. Срыв: TX в уже занятую среду (коллизия
      * RTS/CTS-обмена TXOP). */
-    u32 r0 = mac_sel_shadow & 0xffff0fff;
+    u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
-    uc_mac_cmd(r0 | 0x1d00a000);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     mac_select_all_sectors_and_wait();
     mac_cmd_29000001();
     if (!mac_cca_ok()) {

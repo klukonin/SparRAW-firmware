@@ -240,13 +240,37 @@ static void wmi_cfg_rx_chain_open_sniffer(struct wmi_cfg_rx_chain_cmd *p, u32 mi
                                   pcp_bcon_interval, 1, mid & 0xffu);
 }
 
+/* Цепочка RX уже настроена (CFG_RX_CHAIN принят); сбрасывается только перезагрузкой fw. В промежутке 0x806920..0x8069ff
+ * (tx_power.c, l2mgr_connect_*). */
+FWDATA(8069f5) volatile u8 rx_chain_configured = 0;
+
 /* wmi_cfg_rx_chain (0x8fb7fc): struct wmi_cfg_rx_chain_cmd (include/wmi.h). Ответ
- * WMI_CFG_RX_CHAIN_DONE (0x1820): {rx_ring_tail_ptr, status}. */
+ * WMI_CFG_RX_CHAIN_DONE (0x1820): {rx_ring_tail_ptr, status}. Отказ — status 0 (не WMI_CFG_RX_CHAIN_SUCCESS):
+ * повторная команда (кольца уже заняты — у vendor ассерт 0x127c; драйвер шлёт её раз за загрузку) и
+ * max_rx_pl_per_desc ≥ 3 не степенью двойки (у vendor — ассерт 0x1343). Проверка — до любых изменений. */
 static void wmi_cfg_rx_chain(struct wmi_cfg_rx_chain_cmd *p, u32 mid)
 {
     struct wmi_cfg_rx_chain_done_event *rsp = host_if_send_pair();
     if (rsp == 0)
         fw_sysassert_fatal((void *)0, 0x1342);
+    {
+        s32 pl = p->max_rx_pl_per_desc;
+        u32 bad = 0;
+        if (pl >= 3 && (pl & -pl) != pl) {
+            wmi_reject_param(0x820, (u32)pl, 0x34);
+            bad = 1;
+        } else if (rx_chain_configured) {
+            wmi_reject_param(0x820, 1, 0);
+            bad = 1;
+        }
+        if (bad) {
+            rsp->rx_ring_tail_ptr = 0;
+            rsp->status = 0;
+            low_sme_send_evt2sw(rsp, 0x1820, sizeof(*rsp), mid, 0, 0, 0);
+            return;
+        }
+        rx_chain_configured = 1;
+    }
     /* volatile: vendor читает mode двумя ldh (без него gcc при выравнивании 4 берёт слово) */
     const volatile struct wmi_sniffer_cfg *sn = &p->sniffer_cfg;
     u32 sniffer = sn->mode16[0] | ((u32)sn->mode16[1] << 16);
@@ -273,11 +297,7 @@ static void wmi_cfg_rx_chain(struct wmi_cfg_rx_chain_cmd *p, u32 mid)
     s32 max_pl = p->max_rx_pl_per_desc;
     if (max_pl < 3) {
         max_pl = 0;
-    } else if ((max_pl & -max_pl) != max_pl) {    /* не степень двойки */
-        fw_log_emit1(0x2b, 0x100d8b0, (u32)max_pl);
-        fw_sysassert_fatal((void *)0, 0x1343);
-        max_pl = 0;
-    }
+    }                                               /* не степень двойки — отказ выше */
 
     psize &= 0xffff;
     rx_chain_set_payload_size(psize);
@@ -548,7 +568,21 @@ void low_sme_wmi_scan_cmd_handler(struct wmi_start_scan_cmd *cmd, u32 mid)
     fw_log_emit2(0x29, 0x100b970, h[2], h[0] | (u32)h[1] << 16);
     fw_log_emit2(0x29, 0x100b9b8, h[4] | (u32)h[5] << 16, h[6] | (u32)h[7] << 16);
     fw_log_emit2(0x29, 0x100b9f0, cmd->scan_type, cmd->num_channels);
-    if (l2mgr_validate_scan(mid) == 0 || cmd->num_channels == 0)
+    /* каналов больше, чем мест в scan_mngr.ch_order (4), или канал вне 0..3 — отказ (vendor: ассерт 0x1470 /
+     * на чипе 0x119b в настройке RF) */
+    u32 bad = 0;
+    if (cmd->num_channels > 4) {
+        wmi_reject_param(0x7, cmd->num_channels, 0x11);
+        bad = 1;
+    } else {
+        for (u32 i = 0; i < cmd->num_channels; i++)
+            if (cmd->channel_list[i].channel >= 4) {
+                wmi_reject_param(0x7, cmd->channel_list[i].channel, 0x12 + 2 * i);
+                bad = 1;
+                break;
+            }
+    }
+    if (bad || l2mgr_validate_scan(mid) == 0 || cmd->num_channels == 0)
         l2mgr_send_scan_complete_evt(3, mid);       /* WMI_SCAN_REJECTED */
     else
         l2mgr_wmi_scan_cmd(cmd, mid);
@@ -1050,6 +1084,13 @@ void vendor_ie_build_wilocity(struct mid_bss *obj, u32 type, u32 f)
     obj->vs_ie_len = (u8)n;
 }
 
+/* SparRAW: тип сети команды хоста допустим — INFRA (1), AP (0x10), P2P (0x20). ADHOC* (IBSS) — только SparRAW-pro;
+ * прочее у vendor доходило до ассерта 0x11ec в mid_log_network_type. */
+u32 wmi_network_type_ok(u32 nt)
+{
+    return nt == 0x01 || nt == 0x10 || nt == 0x20;
+}
+
 /* mid__log_network_type (0x8e696c, 116 Б): тип сети (enum wmi_network_type) записи,
  * vendor IE и журнал; неизвестный тип — ассерт 0x11ec. */
 void mid_log_network_type(struct mid *e, u32 type)
@@ -1267,10 +1308,17 @@ void l2mgr_connect_multi_omni(const struct wmi_connect_cmd *cmd, u32 mid)
 void wmi_connect(const struct wmi_connect_cmd *cmd, u32 mid)
 {
     wmi_connect_count += 1;
-    /* Типы сети ADHOC (2) / ADHOC_CREATOR (4) — IBSS, только SparRAW-pro; открытая версия —
-     * AP/STA/PCP/PBSS по 802.11: отказ тем же путём, что и неверный канал. */
-    if (cmd->network_type == 0x02 || cmd->network_type == 0x04 ||
-        l2mgr_validate_connect(mid, cmd->channel) == 0) {
+    /* Тип сети вне INFRA/AP/P2P (ADHOC* — IBSS, только SparRAW-pro) и канал вне 0..3 (WMI — с 0; vendor канал не
+     * проверял — на чипе ассерт 0x119b в настройке RF) — отказ тем же путём, что и запрет подключения. */
+    u32 bad = 0;
+    if (!wmi_network_type_ok(cmd->network_type)) {
+        wmi_reject_param(0x01, cmd->network_type, 0);
+        bad = 1;
+    } else if (cmd->channel >= 4) {
+        wmi_reject_param(0x01, cmd->channel, 0x28);
+        bad = 1;
+    }
+    if (bad || l2mgr_validate_connect(mid, cmd->channel) == 0) {
         l2mgr_send_disconnect_evt(cmd->bssid, 1, 6 | (WMI_SPARRAW_DISC_CONNECT_REJECTED << 8), mid);
     } else if (conn_multi_omni_count == 1) {
         l2mgr_connect_setup(cmd, mid);

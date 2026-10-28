@@ -71,9 +71,9 @@ u32 rs_start(u32 a, u32 b)              /* 6.2 asm 0x9300ec */
 void mac_rf_switch_cmd1f(u32 a)          /* 6.2 asm 0x92c5e4 */
 {
     uc_mac_cmd(0x1f000601);
-    u32 g = mac_sel_shadow & 0xffff0fff;
+    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g;
-    uc_mac_cmd(g | 0x1d000000);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL);
     arc_nops_nop(2);   /* vendor L_92c628: 2×nop_s + mov 0,0 */
     do {
         VOL(rf_switch_wait_cnt) += 1;   /* vendor: ld/st на каждой итерации */
@@ -511,14 +511,14 @@ static void ucode_cmd_snap_r40(struct rx_meas_ctx *m, u32 b, u32 mode)
 {
     if (!(m->kind == mode && m->state == 2))
         return;
-    u32 cfg = mac_sel_shadow & 0xffff0fff;
+    u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = cfg | (1u << 12) | (1u << 14);
-    uc_mac_cmd(cfg | 0x1d005000);
+    uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_LOW);
     arc_nops(3);
     __asm__ volatile("st r40,[%0]" :: "r"(&m->snap_sel5) : "memory");
-    cfg = mac_sel_shadow & 0xffff0fff;
+    cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = cfg | (1u << 13) | (1u << 14);
-    uc_mac_cmd(cfg | 0x1d006000);
+    uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_HIGH);
     arc_nops(3);
     __asm__ volatile("st r40,[%0]" :: "r"(&m->snap_sel6) : "memory");
     m->state = b;
@@ -808,9 +808,9 @@ void ucode_cmd_dispatch(u32 a, u32 b)
 /* ---- Крупные хендлеры (структурные порты) ---- */
 void ucode_cmd_0x01_handler(const struct lmac_cmd_rx_on *c)
 {
-    u32 r0 = mac_sel_shadow & 0xffff0fff;
+    u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
-    uc_mac_cmd(r0 | 0x1d00a000);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     arc_nops(3);   /* vendor: MAC обновляет r40 не сразу */
     u32 r15 = MAC_PHYSIG_PPDU_EVT_CNT_OF(mac_status_sel());
     u32 r13 = MAC_PHYSIG_CCA_EVT_CNT_OF(mac_status_sel());

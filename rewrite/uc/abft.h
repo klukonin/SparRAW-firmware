@@ -193,6 +193,37 @@ static inline __attribute__((always_inline)) u32 sls_ssw_dur_mul(u32 frame_us)
 #define SSWACK_DUR_SUB    ((DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK) / DMG_CLK_PER_US)
 _Static_assert(SSWFB_DUR_US == 28u && SSWFB_DUR_BRP_US == 37u && SSWACK_DUR_SUB == 27u, "Duration SLS");
 
+/* Пропуск A-BFT после Feedback (10.42.5.2, aMaxABFTAccessPeriod): relax_cnt — число следующих A-BFT, а не маяков.
+ * Маяков в BTI несколько (путь приёма видит каждый), поэтому уменьшение — один раз на BTI: BTI узнаётся по своему
+ * концу (TSF + Duration маяка, 9.3.4.2; у маяков одного BTI совпадает с точностью до мкс). Пропускается и весь BTI,
+ * на котором счётчик дошёл до 0. исправлено (vendor/наш путь приёма: уменьшение на каждый маяк — пропуск двух A-BFT
+ * сгорал за один BTI). Вызывать, когда маяк не адресует нас; 1 — этот A-BFT пропустить. */
+static inline u32 abft_relax_skip(void)
+{
+    u32 e = ((uc_read_tsf_lo() + rx_buf_duration) >> 7) & 0x7fffu;   /* конец BTI, шаг 128 мкс */
+    u32 m = bcn_rx.relax_bti;                       /* б0 — отметка задана, б1..15 — конец BTI */
+    if ((m & 1u) && (((e - (m >> 1)) & 0x7fffu) <= 1u || (((m >> 1) - e) & 0x7fffu) <= 1u))
+        return 1;                                   /* тот же BTI, что при последнем уменьшении */
+    if (abft_cfg.relax_cnt >= 1u) {
+        abft_cfg.relax_cnt -= 1;
+        bcn_rx.relax_bti = (u16)((e << 1) | 1u);
+        return 1;
+    }
+    return 0;
+}
+
+/* SNR Report (9.5.3, поле SSW Feedback): 8 бит дополнительного кода, 4·(SNR − 19) — от −13 до 50,75 дБ; вне
+ * диапазона — насыщение (исправлено, vendor: (u8)((snr − 19) << 2) заворачивался — 63 дБ давали −1 дБ). */
+static inline __attribute__((always_inline)) u8 ssw_snr_report(s32 snr_db)
+{
+    s32 v = (snr_db - 19) * 4;
+    if (v < -128)
+        v = -128;
+    if (v > 127)
+        v = 127;
+    return (u8)v;
+}
+
 /* ---- TXOP BTI (802.11-2020 10.42.4, 9.2.5.1): Duration маяков и конец BTI по эфиру ---- */
 /* TXTIME маяка — по формуле Control PHY (ifs.h) от длины PSDU, которую fw кладёт в fwsh_diag.bcn_psdu_len при
  * постановке шаблона (TX_API_send_dband_bcon); P = TXTIME + SBIFS; TXOP = ⌈((n − 1)·P + d·165) / 165⌉ мкс (d —

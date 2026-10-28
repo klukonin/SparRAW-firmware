@@ -183,6 +183,29 @@
     успех на последнем опросе; теперь таймаут — все опросы неудачны, только запись в журнал.
   - fw, START_LISTEN при отказе (PCP/AP или mid в состоянии 2): vendor отвечал LISTEN_STARTED(0), как успех; теперь 1.
 
+- uc, NAV по 10.3.2.4 (tests/unit/test_uc_nav_update.py): предел 32767 мкс вместо 5000; Duration/ID ≥ 32768 NAV не
+  ставит (10.28.3); истёкший NAV ставится любым Duration (vendor сравнивал с давно истёкшим концом — после ~36 мин
+  тишины NAV не ставился); NAV по DMG Beacon соседа — его Duration без надбавки 1600 мкс.
+- uc, Duration ответов (9.2.5.1): Grant Ack и CF-End на CF-End — вверх и точно (было на 1 мкс меньше).
+
+- uc, SLS/A-BFT (tests/unit test_uc_sls_*, test_uc_beacon_*): SNR Report насыщается (−13…50,75 дБ, 9.5.3; vendor
+  заворачивал по модулю 256); Total Sectors in ISS — секторы этой ISS, а не Capability; в SSW станции в A-BFT RF-цепь
+  не попадает в RXSS Length (9.5.1, 9.2.2); A-BFT с IsResponderTXSS = 0 (RXSS ответчика) — станция не участвует
+  (vendor шёл развёрткой, 10.42.2.3.3); пропуск aMaxABFTAccessPeriod — по A-BFT, а не по маякам (10.42.5.2).
+- fw, очистка после разрыва (tests/unit/test_fw_conn_cleanup.py): элемент списка ранжирования соединений снимается
+  при освобождении записи (vendor оставлял висячий после тайм-аута/отказа ассоциации и разрыва во время неё).
+  У STA при разрыве сбрасываются AID и таблица SP из ESE (vendor: новая ассоциация с другим AID по тому же маяку
+  оставляла окно прежнего AID с «инициировать» — передача в чужом SP).
+  WMI_PCP_STOP при ассоциированных станциях отключает их и останавливает BSS (vendor: только журнал — маяки шли,
+  WMI_PCP_STOPPED не уходил, wmi_pcp_stop драйвера — тайм-аут).
+  ≥ 8 потерь связи за 4,5 с — запись в журнал, а не фатальный ассерт 0x142e (костыль vendor: падение fw по эфиру).
+- fw, значения хоста (tests/unit/test_fw_wmi_validation.py, test_fw_wmi_fuzz.py): отказ WMI_BAD_PARAM с ответом
+  вместо фатальных ассертов/записи за массивом vendor — cid WMI_SET_SECTORS, тип сети и канал CONNECT/PCP_START/
+  BCON_CTRL (0x11ec, 0x119b), список каналов START_SCAN (> 4 — 0x1470), CFG_RX_CHAIN повторный (0x127c) и
+  max_rx_pl_per_desc не степень двойки (0x1343), VRING_CFG с timeslot_us 0 (0x12b2), RCP_ADDBA_RESP с TID ≥ 8
+  (0x1013), P2P_CFG с интервалом 0 (0x1243), DISCOVERY_START/LISTEN/SEARCH при скане или поднятом BSS
+  (0x1235..0x123a), BCAST_VRING_CFG на занятое кольцо или до подъёма BSS (0x1287, 0x11f5).
+
 ## Сохранённые особенности vendor (с комментариями в коде)
 
 Примеры: WMI 0x9a6/0x9a7 отвечают id 0x19a5; 0xfff вечный цикл;

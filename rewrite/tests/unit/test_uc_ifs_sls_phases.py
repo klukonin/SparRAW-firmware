@@ -130,7 +130,7 @@ def test_responder_txss_ack_after_mbifs_and_restores_sifs(uc, iss_ok, fb_ok):
     assert uc.r32(TXSS_IFS_RESTORE) == 0
 
 
-RX_STUBS = {'uc_wait_event_busy': 0, 'rx_parse_ssw_field': 0, 'rx_switch_to_rx_mode': 0,
+RX_STUBS = {'uc_wait_event_busy': 0, 'rx_parse_ssw_field': 0, 'rx_end_switch_to_tx': 0,
             'rx_funcs_record_level_8020f8_8020fc': 0, 'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0}
 
 
@@ -158,10 +158,6 @@ def test_chain_iss_reception_then_responder_flow_ends_in_sifs(uc):
     assert_back_to_sifs(uc, init)
 
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 10.42.2.2/10.3.2.3.10: SSW-Ack на повтор SSW-Feedback, '
-                   'отправленный из обработчика приёма (txss.c sls_rx_ssw_frame → sls_send_ssw_ack, ветка r37.25), '
-                   'уходит при SIFS в 0x886d00: MBIFS грузится только при приёме SSW (r37.24), а поток ответчика '
-                   'уже вернул SIFS')
 def test_ack_to_retried_feedback_after_mbifs(uc):
     """Инициатор не получил SSW-Ack и повторил SSW-Feedback (10.42.6.2) уже после конца потока ответчика (рейтинг
     секторов сохранён, sls_rank_valid_mask): ответчик в цикле приёма DTI (txrx_state1 = 8) отвечает SSW-Ack прямо из

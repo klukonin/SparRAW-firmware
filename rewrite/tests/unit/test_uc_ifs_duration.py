@@ -196,9 +196,6 @@ def test_grant_ack_duration_never_negative(uc, d):
     assert grant_ack_duration(uc, d) == [0]
 
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 9.3.1.18 + 9.2.5.1: Duration Grant Ack = ⌈D − (TXTIME(Grant Ack) + '
-                   'SIFS)⌉ = ⌈D − 18,05⌉; uc (rx.c rx_send_dmg_cts, ifs.h DMG_RESP_DUR_SUB_US) вычитает ⌈18,05⌉ = 19 — '
-                   'результат на 1 мкс меньше (округление вниз)')
 @pytest.mark.parametrize('d', [19, 20, 100, 32767])
 def test_grant_ack_duration_rounded_up(uc, d):
     want = max(0, ceil_us(d - ctrl_txtime_us(GRANT_ACK_LEN) - A_SIFS_US))
@@ -223,9 +220,6 @@ def test_cf_end_response_last_in_sequence_is_zero(uc):
     assert d == [0] and ret == 0
 
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 9.3.1.6 + 9.2.5.1: ответ на CF-End с i = 3 (Duration ⌈34,07⌉ = 35) '
-                   'имеет i = 2: (i − 1)·(TXTIME(CF-End) + SIFS) = 17,04 → 18 мкс; uc (rx.c rx_flow_send_imm_response, '
-                   'ifs.h DMG_RESP_DUR_SUB_US) даёт 35 − ⌈17,04⌉ = 17 (на 1 мкс меньше)')
 def test_cf_end_response_middle_of_sequence(uc):
     d, ret = cf_end_response(uc, cf_end_seq_duration(3))
     assert d == [cf_end_seq_duration(2)]

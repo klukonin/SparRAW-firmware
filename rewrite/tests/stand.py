@@ -251,6 +251,11 @@ class Stand:
     # --- роли ---
     def boot_sta(self, timeout=90):
         p, c = self.peer, self.cfg['peer']
+        # Радио dut — выключить до перезапуска точки: иначе станция прошлого теста успевает переподключиться к
+        # свежей точке, а потом пропадает при перезагрузке dut по питанию без разъединения — vendor-точка после
+        # этого перестаёт слать маяки и принимать WMI («WMI ring full»), новая загрузка dut — «link up: no beacon
+        # from peer» (сюита 2026-10-28, 2 из 4 прогонов; hwboot.sh перезапускает точку уже при выключенном dut).
+        self.dut.run('wifi down radio0 >/dev/null 2>&1', check=False, timeout=30)
         if self.peer_dirty or p.run('iw dev | grep -c "type AP"', check=False).strip() == '0':
             self._peer_restore_ap()
         # точка может держать зависшую запись станции и не слать маяки — перезапуск wifi параллельно загрузке dut

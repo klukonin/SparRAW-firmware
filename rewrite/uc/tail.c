@@ -42,9 +42,9 @@ void internal_tx_isr(void)
         case 1: internal_tx_flow_sm2(0); break;
         case 2: {
             /* бит 6: TxSS-sweep — возможно отложить, если мало времени. */
-            u32 cfg = mac_sel_shadow & 0xffff0fff;
+            u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
             mac_sel_shadow = cfg | (1u << 14);
-            uc_mac_cmd(cfg | 0x1d004000);
+            uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_BI_COUNTER);
             arc_nops(3);
             u32 bi = mac_status_sel() & MAC_BI_COUNTER;          /* bmsk 0x19 */
             u32 dur = txss_sweep_duration_for_sta(bf_cur_sta);
@@ -468,9 +468,15 @@ void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d)
 
 u32 grant_detect_step(u32 a, u32 b, u32 c) {
     /* 6.2 asm 0x92db88. */
+    return grant_detect_step_at(uc_read_tsf_lo() + a, b, c);
+}
+
+/* grant_detect_step по уже прочитанному TSF (t = TSF + смещение): путь ответа на RTS читает TSF один раз
+ * (rx_get_required_response) — второе чтение (команда MAC 0x4d + 3 nop + r55) стояло в сроке SIFS. */
+u32 grant_detect_step_at(u32 t, u32 b, u32 c) {
     u32 r14 = b, r15 = 0;
-    u32 r0 = uc_read_tsf_lo() + a;
-    u32 r2 = rx_nav.flags;                               /* vendor читает после uc_read_tsf_lo */
+    u32 r0 = t;
+    u32 r2 = rx_nav.flags;
     if ((r2 & 3) == 3) {
         r0 -= rx_nav.end_tsf;
         if (r0 & (1u << 31))
@@ -893,9 +899,9 @@ void mac_prepare_txrx_window(struct tx_ctx_s *a, u32 b)
         return;
     }
     mac_select_rf_module_cmd31(0, 0);
-    u32 r8 = mac_sel_shadow & 0xffff0fff;
-    mac_sel_shadow = r8 | 0x3000;
-    uc_mac_cmd(r8 | 0x1d003000);
+    u32 r8 = mac_sel_shadow & ~MAC_SEL_FIELD;
+    mac_sel_shadow = r8 | MAC_SEL_REM_TIME;
+    uc_mac_cmd(r8 | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
     arc_nops_nop(2);
     u32 r7 = (u16)mac_status_sel();              /* extw r7,r40 — delay-слот, читается всегда */
     if (b == 2) {
@@ -1013,7 +1019,7 @@ void mac_mode_program_c(struct sls_peer_rec *a)
              * порога. Срыв: Feedback вне окна aSSFBDuration — ответчик его не ждёт, A-BFT-
              * ассоциация срывается. Не добавлять код между чтением r55 и 0x19000001. */
             uc_mac_cmd(0x49000080u);
-            mac_set_mode_a000(evt);
+            mac_switch_rx_to_tx(evt);
             uc_mac_cmd(0x4d000000u);
             arc_nops(3);
             u32 r55 = mac_timer_sel();
@@ -1053,9 +1059,9 @@ void mac_mode_program_c(struct sls_peer_rec *a)
         if (rx_arm_window_c() == 0)
             continue;
         /* L_92c166 */
-        u32 cfg0 = mac_sel_shadow & 0xffff0fffu;
+        u32 cfg0 = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = cfg0 | 0xd000u;
-        uc_mac_cmd(cfg0 | 0x1d00d000u);
+        uc_mac_cmd(cfg0 | MAC_CMD_STATUS_SEL | MAC_SEL_BF_METRIC);
         arc_nops(3);
         u32 r9 = MAC_BF_METRIC_OF(mac_status_sel());
         u32 r0b = (r9 > 0x3ff) ? (r9 - 0x800) : r9;
@@ -1997,9 +2003,9 @@ void tx_bcast_flow(u32 a) {
     while (!(mac_txctl_sel() & MAC_MTP_AGG_VALID))
         ;
     u32 r13v = (u32)(u16)mac_txctl_sel();
-    u32 g2 = mac_sel_shadow & 0xffff0fff;
+    u32 g2 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g2 | (1u << 13) | (1u << 15);
-    uc_mac_cmd(g2 | 0x1d00a000);
+    uc_mac_cmd(g2 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     mac_select_all_sectors_and_wait();
     mac_cmd_29000001();
     if (!mac_cca_ok()) {
@@ -2144,9 +2150,9 @@ void tx_initiator_flow_fixed_scheduling(u32 a) {
     u32 sp_buf[4];                            /* vendor: кадр 16 Б, буфер sp+4..sp+0xc */
     u32 r1 = fsched_pick_queue_r41((u32)sp_buf);
     if (uc_role_ap == 0 && r1 == 0 && fsched_ctx.state == 4) {   /* ld_s [gp,0x124] — байты */
-        u32 g = mac_sel_shadow & 0xffff0fff;
+        u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = g | (1u << 12) | (1u << 13);
-        uc_mac_cmd(g | 0x1d003000);
+        uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
         arc_nops(3);
         u32 r0 = (u32)(u16)mac_status_sel();
         if (r0 > 0xb)
@@ -2387,9 +2393,9 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
     r13->ack_mask = 0x13;
     if (qid_cfg[r13->qid].ctrl_b6 != 0)
         r13->ack_mask |= 1u << 6;
-    u32 g = mac_sel_shadow & 0xffff0fff;
+    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | (1u << 12) | (1u << 13);
-    uc_mac_cmd(g | 0x1d003000);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
     arc_nops(3);
     u32 r15 = (u32)(u16)mac_status_sel();
     u32 r0 = mtp_queue_release_mgmt(r13, (u32)&sp_buf[1], 0, r14);
@@ -2537,9 +2543,9 @@ void rx_funcs_send_direct_frame(u32 a) {
 /* Хвост ответа TX (0x93b75e..0x93b7ec и аналоги): ожидание r43, r51, 0x19/0x18. */
 static inline __attribute__((always_inline)) void uc_mac_sel(u32 sel)
 {
-    u32 g = mac_sel_shadow & 0xffff0fff;
+    u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g | sel;
-    uc_mac_cmd(g | 0x1d000000 | sel);
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | sel);
 }
 
 static void bcon_tx_resp_tail(void)
@@ -2630,7 +2636,7 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             mac_program_tx_beacon();
         else
             mac_program_tx_common();
-        uc_mac_sel(0xa000);
+        uc_mac_sel(MAC_SEL_PHY_SIGNALS);
         mac_select_all_sectors_and_wait();
         mac_cmd_29000001();
         u32 r40 = mac_status_sel();
@@ -3031,7 +3037,7 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
     bf_set32((u32)buf, 4, 4, 6);
     bf_set32((u32)buf, 8, 4, 9);
     buf[0x10] = sls.best.sector | (sls.best.antenna << 6);
-    buf[0x11] = (sls.best.snr_db - 0x13) << 2;
+    buf[0x11] = ssw_snr_report(sls.best.snr_db);
     buf[0x12] = 0;
     buf[0x13] = 0;
     buf[0x14] = 0;

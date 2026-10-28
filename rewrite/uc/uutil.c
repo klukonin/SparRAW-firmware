@@ -180,9 +180,9 @@ void uc_sleep_until_event(u32 a, u32 b)
 /* Чтение BI-синхронизации (0x936b60). */
 u32 uc_read_bi_sync(void)
 {
-    u32 r0 = mac_sel_shadow & 0xffff0fff;
+    u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 14);
-    uc_mac_cmd(r0 | 0x1d004000u);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_BI_COUNTER);
     arc_nops(3);
     return MAC_BI_SYNC_OF(mac_status_sel());              /* lsr r0,r40,0x1f */
 }
@@ -191,9 +191,9 @@ u32 uc_read_bi_sync(void)
 u32 uc_bi_counter_in_window(u32 a)
 {
     (void)a;
-    u32 r2 = mac_sel_shadow & 0xffff0fff;
+    u32 r2 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r2 | (1u << 14);
-    uc_mac_cmd(r2 | 0x1d004000);
+    uc_mac_cmd(r2 | MAC_CMD_STATUS_SEL | MAC_SEL_BI_COUNTER);
     arc_nops(3);
     u32 r1 = mac_status_sel() & MAC_BI_COUNTER;
     bi_pos_us = r1;
@@ -285,7 +285,7 @@ void uc_wait_direct_tx_ready(void)
 {
     u32 r0 = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = r0;
-    uc_mac_cmd(r0 | 0x1d000000u);
+    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL);
     arc_nops_nop(2);
     u32 v;
     do {

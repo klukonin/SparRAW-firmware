@@ -30,14 +30,13 @@ void l2mgr_apply_key_to_prings(struct conn *conn)
 }
 
 /* check_high_false_alarm_aging_cb (0x8f1980, 56 Б): таймер через 0x44aa20 мкс (4,5 с)
- * после потери связи; cnt0 — счётчик тревог при постановке. Прирост ≥ 8 за
- * это время — ассерт 0x142e. Таймер [0x8000dc] снят. */
+ * после потери связи; cnt0 — счётчик тревог при постановке; запись в журнал (сколько тревог за это время).
+ * Таймер [0x8000dc] снят. исправлено (vendor: прирост ≥ 8 — фатальный ассерт 0x142e: частые потери связи —
+ * состояние эфира, не ошибка fw; падение fw и её перезагрузка драйвером рвали и остальные соединения). */
 static void check_high_false_alarm_aging_cb(u32 cnt0, u32 a1)
 {
     (void)a1;
     fw_log_emit2(0x2b, 0x100f4e8, FALSE_ALARM_CNT, cnt0);
-    if (FALSE_ALARM_CNT - cnt0 >= 8)                   /* cmp_s / blnc: беззнаково */
-        fw_sysassert_fatal(__builtin_return_address(0), 0x142e);
     FALSE_ALARM_TMR = 0;
 }
 

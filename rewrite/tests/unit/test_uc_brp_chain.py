@@ -15,7 +15,7 @@ BF_STA = 0x801ffc                  # bf_sta[sta]: +9 L-RX пира, +0xa б0 «�
 STA_TAB = 0x801104
 PEER = bytes.fromhex('24181d243b0b')
 
-RX_STUBS = {'uc_wait_event_busy': 0, 'rx_parse_ssw_field': 0, 'rx_switch_to_rx_mode': 0,
+RX_STUBS = {'uc_wait_event_busy': 0, 'rx_parse_ssw_field': 0, 'rx_end_switch_to_tx': 0,
             'rx_funcs_record_level_8020f8_8020fc': 0, 'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0}
 
 

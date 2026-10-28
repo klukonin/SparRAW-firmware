@@ -1381,7 +1381,9 @@ void wmi_rcp_addba_resp(const struct wmi_rcp_addba_resp_cmd *cmd, u32 mid)
     struct mid *m;
     u32 len;
     struct wmi_rcp_addba_resp_sent_event *e;
-    if (conn == 0) {
+    if (tid >= 8)                                   /* правил ключа MAC 8 (vendor: ассерт 0x1013 после отправки ответа) */
+        wmi_reject_param(0x825, cmd->cidxtid, 0);
+    if (conn == 0 || tid >= 8) {
         TX_API_free_memory(pl);                     /* vendor не освобождал — утечка элемента TX-пула */
         e = host_if_send_pair();
         e->cidxtid = cmd->cidxtid;

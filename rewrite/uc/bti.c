@@ -516,9 +516,9 @@ void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c)
         uc_mac_cmd(0x49000100);
         uc_mac_cmd(slot0 | 0x51000000);
         uc_mac_cmd(0x5400030c);
-        u32 r8 = mac_sel_shadow & 0xffff0fff;
+        u32 r8 = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = r8;
-        uc_mac_cmd(r8 | 0x1d000000);
+        uc_mac_cmd(r8 | MAC_CMD_STATUS_SEL);
         arc_nops_nop(2);
         if ((mac_status_sel() & MAC_BIFS_IDLE_DETECT) != 5)           /* bmsk 0x2; brne → L_9241d8 */
             uc_assert((u32)__builtin_return_address(0), 0x77);
@@ -619,10 +619,10 @@ void aw_worker_collect_awake_peers(struct aw_win_s *w)
 
 
 /* ===== Ответ станции в A-BFT (прежний путь abft_responder_respond_flow/_tx_ssw удалён) =====
- * Стенд gp0path (UC_PATH_T, сборка с метками, прежний путь): вход → mac_set_mode_a000 119 тактов,
+ * Стенд gp0path (UC_PATH_T, сборка с метками, прежний путь): вход → mac_switch_rx_to_tx 119 тактов,
  * → ожидание слота ещё 51–60, событие слота → tx_ssw 112, → чтение SIFS_CNT 41, SIFS_CNT → первая 0x19 469;
  * событие слота → 0x19 = 622 такта (3,77 мкс). До события делается всё, что от него не зависит:
- *  - выбор слота (r47) и mac_set_mode_a000 + 0x3d000002 — после маяка с CDOWN 0 (приём завершён), в цикле
+ *  - выбор слота (r47) и mac_switch_rx_to_tx + 0x3d000002 — после маяка с CDOWN 0 (приём завершён), в цикле
  *    bti_bi2_track_best_metric; маяк CDOWN 0 не принят — на пути конца GP0, как раньше;
  *  - ответ A-BFT — прямо из ветки «конец GP0», без пяти возвратов и диспетчера; переход автомата BI BTI→A-BFT
  *    (l1_task_dispatch(2)) — после пачки SSW, uc_read_tsf_lo — после A-BFT (bti_dispatch_sweep_step, как был);
@@ -714,9 +714,11 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
      * 10 Б в FIFO и ожидание direct TX, mac_program_tx_common, спин MTP r43) ~230 инструкций ≈ 1,5–2 мкс +
      * задержки MTP; запас: нет — SBIFS программно не выдерживается. Хвост пачки уходит за aSSDuration и может
      * наехать на SSW-Feedback AP (через MBIFS после aSSDuration). Удлинение пути — меньше SSW в слоте. */
+    /* DMG Antenna ID — 2 бита (B16..B17 поля SSW, 9.5.1); выше — RXSS Length, вне CBAP резерв = 0 (9.2.2).
+     * исправлено (vendor: rf_chain_cfg << 16 целиком — RF-цепь ≥ 4 попадала в RXSS Length). Вне цикла: путь короче. */
+    u32 ssw_ant = (u32)(*(u8 *)&rf_chain_cfg & 3u) << 16;
     do {
-        uc_mac_cmd((*(u8 *)&rf_chain_cfg << 16) |
-                           ((r14 << 1) | 0x2d000001 | (r13 << 10)));
+        uc_mac_cmd(ssw_ant | ((r14 << 1) | 0x2d000001 | (r13 << 10)));
         abft_send_ssw_feedback(0);
         uc_mac_cmd(((r15 + 1023u) >> 10) | 0x15000000);
         uc_mac_cmd(0x14000007);
@@ -814,12 +816,12 @@ static u32 abft_ssw_go(struct abft_ssw_st *s)
 }
 
 /* Ответ A-BFT станции, вызов из ветки «конец GP0» bti_bi2_track_best_metric. pre — выбор слота и
- * mac_set_mode_a000 уже сделаны после маяка CDOWN 0 (slot — выбранный слот). */
+ * mac_switch_rx_to_tx уже сделаны после маяка CDOWN 0 (slot — выбранный слот). */
 void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot)
 {
     UC_PATHT(6);
     if (!pre) {
-        mac_set_mode_a000((u32)r);
+        mac_switch_rx_to_tx((u32)r);
         uc_mac_cmd(0x3d000002);
         slot = abft_sta_pick_slot();
     }
@@ -906,6 +908,7 @@ void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot)
                      * (aMaxABFTAccessPeriod = 2). Вне Discovery стандарт пропуска не требует; relax_period от fw
                      * (LMAC 0x23, политика vendor: 1) не действует — он стоил латентности BF станции на BI. */
                     abft_cfg.relax_cnt = (bcn_rx.bi_ctrl[0] & 2u) ? ABFT_MAX_ACCESS_PERIOD : 0u;
+                    bcn_rx.relax_bti = 0;                   /* новый отсчёт пропуска (abft_relax_skip) */
                     uc_evt_build_and_post_report(r, 0);
                     r16 = MAC_EVT4_GP2_END;
                     goto fdbk_done;
@@ -917,7 +920,7 @@ void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot)
         bcn_rx.abft_nofb_cnt += 1;
         r14 = abft_sta_pick_slot();
 fdbk_done:
-        mac_set_mode_a000((u32)r);
+        mac_switch_rx_to_tx((u32)r);
         uc_mac_cmd(0x3d000002);
         r15 = MAC_EVT4_GP2_END;
     }
@@ -970,9 +973,9 @@ static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk)
         t_bcn = abft_t1();                           /* MAC_EVT1_RX_FRAME первого маяка: конец BTI для поправки по последнему маяку */
         if (!(mac_evt1() & MAC_EVT1_RX_FRAME)) {
             /* L_937298 */
-            u32 r1 = mac_sel_shadow & 0xffff0fff;
+            u32 r1 = mac_sel_shadow & ~MAC_SEL_FIELD;
             mac_sel_shadow = r1 | (1u << 14);
-            uc_mac_cmd(r1 | 0x1d004000);
+            uc_mac_cmd(r1 | MAC_CMD_STATUS_SEL | MAC_SEL_BI_COUNTER);
             arc_nops(3);
             bti_bi2_bi_counter = mac_status_sel() & MAC_BI_COUNTER;
             bi_win.bi2_cnt += 1;
@@ -1005,8 +1008,16 @@ static u32 bti_bi2_event_step_chk(struct bi_ctx_s *c, u32 chk)
         bcn_rx.bi_ctrl[5] = rx_buf_body1c;
         bcn_rx.bss_type = rx_buf_bcn_dmg_params & 3;   /* bmsk 0x1 */
         r3 = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
-        if (r3 >= ABFT_SS_FRAMES_PER_SLOT)             /* поле FSS < aSSFramesPerSlot — A-BFT без нас (abft.h) */
-            goto counter_machine;
+        /* FSS < aSSFramesPerSlot (abft.h) — A-BFT без нас */
+        if (r3 >= ABFT_SS_FRAMES_PER_SLOT) {
+            if (bcn_rx.bi_ctrl[1] & BCN_BIC1_IS_RESP_TXSS)
+                goto counter_machine;
+            /* IsResponderTXSS = 0 (RXSS ответчика, 10.42.2.3.3) — A-BFT без нас, но маяк учитывается как обычно
+             * (BSSID ниже: по нему fw узнаёт маяк пира после ассоциации) */
+            r5 = 0;
+            bcn_rx.abft_here = 0;
+            goto sweep_body;
+        }
         bcn_rx.abft_here = 0;
         bcn_rx.abft_go = 0;
         r16 = 0x800;
@@ -1022,9 +1033,9 @@ sweep_body:                                            /* L_936f54 */
     r16 = 0x800;
     r17 = 1;
     if (r5 != 0) {
-        u32 r10 = mac_sel_shadow & 0xffff0fff;
-        mac_sel_shadow = r10 | 0xd000;
-        uc_mac_cmd(r10 | 0x1d00d000);
+        u32 r10 = mac_sel_shadow & ~MAC_SEL_FIELD;
+        mac_sel_shadow = r10 | MAC_SEL_BF_METRIC;
+        uc_mac_cmd(r10 | MAC_CMD_STATUS_SEL | MAC_SEL_BF_METRIC);
         arc_nops(3);
         u32 r11 = mac_status_sel();
         metric = r11;                                  /* sp[0] = сырое */
@@ -1041,9 +1052,9 @@ sweep_body:                                            /* L_936f54 */
 post:                                                  /* L_936fe8 */
     MMIO32(HW_PRS_OWN_ADDR_HI) &= 0x7fffffffu;
     {
-        u32 r0 = mac_sel_shadow & 0xffff0fff;
-        mac_sel_shadow = r0 | 0xd000;
-        uc_mac_cmd(r0 | 0x1d00d000);
+        u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
+        mac_sel_shadow = r0 | MAC_SEL_BF_METRIC;
+        uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_BF_METRIC);
         arc_nops(3);
     }
     {
@@ -1059,14 +1070,14 @@ post:                                                  /* L_936fe8 */
             case RX_MEAS_PLCP: rx_meas_finish_with_8830ec(&rx_meas); break;
             case RX_MEAS_PKT: rx_meas_capture_frame(&rx_meas, (u32)&metric); break;
             case 5: {
-                u32 r6 = mac_sel_shadow & 0xffff0fff;
-                mac_sel_shadow = r6 | 0x5000;
-                uc_mac_cmd(r6 | 0x1d005000);
+                u32 r6 = mac_sel_shadow & ~MAC_SEL_FIELD;
+                mac_sel_shadow = r6 | MAC_SEL_TSF_LOW;
+                uc_mac_cmd(r6 | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_LOW);
                 arc_nops(3);
                 rx_meas.snap_sel5 = mac_status_sel();
-                r6 = mac_sel_shadow & 0xffff0fff;
-                mac_sel_shadow = r6 | 0x6000;
-                uc_mac_cmd(r6 | 0x1d006000);
+                r6 = mac_sel_shadow & ~MAC_SEL_FIELD;
+                mac_sel_shadow = r6 | MAC_SEL_TSF_HIGH;
+                uc_mac_cmd(r6 | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_HIGH);
                 arc_nops_nop(2);
                 rx_meas.snap_sel6 = mac_status_sel();
                 rx_meas.state = r17;
@@ -1140,8 +1151,7 @@ inc_0x26:
 dec_counter:                                           /* L_9371c8 */
     /* relaxation: после Feedback пропускать следующие A-BFT; маяк, адресующий нас (Discovery, CC, A-BFT Responder
      * Address = наш MAC), — без пропуска (10.42.5.2, aMaxABFTAccessPeriod) */
-    if (abft_cfg.relax_cnt >= 1 && !abft_bcn_addressed_to_us()) {   /* brlt r7,0x1 → знаков. на zero-ext */
-        abft_cfg.relax_cnt -= 1;
+    if (!abft_bcn_addressed_to_us() && abft_relax_skip()) {
         bcn_rx.abft_skip_relax += 1;
         r5 = 0;
         goto sweep_body;
@@ -1166,7 +1176,7 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
     /* 6.2 asm 0x93dc80. */
     u32 r16 = MAC_EVT4_GP0_END | MAC_EVT4_GP2_END;
     u32 metric = 0;                           /* sp[0] */
-    u32 fp_pre = 0, fp_slot = 0;              /* выбор слота и mac_set_mode_a000 сделаны после маяка CDOWN 0 */
+    u32 fp_pre = 0, fp_slot = 0;              /* выбор слота и mac_switch_rx_to_tx сделаны после маяка CDOWN 0 */
 
     uc_mac_cmd(0x2011000);
     u32 g0off;                                 /* превышение GP0 маяка взвода (abft_sta_gp0_clk): rx_buf — ещё он */
@@ -1203,9 +1213,9 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                 }
             }
 
-            u32 r8 = mac_sel_shadow & 0xffff0fff;
-            mac_sel_shadow = r8 | 0xd000;
-            uc_mac_cmd(r8 | 0x1d00d000);
+            u32 r8 = mac_sel_shadow & ~MAC_SEL_FIELD;
+            mac_sel_shadow = r8 | MAC_SEL_BF_METRIC;
+            uc_mac_cmd(r8 | MAC_CMD_STATUS_SEL | MAC_SEL_BF_METRIC);
             arc_nops(3);
 
             u32 r7 = MAC_BF_METRIC_OF(mac_status_sel());
@@ -1226,14 +1236,14 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                             rx_meas_capture_frame(&rx_meas, (u32)&metric);
                             break;
                         case 5: {
-                            u32 r6 = mac_sel_shadow & 0xffff0fff;
-                            mac_sel_shadow = r6 | 0x5000;
-                            uc_mac_cmd(r6 | 0x1d005000);
+                            u32 r6 = mac_sel_shadow & ~MAC_SEL_FIELD;
+                            mac_sel_shadow = r6 | MAC_SEL_TSF_LOW;
+                            uc_mac_cmd(r6 | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_LOW);
                             arc_nops_nop(2);
                             rx_meas.snap_sel5 = mac_status_sel();
-                            r6 = mac_sel_shadow & 0xffff0fff;
-                            mac_sel_shadow = r6 | 0x6000;
-                            uc_mac_cmd(r6 | 0x1d006000);
+                            r6 = mac_sel_shadow & ~MAC_SEL_FIELD;
+                            mac_sel_shadow = r6 | MAC_SEL_TSF_HIGH;
+                            uc_mac_cmd(r6 | MAC_CMD_STATUS_SEL | MAC_SEL_TSF_HIGH);
                             arc_nops(3);
                             rx_meas.snap_sel6 = mac_status_sel();
                             rx_meas.state = 1;
@@ -1270,11 +1280,11 @@ void bti_bi2_track_best_metric(struct bi_ctx_s *c)
                 }
             }
             /* Маяк с CDOWN 0 — последний в BTI, приём завершён: подготовка ответа A-BFT до конца GP0
-             * — выбор слота (r47) и mac_set_mode_a000 + 0x3d000002 (ожидания MAC_PHYSIG_CCA_PPDU_COMP/MAC_PHYSIG_PHY_RX_FRAME уже выполнены).
+             * — выбор слота (r47) и mac_switch_rx_to_tx + 0x3d000002 (ожидания MAC_PHYSIG_CCA_PPDU_COMP/MAC_PHYSIG_PHY_RX_FRAME уже выполнены).
              * Путь цикла после маяка удлиняется на ~100 инструкций, но до конца GP0 у нашего AP ≥ 1,6 мкс
              * (D_last = 3), у vendor-AP ~19 мкс. Маяк CDOWN 0 не принят — всё на пути конца GP0, как раньше. */
             if (bcn_rx.abft_go != 0 && !fp_pre && ((rx_buf_bcn_ssw >> 1) & 0x1ff) == 0) {
-                mac_set_mode_a000((u32)&c->rec);
+                mac_switch_rx_to_tx((u32)&c->rec);
                 uc_mac_cmd(0x3d000002);
                 fp_slot = abft_sta_pick_slot();
                 fp_pre = 1;
