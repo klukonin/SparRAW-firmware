@@ -213,10 +213,10 @@ __attribute__((section(".textlate"))) void rx_pkt_srvs_dispatch(struct rx_pkt_sr
 }
 
 /* Таблицы методов объекта RX-служб rx_pkt_srvs (include/ieee80211.h; ставит конструктор
- * 0x8c19b8 — ctor_obj_842840_vtables). */
+ * 0x8c19b8 — ctor_rx_pkt_srvs_vtables). */
 /* 0x800874 */
 FWDATA(800874) const struct rx_pkt_srvs_vt rx_pkt_srvs_vtbl = {
-    .alloc_ei = rx_mgmt_prs_alloc_ei,          /* vendor 0x8e0a84 */
+    .alloc_ei = rx_mgmt_parse_frame,          /* vendor 0x8e0a84 */
     .dispatch = rx_pkt_srvs_dispatch,          /* vendor 0x8e3c70 */
 };
 /* 0x800880 */
@@ -245,7 +245,7 @@ __attribute__((section(".textlate"))) void rx_api_drain_list_init(struct rx_desc
 
 /* ---------------- RX-кольцо DMA (struct rx_ring, include/rx_ring.h) ---------------- */
 
-/* Объект RX-кольца (в образе нули; таблицу методов ставит ctor_obj_805fe4_vtable, кольцо и
+/* Объект RX-кольца (в образе нули; таблицу методов ставит ctor_rx_ring_vtable, кольцо и
  * пул — rx_pool__init, fw/l2mgr.c). */
 /* vendor 0x805fe4 */
 FWDATA(805fe4) struct rx_ring rx_ring = { 0 };
@@ -268,11 +268,11 @@ __attribute__((section(".textlate"))) u32 fwq_tx_get_count(void)
  * +0x38), status бит 0 — готов, бит 2 → info.status; len — длина. Каждый снятый дескриптор
  * получает новый буфер (rx_buf__alloc), голова кольца уходит в DMA. Пул исчерпан
  * (count_below_limit = 0) — журнал «RING PENDED», r->pended = 1, выход. */
-__attribute__((section(".textlate"))) void fwq_tx_handle_completion(struct rx_dma_ring *r, struct llist *list)
+__attribute__((section(".textlate"))) void rx_dma_ring_reap(struct rx_dma_ring *r, struct llist *list)
 {
     u32 n = 0;
     struct rx_desc *d;
-    vring_reg_write_locked_0c(1u << r->dma_ring, 0);
+    vring_dma_icr_write_locked(1u << r->dma_ring, 0);
     d = (struct rx_desc *)tx_desc_by_index(&r->r, r->r.tail);
     while (d->status & 1u) {
         u32 buf;
@@ -292,12 +292,12 @@ __attribute__((section(".textlate"))) void fwq_tx_handle_completion(struct rx_dm
         pkt->info.status = (u16)((d->status >> 2) & 1u);
         pkt->info.len = d->len;
         pkt->info.qid = (u8)((d->w1 >> 16) & 0x1fu);
-        pkt->info.mid = (u8)new_link_evt();
+        pkt->info.mid = (u8)radio_mgr_get_cur_mid();
         pkt->info.cid = (u8)((d->w0 >> 4) & 7u);
         pkt->info.mcs = (u8)((d->w1 >> 21) & 0xfu);
         pkt->rsv_10 = 0;
         pkt->body = (u8 *)buf;
-        list_find_entry_d((u32 *)list, (u32 *)pkt);
+        llist_append((u32 *)list, (u32 *)pkt);
         n++;
         d->buf = (u32)rx_buf_alloc() & 0x3ffffu;
         d->status &= (u8)~1u;
@@ -306,13 +306,13 @@ __attribute__((section(".textlate"))) void fwq_tx_handle_completion(struct rx_dm
         hwd_dma_write_ring_reg(r->dma_ring, r->r.head);
         d = (struct rx_desc *)tx_desc_by_index(&r->r, r->r.tail);
     }
-    vring_reg_write_locked_20(1u << r->dma_ring, 0);
+    vring_fw_ring_unmask_irq(1u << r->dma_ring, 0);
 }
 
 /* fwq_tx__handle_completion_thunk (0x8cc740, 6 Б; rx_ring_vtbl [1]): кольцо — объект +4. */
 void fwq_tx_handle_completion_thunk(struct rx_ring *obj, struct llist *list)
 {
-    fwq_tx_handle_completion(&obj->ring, list);
+    rx_dma_ring_reap(&obj->ring, list);
 }
 
 /* Таблица методов RX-кольца (include/rx_ring.h). */
@@ -363,11 +363,11 @@ __attribute__((section(".textlate"))) void rx_pkt_lookup_handler(struct rx_pkt_s
 }
 
 /* mem_pool__free_thunk (0x8cb15c → 0x8cb19c): вернуть RX-пакет в пул rx_ring.pool
- * (mbox.c mem_pool_free_8cb19c). Прежний порт освобождал в 0x842840 — это таблица
+ * (mbox.c rx_ring_pool_free). Прежний порт освобождал в 0x842840 — это таблица
  * разбора кадров (5 × 0xd4 Б, rx_mgmt__find_free_ei 0x8c3370), не пул пакетов. */
 __attribute__((section(".textlate"))) void mem_pool_free_thunk(struct rx_pkt *pkt)
 {
-    mem_pool_free_8cb19c((u32)pkt);
+    rx_ring_pool_free((u32)pkt);
 }
 
 /* find_mngr__detect_discovery_bcon (0x8c7f40, 86 Б): детект discovery-бикона. */
@@ -386,7 +386,7 @@ __attribute__((section(".textlate"))) u32 find_main_sm_first_detection(struct fi
 {
     (void)field;
     fw_log_emit0(0x2c, 0x1017b50);
-    return (find_main_sm_bcon_step(&obj->found, ptr) == 0) ? 1u : 0u;
+    return (dband_info_find_by_bssid(&obj->found, ptr) == 0) ? 1u : 0u;
 }
 
 /* Схема расписания записи mid (0x805234) и курсор слотов ESE (0x8052e4); в образе нули,
@@ -476,7 +476,7 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
         } while (r17 >= 1);
     }
     fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
-    schedule_scheme_sum_two(obj);
+    schedule_scheme_start_at_next_bi(obj);
 }
 /* Отпечаток ESE маяка (число полей и 24-битная свёртка всех байт полей): vendor замечал
  * только смену ID и адресов первого поля — новое начало, длительность, другие поля и их число
@@ -579,7 +579,7 @@ __attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme
  * extb_s (без знака; прежде — (s8), все вызывающие всё равно берут младший байт). */
 __attribute__((section(".textlate"))) u32 ese_peer_cid_by_aid(struct sched_scheme *obj, u32 a, u32 b)
 {
-    u32 st = mid_state_is_2_or_3(0);
+    u32 st = mid_is_pcp_or_ap(0);
     struct mid *r1 = obj->mid;
     u32 cid = r1->aid;
     u32 flag = (a == cid || a == 0xff) ? 1u : 0u;
@@ -589,7 +589,7 @@ __attribute__((section(".textlate"))) u32 ese_peer_cid_by_aid(struct sched_schem
 /* mid__cid_by_aid (0x8cc06c, 118 Б): маска cid (1 << cid, u16) соединения записи mid obj
  * с AID aid (wildcard 0xff → cid_mask записи). Соединение не в KEY_ASSOC (7) — ассерт
  * 0x1225 и поиск дальше по списку.
- * Исправлено (порт): обход шёл битовым итератором (field_set_0x00_8e5dfc /
+ * Исправлено (порт): обход шёл битовым итератором (bit_iter_init /
  * bit_iter_has_more / bitmap_alloc_bit) по адресу списка — aid/cid читались из [номер бита
  * + 9 / + 8] (младшие адреса), состояние — из [obj+0x124] записи mid, после ассерта —
  * возврат. Vendor: 0x8cc07e iter__init (0x8e5df4) по obj+0x18, 0x8cc0aa list__has_items
@@ -636,7 +636,7 @@ __attribute__((section(".textlate"))) void ese_slot_table_add(struct ese_sched *
 /* schedule_scheme__sum_two (0x8e0d48, 36 Б): [obj+8] = TSF начала BI + BI (мкс), затем
  * дважды lmac_if__evt_walk(obj). Прежний порт брал TSF за указатель объекта (mov_s r13,r0
  * в слоте задержки сохраняет obj до вызова) и писал в [TSF+8]. */
-__attribute__((section(".textlate"))) void schedule_scheme_sum_two(struct sched_scheme *obj)
+__attribute__((section(".textlate"))) void schedule_scheme_start_at_next_bi(struct sched_scheme *obj)
 {
     u32 tsf = mac_get_bi_start_tsf();
     obj->next_bi_tsf = mac_get_beacon_interval_us() + tsf;
@@ -661,7 +661,7 @@ __attribute__((section(".textlate"))) void lmac_if_evt_walk(struct sched_scheme 
     if (obj->ese->tbl->count == 0)
         return;
     while (r14 < 4) {
-        const struct ese_slot *ev = lmac_evt_entry_end(obj->ese);   /* текущий слот: 0x8c7ef0 */
+        const struct ese_slot *ev = lmac_evt_current_slot(obj->ese);   /* текущий слот: 0x8c7ef0 */
         u32 r3 = ev->start + obj->next_bi_tsf;
         u32 r2 = ev->ctrl_lo;                       /* ldw_s r2,[r0,0] */
         u32 r15 = r2 | (1u << 6);
@@ -674,14 +674,14 @@ __attribute__((section(".textlate"))) void lmac_if_evt_walk(struct sched_scheme 
          * r2 = флаги). Прежний порт передавал (r3, r2, r1): конец и флаги менялись местами
          * в 0x886f84/0x886f88. */
         sched_program_alloc_slot_regs(r3, r1, r2);
-        if (lmac_if_evt_first_field(obj->ese) != 0)
+        if (lmac_evt_advance_slot(obj->ese) != 0)
             obj->next_bi_tsf = mac_get_beacon_interval_us() + obj->next_bi_tsf;
         r14++;
     }
 }
 /* lmac_evt__entry_end (0x8c7ef0, 16 Б): текущий слот таблицы: &tbl->slot[cur]. noinline —
  * отдельная функция у vendor (встроенная, gcc -Os пересчитывает cur·12 на каждое поле). */
-__attribute__((section(".textlate"), noinline)) struct ese_slot *lmac_evt_entry_end(struct ese_sched *obj)
+__attribute__((section(".textlate"), noinline)) struct ese_slot *lmac_evt_current_slot(struct ese_sched *obj)
 {
     return &obj->tbl->slot[obj->cur];
 }
@@ -696,7 +696,7 @@ __attribute__((section(".textlate"))) void sched_program_alloc_slot_regs(u32 a, 
     MMIO32(HW_MAC_SCHED_SLOT_CTRL) = c;
 }
 /* lmac_if__evt_first_field (0x8c65fc, 42 Б): cur = (cur + 1) % tbl->count, 1 если 0. */
-__attribute__((section(".textlate"))) u32 lmac_if_evt_first_field(struct ese_sched *obj)
+__attribute__((section(".textlate"))) u32 lmac_evt_advance_slot(struct ese_sched *obj)
 {
     u32 a = obj->cur + 1;
     u32 b = obj->tbl->count;

@@ -92,7 +92,7 @@ void mac__program_deadline_slack(int value, int offset, int early) {
 |---|---|---|
 | `shallow_sleep_rfc_step` (0x9219c8) | `(BI, 0x19, 0x50)` | перезагрузка BI − 25 − 1 мкс, 85 тактов |
 | `power_manager__decide_shallow_sleep` (0x92ad98) | `(BI, 7, 0x50)` | BI − 7 − 1 мкс, 85 тактов (штатное значение на стенде) |
-| `txrx_api_cmd_step` (0x931ce8) | константы 4, 7, 8, 10, 17, 19 рядом | ещё один профиль |
+| `txrx_api_program_bi_tsf_control` (0x931ce8) | константы 4, 7, 8, 10, 17, 19 рядом | ещё один профиль |
 
 ### Параметры BI, контур событий и ворота передачи маяка
 
@@ -321,7 +321,7 @@ LINK_STATS — это HEADER_CRC_ERROR SC/CP (0x883978/0x8839b4). Полная �
 ## Не установлено
 
 * Значение 0x19 во втором профиле `mac__program_deadline_slack` и роль профиля
-  `txrx_api_cmd_step`.
+  `txrx_api_program_bi_tsf_control`.
 * Кто пишет `0x801434` (BI): записи в ucode не найдено; вероятно, приходит тем же
   конфигом или ставится fw другим путём.
 * Точный смысл `0x886e84` (текущий NAV или предел).

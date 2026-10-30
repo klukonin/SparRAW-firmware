@@ -72,19 +72,19 @@ void phy_stats_dump(struct psvc *svc, u32 cnt)
     b = phy_get_ina_rssi_adc_db_sfd_locked();
     fw_log_emit2(0x24, 0x10196a0, a, b);
     agc[0] = agc[1] = agc[2] = agc[3] = 0;
-    cal = calib_obj4_reset_d4();
+    cal = calib_silent_rssi_reset();
     agc_get_table_pair(cal, 1, &agc[0], &agc[1]);
     agc_get_table_pair(cal, 0, &agc[2], &agc[3]);
     fw_log_emit3(0x24, 0x10196d4, agc[0], agc[2], calib_zero_db.row8);
     fw_log_emit2(0x24, 0x1019720, agc[1], agc[3]);
     for (i = 0; i < 8; i++) {
-        if (!(rf_cfg_get_rf_mask_45e(&rf_obj) & (1u << i)))
+        if (!(rf_obj_get_rf_mask(&rf_obj) & (1u << i)))
             continue;
         fw_log_emit2(0x24, 0x1019760, i, silent_rssi_agc_param_const_2(cal, (u8)i));
         fw_log_emit2(0x24, 0x1019778, i, silent_rssi_agc_param_const_4(cal, (u8)i));
     }
     for (i = 8; i >= 1; i--)
-        rf_cfg_get_rf_mask_45e(&rf_obj);
+        rf_obj_get_rf_mask(&rf_obj);
 }
 
 /* 0x80340c: таблица переходов vendor phy_monitor__on_system_state (0x8e889c): ldb.x, 23 записей, цель = 0x8e88b6 + 2·запись.
@@ -121,13 +121,13 @@ void phy_monitor_on_system_state(struct phy_monitor *obj, u32 st, u32 idle, u32 
     case 3: case 5: case 6: case 8: case 10: case 12: case 16:
         if (conn == 0 && idle == 1) {
             obj->enabled = 0;
-            detector_arm_timer(&obj->svc);
+            detector_disarm_timer(&obj->svc);
             return;
         }
         break;
     case 4: case 7: case 9: case 11:
         obj->enabled = 0;
-        detector_arm_timer(&obj->svc);
+        detector_disarm_timer(&obj->svc);
         return;
     default:                                    /* 19; 17/18/20/21 — вход/выход из сна (PS) — больше не рассылаются: энергосбережение вырезано (см. fw/action.c psc_req_reject) */
         fw_sysassert_fatal(__builtin_return_address(0), 0x1435);
@@ -142,7 +142,7 @@ FWDATA(8007a0) const struct phy_monitor_vt phy_monitor_vtbl = {
     .psvc = {
         .rsv0 = 0,
         .start = periodic_service_start,
-        .stop = detector_arm_timer,
+        .stop = detector_disarm_timer,
         .task = phy_stats_dump,
         .run = periodic_service_run,
     },

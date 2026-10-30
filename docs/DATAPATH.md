@@ -89,8 +89,8 @@ FWQ, TX_API, BA-автоматы, разбор кадров управления
   `mac__enable_qset_bit7` @0x928e38 при первом pending-бите; публикация —
   `mac__publish_masks` @0x9373b0 **[код]**. Адреса 6.2 — в §8.
 * **CBAP/EDCA в железе.** LMAC 0x04 (fw `lmac_if__build_cmd_0x04` @0x8d8d30,
-  4 записи по 12 Б {ac, cwmin_exp, cwmax_exp, aifsn=2}) → `txrx_api_step_c`
-  @0x9319e8: `[0x886d68+4·ac] = aifsn<<28 | 0x1ff` (6.2 `txrx_api_step_c` 0x9368d8 — `| 0x201ff`:
+  4 записи по 12 Б {ac, cwmin_exp, cwmax_exp, aifsn=2}) → `txrx_api_program_edca_ac`
+  @0x9319e8: `[0x886d68+4·ac] = aifsn<<28 | 0x1ff` (6.2 `txrx_api_program_edca_ac` 0x9368d8 — `| 0x201ff`:
   лишний бит 17, смысл не установлен; [8:0] и бит 17 — не AIFSN), `[0x886d78+4·ac] =
   0xc0adc0ad<<ac` (затравка ГПСЧ backoff — гипотеза), MAC-команда
   **`(0x09+ac)<<24 | (2^cwmin−1)`** — окно CW движка ac; `0x800ac8+4·ac =
@@ -180,11 +180,13 @@ scheduling выбирает qid по MTP_Q_AVAIL ИЛИ BAP_Q_AVAIL (R41 сел�
 бит станции в `0x802948`, иначе `ctx[10] & 3`
 (`ucode_txrx_tx_context_channel_access_e`: 0 немедленно, 1 RTS, 2 self-CTS, 3 по
 мощности). Для RTS нужно ≥ 0x31 единиц до конца периода (`R40` — остаток),
-иначе фаза `0x8000` и счётчик **`0x8022e8`**; RTS уходит в эфир, при срыве
+иначе фаза `0x8000` и счётчик **`0x8022e8`**; RTS (режим 1 — кадр FIFO, `direct_tx_send_after_delay`) уходит в эфир, при срыве
 передачи — счётчик **`0x8022e4`**. Затем `txop__await_cts_ppdu` 0x9399a4 (в корреляции `uses_g_801be8__9399a4`):
 «CTS получен» = нет `busy2_event` (`r42` б14) и есть `cca_ppdu_comp`
 (`R40[10] PHY_SIGNALS` б24) — **чисто физическая проверка: принят какой-то
-PPDU в окне ответа**, отправитель не сверяется. Нет — фаза `0x800` и счётчик
+PPDU в окне ответа**, отправитель не сверяется. Стенд 2026-10-30 (rewrite/docs/MAC-STAND.md, «Открытие TXOP»):
+`0x19000b00` в эфир ничего не выпускает; `txop__await_cts_ppdu` ждёт slot_event (81–303 такта) и пускает кадр очереди
+парой 0x19000001/0x18…; задержка ~30 тактов между выходом из ожидания и пуском — станция не ассоциируется. Нет — фаза `0x800` и счётчик
 **`0x8022cc`** (TXOP не открыт). Успех — MAC `0x27004000 | …`, роль `gp+0xcc =
 2`, счётчик **`0x8010de`** (TXOP открыт).
 
@@ -252,7 +254,7 @@ PPDU в окне ответа**, отправитель не сверяется.
   `sta__queue_class`, `rx_cfg__select_sta`, `itx__wait_ack_rf` 0x93dbec / `itx__wait_cts_rf`
   0x93dfec (MAC cmd 0x02, ожидание event1|event4, §3.5), `uc_exception__bad_instruction` 0x920484.
   Keep-alive: `keep_alive__arm_slot` 0x939484 (4.1 0x933d2c).
-* **Direct TX (кадр «здесь и сейчас»):** `direct_tx_step` 0x92c3a4 (4.1 0x929488; дескриптор
+* **Direct TX (кадр «здесь и сейчас»):** `direct_tx_ssw_feedback` 0x92c3a4 (4.1 0x929488; дескриптор
   `direct_tx__build_desc` 0x92bf38 (4.1 0x92902c), команды 0x33/0x34, FIFO),
   `direct_tx__init_rx_desc` 0x9246c4 (4.1 0x9243fc), `direct_tx__send_short_frame` 0x93b32c
   (4.1 0x935920), `direct_tx__send_after_delay`, `cf_end__send_frame` 0x938568 (4.1 0x933454;
@@ -264,13 +266,13 @@ PPDU в окне ответа**, отправитель не сверяется.
   `mac_evt__enable_bit_sync_b` 0x936544 (ожидание готовности), `uc_wait_one_event` 0x936588,
   `tx_flow__arm_88606c_0x102` 0x92949c.
 * **Слотовый TX/RX-диспетчер:** `tx_sta__flow_loop` 0x939e88 (512 Б — окно TX/RX: rate search,
-  MTP-ворота очереди, RX-поток), `tx_flow_substep` 0x92fbc0 (4.1 0x92bdc8), `txss_init__flow`
+  MTP-ворота очереди, RX-поток), `rate_search_per_check` 0x92fbc0 (4.1 0x92bdc8), `txss_init__flow`
   0x93bc90 (MAC cmd 0x38), `tx_sta__wait_slot_and_tx`, `txop__await_cts_ppdu` (TXOP-инициатор с
   учётом RD фиксированного расписания, §3.3), `mtp_service__dispatch` 0x92d9d4 (4.1 0x92a404),
   `tx_initiator__reset_slot_counters` 0x92fd74 (4.1 0x92c01c), `bi_tx__check_idle_and_start_uc`
   0x93696c, `qset1_mask__any_pending_uc` 0x93c678, `txss__store_sector_ranking`.
 * **Состояние STA и init:** `sta_ctx__reset_counters` 0x93d004 (команда 0x05),
-  `txrx_api_step_b_uc` 0x936acc (команда 0x00), `txrx_api_cmd_step` 0x936be4 (4.1 0x931ce8;
+  `txrx_api_program_ifs_timing` 0x936acc (команда 0x00), `txrx_api_program_bi_tsf_control` 0x936be4 (4.1 0x931ce8;
   команда 0x01: запас дедлайна, период BI — [BEACONING.md §7](BEACONING.md#7-период-bi-и-tbtt)),
   `bti__reset_sweep_state` и `bi_ctx__clear_state_words` (сброс контекста BI), `tx_ctx__alloc_next`
   (A-BFT/BI init), `power_manager__scale_counters_ms` 0x92e6c0 (4.1 0x92b1c8).
@@ -281,7 +283,7 @@ PPDU в окне ответа**, отправитель не сверяется.
   `rx__mac_prepare` 0x92f2bc (4.1 0x92b7c4), `rx__check_mode_2` 0x936e04 и
   `phy_stats__accumulate_to_shared` 0x92e544 (PHY 0x883800; сброс счётчиков —
   [../6.2/docs/MISC-FW.md](../6.2/docs/MISC-FW.md) §15), `rx__check_g8005f8_bit24` 0x932de8,
-  `rx_flow_substep_uc` 0x93daf0, `rx_flow__latch_phy_8014e8__930da4`,
+  `rx_flow_ctrl_qid_empty` 0x93daf0, `rx_flow__latch_phy_8014e8__930da4`,
   `rx_funcs__record_level_8020f8_8020fc__922168`, `rx_flow__measure_snr_select_best` (428 Б, лист),
   `rx_flow__accumulate_busy_time`, `itx__report_status_evt`, `rx__parse_ssw_field`,
   `rx__handle_brp_frame`, `sta_tbl__find_by_mac`, `mac__select_rf_module_cmd31` 0x93cfdc,
@@ -294,7 +296,7 @@ PPDU в окне ответа**, отправитель не сверяется.
   (0x933928 / 0x92f280).
 * **Очереди и vring:** `vring__disconnect_flush` 0x925c8c (1040 Б, «Flush VRing %d» — слив vring
   при разрыве/смене слота фиксированного расписания: ждёт простоя DMA и TX-конвейера, печатает
-  базы буферов), `dma_is_tx_pipe_idle` 0x926184, `dma_is_idle_uc` 0x9290f4, `vring_is_empty_uc`
+  базы буферов), `dma_is_tx_pipe_idle` 0x926184, `dma_is_idle_uc` 0x9290f4, `boot_uc_publish_mac_cmd_log_snap`
   0x92a6f0 (+хвост `vring__is_empty_uc_quiet` 0x926298), `dump_mac_buffer_bases` 0x925c0c,
   `dump_vring_pring_info` 0x929320; заголовки очередей QH — `qh__write_by_flags` 0x92d488
   (команда 0x45 `fwif_write_qh`), `qh__build_descriptor` 0x92d428 / `qh__build_descriptor_b`
@@ -688,7 +690,7 @@ CID (`tx_initiator_step` @0x93479e, `internal_tx_step`) снова зовёт
 | 10 | qid 31 уводит TXOP во внутренние передачи; sm 3 = BF | @0x933942; @0x928edc |
 | 11 | LMAC 0x08: тип 3 → qset 6, op 1 = удалить | @0x93571e..0x93578c; fw @0x8c27f2 |
 | 12 | `hwtail` — звонок драйвера, голова DMA = 0x881818+0x20·idx | txrx.c:2005; @0x8cda92, @0x8cda9e; железо узел B: 0x881838=0, 0x881840=0x15 |
-| 13 | LMAC 0x04 задаёт CW командой (0x09+ac)<<24 | `txrx_api_step_c` @0x931a20..0x931a28 |
+| 13 | LMAC 0x04 задаёт CW командой (0x09+ac)<<24 | `txrx_api_program_edca_ac` @0x931a20..0x931a28 |
 | 14 | `tx__pick_slot_for_peer` — удвоение/сброс CW | @0x924de2..0x924df2, @0x924dfc, команда @0x924e0e |
 | 15 | 6.2: CBAP и fixed scheduling разведены по [gp,-0x34] | @0x937700..0x93770a |
 | 16 | precheck есть в 4.1, в 6.2 нет | 4.1 @0x9337fe; 6.2 `tx_slot__dispatch` без вызова |
@@ -708,7 +710,7 @@ CID (`tx_initiator_step` @0x93479e, `internal_tx_step`) снова зовёт
 | 4.1 uc | `peer__aid_mismatch_flag` | 0x9374d0 | `qid__to_cid_is_unicast` |
 | 4.1 uc | `ucode_cmd__queue_delete` | 0x9354d4 | `ucode_cmd__queue_cfg` |
 | 4.1 fw | `encap_trans_type` | 0x8f37b8 | `wmi_handler_vring_cfg` |
-| 4.1 fw | `lmac_if_send_cmd_0x08` | 0x8d8864 | `lmac_if__send_queue_cfg` |
+| 4.1 fw | `lmac_if_send_vring_cfg` | 0x8d8864 | `lmac_if__send_queue_cfg` |
 | 4.1 fw | `stream_mgr__alloc_pring` | 0x8c2d04 | `stream_mgr__alloc_stream` |
 | 4.1 fw | `vring_schd__is_vring_ready` | 0x8c588c | `vring_schd__is_cid_prohibited` |
 | 6.2 uc | `uses_g_800400_801104_802a90__92ba54` | 0x92ba54 | `cid_tx_disable__set` (в дереве — `bf__pause_sta_tx`) |
@@ -729,7 +731,7 @@ CID (`tx_initiator_step` @0x93479e, `internal_tx_step`) снова зовёт
   12 Б тремя словами big-endian «%08x:%08x:%08x»); зовут построители кадров,
   `set_gtk`, discovery, SW TX **[код]**.
 * SW TX management (кадры, которые строит хост, splitmac): `send_sw_packet`
-  0x8f8dbc / 4.1 0x8f0a94, `handle_packet_splitmac` 0x8f3ba4 (Assoc Resp за хост,
+  0x8f8dbc / 4.1 0x8f0a94, `sw_tx_splitmac_handle_frame` 0x8f3ba4 (Assoc Resp за хост,
   `handle_packet__args` 0x8ea0a0), `mgmt_tx__render_probe_resp` 0x8f2b40 / 4.1 0x8eb824,
   `SW_TX_MGMT_API__link_up_evt` 0x8dabfc / 4.1 0x8d7ae0, `SW_TX_MGMT_API__packet_release`
   0x8df624 / 4.1 0x8db394, TX-complete `sw_tx_mgmt__tx_complete_cb` 0x8e9b1c,
@@ -744,7 +746,7 @@ CID (`tx_initiator_step` @0x93479e, `internal_tx_step`) снова зовёт
   `frame__build_addba_resp` 0x8f4e30 / 4.1 0x8ec664, `frame__build_delba` 0x8f5004 / 4.1 0x8ec860,
   `ba_sm__build_addba_params` 0x8ea62c, `ba_sm__addba_at_08/10`
   0x8c4540/0x8c7edc, `ba_sm__lookup_stream` 0x8eaad8, `ba_sm__prepare_ba_td`
-  0x8e0d6c / 4.1 0x8dcad8, `ba_sm_evt_type` 0x8d9c4c, `stream_mgr__delba_tx_complete` 0x8c8d14
+  0x8e0d6c / 4.1 0x8dcad8, `ba_sm_dispatch_event` 0x8d9c4c, `stream_mgr__delba_tx_complete` 0x8c8d14
   (delba_tx_complete после разрыва), `ba__send_status_report_for_vring`
   0x8c41cc (отчёт о статусе BA), `ba_setup_sm__addba_resp` 0x8f0a44 / 4.1 0x8e92dc,
   `ba_setup_sm__close_all_timers` 0x8f1b84 / 4.1 0x8ea430 и два `ba_setup_sm__close_*`
@@ -783,7 +785,7 @@ CID (`tx_initiator_step` @0x93479e, `internal_tx_step`) снова зовёт
   `macq_desc__read_t1_w0_n2` 0x8e4430 / 4.1 `tail_vring__write_macq_desc_8df898` 0x8df898, `macq_desc__read_t1_w2_n1` 0x8e443c / 4.1 `tail_vring__write_macq_desc_8df8a4` 0x8df8a4);
   `qh__write_by_flags_fw` 0x8dd90c (348 Б — запись заголовка очереди по
   флагам); `tx_macq__is_empty` 0x8da15c / 4.1 0x8d7084, `tx_macq__setup_params` 0x8c6e44,
-  `tx_macq_api_step` 0x8d986c / 4.1 0x8d67cc, `mac__set_cid_mcs` 0x8ea3b8,
+  `tx_macq_config_bcon_mgmt_queues` 0x8d986c / 4.1 0x8d67cc, `mac__set_cid_mcs` 0x8ea3b8,
   `rx_macq__bind_queue` 0x8e42b8 / 4.1 0x8df710, `rx_chain__configure(_b)` 0x8c44bc/0x8c4508,
   `mac_bringup__init_rx_fields` 0x8e4510.
 * DMA-менеджер: `dma_mgr__reset_queue` 0x8e7f6c / 4.1 0x8e2e78 (из `wmi_pmc`),
@@ -802,7 +804,7 @@ CID (`tx_initiator_step` @0x93479e, `internal_tx_step`) снова зовёт
   `hw_sysapi_get_rx_packet_energy_statistics` 0x8cdf70,
   `hw_sysapi_rx_omni_sector_set` 0x8ce40c, `link_lost_diag__dump_dma` 0x8c84d4 / 4.1 0x8eac08,
   `link_lost_diag__rx_status` 0x8f4680 / 4.1 0x8d4600, `mdm_stt_rx_crc_ok` 0x8caeac,
-  `ut_hw_cmd_008__params` 0x8e6f94; `txrx_sel` 0x8ea5f0 / 4.1 0x8e52c4 (RX/TX-сектор; «NO RF»).
+  `ut_hw_cmd_008__params` 0x8e6f94; `rf_sector_commit_by_dir` 0x8ea5f0 / 4.1 0x8e52c4 (RX/TX-сектор; «NO RF»).
 * PSC TX-колбэки: `ps_conn_mgr__psc_req_tx_wb_cb` 0x8e1a18 и
   `ps_conn_mgr__psc_resp_tx_wb_cb` 0x8e1b30 (C++-переходник this+0x38 + тело
   PS_CONNECTION_MGR::…), собственно `psc_if__psc_req_tx_wb_cb` 0x8e1a58 и

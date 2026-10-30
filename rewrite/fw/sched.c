@@ -46,7 +46,7 @@ void *llist_pop_front(void *list)
     l[1] = *(u32 *)head;   /* next */
     l[0] -= 1;
     ((u32 *)head)[0] = 0;     /* next = 0, prev = 0 — как vendor 0x8e2674: иначе повторный */
-    ((u32 *)head)[1] = 0;     /* list_find_entry_d того же узла → assert 0xd4 */
+    ((u32 *)head)[1] = 0;     /* llist_append того же узла → assert 0xd4 */
     return head;
 }
 
@@ -57,8 +57,8 @@ u32 sys_timer_read_now(void)
 
 
 /* Двусвязный список: list[0]=count, [1]=head, [2]=tail;
- * узел: [0]=next, [1]=prev. list_find_entry_d = добавить узел в конец. */
-void list_find_entry_d(void *list_obj, void *node)
+ * узел: [0]=next, [1]=prev. llist_append = добавить узел в конец. */
+void llist_append(void *list_obj, void *node)
 {
     u32 *list = list_obj, *entry = node;
     if (!entry)
@@ -94,7 +94,7 @@ void u_schd_enqueue_ready(struct u_schd_task *task, u32 prio)
 {
     u32 saved = arc_irq_disable();
     sched_ready_mask |= (1u << prio);              /* [gp,0x18] бит готовности */
-    list_find_entry_d(&u_schd.ready[prio], task);
+    llist_append(&u_schd.ready[prio], task);
     arc_irq_restore(saved);
 }
 
@@ -111,7 +111,7 @@ void u_schd_add(u_schd_fn cb, u32 a1, u32 a2, u32 priority)
 
 void u_schd_timer_init(void)
 {
-    field_set_0x00_8d8db8(&u_schd_hw_timer_limit, 0xa50);
+    u_schd_hw_timer_set_and_start(&u_schd_hw_timer_limit, 0xa50);
     power_start_two_timers();
     u_schd_hw_timer_a_start(1);
 }
@@ -255,7 +255,7 @@ __attribute__((section(".textlate"))) void u_schd_expire_timers_thunk(void)
 }
 
 /* Проверка, ожидает ли таймер-прерывание (0x8da00c; таймер — объект [gp,0x74] = 0x8001f8). */
-u32 user_icr_timer_bit(const u32 *timer, u32 v)
+u32 user_icr_timer_irq_pending(const u32 *timer, u32 v)
 {
     (void)timer;
     return (v >> 2) & 1;
@@ -264,7 +264,7 @@ u32 user_icr_timer_bit(const u32 *timer, u32 v)
 /* u_schd__timer_irq_pending (0x8e94f8). */
 u32 u_schd_timer_irq_pending(u32 v)
 {
-    return user_icr_timer_bit(&u_schd_hw_timer_limit, v);
+    return user_icr_timer_irq_pending(&u_schd_hw_timer_limit, v);
 }
 
 /* Отмена запланированной задачи (0x8c8de0); task — описатель из u_schd_schedule. */
@@ -320,7 +320,7 @@ u32 u_schd_pop_expired(u32 q)
     u32 now = u_schd_now();
     struct u_schd_tq *head = u_schd.tq[q];
     u32 deadline;
-    if (!u_schd_deadline_less(head, &deadline))
+    if (!u_schd_head_deadline(head, &deadline))
         return 0;
     if (time_cmp(now, deadline) == -1)
         return 0;
@@ -337,7 +337,7 @@ s32 time_cmp(u32 a0, u32 a1)
 }
 
 /* Получить deadline головы очереди в базе очереди (0x8cc28c). */
-u32 u_schd_deadline_less(struct u_schd_tq *q, u32 *out)
+u32 u_schd_head_deadline(struct u_schd_tq *q, u32 *out)
 {
     const struct u_schd_task *head = (const struct u_schd_task *)q->list.head;
     if (head == 0)
@@ -361,12 +361,12 @@ u32 u_schd_arm_timer(void)
     u32 deadline, q;
     u32 r13 = u_schd_calc_next_deadline(&deadline, &q);
     if (r13 == 0) {
-        u_schd_irq_ack_thunk(0);
+        u_schd_timer_irq_enable(0);
         sched_hw_timer_queue = 2;
         return 0;
     }
     u_schd_program_hw_timer(deadline);
-    u_schd_irq_ack_thunk(1);
+    u_schd_timer_irq_enable(1);
     u_schd_program_hw_timer(deadline);
     sched_hw_deadline = deadline;
     sched_hw_timer_queue = (u8)q;
@@ -385,7 +385,7 @@ void u_schd_program_hw_timer(u32 v)
 }
 
 /* Подтверждение IRQ таймера (0x8e9190). */
-void irq_ack_880b00(u32 a)
+void user_icr_timer_irq_enable(u32 a)
 {
     if (a == 0) {
         MMIO32(HW_RGF_USER_USER_ICR_IMS) = 0x4;
@@ -395,9 +395,9 @@ void irq_ack_880b00(u32 a)
     }
 }
 
-void u_schd_irq_ack_thunk(u32 a)
+void u_schd_timer_irq_enable(u32 a)
 {
-    irq_ack_880b00(a);
+    user_icr_timer_irq_enable(a);
 }
 
 /* Вычислить ближайший deadline по 2 очередям (0x8cc4c8). */
@@ -408,7 +408,7 @@ u32 u_schd_calc_next_deadline(u32 *out_deadline, u32 *out_q)
     for (q = 0; q < U_SCHD_NTQ; q++) {
         struct u_schd_tq *head = u_schd.tq[q];
         u32 deadline;
-        u32 has = u_schd_deadline_less(head, &deadline);
+        u32 has = u_schd_head_deadline(head, &deadline);
         head->now = head->vt->time_base(head, 0);
         if (has == 0)
             continue;
@@ -430,12 +430,12 @@ void u_schd_hw_timer_load_start(u32 a)
     MMIO32(HW_SYS_TIMER_B_LOAD) = a;
     MMIO32(HW_SYS_TIMER_B_CTL) = 0x65;
     arc_sync();
-    irq_ack_880b00(1);
+    user_icr_timer_irq_enable(1);
 }
 
 /* Старт аппаратного таймера ARC a (timer__start 0x8e94a0): режим d (0 — без прерывания,
  * 1/2 — прерывание уровня 1/2, 3 — …), предел c, начальное значение b. */
-__attribute__((section(".textlate"))) void timer_start(u32 a, u32 b, u32 c, u32 d)
+__attribute__((section(".textlate"))) void arc_timer_start(u32 a, u32 b, u32 c, u32 d)
 {
     struct arc_timer_cfg *t = &arc_timer_cfg[a];
     arc_sr(0, t->ctrl_aux);
@@ -462,12 +462,12 @@ struct u_schd_task *u_schd_insert_timer(u32 q, u_schd_fn cb, u32 a0, u32 a1, u32
     /* gcc встраивает fill_task_b/timer_set_fields и меняет порядок записей в поля задачи —
      * безопасно: задача ещё не в очереди, прерывания запрещены (u_schd_schedule). */
     struct u_schd_task *task = u_schd_alloc_task();
-    u_schd_fill_task_b(task, cb, a0, a1);
+    u_schd_fill_task(task, cb, a0, a1);
     u_schd_timer_set_fields(task, deadline, a4, a5, a2);
 
     struct u_schd_tq **queue = &u_schd.tq[q];
     u32 old_next = (*queue)->list.head;
-    list_find_entry(*queue, task, time_cmp);
+    u_schd_tq_insert_sorted(*queue, task, time_cmp);
     u32 new_next = (*queue)->list.head;
     if (old_next != new_next) {
         if (u_schd_arm_timer() == 0)
@@ -477,7 +477,7 @@ struct u_schd_task *u_schd_insert_timer(u32 q, u_schd_fn cb, u32 a0, u32 a1, u32
 }
 
 /* Заполнение задачи (0x8e6f88). */
-__attribute__((section(".textlate"))) void u_schd_fill_task_b(struct u_schd_task *t, u_schd_fn cb,
+__attribute__((section(".textlate"))) void u_schd_fill_task(struct u_schd_task *t, u_schd_fn cb,
                                                               u32 a0, u32 a1)
 {
     t->cb = cb;
@@ -499,7 +499,7 @@ void u_schd_timer_set_fields(struct u_schd_task *t, u32 deadline, u32 a4, u32 a5
  * cmp(узел, новый) != -1 — новый встаёт перед узлом. Единственный пользователь — очереди
  * таймеров (u_schd_insert_timer, cmp = time_cmp). */
 
-__attribute__((section(".textlate"))) void list_find_entry(struct u_schd_tq *q, struct u_schd_task *entry,
+__attribute__((section(".textlate"))) void u_schd_tq_insert_sorted(struct u_schd_tq *q, struct u_schd_task *entry,
                                                            u_schd_cmp_fn cmp)
 {
     if (entry == 0)
@@ -508,7 +508,7 @@ __attribute__((section(".textlate"))) void list_find_entry(struct u_schd_tq *q, 
         fw_sysassert_fatal((void *)0, 0xf3);
 
     if (q->list.count == 0) {
-        list_find_entry_c(q, entry);
+        llist_prepend(q, entry);
         return;
     }
 
@@ -522,17 +522,17 @@ __attribute__((section(".textlate"))) void list_find_entry(struct u_schd_tq *q, 
         cur = cur->next;
     }
     if (cur == 0)
-        list_find_entry_d(q, entry);
+        llist_append(q, entry);
     else if (prev != 0)
-        list_find_entry_b(q, entry, prev);
+        llist_insert_after(q, entry, prev);
     else
-        list_find_entry_c(q, entry);
+        llist_prepend(q, entry);
 }
 
 /* Вставка в начало списка (0x8c25b0). Список {count, head, tail}, узел {next, prev}.
  * Прежний порт считал смещения в словах (u32* + 4 = +16 Б): проверка prev смотрела в поле
  * аргумента задачи (ассерт 0xd2 при таймерах с аргументом), head/tail писались мимо. */
-__attribute__((section(".textlate"))) void list_find_entry_c(void *list_obj, void *node)
+__attribute__((section(".textlate"))) void llist_prepend(void *list_obj, void *node)
 {
     u32 *list = list_obj, *entry = node;
     if (entry == 0)
@@ -551,7 +551,7 @@ __attribute__((section(".textlate"))) void list_find_entry_c(void *list_obj, voi
 }
 
 /* Вставка после prev (0x8c26b4). */
-__attribute__((section(".textlate"))) void list_find_entry_b(void *list_obj, void *node, void *prev)
+__attribute__((section(".textlate"))) void llist_insert_after(void *list_obj, void *node, void *prev)
 {
     u32 *list = list_obj, *entry = node;
     u32 *p = prev;

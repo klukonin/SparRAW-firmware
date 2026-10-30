@@ -29,12 +29,12 @@ void mac_read_tsf64_uc(u32 *out)
 }
 
 
-void mac_ddc_mask_all_on(void)
+void mac_fw2uc_irq_mask_all(void)
 {
     MMIO32(HW_FW2UC_IMV) = 0xf;
 }
 
-void mac_cfg_set_gp20_default_15748(void)
+void mac_install_rf_gain_cb(void)
 {
     rf_gain_cb = VENDOR_CB(935748);       /* rf_gain_adjust_cb */
 }
@@ -45,7 +45,7 @@ void mac_set_sector_arg_and_select_all(u32 a)
     mac_select_all_sectors_and_wait();
 }
 
-u32 mac_read_time_88c120(void)
+u32 mac_read_ext_window_remain(void)
 {
     return MMIO32(HW_MAC_EXT_WINDOW_REMAIN) & 0xffffff; /* bmsk 0x17 — 24 бита */
 }
@@ -63,7 +63,7 @@ void mac_set_rf_chain_state_with_sta_sector(void)
 /* СРОК: выход по MAC_EVT1_PPDU_REPORT (ppdu_report_event) или MAC_PHYSIG_CCA_PPDU_COMP (cca_ppdu_comp) в приёмном потоке (rx.c) —
  * опрос 6 инструкций на проход (vendor 0x93675c: 5), без ограничения; задержка реакции — единицы
  * инструкций. Срыв: зависание приёмного потока, если не придёт ни одно событие. */
-void mac_wait_event_r42_or_r40(u32 a, u32 b)
+void mac_wait_evt1_or_status(u32 a, u32 b)
 {
     /* 0x93675c: tst r42,r0 / tst r40,r1 — core-регистры MAC, не aux. */
     for (;;) {
@@ -150,7 +150,7 @@ u32 macq_hw_read_state1(u32 q)
 }
 
 
-void mac_cmd_0f_step(struct pm_ctx_s *p)
+void aw_set_new_tbtt_clear_ps(struct pm_ctx_s *p)
 {
     /* 0x92e438 */
     aw_set_new_tbtt(p);
@@ -163,13 +163,13 @@ void mac_cmd_29000001(void)
     arc_nops(3);
 }
 
-void mac_set_slot_timing_886f60(void)
+void mac_set_default_slot_timing(void)
 {
     uc_mac_cmd(0x4a000018);   /* mailbox */
     MMIO32(HW_MAC_SLOT_TIMING) = 0x3780378;
 }
 
-void mac_program_13ab6680_b(void)
+void uc_timers_start_without_irq(void)
 {
     /* 0x93c904 */
     uc_timer_start(1, 0, 0x13ab6680, 0);
@@ -210,13 +210,13 @@ u32 mac_replicate_bit_mask(const struct lmac_mac_regs *a)
     u32 b = (a->qset_mode >> 1) & 1;
     return b * 0x6666;
 }
-void mac_cmd_56_57(void)
+void mac_set_phy_mode(void)
 {
     /* 0x9368ac */
     uc_mac_cmd((rf_chain_cfg & 0xf) | 0x563f0020u);   /* ld_s [gp,-12] — байты */
     uc_mac_cmd(0x57000002);
 }
-void mac_set_880afc_bits(u32 a)
+void clk_gate_vec2_enable(u32 a)
 {
     /* 0x928dcc */
     if (a != 0)
@@ -265,7 +265,7 @@ void mac_set_slot_mask_924000(void)
 {
     mac_chain_mask = 0x924000;
     uc_mac_cmd(0x8924000);
-    mac_rf_switch_cmd1f(1);
+    mac_rf_switch_wait_idle(1);
     uc_mac_cmd(0x81u << 18);
 }
 
@@ -275,7 +275,7 @@ void mac_set_chain_mask_924f00(void)
     u32 r0 = (rx_nav.ev_mask & 0x924f00) | (1u << 27);
     uc_mac_cmd(r0);
     uc_mac_cmd(0x81u << 18);
-    mac_rf_switch_cmd1f(1);
+    mac_rf_switch_wait_idle(1);
 }
 
 /* СРОК: 0x27007e00 → 0x02004002 → 3 nop → ждать r42 (slot_event | busy2_event) без тайм-аута; MAC
@@ -292,7 +292,7 @@ void mac_select_all_sectors_and_wait(void)
     uc_wait_event_busy(MAC_EVT1_SLOT | MAC_EVT1_BUSY2, 0);
 }
 
-void mac_program_4f_52(u32 a, u32 b)
+void mac_program_gp_timer0(u32 a, u32 b)
 {
     uc_mac_cmd(a | 0x4f000000u);
     uc_mac_cmd((b << 8) | 0x52000008u);
@@ -349,7 +349,7 @@ void mac_program_tx_beacon(void)
     uc_mac_cmd(0x17000003);
     arc_nops(3);
 }
-void mac_set_880bf0_mode(u32 mode)
+void mac_set_pwr_mode_map_bf0(u32 mode)
 {
     /* 0x928d78: режимы 0,1,2,4; иначе assert и всё равно запись. */
     if (!(mode == 0 || mode == 1 || mode == 2 || mode == 4))
@@ -376,7 +376,7 @@ void mac_program_tx_with_qid(u32 qid)
 /* СРОК: при r40[2:0] = 5 MAC должен подтвердить смену режима (MAC_EVT1_BUSY2) за тайм-аут 0xa GP-таймера
  * (uc_wait_two_events → uc_wait_event_busy, 0x23010000|0xa) — иначе assert 0x3f (аппаратный).
  * Паузы выборки r40 (5 инструкций) и после ожидания (3 nop) — как vendor 0x93e0dc; запас не оценён. */
-void mac_set_mode_0000(void)
+void mac_wait_mode_ack_if_idle(void)
 {
     /* 0x93e0dc: при состоянии r40&7 == 5 дождаться событий и проверить r42 bit14. */
     u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
@@ -394,7 +394,7 @@ void mac_set_mode_0000(void)
  * uc_wait_event1_or_event4) MAC_EVT4_GP0_END опрашивается снова — без паузы, как vendor 0x93e084; запас —
  * единицы инструкций (аппаратная задержка квитирования не измерена). Срыв: устаревший MAC_EVT4_GP0_END —
  * ложный возврат 0 (тайм-аут вместо busy2). */
-u32 mac_arm_events_0xc00(void)
+u32 mac_wait_busy2_or_gp0_timeout(void)
 {
     /* 0x93e084: 1 — событие r42 bit14, 0 — r54 bit6. */
     uc_mac_cmd(mac_evt_en_shadow | 0x27000c00);
@@ -517,7 +517,7 @@ void mac_mode_send_direct_frame(u32 a)
     arc_core_wr(34, brp_frame.seq_ctrl | (1u << 24));   /* ldw_s — полуслово */
     tx_fifo_free -= 2;
     tx_fifo_write_bytes((u32)&brp_frame.category, 0xe);
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
 }
 
 /* СРОК: RX-сектор/AWV пира (0x3a/0x3b/слово с б30) должен встать до приёма ответа Ack/BA/CTS через
@@ -576,9 +576,18 @@ void mac_program_qset_slots(void)
 /* Вспомогательные для mac_switch_rx_to_tx (горячий путь, см. ХРУПКО ниже). */
 #define A000_NOP3() arc_nops(3)
 #define A000_NOP2M() arc_nops_nop(2)
+/* Заголовок нового кадра разобран в окне перехода RX→TX (между ожиданиями и проверкой) — начать переход заново:
+ * ожидания дождутся конца этого кадра. Отдельной функцией (хвостовым переходом): цикл в теле mac_switch_rx_to_tx
+ * выносил константы в сохраняемые регистры — пролог push/pop на быстрой ветке. */
+__attribute__((noinline)) u32 mac_switch_rx_to_tx_again(u32 a)
+{
+    uc_stats.rx_to_tx_rewait += 1;
+    return mac_switch_rx_to_tx(a);
+}
+
 /* Медленная ветка mac_switch_rx_to_tx (состояние PHY ≥ 6, стадия BRP: ждать её окончания) — отдельной функцией,
  * чтобы быстрая ветка не платила прологом r13 (gcc держал в нём возврат 0 через uc_assert). ra — адрес возврата
- * mac_switch_rx_to_tx (для uc_assert, как у vendor). */
+ * mac_switch_rx_to_tx (vendor — для uc_assert 141; у нас — аргумент перехода заново, mac_switch_rx_to_tx его не читает). */
 UC_HOT u32 mac_switch_rx_to_tx_wait_brp(u32 ra)
 {
     u32 g;
@@ -598,8 +607,8 @@ UC_HOT u32 mac_switch_rx_to_tx_wait_brp(u32 ra)
     A000_NOP2M();   /* vendor L_92a8cc: 2×nop + mov 0,0 */
     uc_mac_cmd(0x3d000004);
     A000_NOP2M();   /* vendor L_92a8e8: 2×nop + mov 0,0 */
-    if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP) || (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME))   /* bbit0 24 → assert; bbit0 3 → мимо */
-        uc_assert(ra, 141);
+    if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP) || (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME))
+        return mac_switch_rx_to_tx_again(ra);   /* исправлено (vendor: uc_assert 141) — см. mac_switch_rx_to_tx */
     uc_mac_cmd(0x2093800);
     mac_rx_to_tx_fast = 0;
     g = mac_sel_shadow & ~MAC_SEL_FIELD;
@@ -633,8 +642,9 @@ u32 mac_switch_rx_to_tx(u32 a)
         return mac_switch_rx_to_tx_wait_brp(UC_RA_NOW());
     /* ХРУПКО (СРОК DMG CTS / CF-End / SSW-FB): быстрая ветка на пути ответа. Порядок команд и nop — как у vendor
      * 0x92a754 L_92a7a2…L_92a874. От vendor отличается только местом записей в DCCM: снимок PHY_SIGNALS (r13 у
-     * vendor) учтён в mac_rx_to_tx_rx_frame_cnt до проверок assert (у vendor — после MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS), чтобы не держать его через
-     * uc_assert. Функция листовая (без пролога): uc_assert — UC_ASSERT_LEAF, медленная ветка — хвостовым переходом.
+     * vendor) учтён в mac_rx_to_tx_rx_frame_cnt до проверки после ожиданий (у vendor — после MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS).
+     * Функция листовая (без пролога): медленная ветка и переход заново (mac_switch_rx_to_tx_again) — хвостовыми
+     * переходами (цикл в теле давал пролог push/pop, 2026-10-30).
      * 63 инструкции от входа до возврата (было 78, vendor 70); не добавлять сюда вызовов и кода без замера
      * (tests/unit/test_uc_deadlines.py, lat.py). */
     VOL(uc_wait_marker) = 0xff2f;   /* метка ожидания: gcc выкидывал запись как мёртвую */
@@ -651,12 +661,13 @@ u32 mac_switch_rx_to_tx(u32 a)
     mac_evt_eng2_store(r49_snap);
     if (r13 & MAC_PHYSIG_PHY_RX_FRAME)
         mac_rx_to_tx_rx_frame_cnt += 1;
-    /* uc_assert(адрес возврата, код) — вставкой UC_ASSERT_LEAF: blink здесь ещё цел (вызовов до этих мест нет;
-     * второй uc_assert после первого пустой — assert_active = 1). */
-    if (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME)
-        UC_ASSERT_LEAF(147);
-    if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
-        UC_ASSERT_LEAF(148);
+    /* исправлено (vendor 0x92a754: uc_assert 147 / 148). phy_rx_frame поднимается и cca_ppdu_comp снимается только с
+     * разбором заголовка (≈ 9 мкс от начала кадра; стенд, метка STAMP_CCA_DET, 2026-10-30): кадр пира, начатый ≈ 9 мкс
+     * назад, попадает заголовком в окно ≈ 24 такта между ожиданиями выше и этой проверкой (эмулятор: повтор
+     * SSW-Feedback, test_machw.py::test_rx_to_tx_header_in_switch_window). Это не отличается от заголовка на такт
+     * раньше, когда ожидания выше дождались бы конца кадра, — так и делаем (переход заново); vendor падал. */
+    if ((mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME) || !(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
+        return mac_switch_rx_to_tx_again(a);
     uc_mac_cmd(0x2093800);
     mac_rx_to_tx_fast = 1;
     g = mac_sel_shadow & ~MAC_SEL_FIELD;
@@ -669,13 +680,13 @@ u32 mac_switch_rx_to_tx(u32 a)
 
 /* СРОК: RX→TX для SSW-Feedback/SSW-Ack через MBIFS = 9 мкс −0/+0,49 (802.11-2020 10.3.2.3.10,
  * 10.42.2.4, 10.42.2.5) после последнего SSW (MAC_RX_MISC_ZERO_CDOWN CDOWN = 0; txss.c, tail.c). Путь:
- * mac_switch_rx_to_tx (~80) + mac_rf_switch_cmd1f (ожидание idle_detect = 5 без ограничения) + 7 команд
+ * mac_switch_rx_to_tx (~80) + mac_rf_switch_wait_idle (ожидание idle_detect = 5 без ограничения) + 7 команд
  * (~28); vendor 0x92e0e4 — тот же состав; запас по коду — около тысячи тактов из 1485, ожидания
  * железа не ограничены. Срыв: SSW-FB/SSW-Ack позже MBIFS — SLS не завершается, повтор. */
 void mac_mode_switch_core_and_rf(u32 a)
 {
     mac_switch_rx_to_tx(a);
-    mac_rf_switch_cmd1f(0);
+    mac_rf_switch_wait_idle(0);
     uc_mac_cmd(0x1f006000);
     uc_mac_cmd(0x38000300);
     uc_mac_cmd(0x3600003f);
@@ -708,7 +719,7 @@ void mac_mode_enter_idle_seq(u32 a)
     if (pm_idle_flags & 1u) {
         uc_mac_cmd(0x83u << 25);
         arc_nops(3);
-        rfc_issue_cmd_10(rf_chain_cfg);
+        rfc_issue_chain_cmd(rf_chain_cfg);
     }
     uc_mac_cmd(0x3d000001);
     arc_nops(3);

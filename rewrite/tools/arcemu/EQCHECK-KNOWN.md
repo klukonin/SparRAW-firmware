@@ -15,7 +15,7 @@
 | Функция | Что расходится | Почему это не отличие |
 |---|---|---|
 | `brp_rf_store_cfg` | RAM 0x80150c | случайный `c` огромный, цикл читает стек; с реальными `c` (0..32) — equal |
-| `bti_arm_period_gp0` | число событий (10 / 4) | при случайных r55 цикл вычитания периода — до 10⁶ итераций, наш цикл длиннее (3 инструкции у vendor) и не укладывается в лимит шагов; в штатной работе итераций единицы |
+| `bti_sta_arm_abft_slot_period` | число событий (10 / 4) | при случайных r55 цикл вычитания периода — до 10⁶ итераций, наш цикл длиннее (3 инструкции у vendor) и не укладывается в лимит шагов; в штатной работе итераций единицы |
 | `ucode_cmd_0x0c_handler` | 2 байта кольца журнала | assert при индексе ≥ 9 пишет в журнал адрес возврата — у нас другие адреса кода |
 | `tx_ctx_post_status` | байты тела события | случайный невыровненный `r0`; компилятор слил две байтовые записи в одну `sth`; с `r0 = 0x802f80` — equal |
 | `tx_bcast_flow` | слово MAC-очереди | vendor кладёт в дескриптор мусор со стека, у нас 0 (`macq_desc`) |
@@ -25,20 +25,20 @@
 | `memcpy_uc` | RAM | случайная длина огромна; с перекрытием в обе стороны и длинами 0..64 — equal |
 | `bf_req_enqueue`, `tx_initiator_reset_slot_counters` | порядок записи независимых полей | DCCM, порядок не наблюдаем |
 | `tx_fifo_write_bytes` | порядок двух слов FIFO | случайный `src` доходит до SP0−0xc — туда vendor сохраняет r13/r14/blink, у нас кадр другой |
-| `hw_power_step`, `hwd_rfc_powerdown_deep_all_rfs`, `rf_utils_fill_step` | слово журнала uc_log | `uc_log_emit` пишет адрес возврата вызывающего: vendor 0x929f18 / 0x929fd0 / 0x929f70, у нас 0x929f0e / 0x929fce / 0x929f60 |
+| `rfc_clear_core_reg1_on_rf`, `hwd_rfc_powerdown_deep_all_rfs`, `rfc_write_core_on_rf` | слово журнала uc_log | `uc_log_emit` пишет адрес возврата вызывающего: vendor 0x929f18 / 0x929fd0 / 0x929f70, у нас 0x929f0e / 0x929fce / 0x929f60 |
 | `bf_reset_sta_slot`, `bf_sm_run_sta` | порядок MMIO | случайный индекс станции уводит `bf_sta[i]` в MMIO; с реальными 0..8 — equal |
 | `abif_save_override_restore` | RAM у SP0−0x60 | случайный `b` указывает в стек, а фильтр стека у прогонов разный (у нас кадр глубже); с `b` в DCCM — equal |
 | `rx_get_required_response` (DEEP) | RAM 0x8039e8..eb (SP0−0x60) | O2 (`UC_HOT`, 2026-10-18) сохраняет на 2 регистра меньше, чем -Os/vendor: кадры исполняемых vendor-вызываемых сдвинуты на 8 Б, отличается только мёртвый стек; с -Os — equal |
 | `rx_flow_handle_frame` | возврат r0 (у vendor мусор, у нас 0/1); на ветке RD — лишние команды запроса MTP | намеренно (2026-10-18): обработчик сам отправляет продолжение TXOP и возвращает 1 (`rx_txop_continue`, ХРУПКО, uc/rx.c); сверять парой — `rx_flow_run` (uc_hybrid PAIRS) — equal(deep) |
-| `direct_tx_step` | хвост кадра в FIFO | заглушка `direct_tx_build_desc` не заполняет `buf` на стеке — читается мусор разных кадров стека |
+| `direct_tx_ssw_feedback` | хвост кадра в FIFO | заглушка `direct_tx_build_desc` не заполняет `buf` на стеке — читается мусор разных кадров стека |
 | `direct_tx_build_desc` | 2 байта буфера кадра | Duration: см. «Исправлено после разбора» |
-| `l1_task_phase_of`, `bcon_txss_sweep_step` | `sr 18` (глубоко) | эпилог прерывания `uc_isr_l2_task2` восстанавливает MULHI (aux 0x12) прерванного кода — старшую половину последнего умножения, у каждого кода свою |
+| `l1_task_run_bi_phase`, `bcon_txss_sweep_step` | `sr 18` (глубоко) | эпилог прерывания `uc_isr_l2_task2` восстанавливает MULHI (aux 0x12) прерванного кода — старшую половину последнего умножения, у каждого кода свою |
 | `qh_read_desc_window`, `qh_write_desc_window`, `memset_uc` | MMIO / RAM у стека | случайный указатель (или огромный `count`) доходит до стека, где vendor держит слово базы окна `[sp]`; с `dst` в DCCM и `count` 0..16 — equal |
 | `phy_read_regs_883844` | число событий | случайный `n` огромен, прогоны упираются в лимит шагов; с `n` 0..32 — equal |
 | `macq_desc_read_uc`, `macq_desc_write_uc` | командное слово 0x88660c | vendor берёт биты 18..19, 23..31 из неинициализированной ячейки стека, у нас 0 (комментарий в txss.c) |
 | `uc_timer_start` | порядок MMIO | случайный номер таймера уводит `r13` в MMIO (запись `[3]` / чтение `[1]`); с `a` = 0..2 — equal |
 | `txss_set_sweep_param` | RAM `ss_order` | случайный `p`: длина `p[0x48]` > 0x40 и мусорный план; с `p` = 0x802a20 — equal |
-| `txss_program_tx_frame` | косвенные вызовы | случайный `e` — адрес обратного вызова: прыжок в произвольное место ICCM (у vendor — таблица векторов, в гибриде — середина `mac_mode_program_c`); вызывающие передают `e = 0` — с реальными аргументами equal(deep) |
+| `txss_program_tx_frame` | косвенные вызовы | случайный `e` — адрес обратного вызова: прыжок в произвольное место ICCM (у vendor — таблица векторов, в гибриде — середина `abft_rx_ssw_tx_feedback`); вызывающие передают `e = 0` — с реальными аргументами equal(deep) |
 | `uc_evt_build_and_post_report` | RAM буфера события | 8 байт = байты кадра стека, которые vendor не пишет (`stb` по `sp+0x28/0x2d/0x30`, слово `sp+0x60`): у vendor мусор, у нас 0 |
 | `brp_initiator_flow_successful_receive_training` | кольцо журнала 0x80325c | адрес возврата assert: vendor 0x9228c6, у нас 0x93f002 |
 | `txss_init_send_fdbk_wait_ack` | первое слово FIFO (глубоко) | глубокий режим исполняет vendor `txss_init_send_ssw_fdbk`, а тот шлёт Duration из стека (см. ниже) — мусор зависит от кадра вызывающего |
@@ -56,9 +56,9 @@
 * `txss_init_send_ssw_fdbk` — vendor пишет только buf[0..1] кадра SSW-Feedback (`stw r3,[sp]`),
   Duration (buf[2..3]) уходит мусором стека; у нас 0, как в кадрах из шаблонов DCCM.
   eqcheck: `diff` в первом слове FIFO, младшая половина совпадает.
-* `brp_read_rf_id` — возвращала маску; vendor возвращает r0 последнего вызова, вызывающие
+* `brp_program_rf_awv` — возвращала маску; vendor возвращает r0 последнего вызова, вызывающие
   возврат не используют — теперь `void` (2282ed6d).
-* `direct_tx_build_desc` (0x92bf38) — тот же кадр SSW-Feedback для `direct_tx_step`: vendor
+* `direct_tx_build_desc` (0x92bf38) — тот же кадр SSW-Feedback для `direct_tx_ssw_feedback`: vendor
   `stw 0` в d[0..1], затем ld/st всего слова с полями FC — Duration остаётся мусором стека
   вызывающего. У нас слово целиком = 0x0964 (FC), Duration 0; eqcheck: `diff` ровно в d[2..3].
 

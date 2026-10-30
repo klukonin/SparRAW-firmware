@@ -7,7 +7,7 @@
 #include "../include/arc.h"
 #include "../include/macq_desc.h"
 
-__attribute__((section(".textlate"))) static u32 macq_flag(void) { return sched_fixed_active; } /* [gp,0xb2] = fixed_sched_active (vendor: 0 в STA, 1 в AP) */
+__attribute__((section(".textlate"))) static u32 macq_fixed_sched_active(void) { return sched_fixed_active; } /* [gp,0xb2] = fixed_sched_active (vendor: 0 в STA, 1 в AP) */
 
 /* bf__insert_field (0x8edc10): вставить бит-поле (shift, width бит). */
 __attribute__((section(".textlate"))) u32 bf_insert_field(u32 word, u32 value, u32 shift, u32 width)
@@ -36,7 +36,7 @@ __attribute__((section(".textlate"))) u32 bits_set32_s0_w12(u32 w, u32 v) { retu
  * удерживает (0x40000000) — только STA. */
 __attribute__((section(".textlate"))) void macq_desc_wait_window_free(void)
 {
-    if (macq_flag() == 0) {
+    if (macq_fixed_sched_active() == 0) {
         HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1f);   /* vendor — без предела */
     }
 }
@@ -44,7 +44,7 @@ __attribute__((section(".textlate"))) void macq_desc_wait_window_free(void)
 /* Освободить окно: [0x886608] = 0. */
 __attribute__((section(".textlate"))) void macq_desc_release_window(void)
 {
-    if (macq_flag() == 0) {
+    if (macq_fixed_sched_active() == 0) {
         MMIO32(HW_QDESC_WIN_CTRL) = 0;
     }
 }
@@ -83,7 +83,7 @@ __attribute__((section(".textlate"))) void macq_desc_write(const void *desc, u32
                 off += 4;
             }
 
-            MMIO32(HW_QDESC_WIN_CTRL) = (macq_flag() == 0) ? 0xc0000000u : 0x40000000u;
+            MMIO32(HW_QDESC_WIN_CTRL) = (macq_fixed_sched_active() == 0) ? 0xc0000000u : 0x40000000u;
             arc_sync();
             HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1d);
 
@@ -142,7 +142,7 @@ __attribute__((section(".textlate"))) void macq_desc_write_type6(const void *des
     MMIO32(HW_QDESC_WIN_ADDR) = arg;
     for (i = 0; i < 4; i++)                    /* lp 4: ld.ab [desc], st [0x886614 + i·4] */
         MMIO32(HW_QDESC_WIN_DATA0 + i * 4) = w[i];
-    MMIO32(HW_QDESC_WIN_CTRL) = (macq_flag() == 0) ? 0xc0000000u : 0x40000000u;
+    MMIO32(HW_QDESC_WIN_CTRL) = (macq_fixed_sched_active() == 0) ? 0xc0000000u : 0x40000000u;
     arc_sync();
     HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1d);
     macq_desc_release_window();
@@ -184,7 +184,7 @@ __attribute__((section(".textlate"))) void rx_macq_setup(u32 cfg, u32 mode, u32 
         w = rx_macq_get_cfg_word();
         if (a2 == 0 || a2 == 5 || a2 == 1) w = 0;
         if (a2 == 3) w = 1;
-        rx_macq_program_desc_848018(cfg, a3, 0, 0, w);
+        rx_macq_program_ctl_desc(cfg, a3, 0, 0, w);
         rx_macq_program_offload_desc((void *)cfg);
         rx_chain_configure_b(cfg, a7);
     }

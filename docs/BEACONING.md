@@ -44,7 +44,7 @@ BI станции, двойной буфер MAC_MON 6.2) — [../6.2/docs/BENCH
 | развёртка маяка с рандомизатором | `bti_worker__bti_transmitter_beacon_sweep_flow` 0x923de0 (1564 Б) | 0x923cb4 (1368 Б) |
 | гейт `bi_mode == 2` | `0x923e0c cmp r7,0x2` | `0x923cda cmp r9,0x2` |
 | шаг развёртки по секторам | `bcon_txss_sweep_step` 0x935a4c | 0x93b430 |
-| ветка окон GP для BF-метрики | `bti_transmitter_bi2_flow` 0x923c74 | 0x923b50 |
+| ветка окон GP для BF-метрики | `bti_sta_beacon_abft_flow` 0x923c74 | 0x923b50 |
 | ворота BTI | `bti__bi2_event_step` 0x931f8c, `uc_bi_counter_in_window` 0x932508, `uc_read_bi_sync` 0x931c64 | 0x936e40, 0x937474, 0x936b60 |
 | компаратор TSF | `set_tsf_event` 0x930c28, `disable_tsf_event` 0x925120 | 0x935680, 0x925a10 |
 | чтение TSF | `uc_read_tsf_lo` 0x9315e8, `uc_read_tsf64` 0x930cb0 | `uc_read_tsf_lo` 0x9364c8, `mac__read_tsf64_uc` 0x9356cc |
@@ -225,7 +225,7 @@ ucode 6.2 — `ucode_cmd_0x24_handler` 0x93a830: «DISCOVERY ON/OFF (Type)», с
         bi__decide_beacon_kind (0x9311a4)
             if (bi_mode != 0 && r41 бит 30 && ctx->kind != 1)
                   → bti_worker__bti_transmitter_beacon_sweep_flow (0x923de0)
-            else  → bti_transmitter_bi2_flow (0x923c74)
+            else  → bti_sta_beacon_abft_flow (0x923c74)
                       │
                       ▼
         bti_worker__bti_transmitter_beacon_sweep_flow (0x923de0)
@@ -248,8 +248,8 @@ ucode 6.2 — `ucode_cmd_0x24_handler` 0x93a830: «DISCOVERY ON/OFF (Type)», с
 (`9298c4 mov_s r0,0 ; 9298c6 bl.d 0x9304c8 ; 9298ca mov_s r1,r0` — аргумент 0 в слоте
 задержки; `mov r2,r13` @0x930508 → `basic_sm__dispatch_loop`), и `brne r0,0x1` @0x93124c
 уводит в развёртку @0x923de0 **[код + железо: `ctx->kind = 0` измерено]**. Путь
-`kind = 1 → bti_transmitter_bi2_flow` приходит из `bi_manager__run_rx_flow_by_kind` по биту 19
-`busy_event` (среда занята), а не по TBTT. `bti_transmitter_bi2_flow` маяк не передаёт:
+`kind = 1 → bti_sta_beacon_abft_flow` приходит из `bi_manager__run_rx_flow_by_kind` по биту 19
+`busy_event` (среда занята), а не по TBTT. `bti_sta_beacon_abft_flow` маяк не передаёт:
 каталог `bf_gpc_service` (ассерт `bf_gpc_service.h:134`), обслуживает окна таймеров
 GP0/GP1/GP2 для сбора BF-метрики, функций передачи не зовёт и TX-команд в кольцо не кладёт
 **[код]**.
@@ -274,7 +274,7 @@ GP0/GP1/GP2 для сбора BF-метрики, функций передачи
 
 ### 3.2. Ворота передачи маяка **[обе]** **[код]**
 
-`bti_transmitter_bi2_flow` начинается с
+`bti_sta_beacon_abft_flow` начинается с
 
 ```c
 if (*ctx != 1 && bti__bi2_event_step() == 0) return;   // не передавать
@@ -296,7 +296,7 @@ if (uc_bi_counter_in_window() == 0 || uc_read_bi_sync() == 0) {
 Селектор `0x4000` в обоих воротах — регистр `BI_COUNTER`: младшие 26 бит — позиция в BI
 (`bi_counter`), бит 31 — `bi_sync`. Маяк уходит только внутри BTI и только при
 синхронизированном BI ([MAC-REGISTERS.md](MAC-REGISTERS.md#bi_counter-и-бит-31--bi_sync)).
-`bti__bi2_event_step` в цикле зовёт `bti_worker_bi2_step` (4.1 0x923ba8, 6.2 0x923a84) и
+`bti__bi2_event_step` в цикле зовёт `bti_beacon_rx_match_bss` (4.1 0x923ba8, 6.2 0x923a84) и
 работает с регистрами MAC через r25/r40/r42 и gp-относительные слоты. Длительность BI для ворот
 A — `0x801434` (читают 0x93253e, `shallow_sleep_rfc_step` 0x9219c8,
 `power_manager__decide_shallow_sleep` 0x92ad98).
@@ -317,7 +317,7 @@ A — `0x801434` (читают 0x93253e, `shallow_sleep_rfc_step` 0x9219c8,
 ждёт бит 6 r42 `tsf_event` **[4.1, код]**.
 
 Кандидаты вставки задержки маяка (не применялись): пауза на GP0 перед 0x92400c пятью словами,
-скопированными из `bti_transmitter_bi2_flow` (0x923ce0..0x923d10), с длительностью из слова ОЗУ,
+скопированными из `bti_sta_beacon_abft_flow` (0x923ce0..0x923d10), с длительностью из слова ОЗУ,
 меняемого с хоста; без правки прошивки — сдвиг TBTT через слова BI-конфига 0x8005a8/0x8005ac
 **[гипотеза]**.
 
@@ -577,7 +577,7 @@ r42 бит 4 (`bi1_event`, путь TBTT), а не компаратор TSF. П�
 | свёртка масок пиров | `aw__fold_peer_masks` 0x924880 | 0x924ec0 |
 | вход в DTI | `bi_manager__on_dti` 0x928a58 | `bi__after_enter_dti` 0x92b85c → `bi__dti_step` 0x935d5c → `pm__wake_sequence` 0x9262c0 (4.1: 0x925184) |
 | новый TBTT для AW, период по 0x886d64 | `aw__compute_tbtt_from_hw` 0x9325ac, `aw_tbtt_set_step` 0x930b08 | 0x937518, 0x935560; `aw_tbtt__count_intervals` 0x9353ac |
-| шаг BI-менеджера | `bi_manager_step_b` 0x922afc | 0x922258 |
+| шаг BI-менеджера | `bi_bti_end_reset_timers` 0x922afc | 0x922258 |
 | маска событий на время окна | `pm__event_mask_save_all_on` 0x92a630, `pm__event_mask_restore` 0x92a69c | 0x92dc6c, 0x92dcd8 |
 | TSF-арифметика | `bi__tsf_delta64` 0x924544, `uc_tsf_elapsed` 0x924568 | 0x924818, 0x92483c |
 | 1000 в единицах такта MAC 165 МГц | `bi_mode__set_1000_units165` 0x928194 | 0x92af20 |
@@ -641,12 +641,12 @@ US8520648. Путь длительности AW (константа 1000 мкс 
 
 | | 4.1 | 6.2 |
 |---|---|---|
-| писатель `0x886d64` | микрокод, `0x931798 st_s r1,[r0,0x64]` при r1 = 0x64 (100 TU, константа) | `txrx_api_cmd_step` 0x936be4 (LMAC 0x01 RX_ON): `0x886d64 = период_мкс >> 10` |
+| писатель `0x886d64` | микрокод, `0x931798 st_s r1,[r0,0x64]` при r1 = 0x64 (100 TU, константа) | `txrx_api_program_bi_tsf_control` 0x936be4 (LMAC 0x01 RX_ON): `0x886d64 = период_мкс >> 10` |
 | первый TBTT | — | защёлка `0x886dc0`/`0x886dc4`, MAC-команда 0x0d |
 | тело LMAC 0x01 | 0x24 Б, построение @0x8d89f0, +0x20 = 1 ([LMAC-PROTOCOL.md](LMAC-PROTOCOL.md)) | [0..1] TSF начала, [4] бит 0 — включить таймер BI, [6] — период в мкс, [7] — флаги |
 | источник периода у станции | зашитые 100 TU | глобал fw `0x8002d4` через `l2_mgr__connect` 0x8f1e18 → `RADIO_MGR__set_primary_channel` ([../6.2/docs/BENCH.md](../6.2/docs/BENCH.md#интервал-маяка-станции)) |
 
-**[код 6.2; 4.1 — MAC-COMMANDS §9.1]**. `txrx_api_cmd_step` в 4.1 — 0x931ce8 (там же профиль
+**[код 6.2; 4.1 — MAC-COMMANDS §9.1]**. `txrx_api_program_bi_tsf_control` в 4.1 — 0x931ce8 (там же профиль
 `mac__program_deadline_slack`).
 
 Ни одна версия не берёт Beacon Interval из маяка AP, как требует 802.11-2020 §11.1.3.3.1: при BI
@@ -779,7 +779,7 @@ bitmap`) и кормит детектор плохих маяков `bad_beacons
 
 ## Замечания
 
-* `bti_transmitter_bi2_flow` (4.1 0x923c74) в части документов 4.1 описан как «обычная
+* `bti_sta_beacon_abft_flow` (4.1 0x923c74) в части документов 4.1 описан как «обычная
   (нерандомизированная) передача маяка»; по коду это ветка окон GP для BF-метрики, маяк
   передаёт развёртка 0x923de0 при любом `bi_mode` (§3.1).
 * Единица задержки рандомизатора: `shl64(x, 0, 10)` — сдвиг на 10 (×1024 мкс); оценка

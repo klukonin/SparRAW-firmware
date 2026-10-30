@@ -22,3 +22,6 @@ ap_ssid = "SPARRAW-AP-TEST"   # SSID точки dut в тесте AP
 iperf_s = 8
 min_up_mbps = 500             # пороги пропускной способности
 min_down_mbps = 500
+irq_cpu = "2"                 # маска CPU прерываний wil6210 на обоих узлах (cpu1; не ядро iperf и не ядро RPS wifi)
+iperf_cpu = "4"               # маска CPU для iperf3 (taskset)
+brd_md5 = ""                  # md5 /lib/firmware/wil6210.brd обоих узлов (плата малой мощности); пусто — не проверять

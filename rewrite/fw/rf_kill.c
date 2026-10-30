@@ -68,7 +68,7 @@ void low_sme_send_rf_mgmt_status(void)
     else
         fw_sysassert_fatal(__builtin_return_address(0), 0x107e);
     fw_log_emit1(0x20, 0x100b760, buf[0]);
-    low_sme_send_evt2sw(buf, 0x1853, 4, 0xff, 0, 0, 0);
+    host_if_send_event(buf, 0x1853, 4, 0xff, 0, 0, 0);
 }
 
 /* ======================= останов при RF kill ======================= */
@@ -117,7 +117,7 @@ static void l2mgr_scan_abort(void)
 static void l2mgr_send_pcp_stopped(u32 mid)
 {
     fw_log_emit1(0x2b, 0x100ed64, mid);
-    low_sme_send_evt2sw(host_if_send_pair(), 0x1919, 0, mid, 0, 0, 0);
+    host_if_send_event(host_if_send_pair(), 0x1919, 0, mid, 0, 0, 0);
     l2mgr_pending_op_clear(4);
 }
 
@@ -125,7 +125,7 @@ static void l2mgr_send_pcp_stopped(u32 mid)
 static void pcp_stop(struct mid_disc *o)
 {
     fw_log_emit0(0x2c, 0x1016dcc);
-    tx_bcon_del_bcon(((volatile struct mid_disc *)o)->mid);
+    tx_bcon_del(((volatile struct mid_disc *)o)->mid);
 }
 
 /* pcp_stop__flow (0x8e0878, 138 Б): BSS PCP/AP (тип 2, режим 2/3) — бикон снять, режим
@@ -144,7 +144,7 @@ static void pcp_stop_flow(struct mid *e)
     if (ve->bss.state == 2 && (m == 2 || m == 3)) {
         pcp_stop(&e->disc);
         bss_set_mode(b, 1);
-        obj_set_field4_one(b);
+        bss_set_state_idle(b);
         radio_mgr_unset_primary_channel();
         fw_log_emit0(0x1b, 0x100ce68);
     } else {
@@ -178,7 +178,7 @@ void l2mgr_pcp_stop(u32 mid)
 static void l2mgr_pcp_stop_try(u32 mid, u32 tries)
 {
     struct mid *e;
-    if (mid_state_is_2_or_3(mid) == 0)
+    if (mid_is_pcp_or_ap(mid) == 0)
         return;
     e = mid_list_by_mid_fw(mid);
     if (e == 0)
@@ -200,7 +200,7 @@ static void l2mgr_pcp_stop_try(u32 mid, u32 tries)
     sys_state_broadcast(0xb, 0);
     pcp_stop_flow(e);
     if (mid_list_find_by_kind(e, 2) == 0)
-        conn_alloc_and_link(0, 1, 0);   /* conn__alloc_and_link__thunk_0_1_0 (0x8da730) */
+        lmac_if_send_role(0, 1, 0);   /* conn__alloc_and_link__thunk_0_1_0 (0x8da730) */
     sys_state_broadcast(0xc, 0);
     low_sme_termination_check(2);
     stream_mgr_delete_vring(((volatile struct pring *)sm_pring_by_index(1))->vr8);
@@ -223,7 +223,7 @@ static void low_sme_handle_rf_kill(u32 x)
         e = mid_list_by_mid_fw(mid);
         if (e == 0)
             continue;
-        if (mid_state_is_2_or_3(((volatile struct mid *)e)->id) == 0)
+        if (mid_is_pcp_or_ap(((volatile struct mid *)e)->id) == 0)
             continue;
         RF_KILL_STOP |= 4;
         fw_log_emit1(0x20, 0x100b92c, RF_KILL_STOP);

@@ -20,7 +20,7 @@ u32 pcie_read_app_debug_if(void)
 }
 
 /* hwd_dma__read_8812d4 (0x8d07c8): [0x881280+0x54]. */
-u32 hwd_dma_read_8812d4(void)
+u32 hwd_dma_read_pedi_debug_if(void)
 {
     return MMIO32(HW_DMA_DIAG_12D4);
 }
@@ -42,7 +42,7 @@ __attribute__((noinline)) u32 mac_rx_stats_crc_ok(void)
 void link_lost_diag_dump_pcie(void)
 {
     u32 l1   = hwd_pcie_ltssm_is_l1_idle();
-    u32 l1ss = hwd_pcie_get_88b0c0_state4();
+    u32 l1ss = hwd_pcie_get_l1ss_state();
     u32 lt   = hwd_pcie_get_ltssm_state();
     fw_log_emit3(0x20, 0x10010b8, l1, l1ss, lt);
     fw_log_emit1(0x20, 0x10010f4, pcie_read_app_debug_if());
@@ -51,7 +51,7 @@ void link_lost_diag_dump_pcie(void)
 /* link_lost_diag__dump_dma (0x8c84d4): «DEBUG DMA: PEDI DIF DEBUG IF: 0x%x». */
 void link_lost_diag_dump_dma(void)
 {
-    fw_log_emit1(0x20, 0x1001114, hwd_dma_read_8812d4());
+    fw_log_emit1(0x20, 0x1001114, hwd_dma_read_pedi_debug_if());
 }
 
 /* link_lost_diag__dump_mac_rx (0x8c8568): «DEBUG MAC RX: CRC_OK / CRC_ERR», регистры
@@ -110,6 +110,6 @@ void link_lost_diag(void)
     link_lost_diag_dump_mac_rx();
     link_lost_diag_dump_false_alarms();
     link_lost_diag_dump_rf(&rf_obj);
-    calib_obj4_reset_d4();
+    calib_silent_rssi_reset();
     link_lost_diag_noop_dump_hook();
 }

@@ -51,7 +51,7 @@ void l2mgr_link_lost_radio_cb(struct rm_req *a, u32 t0)
     (void)a;
     calib_mngr_system_state_evt_handler(0x13, 0);
     fw_log_emit1(0x2c, 0x100f3fc, LL_RM_REQ);
-    radio_mgr_call_method_10((struct rm_req *)LL_RM_REQ);
+    radio_mgr_lock_free((struct rm_req *)LL_RM_REQ);
     d = (u_schd_now() - t0) << 4;
     LL_RADIO_TIME = d;
     fw_log_emit1(0x2b, 0x100f440, d);

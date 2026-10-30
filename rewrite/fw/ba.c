@@ -5,7 +5,7 @@
  * (таблица 0x800888, vptr ctx+0x68); команды WMI_VRING_BA_EN/DIS; WMI_BA_STATUS_EVENT.
  * Объекты — include/stream.h (struct stream_ctx / stream_sm / ba_setup_sm / ba_wait_sm).
  *
- * Таблица stream_sm (12 событий × 5 состояний; ba_sm_evt_type переводит тип стрима в
+ * Таблица stream_sm (12 событий × 5 состояний; ba_sm_dispatch_event переводит тип стрима в
  * событие 0,1,5,3,4,6,0xa): 0 — BA_EN, 1 — BA_DIS/удаление, 2 — готов к изменению,
  * 3/4 — ответ ADDBA, 5/6 — DELBA, 7/8 — итог установки, 9 — пауза, 10 — удаление
  * соединения, 11 — завершение. Действия — (адреса в fw_data). */
@@ -35,8 +35,8 @@ static inline __attribute__((always_inline)) void lp_delay(u32 n)
 
 /* ba_sm__get_param_byte7 (0x8cce9c, 6 Б) / byte6 (0x8cca30, 6 Б): vring / тип pring.
  * noinline — у vendor вызовы (с полями по имени gcc их встраивает). */
-__attribute__((noinline)) u32 ba_sm_get_param_byte7(const struct stream_sm *s) { return s->ctx->vr; }
-__attribute__((noinline)) u32 ba_sm_get_param_byte6(const struct stream_sm *s)
+__attribute__((noinline)) u32 ba_sm_get_vring_id(const struct stream_sm *s) { return s->ctx->vr; }
+__attribute__((noinline)) u32 ba_sm_get_pring_type(const struct stream_sm *s)
 {
     return s->ctx->pring_type;
 }
@@ -63,7 +63,7 @@ void send_ba_status_report(const struct stream_ctx *ctx, u32 ringid, u32 status,
     e[5] = (u8)agg;
     e[8] = (u8)amsdu;
     fw_log_emit1(0x2b, 0x101108c, ctx->conn->mid->id);
-    low_sme_send_evt2sw(e, 0x1823, 9, ctx->conn->mid->id, 0, 0, 0);
+    host_if_send_event(e, 0x1823, 9, ctx->conn->mid->id, 0, 0, 0);
 }
 
 /* vring_is_empty (0x8d47a0, 66 Б): указатели DMA vring vr (+0x440c0c0 / +0x440c100) равны. */
@@ -88,7 +88,7 @@ void dmaq_hw_reset_ptrs(u32 vr)
 }
 
 /* Поле w бит [lo .. lo+n-1] = v (bits__set32_*). */
-static void bf32(u32 *w, u32 lo, u32 n, u32 v)
+static void bitfield_set32(u32 *w, u32 lo, u32 n, u32 v)
 {
     u32 m = ((n >= 32) ? 0xffffffffu : ((1u << n) - 1u)) << lo;
     *w = (*w & ~m) | ((v << lo) & m);
@@ -101,12 +101,12 @@ void stream_params_copy_hdr(const struct vring_tbl_entry *e, struct macq_desc *d
     d->lines = e->win_lines;
     d->rd = e->win_start;
     d->wr = e->win_start;
-    bf32(&d->w2, 0, 12, 997);
-    bf32(&d->w2, 12, 12, e->param_a & 0xfffu);
+    bitfield_set32(&d->w2, 0, 12, 997);
+    bitfield_set32(&d->w2, 12, 12, e->param_a & 0xfffu);
     d->param_a_lo = (u8)e->param_a;
-    bf32(&d->w3, 0, 4, (e->param_a >> 8) & 0xfu);
-    bf32(&d->w3, 4, 12, e->param_b & 0xfffu);
-    bf32(&d->w3, 16, 12, e->param_a & 0xfffu);
+    bitfield_set32(&d->w3, 0, 4, (e->param_a >> 8) & 0xfu);
+    bitfield_set32(&d->w3, 4, 12, e->param_b & 0xfffu);
+    bitfield_set32(&d->w3, 16, 12, e->param_a & 0xfffu);
 }
 
 /* stream_mgr__build_params (0x8e2a50, 92 Б): тип очереди, флаги и окно MACQ (LMAC 0x1f);
@@ -117,9 +117,9 @@ void stream_mgr_build_params(struct vring_tbl_entry *e, u32 mode, u32 flag, u32 
     memset0_words(&buf, sizeof(buf));
     e->mode = (u8)mode;
     buf.ba.w0 = (buf.ba.w0 & ~1u) | (flag & 1u);
-    bf32(&buf.ba.w0, 16, 4, tid & 0xfu);
+    bitfield_set32(&buf.ba.w0, 16, 4, tid & 0xfu);
     stream_params_copy_hdr(e, &buf.win);
-    qh_write_or_conn_alloc(e->macq, 0x1f, &buf, 0);
+    macq_qh_write(e->macq, 0x1f, &buf, 0);
     if (e->mode != 5 && e->mode != 6)
         mac_ring_disable(e->macq);
     e->state = 1;
@@ -134,8 +134,8 @@ void sw_vring_ba_params(const struct vring_tbl_entry *e)
     n = (s32)e->max_mpdu + 7;
     if (n < 0)
         n += 7;                                     /* asr со знаком (add.n) */
-    bf32(&buf.win.w2, 0, 12, (u32)(n >> 3) & 0xfffu);
-    qh_write_or_conn_alloc(e->macq, 0x20, &buf, 0);
+    bitfield_set32(&buf.win.w2, 0, 12, (u32)(n >> 3) & 0xfffu);
+    macq_qh_write(e->macq, 0x20, &buf, 0);
 }
 
 /* ba_sm__build_addba_params (0x8ea62c, 88 Б): тип mode, секторный и типовой дескрипторы
@@ -144,10 +144,10 @@ void ba_sm_build_addba_params(struct vring_tbl_entry *e, u32 mode, u32 a2, u32 a
 {
     struct macq_qdesc buf;
     e->mode = (u8)mode;
-    ba_sm_addba_at_10(e, &buf, e->sector_mode, (e->ctl >> 1) & 1u, e->to_res, a5);
-    sm_pring_all_wb_done_evt(e, &buf);
-    ba_sm_addba_at_08(e, &buf, a4, a2, a3, 0, 0);
-    qh_write_or_conn_alloc(e->macq, 0x16, &buf, a3);
+    tx_macq_build_sector_desc(e, &buf, e->sector_mode, (e->ctl >> 1) & 1u, e->to_res, a5);
+    tx_macq_build_mode_desc(e, &buf);
+    tx_macq_build_ba_desc(e, &buf, a4, a2, a3, 0, 0);
+    macq_qh_write(e->macq, 0x16, &buf, a3);
 }
 
 /* sw_vring__program_ba_win (0x8e4094, 64 Б): окно BA RX-MACQ q (rx_macq_bufs.ba_win 0x847fc8). */
@@ -156,7 +156,7 @@ void sw_vring_program_ba_win(u32 q, u32 win)
     struct macq_desc *d = &rx_macq_bufs.ba_win;
     macq_desc_read(d, q, 1, 0, 2);                  /* macq_desc__read_t1_w0_n2 0x8e4430 */
     d->rd = d->wr;
-    bf32(&d->w3, 4, 12, win & 0xfffu);
+    bitfield_set32(&d->w3, 4, 12, win & 0xfffu);
     macq_desc_write(d, q, 1, 0, 0, 0, 0, 1);
 }
 
@@ -185,7 +185,7 @@ void vring_wait_drain(u32 rq)
 
 /* stream_mgr__prepare_buf30_by_id (0x8cccb4 → 0x8dd8ec, 30 Б): номер блока начала окна
  * (поле 12 бит слова 1) MACQ-дескриптора очереди e. */
-u32 stream_mgr_prepare_buf30_by_id(const struct vring_tbl_entry *e)
+u32 stream_mgr_get_win_start_seq(const struct vring_tbl_entry *e)
 {
     u32 b[0xc];
     macq_desc_read(b, e->macq, 2, 3, 1);
@@ -206,14 +206,14 @@ void stream_ctx_vt_ba_teardown(struct stream_ctx *ctx, u32 a0, u32 a1)
     e = vring_tbl_entry_addr(ctx->vr);
     if (ctx->removing != 0) {
         u32 busy = vring_is_empty(ctx->vr, 0) == 0;
-        lmac_if_send_cmd_0x08(3, 1, (u8)vring_get_pring_id(ctx), ctx->tbl_vr, 0, 0, busy);
+        lmac_if_send_vring_cfg(3, 1, (u8)vring_get_pring_id(ctx), ctx->tbl_vr, 0, 0, busy);
         vring_tbl_entry_addr(ctx->tbl_vr)->state = 2;
         fw_log_emit2(0x2b, 0x1010fec, ctx->vr, busy);
     } else {
         struct conn *conn = ctx->conn;
         u32 cid = conn->cid;
         struct vring_schd_if *tbl;
-        ba_sm_build_addba_params(e, 5, ctx->tid, 0, cid, conn_sec_mode_not_1(conn));
+        ba_sm_build_addba_params(e, 5, ctx->tid, 0, cid, conn_is_secured(conn));
         tbl = vring_active_ring_table();
         tbl->vt->resume_vring(tbl, ctx->vr);
     }
@@ -241,7 +241,7 @@ void stream_ctx_vt_ready(struct stream_ctx *ctx)
     struct stream_sm *s = &ctx->sm;
     u32 go;
     if (fixed_sched.enabled == 0)
-        ctx->ssn = (u16)stream_mgr_prepare_buf30_by_id(e);
+        ctx->ssn = (u16)stream_mgr_get_win_start_seq(e);
     go = (s->setup.hdr.state == 6 && s->hdr.state == 1) || s->hdr.state == 3 || s->hdr.state == 4;
     if (go)
         SM_EV(s, 2, 0, 0, 0);
@@ -265,10 +265,10 @@ void stream_ctx_vt_ba_agreed(struct stream_ctx *ctx, u32 win, u32 timeout,
     struct vring_schd_if *tbl;
     sw_vring_ba_params(e);
     fw_log_emit3(0x27, 0x1010fb0, win, e->max_mpdu, ctx->tbl_vr);
-    hwd_dma_set_ring_field_99e0(0, (u32)((s32)win >> 3));
+    hwd_dma_set_ring_host_thrsh(0, (u32)((s32)win >> 3));
     conn = ctx->conn;
     cid = conn->cid;
-    ba_sm_build_addba_params(e, 6, ctx->tid, win, cid, conn_sec_mode_not_1(conn));
+    ba_sm_build_addba_params(e, 6, ctx->tid, win, cid, conn_is_secured(conn));
     tbl = vring_active_ring_table();
     tbl->vt->resume_vring(tbl, ctx->vr);
     send_ba_status_report(ctx, ctx->vr, 0, win, timeout, (u8)amsdu);
@@ -318,7 +318,7 @@ void stream_ctx_vt_remove(struct stream_ctx *ctx)
             if (!(v & 8u))
                 break;
         }
-        stream_mgr_prepare_1f(ctx->conn->cid, ctx->tid);
+        stream_mgr_write_filter_word(ctx->conn->cid, ctx->tid);
         vring_wait_drain(rq);
         macq_desc_read(d, 2, 1, 2, 1);
         d[0] |= 1u << 18;
@@ -346,7 +346,7 @@ FWDATA(800888) const struct stream_ctx_vt stream_ctx_vtbl = {
 void stream_sm_act_ba_en(struct stream_sm *s, u32 a0, u32 a1, u32 a2)
 {
     SM_EV(&s->setup, 0, a0, a1, a2);
-    if (ba_sm_get_param_byte7(s) != 9)
+    if (ba_sm_get_vring_id(s) != 9)
         SM_EV(&s->setup, 1, 0, 0, 0);
 }
 
@@ -389,59 +389,59 @@ void stream_sm_act_dis_status(struct stream_sm *s)
  * vt[2] контекста (приостановить vring). */
 void stream_sm_act_teardown(struct stream_sm *s, u32 a0)
 {
-    fw_log_emit3(0x2b, 0x1013500, ba_sm_get_param_byte7(s), ba_sm_get_param_byte6(s),
+    fw_log_emit3(0x2b, 0x1013500, ba_sm_get_vring_id(s), ba_sm_get_pring_type(s),
                  vring_get_pring_id_of_obj(s));
     SM_EV(&s->wait, 0, a0, 1, 0);
     s->ctx->vt->suspend(s->ctx);
 }
 
 /* (0x8ebfe8, 14 Б): ba_setup_sm событие 2. */
-void stream_sm_act_setup_ev2(struct stream_sm *s)
+void stream_sm_act_setup_vring_stopped(struct stream_sm *s)
 {
     SM_EV(&s->setup, 2, 0, 0, 0);
 }
 
 /* (0x8e7938, 14 Б): wait_sm событие 1. */
-void stream_sm_act_wait_ev1(struct stream_sm *s)
+void stream_sm_act_wait_ready_to_run(struct stream_sm *s)
 {
     SM_EV(&s->wait, 1, 0, 0, 0);
 }
 
 /* (0x8c4394, 10 Б): vt[1] контекста (сброс BA). */
-void stream_sm_act_vt1(struct stream_sm *s, u32 a0, u32 a1)
+void stream_sm_act_ctx_ba_teardown(struct stream_sm *s, u32 a0, u32 a1)
 {
     s->ctx->vt->ba_teardown(s->ctx, a0, (u16)a1);
 }
 
 /* (0x8c3110, 20 Б): EVT_ADDBAREQ_TX_COMPLETE — итог передачи ADDBA Request: ba_setup_sm
  * событие 4 (передан, a0 == 1) или 5 (EVT_ADDBAREQ_TX_FAILED). */
-void stream_sm_act_addba_rsp(struct stream_sm *s, u32 a0)
+void stream_sm_act_addba_req_tx_done(struct stream_sm *s, u32 a0)
 {
     SM_EV(&s->setup, a0 == 1 ? 4 : 5, 0, 0, 0);
 }
 
 /* (0x8c3154, 42 Б): EVT_ADDBARSP_ARRIVED — ba_setup_sm событие 7 (a0 — тело ответа). */
-void stream_sm_act_setup_ev7(struct stream_sm *s, u32 a0)
+void stream_sm_act_setup_addba_rsp_arrived(struct stream_sm *s, u32 a0)
 {
     fw_log_emit0(0x2b, 0x1013540);
     SM_EV(&s->setup, 7, a0, 0, 0);
 }
 
 /* (0x8c8d5c, 14 Б): wait_sm событие 2. */
-void stream_sm_act_wait_ev2(struct stream_sm *s)
+void stream_sm_act_wait_delba_tx_complete(struct stream_sm *s)
 {
     SM_EV(&s->wait, 2, 0, 0, 0);
 }
 
 /* (0x8e2a30, 28 Б): wait_sm событие 3 (a0) и vt[2] контекста. */
-void stream_sm_act_wait_ev3_suspend(struct stream_sm *s, u32 a0)
+void stream_sm_act_wait_rcp_delba_suspend(struct stream_sm *s, u32 a0)
 {
     SM_EV(&s->wait, 3, a0, 0, 0);
     s->ctx->vt->suspend(s->ctx);
 }
 
 /* (0x8e21c4, 44 Б): wait_sm событие 3 (a0). */
-void stream_sm_act_wait_ev3(struct stream_sm *s, u32 a0)
+void stream_sm_act_wait_rcp_delba_arrived(struct stream_sm *s, u32 a0)
 {
     fw_log_emit0(0x2b, 0x1013554);
     SM_EV(&s->wait, 3, a0, 0, 0);
@@ -469,14 +469,14 @@ void stream_sm_act_setup_done(struct stream_sm *s, u32 a0)
 }
 
 /* (0x8c437c, 14 Б): ba_setup_sm событие 0xc. */
-void stream_sm_act_setup_ev12(struct stream_sm *s)
+void stream_sm_act_setup_abort(struct stream_sm *s)
 {
     SM_EV(&s->setup, 0xc, 0, 0, 0);
 }
 
 /* (0x8c438c, 8 Б): vt[2] контекста. vendor (ld r1,[r0,0x68]; ld r1,[r1,8]; j [r1]) затирает
  * r1 адресом метода — аргументы события методу не передаются (он их и не читает). */
-void stream_sm_act_vt2(struct stream_sm *s)
+void stream_sm_act_suspend(struct stream_sm *s)
 {
     s->ctx->vt->suspend(s->ctx);
 }
@@ -504,21 +504,21 @@ FWDATA(802840) const struct sm_trans stream_sm_trans[12][5] = {
     },
     [2] = {   /* EVT_VRING_STOPPED */
         { SM_ACT(basic_sm_error_handler), 0 },               /* NOT_BA_AGR_STATE → NOT_BA_AGR_STATE */
-        { SM_ACT(stream_sm_act_setup_ev2), 1 },              /* BA_SETUP_STATE → BA_SETUP_STATE */
+        { SM_ACT(stream_sm_act_setup_vring_stopped), 1 },              /* BA_SETUP_STATE → BA_SETUP_STATE */
         { SM_ACT(basic_sm_error_handler), 2 },               /* BA_AGREED_STATE → BA_AGREED_STATE */
-        { SM_ACT(stream_sm_act_wait_ev1), 3 },               /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
-        { SM_ACT(stream_sm_act_vt1), 0 },                    /* WAIT_REMOVE_STREAM_STATE → NOT_BA_AGR_STATE */
+        { SM_ACT(stream_sm_act_wait_ready_to_run), 3 },               /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
+        { SM_ACT(stream_sm_act_ctx_ba_teardown), 0 },                    /* WAIT_REMOVE_STREAM_STATE → NOT_BA_AGR_STATE */
     },
     [3] = {   /* EVT_ADDBAREQ_TX_COMPLETE */
         { SM_ACT(sm_action_nop_b), 0 },                      /* NOT_BA_AGR_STATE → NOT_BA_AGR_STATE */
-        { SM_ACT(stream_sm_act_addba_rsp), 1 },              /* BA_SETUP_STATE → BA_SETUP_STATE */
+        { SM_ACT(stream_sm_act_addba_req_tx_done), 1 },              /* BA_SETUP_STATE → BA_SETUP_STATE */
         { SM_ACT(sm_action_nop_b), 2 },                      /* BA_AGREED_STATE → BA_AGREED_STATE */
         { SM_ACT(sm_action_nop_b), 3 },                      /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
-        { SM_ACT(stream_sm_act_addba_rsp), 4 },              /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
+        { SM_ACT(stream_sm_act_addba_req_tx_done), 4 },              /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
     },
     [4] = {   /* EVT_ADDBARSP_ARRIVED */
         { SM_ACT(sm_action_nop_b), 0 },                      /* NOT_BA_AGR_STATE → NOT_BA_AGR_STATE */
-        { SM_ACT(stream_sm_act_setup_ev7), 1 },              /* BA_SETUP_STATE → BA_SETUP_STATE */
+        { SM_ACT(stream_sm_act_setup_addba_rsp_arrived), 1 },              /* BA_SETUP_STATE → BA_SETUP_STATE */
         { SM_ACT(sm_action_nop_b), 2 },                      /* BA_AGREED_STATE → BA_AGREED_STATE */
         { SM_ACT(sm_action_nop_b), 3 },                      /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
         { SM_ACT(sm_action_nop_b), 4 },                      /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
@@ -527,14 +527,14 @@ FWDATA(802840) const struct sm_trans stream_sm_trans[12][5] = {
         { SM_ACT(sm_action_nop_b), 0 },                      /* NOT_BA_AGR_STATE → NOT_BA_AGR_STATE */
         { SM_ACT(sm_action_nop_b), 1 },                      /* BA_SETUP_STATE → BA_SETUP_STATE */
         { SM_ACT(basic_sm_error_handler), 2 },               /* BA_AGREED_STATE → BA_AGREED_STATE */
-        { SM_ACT(stream_sm_act_wait_ev2), 3 },               /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
+        { SM_ACT(stream_sm_act_wait_delba_tx_complete), 3 },               /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
         { SM_ACT(sm_action_nop_b), 4 },                      /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
     },
     [6] = {   /* EVT_RCP_DELBA_ARRIVED */
         { SM_ACT(sm_action_nop_b), 0 },                      /* NOT_BA_AGR_STATE → NOT_BA_AGR_STATE */
         { SM_ACT(sm_action_nop_b), 1 },                      /* BA_SETUP_STATE → BA_SETUP_STATE */
-        { SM_ACT(stream_sm_act_wait_ev3_suspend), 3 },       /* BA_AGREED_STATE → BA_TEARDOWN_STATE */
-        { SM_ACT(stream_sm_act_wait_ev3), 3 },               /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
+        { SM_ACT(stream_sm_act_wait_rcp_delba_suspend), 3 },       /* BA_AGREED_STATE → BA_TEARDOWN_STATE */
+        { SM_ACT(stream_sm_act_wait_rcp_delba_arrived), 3 },               /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
         { SM_ACT(sm_action_nop_b), 4 },                      /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
     },
     [7] = {   /* EVT_BA_SETUP_SUCCESS_NTF */
@@ -555,12 +555,12 @@ FWDATA(802840) const struct sm_trans stream_sm_trans[12][5] = {
         { SM_ACT(basic_sm_error_handler), 0 },               /* NOT_BA_AGR_STATE → NOT_BA_AGR_STATE */
         { SM_ACT(basic_sm_error_handler), 1 },               /* BA_SETUP_STATE → BA_SETUP_STATE */
         { SM_ACT(basic_sm_error_handler), 2 },               /* BA_AGREED_STATE → BA_AGREED_STATE */
-        { SM_ACT(stream_sm_act_vt1), 0 },                    /* BA_TEARDOWN_STATE → NOT_BA_AGR_STATE */
+        { SM_ACT(stream_sm_act_ctx_ba_teardown), 0 },                    /* BA_TEARDOWN_STATE → NOT_BA_AGR_STATE */
         { SM_ACT(basic_sm_error_handler), 4 },               /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
     },
     [10] = {   /* EVT_REMOVE_STREAM */
         { SM_ACT(stream_sm_act_teardown), 4 },               /* NOT_BA_AGR_STATE → WAIT_REMOVE_STREAM_STATE */
-        { SM_ACT(stream_sm_act_setup_ev12), 4 },             /* BA_SETUP_STATE → WAIT_REMOVE_STREAM_STATE */
+        { SM_ACT(stream_sm_act_setup_abort), 4 },             /* BA_SETUP_STATE → WAIT_REMOVE_STREAM_STATE */
         { SM_ACT(stream_sm_act_teardown), 4 },               /* BA_AGREED_STATE → WAIT_REMOVE_STREAM_STATE */
         { SM_ACT(sm_action_nop_b), 3 },                      /* BA_TEARDOWN_STATE → BA_TEARDOWN_STATE */
         { SM_ACT(sm_action_nop_b), 4 },                      /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
@@ -570,7 +570,7 @@ FWDATA(802840) const struct sm_trans stream_sm_trans[12][5] = {
         { SM_ACT(basic_sm_error_handler), 4 },               /* BA_SETUP_STATE → WAIT_REMOVE_STREAM_STATE */
         { SM_ACT(basic_sm_error_handler), 4 },               /* BA_AGREED_STATE → WAIT_REMOVE_STREAM_STATE */
         { SM_ACT(basic_sm_error_handler), 4 },               /* BA_TEARDOWN_STATE → WAIT_REMOVE_STREAM_STATE */
-        { SM_ACT(stream_sm_act_vt2), 4 },                    /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
+        { SM_ACT(stream_sm_act_suspend), 4 },                    /* WAIT_REMOVE_STREAM_STATE → WAIT_REMOVE_STREAM_STATE */
     },
 };
 /* 0x80296c: описатель stream_sm (состояний 5, событий 12, старт NOT_BA_AGR_STATE); ид [0x10] пишет
@@ -678,11 +678,11 @@ void stream_mgr_ba_disable(u32 vr)
         return;
     }
     s->ba_en = 0;
-    ba_sm_evt_type(s, 1, 0x25, 1, 0);
+    ba_sm_dispatch_event(s, 1, 0x25, 1, 0);
 }
 
 /* vring_ba_en__race_check (0x8c4240, 82 Б): WMI_VRING_BA_EN — стрим есть и не удаляется. */
-void vring_ba_en_race_check(u32 vr, u32 agg, u32 timeout, u32 amsdu)
+void stream_mgr_ba_enable(u32 vr, u32 agg, u32 timeout, u32 amsdu)
 {
     struct stream_ctx *s = stream_by_vr[vr];
     if (s == 0) {
@@ -694,7 +694,7 @@ void vring_ba_en_race_check(u32 vr, u32 agg, u32 timeout, u32 amsdu)
         return;
     }
     s->ba_en = 1;
-    ba_sm_evt_type(s, 0, agg, timeout, amsdu);
+    ba_sm_dispatch_event(s, 0, agg, timeout, amsdu);
 }
 
 /* wmi_vring_ba_dis (0x8fb490, 34 Б): {ringid, reserved, reason u16}. */
@@ -716,7 +716,7 @@ void wmi_vring_ba_en(const struct wmi_vring_ba_en_cmd *cmd, u32 mid)
         wmi_reject_param(0x823, cmd->ringid, 0);
         return;
     }
-    vring_ba_en_race_check(cmd->ringid, cmd->agg_max_wsize, cmd->ba_timeout, cmd->amsdu);
+    stream_mgr_ba_enable(cmd->ringid, cmd->agg_max_wsize, cmd->ba_timeout, cmd->amsdu);
 }
 
 /* conn__sm_handle_event (0x8d9cc0, 8 Б): событие автомату разрыва соединения. */
@@ -744,7 +744,7 @@ u32 stream_mgr_remove_conn_stream(struct conn *conn, u32 a1, u32 a2)
         s->removing = 1;
         s->ba_en = 0;
         fw_log_emit2(0x2b, 0x1010c34, s->vr, conn->cid);
-        ba_sm_evt_type(s, 6, 0x24, 0, 0);
+        ba_sm_dispatch_event(s, 6, 0x24, 0, 0);
         return 1;
     }
     fw_log_emit1(0x2b, 0x1010c68, conn->cid);
@@ -781,7 +781,7 @@ void vring_enable_first_pending_gtk(void)
  * 3 WAIT_ADDBAREQ_SENT, 4 WAIT_FOR_ADDBARSP, 5 ABORT_PENDING, 6 WAIT_FOR_VRING_STOP.
  * Путь запроса: 2 —(3 TX_PERMITTED: send_req)→ 3 —(4 TX_COMPLETE: req_sent, таймер ответа
  * [0x8002b0])→ 4; в 3 — (5 TX_FAILED: arm_retry, пауза [0x8002ac])→ 4; в 4 — (6 таймаут
- * ответа/паузы: ba_retry_flow)→ 2, после 30 попыток — отказ; ответ — 7 (resp). */
+ * ответа/паузы: ba_setup_retry_or_fail)→ 2, после 30 попыток — отказ; ответ — 7 (resp). */
 
 
 /* Поле u16 (младший байт первым) по невыровненному адресу (bf__set_field_u16 0x8edc34). */
@@ -795,7 +795,7 @@ static void bf16_le(u8 *p, u32 lo, u32 n, u32 v)
 }
 
 /* Поле байта (bf__set_field_byte_fw 0x8edccc). */
-static void bf8(u8 *p, u32 lo, u32 n, u32 v)
+static void bits_set8(u8 *p, u32 lo, u32 n, u32 v)
 {
     u32 m = ((1u << n) - 1u) << lo;
     *p = (u8)((*p & ~m) | ((v << lo) & m));
@@ -824,7 +824,7 @@ u32 frame_build_addba_req(struct ieee80211_addba *d, u32 token, u32 win, u32 tid
     d->params[0] = (u8)((d->params[0] & ~1u) | (amsdu & 1u));
     d->params[0] &= (u8)~2u;                      /* политика: немедленный BA */
     d->token = (u8)token;
-    bf8(&d->params[0], 2, 4, tid & 0xfu);
+    bits_set8(&d->params[0], 2, 4, tid & 0xfu);
     bf16_le(d->params, 6, 10, win & 0x3ffu);
     d->timeout[0] = (u8)timeout;
     d->timeout[1] = (u8)(timeout >> 8);
@@ -839,7 +839,7 @@ u32 frame_build_delba(struct ieee80211_delba *d, u32 initiator, u32 tid, u32 rea
     /* volatile: байтовые stb как у vendor (иначе gcc сливает их в stw — тело выровнено на 2) */
     *(volatile u8 *)&d->category = ACT_CAT_BA;
     *(volatile u8 *)&d->action = WLAN_ACT_DELBA;
-    bf8(&d->params[1], 4, 4, tid & 0xfu);
+    bits_set8(&d->params[1], 4, 4, tid & 0xfu);
     d->params[1] = (u8)((d->params[1] & ~8u) | ((initiator & 1u) << 3));
     d->reason = (u16)reason;
     return sizeof(*d);
@@ -858,7 +858,7 @@ void ba_addba_req_tx_done(u32 pl, u32 status, u32 a2)
         if (s == 0)
             fw_log_emit0(0x1b, 0x10108f8);
         else
-            ba_sm_evt_type(s, 3, status == 0, 0, 0);
+            ba_sm_dispatch_event(s, 3, status == 0, 0, 0);
     }
     TX_API_free_memory(pl);
 }
@@ -875,7 +875,7 @@ void stream_mgr_delba_tx_complete(u32 pl, u32 status, u32 a2)
         if (s == 0)
             fw_log_emit0(0x1b, 0x1010980);
         else
-            ba_sm_evt_type(s, 2, status == 0, 0, 0);
+            ba_sm_dispatch_event(s, 2, status == 0, 0, 0);
     }
     TX_API_free_memory(pl);
 }
@@ -896,7 +896,7 @@ void ba_sm_send_addba_req(struct stream_sm *s, u32 token, u32 win, u32 timeout, 
      * остановке vring) — запрос уходил с прежним 0, а очередь начинает с 0x800 (стенд 2026-10-26: группа 3, слово 1
      * дескриптора = 0x800 = SN первого кадра под BA); получатель сдвигал окно костылём «1-st frame wrong sequence». */
     if (fixed_sched.enabled == 0)
-        ctx->ssn = (u16)stream_mgr_prepare_buf30_by_id(vring_tbl_entry_addr(ctx->vr));
+        ctx->ssn = (u16)stream_mgr_get_win_start_seq(vring_tbl_entry_addr(ctx->vr));
     len += frame_build_addba_req((struct ieee80211_addba *)(pl + len), (u8)token, win, ctx->tid, timeout,
                                  ctx->ssn, amsdu != 0);
     fw_log_emit2(0x2b, 0x10135bc, ctx->vr, ctx->tid);
@@ -962,7 +962,7 @@ void ba_setup_close_all_timers(struct ba_setup_sm *b)
 /* ba__retry_flow (0x8f1a48, 86 Б): ещё попытка (событие 3) либо, после 30, — отказ
  * (stream_sm 8 с ошибкой, событие 0xa). Сверено с vendor: brge r2,0x1e (со знаком),
  * add_s/extb перед записью — как здесь. */
-void ba_retry_flow(struct ba_setup_sm *b)
+void ba_setup_retry_or_fail(struct ba_setup_sm *b)
 {
     if ((s32)b->tries >= 0x1e) {
         fw_log_emit1(0x25, 0x10136cc, b->tries);
@@ -1034,7 +1034,7 @@ void ba_setup_act_start(struct ba_setup_sm *b)
         fw_sysassert_fatal((void *)0, 0x129a);
     b->global_timer = u_schd_schedule(ba_setup_global_timeout_cb, (u32)b, 0, 0,
                                       ba_setup_total_timeout, 0, 0);
-    ba_retry_flow(b);
+    ba_setup_retry_or_fail(b);
 }
 
 /* (0x8f866c, 24 Б): отправить ADDBA Request (новый dialog token). */
@@ -1201,7 +1201,7 @@ FWDATA(802988) const struct sm_trans ba_setup_sm_trans[13][7] = {
         { SM_ACT(basic_sm_error_handler), 1 },               /* WAIT_FOR_PERMIT_STATE → WAIT_FOR_PERMIT_STATE */
         { SM_ACT(basic_sm_error_handler), 2 },               /* ADDBAREQ_CHECKING_MAX_RETRY_STATE → ADDBAREQ_CHECKING_MAX_RETRY_STATE */
         { SM_ACT(sm_action_nop_b), 0 },                      /* WAIT_ADDBAREQ_SENT_STATE → WAIT_FOR_START_STATE */
-        { SM_ACT(ba_retry_flow), 2 },                        /* WAIT_FOR_ADDBARSP_STATE → ADDBAREQ_CHECKING_MAX_RETRY_STATE */
+        { SM_ACT(ba_setup_retry_or_fail), 2 },                        /* WAIT_FOR_ADDBARSP_STATE → ADDBAREQ_CHECKING_MAX_RETRY_STATE */
         { SM_ACT(basic_sm_error_handler), 5 },               /* ABORT_PENDING_STATE → ABORT_PENDING_STATE */
         { SM_ACT(sm_action_nop_b), 6 },                      /* WAIT_FOR_VRING_STOP_STATE → WAIT_FOR_VRING_STOP_STATE */
     },
@@ -1286,7 +1286,7 @@ u32 frame_build_addba_resp(struct ieee80211_addba_resp *d, u32 token, u32 win, u
     d->params[0] = (u8)((d->params[0] & ~1u) | (amsdu & 1u));
     d->params[0] &= (u8)~2u;
     d->status[1] = (u8)(status >> 8);
-    bf8(&d->params[0], 2, 4, tid & 0xfu);
+    bits_set8(&d->params[0], 2, 4, tid & 0xfu);
     bf16_le(d->params, 6, 10, win & 0x3ffu);
     d->timeout[0] = (u8)timeout;
     d->timeout[1] = (u8)(timeout >> 8);
@@ -1312,7 +1312,7 @@ void stream_mgr_addba_req_handler(const struct ieee80211_addba *f, u32 cid)
     e->ba_timeout = (u16)(f->timeout[0] | ((u32)f->timeout[1] << 8));
     e->ba_seq_ctrl = (u16)(f->ssn[0] | ((u32)f->ssn[1] << 8));
     fw_log_emit1(0x2b, 0x1010520, conn->mid->id);
-    low_sme_send_evt2sw(e, 0x1824, 8, conn->mid->id, 0, 0, 0);
+    host_if_send_event(e, 0x1824, 8, conn->mid->id, 0, 0, 0);
 }
 
 /* stream_mgr::addba_rsp_handler (0x8c3124, 48 Б): ADDBA Response пира → stream_sm. */
@@ -1323,7 +1323,7 @@ void stream_mgr_addba_rsp_handler(const struct ieee80211_addba_resp *f, u32 cid)
         fw_log_emit0(0x1b, 0x101055c);
         return;
     }
-    ba_sm_evt_type(s, 4, (u32)f, 0, 0);
+    ba_sm_dispatch_event(s, 4, (u32)f, 0, 0);
 }
 
 /* stream_mgr::delba_handler (0x8c8c18, 252 Б): DELBA пира — для нашей (TX) сессии
@@ -1353,7 +1353,7 @@ void stream_mgr_delba_handler(const struct ieee80211_delba *f, u32 cid)
         e->cidxtid = (u8)((cid & 0xfu) | ((f->params[1] >> 4) << 4));
         e->reason = f->reason;
         fw_log_emit1(0x2b, 0x1010688, conn->mid->id);
-        low_sme_send_evt2sw(e, 0x1826, 4, conn->mid->id, 0, 0, 0);
+        host_if_send_event(e, 0x1826, 4, conn->mid->id, 0, 0, 0);
         return;
     }
     if (s == 0) {
@@ -1366,7 +1366,7 @@ void stream_mgr_delba_handler(const struct ieee80211_delba *f, u32 cid)
         return;
     }
     s->ba_en = 0;
-    ba_sm_evt_type(s, 5, f->reason, 0, 0);
+    ba_sm_dispatch_event(s, 5, f->reason, 0, 0);
 }
 
 /* wmi_rcp_addba_resp (0x8ecbe8, 308 Б): WMI_RCP_ADDBA_RESP {cidxtid, dialog_token,
@@ -1389,7 +1389,7 @@ void wmi_rcp_addba_resp(const struct wmi_rcp_addba_resp_cmd *cmd, u32 mid)
         e->cidxtid = cmd->cidxtid;
         e->status = 1;
         fw_log_emit1(0x2b, 0x1007a24, mid);
-        low_sme_send_evt2sw(e, 0x1825, 4, mid, 0, 0, 0);
+        host_if_send_event(e, 0x1825, 4, mid, 0, 0, 0);
         return;
     }
     m = mid_list_by_mid_fw(mid);
@@ -1406,7 +1406,7 @@ void wmi_rcp_addba_resp(const struct wmi_rcp_addba_resp_cmd *cmd, u32 mid)
     e->status = 0;
     e->cidxtid = cmd->cidxtid;
     fw_log_emit1(0x2b, 0x1007aac, mid);
-    low_sme_send_evt2sw(e, 0x1825, 4, mid, 0, 0, 0);
+    host_if_send_event(e, 0x1825, 4, mid, 0, 0, 0);
     install_key_parse_flags(cid, tid & 0xfu, 2);
 }
 

@@ -225,7 +225,7 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
     case 0x133: hwd_abif_rx_table_config_vga_bias((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8]); break;
     case 0x134: resp->data[0] = hwd_abif_rx_table_read_vga_bias((u32)c->arg8[0], (u32)c->arg8[4]); len = 0xc; break;
     case 0x135:                                     /* строка RX-таблицы (3 слова) → +8 */
-        hwd_abif_uses_rgf_88a208_8cf5fc((u32)c->arg8[0], buf.w);
+        hwd_abif_rx_table_read_row((u32)c->arg8[0], buf.w);
         memcpy_fw(resp->data, buf.w, 0xc);
         len = 0x14;
         break;
@@ -274,7 +274,7 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
     case 0x160: hwd_abif_dvs_lo_splitter_enable((u32)c->arg8[0]); break;
     case 0x161: hwd_abif_dvs_lo_splitter_config_buf_val(c->arg[0], (u32)c->arg8[4]); break;
     case 0x162: hwd_abif_dvs_rfca_config_en((u32)c->arg8[0]); break;
-    case 0x163: ut_hw_drivers_check_index((s32)(u32)c->arg8[0], (u32)c->arg8[4]); break;
+    case 0x163: rfc_tx_power_tbl_set_mcs_row((s32)(u32)c->arg8[0], (u32)c->arg8[4]); break;
     case 0x164: resp->data[0] = rfca_get_rf_mask(); len = 0xc; break;
     case 0x170: {
         /* Номер канала 1..4 из тела передаётся channel__check_range как есть, а та ждёт
@@ -294,15 +294,15 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
 
     /* ---------------- CAR / PLL 0x201..0x203 ---------------- */
     case 0x201: car_enable_pll3_and_wait_on(); break;
-    case 0x202: hwd_wait_pll_lock(); break;     /* vendor грузит place_holder[0] в r0 — не читается */
-    case 0x203: ut_hw_drivers_cmd_0x203(); break;
+    case 0x202: clk_switch_to_ref(); break;     /* vendor грузит place_holder[0] в r0 — не читается */
+    case 0x203: ut_hw_drivers_pll_bypass_step(); break;
 
     /* ---------------- MAC SXD 0x301..0x305 ---------------- */
     case 0x301: hwd_mac_trigger_sxd_tx_mode((u32)c->arg8[0]); break;
     case 0x302: hwd_mac_sxd_rx_mode_entry(); break;
     case 0x303: hwd_mac_sxd_mode_neutral(); break;
     case 0x304: hwd_mac_sxd_tx_phy_frame_start(); break;
-    case 0x305: field_set_0x00_8db5bc(c->arg[0]); break;
+    case 0x305: lmac_if_send_brp_snr_cfg(c->arg[0]); break;
 
     /* ---------------- PHY 0x401..0x438 ---------------- */
     case 0x401: hwd_phy_self_tx_mode_entry(); break;
@@ -426,28 +426,28 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
     case 0x435: hwd_phy_online_measurement_stop(); break;
     case 0x436: hwd_phy_online_measurement_completed(); break;
     case 0x437:
-        resp->data[0] = ut_hw_drivers_pair_2568((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (u32)c->arg8[12], (u32)c->arg8[16]);
+        resp->data[0] = ut_hw_drivers_apply_agc_word((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (u32)c->arg8[12], (u32)c->arg8[16]);
         len = 0xc;
         break;
     /* 0x438 (поправки TOF) — только SparRAW-pro; здесь default. */
 
     /* ---------------- RFC 0x501..0x51e ---------------- */
-    case 0x501: hwd_program_889_group(c->arg[0]); break;
+    case 0x501: hwd_rf_clocks_enable(c->arg[0]); break;
     case 0x502: hwd_rfc_write_core_fw((u32)c->arg8[0], (u32)c->arg8[4], c->arg[2], c->arg[3]); break;
     case 0x503: rfc_field_write(0, c->arg[0], c->arg[1], 0); break;      /* r3 — мусор, не читается */
     case 0x504: resp->data[0] = hwd_rfc_read_rgf(0, c->arg[0]); len = 0xc; break;
     case 0x505: rf_sector_commit_rx(0, (u32)c->arg8[0]); break;
     case 0x506: rf_sector_commit_tx(0, (u32)c->arg8[0]); break;
-    case 0x507: ut_hw_drivers_cmd_0x507(0, (u32)c->arg8[0], (u32)c->arg8[4]); break;
-    case 0x508: ut_hw_drivers_cmd_0x508(0, (u32)c->arg8[0], (u32)c->arg8[4]); break;
-    case 0x509: hwd_rfc_write_core_fw_mode1(0); break;
+    case 0x507: rfc_core_fw_commit_rx_sector(0, (u32)c->arg8[0], (u32)c->arg8[4]); break;
+    case 0x508: ut_hw_drivers_cmd_tx_sector_gain_index(0, (u32)c->arg8[0], (u32)c->arg8[4]); break;
+    case 0x509: hwd_rfc_apply_gain_tables(0); break;
     case 0x50a:
         if (c->arg[0] == 1)
-            hwd_setup_pair(0, 0);                   /* r1 — мусор, не читается */
+            hwd_rfc_powerdown_deep(0, 0);                   /* r1 — мусор, не читается */
         else
             rfc_restore_txrx_sets_fw();
         break;
-    case 0x50b: hwd_rfc_uses_rgf_889100(); break;
+    case 0x50b: hwd_rfc_spi_enable(); break;
     case 0x50c:
         hwd_rfc_sector_edge_gain_set((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (u32)c->arg8[12], (u32)c->arg8[16], (s32)(u32)c->arg8[20]);
         break;
@@ -456,7 +456,7 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
         hwd_rfc_sector_edge_phase_set((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (s32)(u32)c->arg8[12], (u32)c->arg8[16], (s32)(u32)c->arg8[20]);
         break;
     case 0x50f:
-        resp->data[0] = ut_hw_drivers_cmd_0x50f((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (s32)(u32)c->arg8[12]);
+        resp->data[0] = hwd_rfc_sector_edge_phase_get((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (s32)(u32)c->arg8[12]);
         len = 0xc;
         break;
     case 0x510:
@@ -466,7 +466,7 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
     case 0x512:
         hwd_rfc_sector_x16_state_set((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (u32)c->arg8[12], (u32)c->arg8[16], (s32)(u32)c->arg8[20]);
         break;
-    case 0x513: resp->data[0] = ut_hw_drivers_cmd_0x513((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (u32)c->arg8[12]); len = 0xc; break;
+    case 0x513: resp->data[0] = hwd_rfc_sector_x16_state_get((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (u32)c->arg8[12]); len = 0xc; break;
     case 0x514:
         hwd_program_rf_regs_seq((u32)c->arg8[0], c->arg[1], (u32)c->arg8[8], c->arg[3], c->arg[4], c->arg[5], c->arg[6],
                                 c->arg[7], c->arg[8], (u8)(u32)c->arg8[36]);
@@ -495,10 +495,10 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
         memcpy_fw(resp->data, buf.w, 0x40);
         len = 0x48;
         break;
-    case 0x518: xpm_wave_rd_set(c->arg[0], c->arg[1], c->arg[2]); break;
-    case 0x519: resp->data[0] = xpm_read_cfg_378(c->arg[0], c->arg[1]); len = 0xc; break;
-    case 0x51a: xpm_write_cfg_350(c->arg[0], c->arg[1], c->arg[2]); break;
-    case 0x51b: resp->data[0] = xpm_read_cfg_350(c->arg[0], c->arg[1]); len = 0xc; break;
+    case 0x518: xpm_write_wr_wave_word(c->arg[0], c->arg[1], c->arg[2]); break;
+    case 0x519: resp->data[0] = xpm_read_wr_wave_word(c->arg[0], c->arg[1]); len = 0xc; break;
+    case 0x51a: xpm_write_rd_wave_word(c->arg[0], c->arg[1], c->arg[2]); break;
+    case 0x51b: resp->data[0] = xpm_read_rd_wave_word(c->arg[0], c->arg[1]); len = 0xc; break;
     case 0x51c: {                                   /* RFC 0x504: ниббл 0 (≠0) или 1 (0) */
         u32 v = hwd_rfc_read_rgf(0, 0x504);
 
@@ -529,13 +529,13 @@ void ut_hw_drivers_cmd_handler(struct wmi_mbox *mb, const struct ut_cmd *c)
     case 0x610: {
         u32 a, b;
 
-        ut_hw_drivers_zero_result(&a, &b);
+        ut_hw_drivers_snapshot_sdp_pins(&a, &b);
         resp->data[0] = a;
         resp->data[1] = b;
         len = 0x10;
         break;
     }
-    case 0x611: ut_hw_drivers_step_8f4480(c->arg[0], c->arg[1], c->arg[2]); break;
+    case 0x611: ut_hw_drivers_config_sdp_pins(c->arg[0], c->arg[1], c->arg[2]); break;
 
     /* 0x700: «не поддерживается» событием WMI, но ответ UT (статус 1) всё равно уходит. */
     case 0x700: ut_hw_drivers_reply_not_supported(mb, c); break;

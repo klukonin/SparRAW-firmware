@@ -65,12 +65,12 @@ void assert_notify_host(void)
 {
     fw_log_emit0(0x20, 0x1003a68);
     host_irq_raise_fw_error();
-    pcie_set_event_bit_19();
+    pcie_set_fw_error_event();
 }
 
 /* sysassert__dump_ucode_int6 (0x8c9ce0): подробности сбоя ucode по его коду сисассерта
  * [0x857014]: 0x26 — журнал [0x886e24]; 0x29 — журнал и пара [0x85701c]/[0x857020]. */
-void sysassert_dump_ucode_int6(void)
+void sysassert_dump_ucode_assert_info(void)
 {
     u32 c = VOL(fwsh_diag.uc_assert_code);
 
@@ -202,7 +202,7 @@ void (fw_sysassert_fatal)(void *caller, u32 code)
         fw_log_emit3(0, 0x1001350, site, (u32)caller, code);
     fw_log_emit3(0, 0x100139c, rd_sp(), rd_ilink1(), rd_ilink2());
     if (dbg_ucode_crash == 1)
-        sysassert_dump_ucode_int6();
+        sysassert_dump_ucode_assert_info();
     sysassert_dump_stack();
     sdp_drive_pin_timed(0);
     if (dbg_ucode_crash == 0) {

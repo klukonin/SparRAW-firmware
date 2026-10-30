@@ -19,7 +19,7 @@ void rfc_clear_core_reg1(u32 a)
     hwd_rfc_write_core(a, 1, 0, 0);
 }
 
-void rf_store_last_module_index(void)
+void rf_store_last_set_index(void)
 {
     bti_sweep_set = fwsh_n_sets - 1;
 }
@@ -71,8 +71,8 @@ void rf_set_normal_mode(u32 a)
 {
     /* 6.2 asm 0x92abe4. */
     if (a == 1) {
-        hwd_phy_uses_rgf_884000(0);
-        hwd_phy_uses_rgf_883000(0);
+        phy_tx_en_set_enable(0);
+        phy_rx_ctrl_set_enable(0);
         mac_core_write_3d_0200();
         mac_core_write_3e_then_3d_0007();
         abif_set_enable_bit(1);
@@ -87,13 +87,13 @@ void rf_set_normal_mode(u32 a)
             r0 = 0;
             r1 = 0;
         }
-        abif_set_88a204_field(r0, r1);
+        abif_program_rx_table_ctrl(r0, r1);
         u32 m = (rf_normal_phy_mode == 0) ? 0 : 1;
         hwd_phy_set_mode_uc(m);
         mac_core_write_3d_0200();
         mac_core_write_3e_then_3d_0007();
-        hwd_phy_uses_rgf_884000(1);
-        hwd_phy_uses_rgf_883000(1);
+        phy_tx_en_set_enable(1);
+        phy_rx_ctrl_set_enable(1);
     }
 }
 
@@ -101,8 +101,8 @@ void rf_set_normal_mode(u32 a)
  * (аппаратный: «через 3 такта результат в r40/r41/r47», MAC-COMMANDS §7.3). Путь: хвост
  * uc_mac_cmd (st.ab + bclr) + 2×nop — ровно как vendor; запас: нет/единицы тактов. Короче —
  * опрос читает старое r47, проходит мимо «mailbox занят», и команда 0x41 (сектор/AWV) теряется.
- * То же в rf_write_sector_awv, rfc_issue_cmd_10, rfc_issue_cmd_20_uc (и brp_write_reg_pair). */
-void rf_select_sector_cmd41(u32 a, u32 b)
+ * То же в rf_write_sector_awv, rfc_issue_chain_cmd, rfc_issue_sector_cmd (и brp_write_reg_pair). */
+void rf_select_sector(u32 a, u32 b)
 {
     /* 6.2 asm 0x92f934: выбор RF-сектора — две mailbox-последовательности
      * (arm → команда 0x41 → commit), каждая с poll aux47[17]. */
@@ -193,7 +193,7 @@ void rf_update_active_antenna(u32 a, u32 b)
 /* ---------------- STA/PEER ---------------- */
 
 /* Индекс пира с данным qid среди станций maint_sta_mask, 0xff — нет. */
-u32 sta_find_by_byte(struct fsched_peer_ctx *p, u32 qid)
+u32 sta_find_by_qid(struct fsched_peer_ctx *p, u32 qid)
 {
     for (u32 i = 0; i < SPARRAW_MAX_STA; i++) {
         if ((maint_sta_mask & (1u << i)) && p->ent[i].qid == qid)   /* brne r1,r3 — r1 целиком */
@@ -203,9 +203,9 @@ u32 sta_find_by_byte(struct fsched_peer_ctx *p, u32 qid)
 }
 
 /* 1 — пир с qid активен и сейчас в слоте. */
-u32 peer_lookup_or_ff(struct fsched_peer_ctx *p, u32 qid)
+u32 peer_is_active_in_slot(struct fsched_peer_ctx *p, u32 qid)
 {
-    u32 r = sta_find_by_byte(p, qid);           /* 0x92be68: r1 проходит насквозь */
+    u32 r = sta_find_by_qid(p, qid);           /* 0x92be68: r1 проходит насквозь */
     if (r == 0xff)
         return 0;
     if (!(p->active_mask & (1u << (r & 0x1f))))
@@ -223,7 +223,7 @@ u32 peer_lookup_if_fixed_sched(u32 a0)
         return 0;
     if (fixed_sched_is_engaged() == 0)
         return 0;
-    return peer_lookup_or_ff(&fsched_peers, a0);
+    return peer_is_active_in_slot(&fsched_peers, a0);
 }
 
 void sta_apply_rx_sector_and_mcs(u32 a)
@@ -285,7 +285,7 @@ u32 sta_queue_class(u32 a, u32 b)
     return 0;
 }
 
-u32 sta_get_sweep_byte(u32 a, u32 out)
+u32 qid_cfg_get_sta(u32 a, u32 out)
 {
     /* 6.2 asm 0x93dad0. */
     u8 r0 = qid_cfg[a].cid;
@@ -296,13 +296,13 @@ u32 sta_get_sweep_byte(u32 a, u32 out)
 void sta_reset_link_state(u32 a, u32 b, u32 c)
 {
     /* 6.2 asm 0x921900: memset 3 байта @0x8005fc; при b!=0 сброс
-     * *(u8*)(0x857e49+a*20); при c!=0 проверка sta_link → rs_abort. */
+     * *(u8*)(0x857e49+a*20); при c!=0 проверка sta_link → rate_search_abort. */
     memset0_words_uc(txss_retry_cnt, 3);
     if (b != 0 && a < SPARRAW_MAX_STA)      /* у пира 8 (A-BFT) записи link_stat нет */
         VOL(link_stat[a].bf_reasons) = 0;
     if (c != 0) {
-        if (sta_link_byte_by_index(a) == 0)
-            rs_abort(a);
+        if (rs_internal_trigger_disabled(a) == 0)
+            rate_search_abort(a);
     }
 }
 
@@ -316,7 +316,7 @@ void sta_apply_bf_result(u32 a, u32 b)
         bf_rx_sector = bf_res.tx_sector;
         if (sta_tab[b].fixed_link != 0 || flag == 0)
             return;
-        u32 r1 = sta_link_byte_by_index(b);
+        u32 r1 = rs_internal_trigger_disabled(b);
         rs_start(b, r1);
         if (!rs_is_sta_enabled(b))
             return;
@@ -477,6 +477,26 @@ void txss_store_sector_ranking(u32 a, u32 b)
  * СРОК (b = 5, ISS инициатора): проба CCA (0x29000001, mac_cca_ok) → пуск ISS; между ними
  * выбор сектора/таймингов уже сделан, CCA повторно проверяет bcon_txss_sweep_step перед TX —
  * запас большой. Опросы MAC_MTP_PERM_VALID здесь без ограничения времени. */
+/* Duration SSW вне A-BFT (9.3.1.15): до конца SSW с CDOWN 0 + MBIFS «or until the end of the current allocation,
+ * whichever comes first». Duration по плану (SLS_SSW_DUR) и остаток выделения убывают одинаково — на кадр +
+ * промежуток, поэтому разница считается один раз перед первым SSW и вычитается из плана (ss_plan_tx_dur — только
+ * для Duration): в цикле развёртки (ХРУПКО, tail.c bcon_txss_sweep_step) инструкций не прибавляется. Вычет не
+ * больше MBIFS — Duration последнего SSW (9 мкс) не уходит ниже 0; развёртка, не влезающая в выделение глубже,
+ * сама нарушает 10.42.2.1, укорачивать её здесь нечем. От чтения остатка до конца первого SSW — TXTIME 14,909 мкс
+ * + путь + округление регистра: 17 мкс, Duration занижается (безопасная сторона). */
+#define SSW_FRAME_US  ((DMG_TXTIME_SSW_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US + 2u)
+_Static_assert(SSW_FRAME_US == 17u, "SSW до конца кадра");
+static void ssw_plan_cap_by_allocation(const u16 *timing)
+{
+    u32 d0 = SLS_SSW_DUR(ss_plan_tx_dur, SLS_MBIFS_US - timing[2], ss_plan_cdown, sls_ssw_dur_mul(timing[1]));
+    u32 left = dti_alloc_left_us();
+    u32 l0 = (left > SSW_FRAME_US) ? left - SSW_FRAME_US : 0;
+    if (d0 > l0) {
+        u32 x = d0 - l0;
+        ss_plan_tx_dur -= (x < SLS_MBIFS_US) ? x : SLS_MBIFS_US;
+    }
+}
+
 u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
 {
     /* 6.2 asm 0x93c2f8. */
@@ -502,14 +522,15 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
         t |= rf_set_tx << 24;
         abif_dvs_rf_ctrl_shadow = t;
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = t;
-        u32 sv = (u8)((r14 - 1) + ss->n_frames * r14);
+        u32 sv = (r14 - 1) + ss->n_frames * r14;       /* CDOWN 9 бит (9.5.1): до 64·4 + 3 = 259 */
         txss_set_sweep_param((u32)timing, ss, r14, 0, sv, sp4);
+        ssw_plan_cap_by_allocation(timing);
         /* первый SSW RSS: до конца SSW с CDOWN 0 + MBIFS, вверх, буквально (9.3.1.15; SLS_SSW_DUR, abft.h) */
         uc_mac_cmd(SLS_SSW_DUR(ss_plan_tx_dur, SLS_MBIFS_US - timing[2], ss_plan_cdown, sls_ssw_dur_mul(timing[1])) |
                    (1u << 24) | (1u << 26) | (1u << 28));
         uc_mac_cmd(0x14000007);
     }
-    direct_tx_program_cmd34(0x10, 0x16);
+    direct_tx_program_desc(0x10, 0x16);
     mac_program_tx_common();
     if (b == 1) {
         mac_evt_enable_bit_sync_b(6);
@@ -563,8 +584,9 @@ u32 txss_program_tx_frame(u32 a, u32 b, u32 c, u32 d, u32 e)
     if (b == 5) {                               /* cmp r17,5; bne_s L_93c608 */
         uc_mac_cmd(mac_evt_en_shadow | 0x27007e00);
         uc_mac_cmd(0x2004002);
-        u32 sp8 = (u8)((r14 - 1) + ss->n_frames * r14);
+        u32 sp8 = (r14 - 1) + ss->n_frames * r14;
         txss_set_sweep_param((u32)timing, ss, r14, 0, sp8, sp4);
+        ssw_plan_cap_by_allocation(timing);
         u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = g | (1u << 13) | (1u << 15);
         uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
@@ -655,6 +677,8 @@ u32 sls_rx_ssw_frame(void)
             txss_rank_needed = 1;
             return 0;
         } else if (mac_rx_rep2() & MAC_RX_REP2_SSW_FB) {
+            UC_STAMP(STAMP_FB_REP, mac_rx_rep1(), mac_rx_rep2());
+            UC_STAMP(STAMP_FB_REP, mac_rx_rep3(), mac_rx_misc());
             u32 r0;
             if (sls_rank_valid_mask & (1u << (idx & 31))) {
                 /* СРОК: SSW-Feedback → SSW-Ack прямо из обработчика приёма, через MBIFS (9 мкс,
@@ -664,7 +688,7 @@ u32 sls_rx_ssw_frame(void)
                  * до ~200 тактов каждое). Vendor так же; запас: сотни инструкций (одномодульный
                  * RF), с делениями — десятки. Срыв — см. sls_send_ssw_ack. */
                 rx_parse_ssw_field((u32)&sp.sector, (u32)&sp.antenna, (u32)&sp.snr);
-                rx_funcs_record_level_8020f8_8020fc((s8)sp.snr);   /* ldb.x */
+                bf_rep_record_snr_level((s8)sp.snr);   /* ldb.x */
                 sta_set_tx_sector(VOL(rxf.sta), sp.sector, sp.antenna, 1);
                 /* SSW-Ack — через MBIFS после SSW-Feedback (10.42.2.2). Сюда приходит и повтор Feedback после конца
                  * потока ответчика (10.42.6.2), когда в MAC уже SIFS; исправлено (vendor: Ack уходил при SIFS). После
@@ -690,7 +714,7 @@ u32 sls_rx_ssw_frame(void)
             return r0;
         } else if (mac_rx_rep2() & MAC_RX_REP2_SSW_ACK) {
             rx_parse_ssw_field((u32)&sp.sector, (u32)&sp.antenna, (u32)&sp.snr);
-            rx_funcs_record_level_8020f8_8020fc((s8)sp.snr);   /* ldb.x */
+            bf_rep_record_snr_level((s8)sp.snr);   /* ldb.x */
             sls_rx.flags |= 8;
             return 1;
         } else {
@@ -711,7 +735,7 @@ u32 sls_rx_ssw_frame(void)
  * SSW-Feedback (802.11-2020 10.42.2.2 «responder shall begin an SSW ack procedure an MBIFS
  * following the reception of an SSW-Feedback frame», 10.3.2.3.10). Событие — r42 (приём
  * SSW-Feedback, MAC_RX_REP2_SSW_FB); действие — 0x19…/0x18… и выдача кадра в FIFO
- * (rx_funcs_send_direct_frame → 0x33). Здесь ~300 инструкций до конца выдачи кадра (5 команд
+ * (direct_tx_send_frame → 0x33). Здесь ~300 инструкций до конца выдачи кадра (5 команд
  * TX-сектора/RF, сборка кадра, cmd34, tx_common, опрос MAC_MTP_PERM_VALID без ограничения), плюс путь приёма:
  * из txss_resp_flow — rx_flow_run + txss_resp_wait_fdbk, из sls_rx_ssw_frame — ~130 инструкций;
  * итого ≈ 450–600 ≈ 3,5–5 мкс (vendor ~то же, 107 инструкций у него против наших 103). Запас:
@@ -734,7 +758,7 @@ void sls_send_ssw_ack(u32 a, u32 b)
     abif_dvs_rf_ctrl_shadow = r;
     *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r;
     sls_build_ssw_ack(&buf, a, b);
-    direct_tx_program_cmd34(0x10, 0x18);
+    direct_tx_program_desc(0x10, 0x18);
     {
         /* Duration SSW-Ack = Duration принятого SSW-Feedback − MBIFS − TXTIME(SSW-Ack), вверх (9.3.1.17;
          * SSWACK_DUR_SUB, abft.h), 0x15 буквально. vendor команды не давал — поле из буфера (не заполнялось). */
@@ -756,7 +780,7 @@ void sls_send_ssw_ack(u32 a, u32 b)
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd((txrx_state1 & 0x10) ? 0x18000000 : 0x18001000);
-    rx_funcs_send_direct_frame((u32)&buf);
+    direct_tx_send_frame((u32)&buf);
     mac_evt_enable_bit_sync_b(6);
     mac_set_rf_chain_state_with_sta_sector();
     while (!(mac_evt1() & MAC_EVT1_TX_END))
@@ -773,9 +797,9 @@ void sls_build_ssw_ack(struct ssw_ack_frame *f, u32 idx, u32 flag)
 {
     /* 6.2 asm 0x93b220. */
     f->fc = 0;
-    bf_set32((u32)f, 2, 2, 1);
-    bf_set32((u32)f, 4, 4, 6);
-    bf_set32((u32)f, 8, 4, 0xa);
+    bf_set32_lo_hi((u32)f, 2, 2, 1);
+    bf_set32_lo_hi((u32)f, 4, 4, 6);
+    bf_set32_lo_hi((u32)f, 8, 4, 0xa);
     u32 val;
     if (flag == 1) {
         /* лучший сектор из рейтинга fw (sector_rec), чтение не volatile — как у vendor */
@@ -815,7 +839,7 @@ u32 dmaq_hw_read_ptr(u32 q)
     return MMIO32(addr & ~3u);
 }
 
-void txop_clear_dma_ctl_bit1(void)
+void txop_clear_l2_offload_tx_ctl_bit1(void)
 {
     MMIO32(HW_L2_OFFLOAD_TX_CTL) &= ~(1u << 1); /* 0x881800 + 0xc9*4 */
 }
@@ -830,7 +854,7 @@ u32 txop_pick_ctrl_code_by_peer(struct tx_ctx_s *a)
     return (u32)a;   /* vendor возвращает r0=a */
 }
 
-u32 dma_read_881c28(void)
+u32 dma_fw_icr_c24_read(void)
 {
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~(1u << 1));
@@ -839,7 +863,7 @@ u32 dma_read_881c28(void)
     return r;
 }
 
-void dma_write_881c28(u32 v)
+void dma_fw_icr_c24_write(u32 v)
 {
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~(1u << 1));
@@ -966,13 +990,17 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     /* СРОК: проба CCA (0x29000001 + mac_cca_ok) → пуск TX (0x19000001 … итоговая 0x18…|б27|б28)
      * должен уложиться в окно, где проба ещё верна (aCCATime/aSlotTime = 5 мкс, 802.11-2020
      * 10.3.2.3, Table 20-30). Путь ~40 инструкций (mac_program_rx_window, 2 команды, чтение r43),
-     * при dti_qset_mode ≠ 0 ещё fsched_slot_f3_positive и декремент счётчика RD — между 0x19 и
+     * при dti_qset_mode ≠ 0 ещё fsched_slot_rd_counter_nonzero и декремент счётчика RD — между 0x19 и
      * 0x18 (vendor так же); запас: десятки–сотни. Срыв: TX в уже занятую среду (коллизия
      * RTS/CTS-обмена TXOP). */
     u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
     uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
+    UC_STAMP_T0(STAMP_TXOP_CTS, t_in);
     mac_select_all_sectors_and_wait();
+    UC_STAMP_T0(STAMP_TXOP_CTS, t_w);
+    UC_STAMP_V(STAMP_TXOP_CTS, e1, mac_evt1());
+    UC_STAMP_V(STAMP_TXOP_CTS, ps, mac_status_sel());
     mac_cmd_29000001();
     if (!mac_cca_ok()) {
         uc_mac_cmd(0x29000002);
@@ -984,12 +1012,20 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     uc_mac_cmd(0x19000001);
     u32 r13 = MAC_MTP_RESP_RD_SUPP_OF(mac_mtp_resp());
     if (dti_qset_mode != 0) {
-        u32 r = fsched_slot_f3_positive(&fsched_peers);
+        u32 r = fsched_slot_rd_counter_nonzero(&fsched_peers);
         r13 &= r;
         if (r != 0)
             fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
     }
     uc_mac_cmd((r13 << 11) | (1u << 14) | (1u << 27) | (1u << 28));
+#ifdef UC_STAMP_MASK
+    if (UC_STAMP_ON(STAMP_TXOP_CTS)) {          /* после пуска: путь до него не меняется (три чтения выше) */
+        uc_mac_cmd(0x4d000000);
+        arc_nops(3);
+        UC_STAMP(STAMP_TXOP_CTS, e1, (ps & 0xffff0000u) | ((t_w - t_in) & 0xffff));
+        UC_STAMP(STAMP_TXOP_CTS, mac_timer_sel(), arc_lr(0x100) - t_w);
+    }
+#endif
     return 1;
 }
 
@@ -1075,7 +1111,7 @@ u32 hwd_rfc_read_rgf_uc(u32 a, u32 b)
 
 /* ---------------- Дополнительные (небольшие/структурные) ---------------- */
 
-u32 sector_mem_addr_of(u32 a)
+u32 rfc_clear_sector_row(u32 a)
 {
     u32 r13 = (u8)(a + 0x60) << 6;
     r13 += r13 << 1;                     /* add1 r13,r13,r13 = ×3 */
@@ -1106,7 +1142,7 @@ void qh_build_descriptor(u32 a, u32 b, struct qh_desc3_win *d)
     r0 = (r0 + r14 - 1) & 0xfff;
     d->end = (d->end & 0xfffff000u) | r0;
 }
-u32 qh_build_descriptor_b(u32 a)
+u32 qh_read_desc_start(u32 a)
 {
     u32 sp[0x30/4];
     qh_read_desc_window((u32)sp, a, 2, 3, 1);   /* 0x92d410 */
@@ -1255,7 +1291,7 @@ void rfc_write_core_checked(u32 a, u32 b, u32 c)
         uc_assert((u32)__builtin_return_address(0), 0x1142);   /* и продолжает */
     hwd_rfc_write_core(0, 0, b, c);
 }
-void rfc_issue_cmd_10(u32 a)
+void rfc_issue_chain_cmd(u32 a)
 {
     u32 r0 = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = r0 | 0x30000;
@@ -1265,7 +1301,7 @@ void rfc_issue_cmd_10(u32 a)
         ;
     uc_mac_cmd(a | 0x41000010);
 }
-u32 rfc_issue_cmd_20_uc(u32 a, u32 b)
+u32 rfc_issue_sector_cmd(u32 a, u32 b)
 {
     u32 r13 = a, r14 = b;
     u32 r0 = mac_sel_shadow & 0xfff0ffff;

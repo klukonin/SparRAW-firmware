@@ -352,9 +352,6 @@ def test_ssw_sector_id_full_range(uc, sector):
     assert all(s['antenna'] == 0 and s['rxss_len'] == 0 for s in ssw)
 
 
-@pytest.mark.xfail(strict=True, reason='9.5.1: CDOWN — 9 бит (0..511), а счётчик развёртки u8: при 64 секторах × 4 '
-                   'антеннах пира (256 SSW + 3 LBIFS) начальный CDOWN усекается до 259 & 0xff — uc/txss.c:505, '
-                   'uc/txss.c:564 ((u8)(…)), ss_plan_cdown u8 (uc/dccm.h:1927, uc/tail.c:3553)')
 @pytest.mark.parametrize('responder', [False, True], ids=['iss', 'rss'])
 def test_cdown_beyond_255_frames(uc, responder):
     """9.5.1: «Possible values range from 0 to 511»; 10.42.2.2/10.42.2.3: 64 сектора × 4 DMG-антенны пира (Number of

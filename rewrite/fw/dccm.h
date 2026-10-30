@@ -237,7 +237,7 @@ extern u32 tx_lifetime_shift;                        /* 0x80036c: [gp,0x1e8]: с
 extern u32 l2_false_alarm_count;                     /* 0x800370: [gp,0x1ec]: счётчик ложных тревог (потерь связи) high false alarm */
 extern u32 l2_false_alarm_lock_time;                 /* 0x800374: [gp,0x1f0]: длительность последнего захвата радио при потере связи (мкс×16) */
 extern volatile u32 pcie_perst_assert_irq_en;        /* 0x800378: [gp,0x1f4]: разрешить прерывание PERST assert (1) */
-extern volatile u32 pcie_perst_cfg_fix_en;           /* 0x80037c: [gp,0x1f8]: правка DBI 0x10/0x14 в pcie_perst_handler_step (1) */
+extern volatile u32 pcie_perst_cfg_fix_en;           /* 0x80037c: [gp,0x1f8]: правка DBI 0x10/0x14 в pcie_perst_reprogram_bars (1) */
 extern u32 rf_rfc_div_restart_count;                 /* 0x800384: [gp,0x200]: счётчик перезапусков делителя RFC */
 extern u32 calib_first_run_delay;                    /* 0x800388: [gp,0x204]: задержка первого запуска движка калибровки, мкс (20000) */
 extern volatile u32 temp_first_meas_done;            /* 0x80038c: [gp,0x208]: первое измерение температуры выполнено (UT 10/32 — статус) */
@@ -301,7 +301,7 @@ extern volatile u8 wmi_rf_sector_get_first;          /* 0x8004c4: [gp,0x340]: п
 extern volatile u8 wmi_rf_sector_set_first;          /* 0x8004c5: [gp,0x341]: первый WMI_SET_RF_SECTOR_PARAMS — сбросить объект 0x804848 (1) */
 extern volatile u16 rf_pwr_on_hold;                  /* 0x8004c6: [gp,0x342]: выдержка включения RF, TSF (не меньше 0x2328; WMI_RF_PWR_ON_DELAY) */
 extern volatile u16 rf_pwr_on_extra_delay;           /* 0x8004c8: [gp,0x344]: доп. задержка ×80×2 nop после SDP 4 = 1 (WMI_RF_PWR_ON_DELAY) */
-extern u8 calib_lo_power_tidx_map[8];                /* 0x8004cc: 0x8004cc: индекс таблицы LO power режима 1 по lo_power_calib_get_table_idx (calib_lo_power_main), образ {0,0,0,4,0,4,4,6} */
+extern u8 calib_lo_power_tidx_map[8];                /* 0x8004cc: 0x8004cc: индекс таблицы LO power режима 1 по lo_power_calib_get_xif_gc (calib_lo_power_main), образ {0,0,0,4,0,4,4,6} */
 extern volatile u32 scan_probe_timeout_us;           /* 0x8004e8: [gp,0x364]: таймаут ответа на probe при скане */
 extern u32 bcon_pool_inited;                         /* 0x8004ec: 0x8004ec: пул 0x805a98 дескрипторов бикона инициализирован (лениво в add_bcon) */
 extern u32 bcon_pool_empty_count;                    /* 0x8004f0: [gp,0x36c]: «pool is empty» — нет post-send-info для маяка (add_bcon) */
@@ -316,7 +316,7 @@ extern u8 calib_vga_dc_win_hi;                       /* 0x800513: [gp,0x38f]: о
 extern u32 calib_vga_dc_fine_force;                  /* 0x800514: [gp,0x390]: разовый запрос G_RX_VGA_RANGE_CONFIG.VGA_DC_FINE_FORCE */
 extern u8 calib_sar_idx;                             /* 0x800518: 0x800518: индекс/сдвиг SAR (calib_sar_step idx; маска петли 1<<idx), образ 0xc */
 extern u8 calib_sar_thr;                             /* 0x800519: 0x800519: порог SAR-шага hwf_calib_sar_alg, образ 1 */
-extern u8 calib_sar_skip_step2;                      /* 0x80051a: 0x80051a: != 0 — без calib_sar_step2 после SAR-итераций, образ 1 */
+extern u8 calib_sar_skip_step2;                      /* 0x80051a: 0x80051a: != 0 — без calib_sar_final_step после SAR-итераций, образ 1 */
 extern u32 calib_if_gain_retry_count;                /* 0x80051c: 0x80051c: число повторных if_gain (a0 = 1); 0 — при полной (a0 = 0) */
 extern u32 ps_halt_dma_b27;                          /* 0x800520: бит 27 RGF DMA 0x881bf0, снятый в power_halt_seq (a = 1); 0 — шаг 7 при halt/wake */
 extern volatile u32 phy_rx_stats_clear_time;         /* 0x800524: 0x800524: время u_schd последнего сброса статистики PHY RX */
@@ -343,7 +343,7 @@ extern u32 calib_lo_power_rfc_saved[3];              /* 0x800a34: 0x800a34: ис
 extern u32 lmac_edca_cur_mode;                       /* 0x800c0c: 0x800c0c: последний режим EDCA-таблицы, посланный LMAC (команда 0x04); = — не слать */
 extern u32 calib_engine_names[6];                    /* 0x800dc8: 0x800dc8: строки имён движков (журнал «Engine of %s is already active») */
 extern u32 calib_engine_corr_count[6];               /* 0x800e08: 0x800e08: число шагов коррекции (READY_FOR_CORRECTION) движка */
-extern volatile u32 temp_first_meas[9];              /* 0x80114c: первое измерение: [0] BB, [1 + i] RF i, м°C (perform_first_measurement_operations; UT 10/32) */
+extern volatile u32 temp_first_meas[9];              /* 0x80114c: первое измерение: [0] BB, [1 + i] RF i, м°C (temp_store_and_calibrate_first_meas; UT 10/32) */
 extern volatile u16 link_mcs_en_vec_lo;              /* 0x80149e: 0x80149e: разрешённые MCS, младшие 16 бит (0x1dde / 0x1de / 0x10) */
 extern volatile u16 link_mcs_en_vec_hi;              /* 0x8014a0: 0x8014a0: разрешённые MCS, старшие 16 бит */
 extern u8 calib_if_predist_atten_tbl[19];            /* 0x801954: аттенюатор предыскажения TX по индексу (IF_GAIN::GAIN out[2] < 0x13) */
@@ -359,8 +359,8 @@ extern volatile u32 abif_rx_vga_bias_rd_word[5];     /* 0x801b08: то же дл
 extern u32 unk_801b38[13];                           /* 0x801b38: образ {8,0x10,…,0x2000,0x7d00,-1}: степени двойки 8..8192, 32000, маркер -1. Обращений в vendor fw нет: ни литерала/limm 0x801b38..0x801b6b в коде (tools: поиск LE и middle-endian limm по .fw, 6.2/src/asm/fw), ни указателя в fw_data (RELOCS-NUM-fw: «середина линейного кода» — числа таблицы) */
 extern s8 unk_801b84[32];                            /* 0x801b84: образ {-29 ×8, -21 ×22, 0, -21}: s8-таблица (вероятно пороги дБм по индексу). Обращений в vendor fw нет: ни литерала/limm 0x801b84..0x801ba3 в коде (поиск LE и middle-endian limm по .fw, 6.2/src/asm/fw), ни указателя в fw_data */
 extern u32 rf_auto_fill_pat0[6];                     /* 0x801fec: шаблон 6 слов auto_fill по умолчанию (нули; rf_utils__fill_default_patterns) */
-extern u32 calib_lo_power_cur_init[3];               /* 0x803694: исходные поля RFC 0x484 (нули образа) — копия в hwf_calib_lo_power_flow перед rfc_read_field_484 */
-extern u32 calib_lo_power_packed_init[3];            /* 0x8036a0: исходные упакованные поля (нули образа) — hwf_calib_lo_power_flow → rfc_pack_field_value */
+extern u32 calib_lo_power_cur_init[3];               /* 0x803694: исходные поля RFC 0x484 (нули образа) — копия в hwf_calib_lo_power_apply перед rfc_read_lo_power_fields */
+extern u32 calib_lo_power_packed_init[3];            /* 0x8036a0: исходные упакованные поля (нули образа) — hwf_calib_lo_power_apply → rfc_pack_field_value */
 extern u32 calib_lo_leak_start_x;                    /* 0x8037ec: 0x8037ec: стартовая x поиска минимума LO-утечки (образ 0x40) */
 extern u32 calib_lo_leak_start_y;                    /* 0x8037f0: 0x8037f0: стартовая y поиска минимума LO-утечки (образ 0x40) */
 extern u32 calib_lo_leak_init_dc;                    /* 0x8037f4: 0x8037f4: исходные DC четырёх колонок (4 байта) для поиска LO-утечки */

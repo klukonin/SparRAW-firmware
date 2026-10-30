@@ -13,45 +13,45 @@ u8 fsched_get_cur_idx(struct fsched_peer_ctx *p)
 }
 
 /* qid пира текущего слота. */
-u8 fsched_cur_entry_byte0(struct fsched_peer_ctx *p)
+u8 fsched_cur_entry_qid(struct fsched_peer_ctx *p)
 {
     return p->ent[p->cur_idx].qid;
 }
 
 /* Индекс записи конфигурации слота текущего пира. */
-u8 fsched_cur_entry_byte1(struct fsched_peer_ctx *p)
+u8 fsched_cur_entry_cfg_idx(struct fsched_peer_ctx *p)
 {
     return p->ent[p->cur_idx].cfg_idx;
 }
 
-void fsched_slot_clear_f3(struct fsched_peer_ctx *p)
+void fsched_slot_clear_rd_counter(struct fsched_peer_ctx *p)
 {
     p->ent[p->cur_idx].rd_counter = 0;
 }
 
-void fsched_slot_clear_f4(struct fsched_peer_ctx *p)
+void fsched_slot_clear_miss_cnt(struct fsched_peer_ctx *p)
 {
     p->ent[p->cur_idx].miss_cnt = 0;
 }
 
-void fsched_slot_clear_f2(struct fsched_peer_ctx *p)
+void fsched_slot_clear_slot_cnt(struct fsched_peer_ctx *p)
 {
     p->ent[p->cur_idx].slot_cnt = 0;
 }
 
-void fsched_slot_inc_f2(struct fsched_peer_ctx *p)
+void fsched_slot_inc_slot_cnt(struct fsched_peer_ctx *p)
 {
     p->ent[p->cur_idx].slot_cnt += 1;
 }
-u32 fsched_slot_f3_positive(struct fsched_peer_ctx *p)
+u32 fsched_slot_rd_counter_nonzero(struct fsched_peer_ctx *p)
 {
     /* 0x92be0c: ldb (беззнаковый) > 0. */
     return p->ent[p->cur_idx].rd_counter != 0;
 }
 
-u8 fsched_slot_byte0(struct fsched_peer_ctx *p)
+u8 fsched_slot_time_before_tx_us(struct fsched_peer_ctx *p)
 {
-    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_byte1(p)].time_before_tx_us;
+    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_cfg_idx(p)].time_before_tx_us;
 }
 u32 fixed_sched_is_engaged(void)
 {
@@ -61,17 +61,17 @@ u32 fixed_sched_is_engaged(void)
     return fsched_ctx.engaged != 0;
 }
 
-u32 fsched_test_mask2c_bit(struct fsched_peer_ctx *p, u32 bit)
+u32 fsched_bf_req_mask_bit(struct fsched_peer_ctx *p, u32 bit)
 {
     return (p->bf_req_mask & (1u << bit)) != 0;
 }
 
-u16 fsched_slot_half4(struct fsched_peer_ctx *p)
+u16 fsched_slot_flush_to_us(struct fsched_peer_ctx *p)
 {
-    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_byte1(p)].flush_to_us;
+    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_cfg_idx(p)].flush_to_us;
 }
 
-u32 fsched_slot_inc_f4_reached_7(struct fsched_peer_ctx *p)
+u32 fsched_slot_inc_miss_cnt_reached_7(struct fsched_peer_ctx *p)
 {
     struct fsched_peer_ent *e = &p->ent[p->cur_idx];
     u8 v = e->miss_cnt + 1;
@@ -79,10 +79,10 @@ u32 fsched_slot_inc_f4_reached_7(struct fsched_peer_ctx *p)
     return (v < 7) ? 0 : 1;
 }
 
-void fsched_ap_copy_slot_byte1(struct fsched_peer_ctx *p)
+void fsched_ap_init_slot_rd_counter(struct fsched_peer_ctx *p)
 {
     /* 6.2 asm 0x92ec28: начальный счётчик RD пира — из записи конфигурации. */
-    u8 rd = FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_byte1(p)].rd_count;
+    u8 rd = FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_cfg_idx(p)].rd_count;
     p->ent[p->cur_idx].rd_counter = rd;
 }
 u32 fsched_ap_station_done(struct fsched_peer_ctx *p)
@@ -123,8 +123,8 @@ void fsched_log_phase(u32 phase, u32 idx)
 u32 fsched_arm_slot_from_cfg(void)
 {
     /* 6.2 asm 0x935a6c: длительность слота (единицы 165) -> поле qset 0; флаг 0x80064c=1.
-     * (vendor передаёт r0=0x801be8 в get_mem_857744_x2, который его не использует.) */
-    sxd_hal_write_qset_field(0, get_mem_857744_x2() * 165);
+     * (vendor передаёт r0=0x801be8 в fsched_assoc_slot_us, который его не использует.) */
+    sxd_hal_write_qset_field(0, fsched_assoc_slot_us() * 165);
     fsched_ctx.state = 1;
     return 0;
 }
@@ -166,7 +166,7 @@ u32 fsched_time_left_class(u32 a)
     fsched_ctx.tbtt_left_prev = t;
     if (a == 0)
         return (t < 0xbb8) ? 2 : 0;
-    if (t >= fsched_slot_half4(&fsched_peers))
+    if (t >= fsched_slot_flush_to_us(&fsched_peers))
         return 0;
     return (t > 0x64) ? 1 : 2;
 }
@@ -180,14 +180,14 @@ void fsched_run_tx_slot_twice(void)
 {
     fsched_get_cur_idx(&fsched_peers);
     mac_set_sector_arg_and_select_all(mac_read_usec_to_tbtt_uc(0));
-    fsched_slot_clear_f3(&fsched_peers);
+    fsched_slot_clear_rd_counter(&fsched_peers);
     fixed_sched_run_tx_slot();
     uc_delay_clk(400 * 2);         /* vendor 0x938a3c: lp 0x190 × 2×nop_s */
     fixed_sched_run_tx_slot();
     fsched_ctx.state = 4;
 }
 
-u32 bit_scan_msb(u32 a)
+u32 bit_index_lsb(u32 a)
 {
     /* 6.2 asm 0x92d034: несмотря на имя (из blocks.json) — индекс МЛАДШЕГО
      * установленного бита (двоичный поиск по нижним 16/8/4/2/1 битам); 0 -> 0. */
@@ -202,7 +202,7 @@ u32 bit_scan_msb(u32 a)
     return n;
 }
 
-u32 bitstream_push(u32 a, u32 b, u32 c, u32 d)
+u32 bit_hist_push(u32 a, u32 b, u32 c, u32 d)
 {
     /* 6.2 asm 0x93cd00: сдвиг буфера, при c!=0 вставка d|buf, возврат b<=count. */
     u32 *bs = (u32 *)a;                 /* {биты, число единиц} (rs_sta_state.back_fail и др.) */
@@ -226,18 +226,18 @@ u32 fsched_ap_start_slot(void)
 {
     if (fsched_tx_ctrl_frame() != 0) {
         uc_mac_cmd(0x14000100);
-        fsched_slot_clear_f4(&fsched_peers);
+        fsched_slot_clear_miss_cnt(&fsched_peers);
         fsched_ctx.state = 6;
         rx_wait_start_tsf = uc_read_tsf_lo();
         return 2;
     } else {
-        mac_rf_switch_cmd1f(1);
+        mac_rf_switch_wait_idle(1);
         uc_mac_cmd(0x2040000);
         u32 cur = fsched_get_cur_idx(&fsched_peers);
         rx_mode_configure(2, cur);
         u32 r0 = fsched_log_idx;
         fsched_log[r0].step = 6;
-        if (fsched_slot_inc_f4_reached_7(&fsched_peers) != 0) {
+        if (fsched_slot_inc_miss_cnt_reached_7(&fsched_peers) != 0) {
             u8 c2 = fsched_get_cur_idx(&fsched_peers);
             fsched_bf_req_set(&fsched_peers, (u8)c2);
         }
@@ -280,11 +280,11 @@ u32 fsched_pick_ready_queue(u32 a)
 
 u32 fsched_tx_ctrl_frame(void)
 {
-    gp0_arm_usec_b(0x20);
+    gp0_timer_arm_usec(0x20);
     /* struct dtx_grant_req байтами: с полями gcc сливает stb [sp,8]/[sp,9] в один sth
      * (store merging) — код меняется (codecmp). */
     u8 buf[12];
-    *(u16 *)&buf[0] = (u16)get_mem_857744_x2_928308();   /* alloc_dur; r0 = 0x801be8 не используется */
+    *(u16 *)&buf[0] = (u16)fsched_virtual_slot_us();   /* alloc_dur; r0 = 0x801be8 не используется */
     buf[2] = fsched_get_cur_idx(&fsched_peers);         /* sta */
     buf[9] = 1;                                         /* dst_aid */
     *(u32 *)&buf[4] = 1;                                /* alloc_type */
@@ -301,9 +301,9 @@ u32 fsched_tx_ctrl_frame(void)
     r0b |= r1 << 24;
     abif_dvs_rf_ctrl_shadow = r0b;
     MMIO32(HW_ABIF_DVS_RF_CTRL) = r0b;
-    return mac_arm_events_0xc00();             /* хвост: результат arm_events */
+    return mac_wait_busy2_or_gp0_timeout();             /* хвост: результат arm_events */
 }
-u32 fsched_pick_queue_r41(u32 a)
+u32 fsched_pick_any_ready_queue(u32 a)
 {
     /* 0x9397f0: в режиме STA ([0x8014c0]==0) — сначала pick_ready_queue. */
     if (uc_role_ap == 0 && fsched_pick_ready_queue(a) != 0)
@@ -334,7 +334,7 @@ u32 fsched_ap_poll_station(struct fsched_peer_ctx *p)
         p->ent[r1].cfg_idx = 1;
         return 1;
     }
-    u32 r0b = fsched_cur_entry_byte0(p) << 16;
+    u32 r0b = fsched_cur_entry_qid(p) << 16;
     u32 r15 = r0b | 1u;
     uc_mac_cmd(0x1b001111);
     r15 |= (1u << 25) | (1u << 26) | (1u << 28);

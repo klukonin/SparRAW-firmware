@@ -29,6 +29,8 @@ else:
 
 def pytest_configure(config):
     config.addinivalue_line('markers', 'unit: юнит-тест без стенда (эмулятор ARC / хостовый gcc)')
+    # Параллельный прогон: pytest -n 8 --dist loadgroup — тесты с общим дорогим кэшем/фикстурой в одной группе
+    config.addinivalue_line('markers', 'xdist_group(name): группа тестов на один воркер pytest-xdist (loadgroup)')
 
 
 def pytest_collection_modifyitems(config, items):
@@ -102,3 +104,17 @@ def uc(build_dir, uc_fw):
     """Свежий эмулятор uc: код из uc.elf, DCCM — uc_data образа (или 0 + .ucdata без vendor-образа)."""
     import ucemu
     return ucemu.UC(os.path.join(build_dir, 'uc.elf'), uc_fw)
+
+
+@pytest.fixture
+def fw_factory(fw_elf):
+    """Фабрика независимых эмуляторов fw (несколько узлов в одном тесте, air.Air)."""
+    import fwemu
+    return lambda: fwemu.FW(fw_elf).boot()
+
+
+@pytest.fixture
+def uc_factory(build_dir, uc_fw):
+    """Фабрика независимых эмуляторов uc."""
+    import ucemu
+    return lambda: ucemu.UC(os.path.join(build_dir, 'uc.elf'), uc_fw)

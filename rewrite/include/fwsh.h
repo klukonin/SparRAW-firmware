@@ -106,7 +106,7 @@ struct mac_mon_report_s {
     u16  tx_cts;                    /* +0x62 tx cts (+0x62): по MAC-MON.md (rx_flow__handle_frame); абсолютным адресом в C не встречает */
     u16  tx_dts;                    /* +0x64 tx dts (+0x64): rx_send_response_frame (rx.c 325) */
     u16  cf_end;                    /* +0x66 cf end (+0x66): tx.c 869 (tx__send_and_await_rx_frame) */
-    u8   ka_pass;                   /* +0x68 keep-alive pass (+0x68): internal_tx_flow_sm2, ACK получен (tx.c 1194) */
+    u8   ka_pass;                   /* +0x68 keep-alive pass (+0x68): internal_tx_keepalive_flow, ACK получен (tx.c 1194) */
     u8   ka_fail;                   /* +0x69 keep-alive fail (+0x69): tx.c 1197/1203 */
     u8 _pad2[1];
     u8   itx_rf_fail;               /* +0x6b +0x6b, в MAC-MON.md нет: internal_tx_flow_sm4 ++ при неудаче itx_wait_cts_rf / itx_wait_ac */
@@ -156,13 +156,13 @@ _Static_assert(sizeof(struct mac_mon_report_s) == 0x80, "mac_mon_report");
 /* Диагностика и счётчики (0x857000, 0x40 Б; в 6.2 переложен относительно 4.1 —
  * docs/LINK-STATS-PHY.md). */
 struct fwsh_diag {
-    u32 ka_cnt;                                /* 0x00: uc — отправлено keep-alive (internal_tx_flow_sm2) */
+    u32 ka_cnt;                                /* 0x00: uc — отправлено keep-alive (internal_tx_keepalive_flow) */
     u32 ka_fail_cnt;                           /* 0x04: uc — keep-alive без ответа до порога BF */
-    u32 bcn_psdu_len;                          /* 0x08: fw — длина PSDU DMG Beacon (MPDU + FCS 4 Б), TX_API_send_dband_bcon;
+    u32 bcn_psdu_len;                          /* 0x08: fw — длина PSDU DMG Beacon (MPDU + FCS 4 Б), tx_api_send_dband_bcon;
                                                 *       uc — TXOP BTI по TXTIME (bti.c) */
     u32 fw_assert_code;                        /* 0x0c: fw_sysassert_fatal — код */
     u32 fw_assert_caller;                      /* 0x10: … и точный адрес вызова (site; caller — в журнале) */
-    u32 uc_assert_code;                        /* 0x14: uc_assert — код (fw: вектор 6, sysassert_dump_ucode_int6) */
+    u32 uc_assert_code;                        /* 0x14: uc_assert — код (fw: вектор 6, sysassert_dump_ucode_assert_info) */
     u32 uc_assert_caller;                      /* 0x18: … и точный адрес вызова (site, адрес ICCM uc) */
     u32 uc_wd_pm_ms[2];                        /* 0x1c: uc L2-сторож — счётчики PM (мс) до/после пересчёта */
     u32 bti_txop_fallback;                     /* 0x24: uc — TXOP BTI по r47 (vendor): длина маяка не сходится с r47 */
@@ -181,7 +181,7 @@ struct fwsh_diag {
     u32 brp_cfg_x;                             /* 0x38: fw — слово board-файла за масками BRP (читателей нет) */
     union {                                    /* 0x3c: uc — маски пиров окна пробуждения */
         u8  aw_peers[4];
-        u32 aw_peers_w;                        /*       пишутся одним словом (aw_worker_collect_awake_peers) */
+        u32 aw_peers_w;                        /*       пишутся одним словом (aw_collect_awake_peers) */
     };
 };
 FWSH_OFF(struct fwsh_diag, fw_assert_code, 0x0c);
@@ -196,7 +196,7 @@ _Static_assert(sizeof(struct fwsh_diag) == 0x40, "fwsh_diag");
  * приоритетных, и маски cid с ненулевым счётчиком (fw); слово 0 пишет uc. */
 struct fwq_tx_avail {
     u32 aw_info;                               /* 0x00: uc — [7:0] копия mask, б25..27 — флаги окна
-                                                *       пробуждения (aw_worker_collect_awake_peers, misc.c) */
+                                                *       пробуждения (aw_collect_awake_peers, misc.c) */
     volatile u8 count[SPARRAW_STA_SLOTS];      /* 0x04 */
     u8  rsv_0d[3];
     volatile u32 mask;                         /* 0x10: cid с count ≠ 0 */
@@ -294,7 +294,7 @@ struct ese_slot_tbl {
 FWSH_OFF(struct ese_slot_tbl, slot, 4);
 _Static_assert(sizeof(struct ese_slot_tbl) == 0x28, "ese_slot_tbl");
 
-/* Отсчёты статистики энергии (0x857290, 0xb4 Б): пишет uc (bf_req_report_20_cb, событие LMAC
+/* Отсчёты статистики энергии (0x857290, 0xb4 Б): пишет uc (bf_req_report_energy_cb, событие LMAC
  * 0x20), читает fw (energy_statistics_complete, fw/phy_ext.c). Последнее слово gain[19]
  * (0x857340). Область 0x857344..0x8576a0 (счётчик и записи FTM) — только SparRAW-pro. */
 #define FWSH_ENERGY_N 20
@@ -313,7 +313,7 @@ _Static_assert(sizeof(struct fwsh_energy) == 0xb4, "fwsh_energy");
 /* Статистика PHY RX (0x84 Б): итог команды 9 (fw_sysapi__send_measure_evt); копит uc
  * (phy_stats_accumulate_to_shared), обнуляет LMAC 0x37. */
 struct phy_rx_stats {
-    u32 cnt[14];                               /* 0x00: счётчики PHY RX (hwd_phy_uses_rgf_883800_929b94) */
+    u32 cnt[14];                               /* 0x00: счётчики PHY RX (phy_rx_stats_read_counters) */
     u32 acc[8][2];                             /* 0x38: суммы u64 {мл., ст.} (…_929af4) */
     u32 max_mcs;                               /* 0x78: наибольший MCS (индекс mcs_phy_rate_mbps 0x8012f0) */
     u32 rx_sector;                             /* 0x7c: bf_res.rx_sector */
@@ -328,7 +328,7 @@ struct fwsh_phy_blk {
     u32  x4;                                   /* 0x04 */
     volatile u32 tof_req;                      /* 0x08 (0x8576a8): запрос TOF/ABIF — только SparRAW-pro (здесь не используется);
                                                 *       uc: 1 — сохранить и переопределить, 2 — восстановить,
-                                                *       затем 0 (rx_funcs_rx_flow, l1) */
+                                                *       затем 0 (rx_flow_main, l1) */
     struct phy_rx_stats st;                    /* 0x0c (0x8576ac) */
 };
 FWSH_OFF(struct fwsh_phy_blk, tof_req, 0x08);

@@ -49,47 +49,49 @@ void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot);   /* bti.c 
 u32 abft_discovery_ok_call(void);                               /* bti.c — 10.42.5.1 (не встраивается) */
 u32 abft_discovery_addressed_call(void);                        /* bti.c — маяк адресует нас */
 void abft_send_ssw_feedback(u32 a);                             /* bti.c */
-void abif_set_88a204_field(u32 a, u32 b);                       /* tail.c */
+void abif_program_rx_table_ctrl(u32 a, u32 b);                       /* tail.c */
 void abif_set_enable_bit(u32 a);                                /* tail.c */
 void arc_program_action_point(const struct arc_ap_cfg *a);      /* tail.c */
 void arc_protect_addr_uc(u32 a, u32 b, u32 c);                  /* tail.c */
 void aw_compute_tbtt_from_hw(u32 a, u32 *out);                  /* bti.c */
-void aw_fold_peer_masks(u32 a, u32 b, u32 c);                   /* bti.c */
+void aw_collect_bf_peers(u32 a, u32 b, u32 c);                   /* bti.c */
 void aw_open_event_mask(void);                                  /* bti.c */
 void aw_set_new_tbtt(struct pm_ctx_s *p);                       /* bti.c */
 void aw_start_window(struct aw_win_s *w, u32 b);                /* bti.c */
-void aw_worker_collect_awake_peers(struct aw_win_s *w);         /* bti.c */
-u32 aw_worker_read_dma_881c84(void);                            /* bti.c */
-u32 background_bi_step(void);                                   /* tail.c */
+void aw_collect_awake_peers(struct aw_win_s *w);         /* bti.c */
+u32 aw_read_dma_rings_with_data(void);                            /* bti.c */
+u32 pm_idle_try_enter(void);                                   /* tail.c */
 void background_task_dispatch(void);                            /* sched.c */
 void bap_q_avail_check(u32 a, u32 b, u32 c);                    /* tail.c */
 void basic_sm_bind_descriptor_uc(struct sm_obj *a, const struct sm_desc *b); /* util.c */
 void bcon_txss_program_sector(u32 a, u32 b, u32 c);             /* tail.c */
 u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f); /* tail.c */
 void bf_abort_noop_hook(u32 a);                                 /* bf.c */
-void bf_abort_step(u32 a);                                      /* bf.c */
-void bf_abort_to_state11(u32 a);                                /* bf.c */
+void bf_sm_schedule(u32 a);                                      /* bf.c */
+void bf_abort_sta(u32 a);                                /* bf.c */
 u32 bf_abort_unexpected(u32 a0, u32 a1);                        /* bf.c */
 void bf_clear_all_sta(void);                                    /* bf.c */
-void bf_clear_pending_and_notify(u32 a);                        /* bf.c */
-void bf_clear_sta_bit_state34(u32 bit, u32 st);                 /* bf.c */
+void bf_exit_sta_tx_pause(u32 a);                        /* bf.c */
+void bf_clear_rank_valid_bit(u32 bit, u32 st);                 /* bf.c */
 void bf_ctx_dispatch_by_role(struct sls_peer_rec *a);           /* bf.c */
-void bf_enter_mode3(u32 a, u32 b);                              /* bf.c */
+void bf_enter_sta_tx_pause(u32 a, u32 b);                              /* bf.c */
 void bf_flow_exit(u32 a0);                                      /* bf.c */
-void bf_gpc_program_mac_by_mode_b(u32 a0);                      /* bf.c */
+void abft_sta_arm_abft_end_timer(u32 a0);                      /* bf.c */
 void bf_init_globals(void);                                     /* bf.c */
 void bf_init_sm(u32 a, u32 b);                                  /* bf.c */
 void bf_metrics_reset_and_stamp(void);                          /* bf.c */
 void bf_pause_sta_tx(u32 a0, u32 a1);                           /* bf.c */
-void bf_pending_clear_bit(u32 bit);                             /* bf.c */
-void bf_pending_set_bit(u32 bit);                               /* bf.c */
-void bf_req_claim_and_report_23(struct rx_meas_ctx *m);         /* bf.c */
-void bf_req_claim_and_report_2b(struct rx_meas_ctx *m);         /* bf.c */
+void bg_task_clear_pending_bit(u32 bit);                             /* bf.c */
+void bg_task_set_pending_bit(u32 bit);                               /* bf.c */
+u32 uc_bench_one(u32 id, u32 n);                                /* bench.c (-DUC_BENCH) */
+void uc_bench_tick(void);                                       /* bench.c (-DUC_BENCH) */
+void bf_req_report_pkt_cb(struct rx_meas_ctx *m);         /* bf.c */
+void bf_req_report_chest_cb(struct rx_meas_ctx *m);         /* bf.c */
 u32 bf_req_dequeue_head(u32 a0, u32 a1);                        /* bf.c */
 u32 bf_req_enqueue(u32 a0, u32 a1, u32 a2);                     /* bf.c */
-void bf_req_report_20_cb(struct rx_meas_ctx *m);                /* cmd.c */
-void bf_req_report_21_cb(struct rx_meas_ctx *m);                /* cmd.c */
-void bf_req_report_26_cb(struct rx_meas_ctx *m);                /* cmd.c */
+void bf_req_report_energy_cb(struct rx_meas_ctx *m);                /* cmd.c */
+void bf_req_report_plcp_cb(struct rx_meas_ctx *m);                /* cmd.c */
+void bf_req_report_phystat_cb(struct rx_meas_ctx *m);                /* cmd.c */
 u32 bf_req_try_claim(struct rx_meas_ctx *m, u32 kind);          /* bf.c */
 void bf_reset_sta(u32 a0, u32 a1);                              /* bf.c */
 void bf_reset_sta_slot(u32 a0);                                 /* bf.c */
@@ -98,7 +100,7 @@ u32 bf_sm_brp_init_result(u32 a0);                              /* bf.c */
 void bf_sm_brp_noop_hook_a(void);                               /* bf.c */
 void bf_sm_brp_noop_hook_b(void);                               /* bf.c */
 u32 bf_sm_brp_resp_result(u32 a);                               /* bf.c */
-u32 bf_sm_clear_slot_diag(void);                                /* bf.c */
+u32 bf_sm_clear_txrx_state(void);                                /* bf.c */
 u32 bf_sm_dispatch_by_state(u32 sta);                           /* bf.c */
 u32 bf_sm_on_brp_init(u32 a0);                                  /* bf.c */
 u32 bf_sm_on_brp_resp(u32 a0);                                  /* bf.c */
@@ -107,19 +109,17 @@ u32 bf_sm_on_txss_resp(u32 a0);                                 /* bf.c */
 void bf_sm_process_request_fifo(void);                          /* bf.c */
 u32 bf_sm_run_sta(u32 sta);                                     /* bf.c */
 void bf_sm_set_sta_state(u32 sta, u32 state);                   /* bf.c */
-void bf_sm_set_state(u32 sta, u32 state);                       /* bf.c */
+void bf_sm_prepare_state_entry(u32 sta, u32 state);                       /* bf.c */
 u32 bf_sm_txss_init_result(u32 a0);                             /* bf.c */
 u32 bf_sm_txss_resp_result(u32 a0);                             /* bf.c */
 void bf_store_flow_status(u32 idx, u32 v);                      /* bf.c */
-void bf_trigger_for_mid(u32 a0);                                /* bf.c */
+void bf_trigger_for_sta(u32 a0);                                /* bf.c */
 void bf_txss_reset_report_ctx(void);                            /* bf.c */
-void bg_task_call_cb20(struct rx_meas_ctx *m);                  /* util.c */
+void bg_task_call_report_cb(struct rx_meas_ctx *m);                  /* util.c */
 void bi_after_enter_aw(struct bi_ctx_s *c);                     /* bi.c */
 void bi_after_enter_dti(struct bi_ctx_s *c);                    /* bi.c */
-void bi_bti_timer_step(u32 a, u32 b);                           /* bi.c */
 void bi_cfg_fill_slot_desc(u32 a, u32 b);                       /* bi.c */
-void bi_cfg_pack_words_78_7c(u32 a, u32 b);                     /* bi.c */
-void bi_cfg_pack_words_thunk(u32 a);                            /* bi.c */
+void bi_cfg_pack_bcon_cfg(u32 a, u32 b);                     /* bi.c */
 void bi_cfg_tick_counters(void);                                /* bi.c */
 void bi_ctrl_program_mac_bcon(void);                            /* bi.c */
 void bi_ctx_clear_counters(struct pm_ctx_s *p);                 /* bi.c */
@@ -131,48 +131,47 @@ void bi_dti_step(void);                                         /* bi.c */
 void bi_init_set_mac_arg_pair(u32 a, u32 b);                    /* bi.c */
 void bi_latch_tsf_and_reset(u32 a);                             /* cmd.c */
 u32 bi_manager_eval_bcon_slot(struct aw_win_s *w, u8 *out, u32 *out_word); /* bi.c */
-void bi_manager_start_tx_or_initiator(void);                    /* bi.c */
-void bi_manager_step_a(struct bi_ctx_s *c);                     /* bi.c */
-void bi_manager_step_b(struct sls_peer_rec *r);                 /* bi.c */
+void bi_dti_start_tx_slot(void);                    /* bi.c */
+void bi_bti_end_update_counters(struct bi_ctx_s *c);                     /* bi.c */
+void bi_bti_end_reset_timers(struct sls_peer_rec *r);                 /* bi.c */
 void bi_mode_init_sequence(void);                               /* boot.c */
 void bi_mode_init_sta_table(void);                              /* stubs.c */
-void bi_mode_init_substep(void);                                /* stubs.c */
+void bi_mode_init_event_timers(void);                                /* stubs.c */
 void bi_mode_load_cmd1e_operand(void);                          /* stubs.c */
 void bi_mode_program_mac_timing(void);                          /* stubs.c */
-void bi_mode_set_1000_units165(struct aw_win_s *w);             /* bi.c */
+void bi_aw_set_qset_1ms(struct aw_win_s *w);             /* bi.c */
 u32 bi_remaining_time_us(void);                                 /* bi.c */
 void bi_run_bti_cycle(struct bi_ctx_s *c);                      /* bi.c */
 void bi_rx_send_response(u32 a, u32 rate, u32 b, u32 flag);     /* bi.c */
 void bi_rx_slot_handler(struct aw_win_s *w);                    /* bi.c */
 u32 bi_rx_start_rx_window(u32 a, u32 b);                        /* bi.c */
-void bi_sm_action_92150c(u32 obj);                              /* bi.c */
-void bi_sm_action_92153c(u32 obj);                              /* bi.c */
-void bi_sm_action_92156c(void);                                 /* bi.c */
-void bi_sm_action_923a5c(void);                                 /* bi.c */
-void bi_sm_action_9262e8(void);                                 /* bi.c */
-void bi_sm_action_92646c(u32 a);                                /* bi.c */
-void bi_sm_action_935a08(u32 obj);                              /* bi.c */
-void bi_sm_action_935a94(u32 obj);                              /* bi.c */
-void bi_sm_action_935b4c(u32 obj, u32 a);                       /* bi.c */
-void bi_sm_action_935d0c(u32 obj);                              /* bi.c */
+void bi_sm_on_bhi_to_aw_in_aw(u32 obj);                              /* bi.c */
+void bi_sm_on_bhi_to_dti_in_aw(u32 obj);                              /* bi.c */
+void bi_sm_on_dti_to_bti_in_aw(void);                                 /* bi.c */
+void bi_sm_on_aw_to_dti_in_bti(void);                                 /* bi.c */
+void bi_sm_on_event_in_dti(void);                                 /* bi.c */
+void bi_sm_action_invalid(u32 a);                                /* bi.c */
+void bi_sm_on_bti_to_abft(u32 obj);                              /* bi.c */
+void bi_sm_on_enter_aw(u32 obj);                              /* bi.c */
+void bi_sm_on_dti_to_bti(u32 obj, u32 a);                       /* bi.c */
+void bi_sm_on_enter_dti(u32 obj);                              /* bi.c */
 void bi_sm_init(void);                                          /* bi.c */
-u32 bi_state_from_g800600(void);                                /* bi.c */
-void bi_timing_snapshot_b(void);                                /* bi.c */
+u32 bi_phase_from_sm_state(void);                                /* bi.c */
+void bi_timing_snapshot(void);                                /* bi.c */
 u64 bi_tsf_delta64(u32 a, u32 b);                               /* bi.c */
-void bi_tx_check_idle_and_start_uc(u32 a);                      /* bf.c */
+void mac_backoff_settle_set_chain_modes(u32 a);                      /* bf.c */
 u32 bit_iter_has_more_uc(u32 a);                                /* bi.c */
-u32 bit_scan_msb(u32 a);                                        /* fsched.c */
+u32 bit_index_lsb(u32 a);                                        /* fsched.c */
 void bits_set_u8_s0_w5_uc(u32 ptr, u32 value);                  /* bi.c */
 void bits_set_u8_s0_w6_uc(u32 ptr, u32 value);                  /* bi.c */
 void bits_set_u8_s0_w7_uc(u32 ptr, u32 value);                  /* bi.c */
-void bits_set_u8_s3_w5_uc(u32 ptr, u32 value);                  /* bi.c */
 void bits_set_u8_s6_w2_uc(u32 ptr, u32 value);                  /* bi.c */
-u32 bitstream_push(u32 a, u32 b, u32 c, u32 d);                 /* fsched.c */
-void boot_uc_init_g800610(void);                                /* boot.c */
-void boot_uc_init_more(struct rx_meas_ctx *m);                  /* tail.c */
+u32 bit_hist_push(u32 a, u32 b, u32 c, u32 d);                 /* fsched.c */
+void boot_uc_init_and_run(void);                                /* boot.c */
+void rx_meas_ctx_init(struct rx_meas_ctx *m);                  /* tail.c */
 void boot_uc_init_structs(void);                                /* boot.c */
 void boot_uc_init_tail(void);                                   /* sched.c */
-void boot_uc_set_88000c(u32 v);                                 /* boot.c */
+void boot_uc_publish_mac_cmd_log(u32 v);                                 /* boot.c */
 void brp_init_ctx(u32 a);                                       /* brp.c */
 u32 brp_init_exchange_request(void);                            /* brp.c */
 void brp_init_flow(u32 a);                                      /* brp.c */
@@ -187,7 +186,7 @@ void brp_pick_sector_cfg(u32 a);                                /* brp.c */
 u32 brp_program_and_measure(u32 a, u32 b, u32 c);               /* brp.c */
 void brp_program_mac_sequence_uc(void);                         /* brp.c */
 void brp_rank_insert(u32 a, u32 b, u32 c);                      /* brp.c */
-void brp_read_rf_id(u32 a);                                     /* brp.c */
+void brp_program_rf_awv(u32 a);                                     /* brp.c */
 void brp_responder_flow_enter(u32 a);                           /* brp.c */
 void brp_responder_transmission_flow(void);                     /* brp.c */
 void brp_restore_sectors(u32 a);                                /* brp.c */
@@ -195,39 +194,39 @@ void brp_rf_module_done(u32 a);                                 /* brp.c */
 void brp_rf_store_cfg(u32 a, u32 b, u32 c);                     /* brp.c */
 void brp_rf_store_module_byte(u32 a);                           /* brp.c */
 void brp_select_cfg_by_snr(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f); /* brp.c */
-void brp_set_phy_884060(u32 a);                                 /* brp.c */
+void brp_set_phy_tx_brp_reg(u32 a);                                 /* brp.c */
 void brp_set_tx_sector_id(u32 ptr, u32 value);                  /* brp.c */
-u32 brp_split_id(u32 a);                                        /* brp.c */
+u32 rf_set_cur_sector_word(u32 a);                                        /* brp.c */
 void brp_update_omni_sector_idx(u32 a, u32 b);                  /* brp.c */
 void brp_write_reg_pair(u32 a, u32 b);                          /* brp.c */
-void bti_arm_period_gp0(void);                                  /* bti.c */
-u32 bti_bi2_event_step(struct bi_ctx_s *c);                     /* bti.c */
-u32 bti_bi2_gp2_end_flag(void);                                 /* bti.c */
-void bti_bi2_track_best_metric(struct bi_ctx_s *c);             /* bti.c */
+void bti_sta_arm_abft_slot_period(void);                                  /* bti.c */
+u32 bti_beacon_rx_step(struct bi_ctx_s *c);                     /* bti.c */
+u32 bti_gp2_end_flag(void);                                 /* bti.c */
+void bti_beacon_track_best_metric(struct bi_ctx_s *c);             /* bti.c */
 void bti_clear_cid_sweep_counters(void);                        /* bti.c */
 void bti_clear_sweep_counters(u32 a);                           /* bti.c */
 void bti_count_sweep_round(struct bi_ctx_s *c);                 /* bti.c */
 void bti_dispatch_sweep_step(struct bi_ctx_s *c, u32 b);        /* bti.c */
 void bti_measure_frame_duration(u32 a);                         /* bti.c */
 u32 bti_prepare_sweep_set(struct bi_ctx_s *c, u32 kind);        /* bti.c */
-u32 bti_r54_event_bit6(void);                                   /* bti.c */
+u32 bti_gp0_end_flag(void);                                   /* bti.c */
 void bti_request_bf_metric(void);                               /* bti.c */
 void bti_reset_sweep_state(struct bi_ctx_s *c);                 /* bti.c */
-void bti_transmitter_bi2_flow(struct bi_ctx_s *c);              /* bti.c */
-void bti_tx_program_bi2_regs(u32 a);                            /* bti.c */
-u32 bti_worker_bi2_step(u32 a, u32 b);                          /* bti.c */
-void bti_worker_bti_transmitter_beacon_sweep_flow(struct bi_ctx_s *c); /* bti.c */
-void buf_check_bounds(struct uc_ring *r);                       /* util.c */
-void buf_fill_ff(struct rx_meas_ctx *m);                        /* tail.c */
+void bti_sta_beacon_abft_flow(struct bi_ctx_s *c);              /* bti.c */
+void bti_sta_arm_abft_first_slot(u32 a);                            /* bti.c */
+u32 bti_beacon_rx_match_bss(u32 a, u32 b);                          /* bti.c */
+void bti_ap_beacon_sweep_tx(struct bi_ctx_s *c); /* bti.c */
+void uc_ring_advance_cursor(struct uc_ring *r);                       /* util.c */
+void rx_meas_ctx_reset(struct rx_meas_ctx *m);                        /* tail.c */
 u32 cf_end_send_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d, u32 e); /* tail.c */
-void clk_gate_880b00(u32 a);                                    /* util.c */
+void clk_gate_vec3_enable(u32 a);                                    /* util.c */
 void config_brp_rf(u32 a, u32 b);                               /* tail.c */
-void cpu_aux28_set_bits12(void);                                /* boot.c */
-void delay_800_iters(void);                                     /* util.c */
+void uc_irq_enable_e1_e2(void);                                /* boot.c */
+void fixed_sched_sta_tx_delayed(void);                                     /* util.c */
 void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b); /* tx.c */
-void direct_tx_init_rx_desc(struct dtx_ctrl_frame *a, u32 b, u32 c); /* tx.c */
-void direct_tx_issue_cmd_33(void);                              /* tx.c */
-void direct_tx_program_cmd34(u32 a, u32 b);                     /* tx.c */
+void direct_tx_init_grant_ack(struct dtx_ctrl_frame *a, u32 b, u32 c); /* tx.c */
+void direct_tx_commit(void);                              /* tx.c */
+void direct_tx_program_desc(u32 a, u32 b);                     /* tx.c */
 void direct_tx_send_after_delay(u32 a, u32 b, u32 c);           /* tx.c */
 u32 direct_tx_send_ctrl_frame(const struct dtx_grant_req *a);   /* tx.c */
 u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_cfg, u32 rate, u32 len); /* tx.c */
@@ -235,15 +234,15 @@ void direct_tx_send_short_frame(u32 a);                         /* tx.c */
 void direct_tx_send_with_seq(u32 a, u32 b, u32 c);              /* tx.c */
 void direct_tx_short_frame0_cb(void);                           /* cmd.c */
 void direct_tx_short_frame2_cb(void);                           /* cmd.c */
-void direct_tx_step(struct sls_peer_rec *a);                    /* tail.c */
+void direct_tx_ssw_feedback(struct sls_peer_rec *a);                    /* tail.c */
 void disable_tsf_event(void);                                   /* tail.c */
 u32 dma_is_idle_uc(u32 q, u32 verbose);                         /* misc.c */
 u32 dma_is_tx_pipe_idle(u32 a, u32 b, u32 c);                   /* misc.c */
-void dma_mac_cfg_880c14(u32 a);                                 /* misc.c */
-void dma_mac_cfg_880c28(u32 a);                                 /* misc.c */
-void dma_mac_cfg_880c2c(u32 v);                                 /* phy.c */
-u32 dma_read_881c28(void);                                      /* txss.c */
-void dma_write_881c28(u32 v);                                   /* txss.c */
+void clk_gate_ext0_enable(u32 a);                                 /* misc.c */
+void clk_gate_ext1_enable(u32 a);                                 /* misc.c */
+void sw_rst_ext1_set(u32 v);                                 /* phy.c */
+u32 dma_fw_icr_c24_read(void);                                      /* txss.c */
+void dma_fw_icr_c24_write(u32 v);                                   /* txss.c */
 u32 dmaq_hw_read_ptr(u32 q);                                    /* txss.c */
 void dti_alloc_dispatch(struct bi_ctx_s *c);                    /* tail.c */
 void dti_alloc_scheduled_event_thunk(u32 *wake);                /* tail.c */
@@ -251,26 +250,27 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake);      /* tail.c */
 void dump_mac_buffer_bases(u32 a, u32 b);                       /* misc.c */
 u32 dump_pring_hw(u32 q);                                       /* misc.c */
 void dump_vring_pring_info(u32 q);                              /* misc.c */
-void ese_dti_dti_start(void);                                   /* ese_dti.c */
+void ese_dti_on_dti_start(void);                                   /* ese_dti.c */
 void ese_dti_slot_end(void);                                    /* ese_dti.c */
 void ese_dti_slot_start(u32 ctrl);                              /* ese_dti.c */
 u32 ese_dti_window_now(void);                                   /* ese_dti.c */
 u32 ese_dti_us_to_window_end(void);                             /* ese_dti.c */
+u32 dti_alloc_left_us(void);                                    /* ese_dti.c */
 void evt_queue_noop_lock_hook(void);                            /* util.c */
 void evt_queue_take_locked(struct uc_mbox_ctx *a, u32 a1, u32 a2, u32 a3); /* tail.c */
-void field_set_0x00_934998(u32 a);                              /* bi.c */
-void field_set_0x00_934b8c(u32 a, u32 b);                       /* misc.c */
-u32 fixed_sched_check_slot_flag(struct fsched_peer_ctx *p);     /* l1.c */
+void mem_clear_word(u32 a);                              /* bi.c */
+void mem_write_u32(u32 a, u32 b);                       /* misc.c */
+u32 fixed_sched_kick_slot_queue(struct fsched_peer_ctx *p);     /* l1.c */
 u32 fixed_sched_is_engaged(void);                               /* fsched.c */
 void fixed_sched_manager_decrement_curr_sta_rd_counter(struct fsched_peer_ctx *p); /* l1.c */
-u32 fixed_sched_read_slot_id(struct fsched_peer_ctx *p);        /* l1.c */
+u32 fixed_sched_complete_peer_off(struct fsched_peer_ctx *p);        /* l1.c */
 void fixed_sched_run_tx_slot(void);                             /* l1.c */
-u16 fixed_sched_slot_cfg_u16_2(struct fsched_peer_ctx *p);      /* l1.c */
+u16 fixed_sched_slot_stop_vring_us(struct fsched_peer_ctx *p);      /* l1.c */
 void fixed_sched_slot_prepare(u32 a);                           /* l1.c */
 void fixed_sched_slot_setup(struct fsched_peer_ctx *p);         /* l1.c */
-u32 fixed_sched_slot_word8(struct fsched_peer_ctx *p);          /* l1.c */
+u32 fixed_sched_slot_mac_buff_size(struct fsched_peer_ctx *p);          /* l1.c */
 void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 arg1, u32 arg2, const struct dtx_grant_req *src); /* misc.c */
-void fsched_ap_copy_slot_byte1(struct fsched_peer_ctx *p);      /* fsched.c */
+void fsched_ap_init_slot_rd_counter(struct fsched_peer_ctx *p);      /* fsched.c */
 u32 fsched_ap_next_station(struct fsched_peer_ctx *p);          /* fsched.c */
 u32 fsched_ap_poll_station(struct fsched_peer_ctx *p);          /* fsched.c */
 u32 fsched_ap_start_slot(void);                                 /* fsched.c */
@@ -279,8 +279,8 @@ u32 fsched_arm_slot_from_cfg(void);                             /* fsched.c */
 u32 fsched_arm_slot_timer(u32 a);                               /* fsched.c */
 void fsched_bf_req_clear(struct fsched_peer_ctx *p, u32 idx);   /* misc.c */
 void fsched_bf_req_set(struct fsched_peer_ctx *p, u32 idx);     /* bf.c */
-u8 fsched_cur_entry_byte0(struct fsched_peer_ctx *p);           /* fsched.c */
-u8 fsched_cur_entry_byte1(struct fsched_peer_ctx *p);           /* fsched.c */
+u8 fsched_cur_entry_qid(struct fsched_peer_ctx *p);           /* fsched.c */
+u8 fsched_cur_entry_cfg_idx(struct fsched_peer_ctx *p);           /* fsched.c */
 void fsched_drop_station(u32 bit);                              /* fsched.c */
 u8 fsched_get_cur_idx(struct fsched_peer_ctx *p);               /* fsched.c */
 void fsched_log_phase(u32 phase, u32 idx);                      /* fsched.c */
@@ -288,108 +288,108 @@ void fsched_peer_add(struct fsched_peer_ctx *p, u32 idx);       /* misc.c */
 void fsched_peer_clear_qid(struct fsched_peer_ctx *p, u32 idx); /* misc.c */
 void fsched_peer_deactivate(struct fsched_peer_ctx *p, u32 idx); /* misc.c */
 void fsched_peer_set_qid(struct fsched_peer_ctx *p, u32 idx, u32 qid); /* misc.c */
-u32 fsched_pick_queue_r41(u32 a);                               /* fsched.c */
+u32 fsched_pick_any_ready_queue(u32 a);                               /* fsched.c */
 u32 fsched_pick_ready_queue(u32 a);                             /* fsched.c */
 void fsched_run_tx_slot_twice(void);                            /* fsched.c */
 u32 fsched_rx_slot(void);                                       /* fsched.c */
-u8 fsched_slot_byte0(struct fsched_peer_ctx *p);                /* fsched.c */
-void fsched_slot_clear_f2(struct fsched_peer_ctx *p);           /* fsched.c */
-void fsched_slot_clear_f3(struct fsched_peer_ctx *p);           /* fsched.c */
-void fsched_slot_clear_f4(struct fsched_peer_ctx *p);           /* fsched.c */
-u32 fsched_slot_f3_positive(struct fsched_peer_ctx *p);         /* fsched.c */
-u16 fsched_slot_half4(struct fsched_peer_ctx *p);               /* fsched.c */
-void fsched_slot_inc_f2(struct fsched_peer_ctx *p);             /* fsched.c */
-u32 fsched_slot_inc_f4_reached_7(struct fsched_peer_ctx *p);    /* fsched.c */
-u32 fsched_test_mask2c_bit(struct fsched_peer_ctx *p, u32 bit); /* fsched.c */
+u8 fsched_slot_time_before_tx_us(struct fsched_peer_ctx *p);                /* fsched.c */
+void fsched_slot_clear_slot_cnt(struct fsched_peer_ctx *p);           /* fsched.c */
+void fsched_slot_clear_rd_counter(struct fsched_peer_ctx *p);           /* fsched.c */
+void fsched_slot_clear_miss_cnt(struct fsched_peer_ctx *p);           /* fsched.c */
+u32 fsched_slot_rd_counter_nonzero(struct fsched_peer_ctx *p);         /* fsched.c */
+u16 fsched_slot_flush_to_us(struct fsched_peer_ctx *p);               /* fsched.c */
+void fsched_slot_inc_slot_cnt(struct fsched_peer_ctx *p);             /* fsched.c */
+u32 fsched_slot_inc_miss_cnt_reached_7(struct fsched_peer_ctx *p);    /* fsched.c */
+u32 fsched_bf_req_mask_bit(struct fsched_peer_ctx *p, u32 bit); /* fsched.c */
 u32 fsched_time_left_class(u32 a);                              /* fsched.c */
 u32 fsched_tx_ctrl_frame(void);                                 /* fsched.c */
 void fwif_write_qh(const struct lmac_cmd_write_qh *c);          /* cmd.c */
-void g_80212c_reset(void);                                      /* bf.c */
-u32 get_mem_857744_x2(void);                                    /* util.c */
-u32 get_mem_857744_x2_928308(void);                             /* tail.c */
+void sls_reset_sweep_results(void);                                      /* bf.c */
+u32 fsched_assoc_slot_us(void);                                    /* util.c */
+u32 fsched_virtual_slot_us(void);                             /* tail.c */
 void get_selected_rf_sector_index_cmd_handler(const struct lmac_cmd_rf_sector_sel *c); /* cmd.c */
-void gp0_arm_usec_b(u32 usec);                                  /* tail.c */
+void gp0_timer_arm_usec(u32 usec);                                  /* tail.c */
 void gp_timer_arm(u32 a, u32 b, u32 c, u32 d);                  /* tail.c */
 void gp_timer_stop(u32 a);                                      /* bi.c */
-u32 grant_detect_step(u32 a, u32 b, u32 c);                     /* tail.c */
-u32 grant_detect_step_at(u32 t, u32 b, u32 c);                  /* tail.c */
+u32 rx_nav_check_idle(u32 a, u32 b, u32 c);                     /* tail.c */
+u32 rx_nav_check_idle_at(u32 t, u32 b, u32 c);                  /* tail.c */
 void handle_bf_triggers(u32 cid, u32 set);                      /* tail.c */
 void handle_pmc_triggers(u32 trigger, u32 param);               /* tail.c */
-void hw_bring_up_phy_dma(u32 a0, u32 a1);                       /* tail.c */
+void hw_power_sequence_phy_dma(u32 a0, u32 a1);                       /* tail.c */
 void hw_power_sequence_rf(u32 a0, u32 a1);                      /* tail.c */
-void hw_power_step(u32 a0);                                     /* tail.c */
+void rfc_clear_core_reg1_on_rf(u32 a0);                                     /* tail.c */
 void hwd_abif_rfc_divider_restart_uc(void);                     /* misc.c */
 void hwd_dma_set_mode_map(u32 a);                               /* misc.c */
-void hwd_phy_init_2(void);                                      /* phy.c */
+void phy_apply_patch_table(void);                                      /* phy.c */
 void hwd_phy_pwr(u32 v);                                        /* phy.c */
 void hwd_phy_rx_set_agc_start_val_and_gain_array_uc(u32 a, u32 b); /* misc.c */
 void hwd_phy_set_mode_uc(u32 mode);                             /* phy.c */
-void hwd_phy_uses_rgf_881000_9296e0(u32 v);                     /* phy.c */
-void hwd_phy_uses_rgf_881000_929730(u32 v);                     /* phy.c */
-void hwd_phy_uses_rgf_883000(u32 v);                            /* phy.c */
-void hwd_phy_uses_rgf_883800_929af4(u32 *out);                  /* phy.c */
-void hwd_phy_uses_rgf_883800_929b94(u32 *out);                  /* phy.c */
-void hwd_phy_uses_rgf_884000(u32 v);                            /* phy.c */
+void phy_pwr_ctl_set_mode_bits(u32 v);                     /* phy.c */
+void phy_pwr_mode_map_set(u32 v);                     /* phy.c */
+void phy_rx_ctrl_set_enable(u32 v);                            /* phy.c */
+void phy_rx_stats_read_accs(u32 *out);                  /* phy.c */
+void phy_rx_stats_read_counters(u32 *out);                  /* phy.c */
+void phy_tx_en_set_enable(u32 v);                            /* phy.c */
 u32 hwd_rfc_auto_fill_verify(const struct rf_fill_info *f, u32 b, u32 c); /* misc.c */
 void hwd_rfc_powerdown_deep_all_rfs(void);                      /* misc.c */
 void hwd_rfc_powerup_deep_all_rfs(void);                        /* misc.c */
 u32 hwd_rfc_read_rgf_uc(u32 a, u32 b);                          /* txss.c */
 void hwd_rfc_write_core(u32 a, u32 b, u32 c, u32 d);            /* txss.c */
-void internal_tx_check_idle(u32 a);                             /* tx.c */
+void internal_tx_set_pending_bit(u32 a);                             /* tx.c */
 void internal_tx_clear_exclude_mask(void);                      /* tx.c */
 void internal_tx_clear_pending(u32 a);                          /* tx.c */
 void internal_tx_clear_pending_bit(u32 bit);                    /* tx.c */
 void internal_tx_drop_event_mask_and_publish(void);             /* tx.c */
-void internal_tx_flow_sm2(u32 a);                               /* tx.c */
+void internal_tx_drop_event_mask(void);                         /* tx.c */
+void internal_tx_keepalive_flow(u32 a);                               /* tx.c */
 void internal_tx_isr(void);                                     /* tail.c */
 void internal_tx_noop_isr_hook(void);                           /* tx.c */
 void internal_tx_set_pending_flag(void);                        /* tx.c */
 void irq_init_event_masks(void);                                /* tail.c */
-u32 irq_safe_deref_field_04(struct uc_mbox_ctx *m);             /* boot.c */
-u32 itx_rr_pick_pending_b(u32 out);                             /* tx.c */
+u32 uc_evt_write_slot(struct uc_mbox_ctx *m);             /* boot.c */
+u32 itx_ka_rr_pick(u32 out);                             /* tx.c */
 u32 itx_wait_ack(void);                                         /* tx.c */
 u32 itx_wait_cts_b(void);                                       /* tx.c */
 void keep_alive_arm_slot(u32 a);                                /* cmd.c */
 void l1_enter_fixed_sched(u32 a);                               /* l1.c */
-u32 l1_fixed_sched_ap_ev4_state2(u32 a);                        /* tail.c */
-u32 l1_fixed_sched_ap_ev4_state4(u32 a);                        /* tail.c */
+u32 l1_fixed_sched_ap_start_slot(u32 a);                        /* tail.c */
+u32 l1_fixed_sched_ap_run_slot(u32 a);                        /* tail.c */
 void l1_fixed_sched_ap_sm(u32 a);                               /* tail.c */
 void l1_fixed_sched_event_entry(void);                          /* l1.c */
 void l1_fixed_sched_sta_sm(u32 a);                              /* tail.c */
-void l1_on_event4(void);                                        /* l1.c */
+void l1_task_on_evt4(void);                                        /* l1.c */
 u32 l1_rx_then_check_bf_abort(void);                            /* l1.c */
 void l1_snapshot_bi_counter(void);                              /* l1.c */
-void l1_task_check_pending(void);                               /* l1.c */
+void l1_task_sel_nbr_update(void);                               /* l1.c */
 void l1_task_dispatch(u32 a, u32 b);                            /* l1.c */
 void l1_task_entry(u32 mode);                                   /* l1.c */
-void l1_task_entry_uc(void);                                    /* l1.c */
+void l1_task_dispatch_evt1(void);                                    /* l1.c */
 void l1_task_kick_and_dispatch_uc(void);                        /* l1.c */
-void l1_task_main_step(void);                                   /* l1.c */
+void l1_task_on_evt1(void);                                   /* l1.c */
 void l1_task_mask_halt_req_and_defer(void);                     /* l1.c */
 void l1_task_mask_wake_req_and_defer(void);                     /* l1.c */
-void l1_task_phase_of(struct bi_ctx_s *c);                      /* l1.c */
+void l1_task_run_bi_phase(struct bi_ctx_s *c);                      /* l1.c */
 void l1_task_report_link_lost(void);                            /* l1.c */
 void l1_task_reset_units(void);                                 /* l1.c */
-u32 l1_task_rx_flow_thunk(void);                                /* l1.c */
+u32 l1_task_rx_flow_run(void);                                /* l1.c */
 u32 l1_task_rx_flow_thunk_b(void);                              /* l1.c */
-void l1_task_select_by_mode(void);                              /* l1.c */
-void l1_task_step_fixed_sched(void);                            /* l1.c */
+void l1_task_check_bf_req_timeout(void);                              /* l1.c */
+void l1_task_on_evt1_fixed_sched(void);                            /* l1.c */
 void l2_handle_watchdog(void);                                  /* tail.c */
 void l2_task_entry(u32 a);                                      /* l1.c */
 void l2_task_kick_mac_events(void);                             /* l1.c */
 void l2_task_report_error_bits(void);                           /* l1.c */
-void list_push_locked(struct uc_ring *r, u32 entry);            /* tail.c */
-u32 mac_arm_events_0xc00(void);                                 /* mac.c */
+u32 mac_wait_busy2_or_gp0_timeout(void);                                 /* mac.c */
 u32 mac_build_qset_mask(const struct lmac_mac_regs *a);         /* mac.c */
-void mac_cfg_set_gp20_default_15748(void);                      /* mac.c */
+void mac_install_rf_gain_cb(void);                      /* mac.c */
 void mac_clk_div165(u32 a, u32 out);                            /* mac.c */
-void mac_cmd_0f_step(struct pm_ctx_s *p);                       /* mac.c */
+void aw_set_new_tbtt_clear_ps(struct pm_ctx_s *p);                       /* mac.c */
 void mac_cmd_29000001(void);                                    /* mac.c */
-void mac_cmd_56_57(void);                                       /* mac.c */
+void mac_set_phy_mode(void);                                       /* mac.c */
 void mac_core_write_3d_0200(void);                              /* mac.c */
 void mac_core_write_3e_then_3d_0007(void);                      /* mac.c */
-void mac_ddc_mask_all_on(void);                                 /* mac.c */
-void mac_ddc_mask_bit3(void);                                   /* boot.c */
+void mac_fw2uc_irq_mask_all(void);                                 /* mac.c */
+void mac_fw2uc_irq_unmask_cmd_halt_wake(void);                                   /* boot.c */
 void mac_evt_enable_bit_sync(u32 a);                            /* mac.c */
 void mac_evt_enable_bit_sync_b(u32 a);                          /* mac.c */
 void mac_evt_select_timer_group(u32 a);                         /* stubs.c */
@@ -397,19 +397,19 @@ void mac_fill_mode_nibbles(u32 mode);                           /* mac.c */
 u16 mac_get_beacon_interval_tu_uc(void);                        /* mac.c */
 void mac_ifs_restore_sifs(void);                                /* mac.c */
 void mac_load_tx_key(const u32 *key);                           /* mac.c */
-void mac_mem_addr_of_slot(u32 a, u32 b, u32 c);                 /* tail.c */
+void macq_hw_enable_queue(u32 a, u32 b, u32 c);                 /* tail.c */
 void mac_mode_enter_idle_seq(u32 a);                            /* mac.c */
-void mac_mode_kick(struct sls_peer_rec *a);                     /* bf.c */
-void mac_mode_program_c(struct sls_peer_rec *a);                /* tail.c */
+void abft_initiator_feedback_loop(struct sls_peer_rec *a);                     /* bf.c */
+void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a);                /* tail.c */
 void mac_mode_send_direct_frame(u32 a);                         /* mac.c */
 void mac_mode_switch_core_and_rf(u32 a);                        /* mac.c */
 void mac_mode_switch_sequence(u32 a);                           /* tail.c */
 void mac_prepare_txrx_window(struct tx_ctx_s *a, u32 b);        /* tail.c */
-void mac_prog_cmd02_body(void);                                 /* tail.c */
-void mac_program_13ab6680(void);                                /* boot.c */
-void mac_program_13ab6680_b(void);                              /* mac.c */
-void mac_program_4f_52(u32 a, u32 b);                           /* mac.c */
-void mac_program_886e0c_20b(u32 a);                             /* tail.c */
+void mac_compute_bi_mon_timings(void);                                 /* tail.c */
+void uc_timers_start_with_irq(void);                                /* boot.c */
+void uc_timers_start_without_irq(void);                              /* mac.c */
+void mac_program_gp_timer0(u32 a, u32 b);                           /* mac.c */
+void mac_program_lmac0_timing(u32 a);                             /* tail.c */
 u32 mac_program_deadline_slack(u32 a, u32 b, u32 c);            /* mac.c */
 void mac_program_qset_slots(void);                              /* mac.c */
 void mac_program_rx_window(u32 a, u32 b, u32 c);                /* tail.c */
@@ -420,32 +420,33 @@ void mac_program_tx_with_qid(u32 qid);                          /* mac.c */
 void mac_program_tx_with_rate(u32 rate);                        /* mac.c */
 void mac_publish_masks(void);                                   /* bf.c */
 void mac_q_tx_ppdu(struct tx_ctx_s *a, u32 b);                  /* tail.c */
-void mac_q_tx_ppdu_3009(struct tx_ctx_s *a);                    /* tail.c */
-void mac_q_tx_ppdu_cmd08(u32 a, u32 b);                         /* tail.c */
+void mac_q_tx_ppdu_txop_open(struct tx_ctx_s *a);                    /* tail.c */
+void mac_q_tx_ppdu_vring_cfg(u32 a, u32 b);                         /* tail.c */
 void mac_qset_reset_masks(void);                                /* mac.c */
 void mac_read_bi_start_tsf64_uc(u32 a, u32 *out, u32 wait);     /* mac.c */
-u32 mac_read_time_88c120(void);                                 /* mac.c */
+u32 mac_read_ext_window_remain(void);                                 /* mac.c */
 void mac_read_tsf64_uc(u32 *out);                               /* mac.c */
 u32 mac_read_usec_to_tbtt_uc(u32 a);                            /* mac.c */
 u32 mac_replicate_bit_mask(const struct lmac_mac_regs *a);      /* mac.c */
-void mac_rf_switch_cmd1f(u32 a);                                /* cmd.c */
+void mac_rf_switch_wait_idle(u32 a);                                /* cmd.c */
 void mac_rx_off_seq(void);                                      /* mac.c */
 void mac_select_all_sectors_and_wait(void);                     /* mac.c */
 void mac_select_rf_module_cmd31(u32 a, u32 b);                  /* mac.c */
-void mac_set_880afc_bits(u32 a);                                /* mac.c */
-void mac_set_880bf0_mode(u32 mode);                             /* mac.c */
+void clk_gate_vec2_enable(u32 a);                                /* mac.c */
+void mac_set_pwr_mode_map_bf0(u32 mode);                             /* mac.c */
 void mac_set_chain_mask_924f00(void);                           /* mac.c */
 void mac_set_chain_modes(u32 a);                                /* mac.c */
 void mac_set_cid_mcs_uc(u32 a, u32 b);                          /* mac.c */
-void mac_set_mode_0000(void);                                   /* mac.c */
+void mac_wait_mode_ack_if_idle(void);                                   /* mac.c */
 u32 mac_switch_rx_to_tx(u32 a);                                   /* mac.c */
 u32 mac_switch_rx_to_tx_wait_brp(u32 ra);                             /* mac.c */
+u32 mac_switch_rx_to_tx_again(u32 a);                              /* mac.c */
 void mac_set_rf_chain_state(u32 a, u32 b);                      /* mac.c */
 void mac_set_rf_chain_state_with_sta_sector(void);              /* mac.c */
 void mac_set_sector_arg_and_select_all(u32 a);                  /* mac.c */
 void mac_set_slot_mask_924000(void);                            /* mac.c */
-void mac_set_slot_timing_886f60(void);                          /* mac.c */
-void mac_wait_event_r42_or_r40(u32 a, u32 b);                   /* mac.c */
+void mac_set_default_slot_timing(void);                          /* mac.c */
+void mac_wait_evt1_or_status(u32 a, u32 b);                   /* mac.c */
 u32 macq_desc_read_uc(u32 addr, u32 unused);                    /* txss.c */
 void macq_desc_write_uc(u32 addr, u32 value);                   /* txss.c */
 void macq_flush_queue(u32 a, u32 b, u32 c);                     /* l1.c */
@@ -464,36 +465,34 @@ void macq_kick_queue_tx(u32 q, u32 b, u32 c);                   /* misc.c */
 u32 macq_probe_empty(u32 q);                                    /* mac.c */
 u32 macq_read_hw_queue_word(u32 q);                             /* mac.c */
 void mailbox_debug_dump_uc(struct uc_ring *r);                  /* stubs.c */
-u32 mailbox_free_space(struct uc_ring *r);                      /* stubs.c */
-void mask_bit_from_index_plus8(u32 a, u32 b);                   /* l1.c */
+void macq_disable_queue_and_ack_irq(u32 a, u32 b);                   /* l1.c */
 void *memcpy_uc(void *dst, const void *src, u32 len);          /* mem.c */
 void *memset(void *d, int c, unsigned int n);                  /* uutil.c */
 void *memset0_words_uc(void *dst, u32 len);                    /* mem.c */
 void *memset_uc(void *dst, u8 v, u32 n);                       /* mem.c */
 void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b);          /* tail.c */
-u8 mtp_queue_byte_by_index(u32 idx);                            /* rate_search.c */
+u8 rs_sta_mcs_try(u32 idx);                            /* rate_search.c */
 u32 mtp_queue_release_mgmt(struct tx_ctx_s *a, u32 b, u32 c, u32 d); /* tail.c */
 void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d);          /* tail.c */
 u32 nav_read_hw_duration_flag(u32 *out);                        /* txss.c */
-u32 notify_aoa(u32 a);                                          /* tail.c */
-void notify_aoa_build(u32 arg0, u32 arg1, u32 arg2);            /* tail.c */
-void obj_vt801adc_ctor(struct sm_obj *a);                       /* util.c */
+void bf_done_report_build_send(u32 arg0, u32 arg1, u32 arg2);            /* tail.c */
+void bi_sm_obj_init(struct sm_obj *a);                       /* util.c */
 u32 peer_lookup_if_fixed_sched(u32 a0);                         /* txss.c */
-u32 peer_lookup_or_ff(struct fsched_peer_ctx *p, u32 qid);      /* txss.c */
+u32 peer_is_active_in_slot(struct fsched_peer_ctx *p, u32 qid);      /* txss.c */
 void peer_masks_apply_op(struct pm_ctx_s *p, u32 op, u32 val);  /* misc.c */
-void peer_masks_or_into_8571c4(u32 a);                          /* misc.c */
-void peer_masks_or_sta_bit_into_8571c4(u32 a);                  /* bf.c */
+void ll_ctx_merge_keepalive_pending(u32 a);                          /* misc.c */
+void itx_ka_publish_sta_pending(u32 a);                  /* bf.c */
 void peer_masks_update_sta_bit(struct fsched_peer_ctx *p, u32 sta, u32 set); /* misc.c */
 void peer_slots_scan_by_masks(u32 a);                           /* misc.c */
 void phy_params_snapshot(u32 a, u32 b);                         /* tail.c */
 u32 phy_read_signal_gain_adc_db(void);                          /* phy.c */
 u32 phy_read_signal_gain_adc_db_sfd_locked(void);               /* phy.c */
 void phy_rx_set_ina_det_mode_uc(u32 a);                         /* phy.c */
-void phy_set_88306c_field(u32 v);                               /* phy.c */
+void phy_set_rx_agc_row(u32 v);                               /* phy.c */
 u32 phy_signal_gain_adc_in_range(void);                         /* phy.c */
 void phy_stats_accumulate_to_shared(struct rx_meas_ctx *m, u32 b); /* tail.c */
-void phy_stats_clear_counters_88395c(void);                     /* phy.c */
-void phy_stats_clear_counters_883960(void);                     /* phy.c */
+void phy_rx_stats_lock(void);                     /* phy.c */
+void phy_rx_stats_clear(void);                     /* phy.c */
 void pm_event_mask_restore(void);                               /* tail.c */
 void pm_event_mask_save_all_on(void);                           /* tail.c */
 void pm_wake_sequence(void);                                    /* bi.c */
@@ -505,7 +504,7 @@ u32 power_mngr_stats_calc_delta(u32 a);                         /* power.c */
 void power_mngr_stats_mark_base(u32 a);                         /* power.c */
 void ppdu_unpack_desc_word(u32 a, u32 *o0, u32 *o1, u32 *o2, u32 *o3, u32 *o4, u32 *o5); /* phy.c */
 void qh_build_descriptor(u32 a, u32 b, struct qh_desc3_win *d); /* txss.c */
-u32 qh_build_descriptor_b(u32 a);                               /* txss.c */
+u32 qh_read_desc_start(u32 a);                               /* txss.c */
 void qh_pack_descriptor(u32 dst, u32 a, u32 count, u32 c, u32 flag, u32 loopcnt, u32 copycnt); /* txss.c */
 void qh_read_desc_window(u32 dst, u32 a1, u32 a2, u32 a3, u32 count); /* txss.c */
 void qh_reset_desc_window(void);                                /* txss.c */
@@ -518,61 +517,57 @@ u32 queue_sel_get_qset4(u32 a);                                 /* tail.c */
 void rate_search_apply_mcs(u32 a, u32 b);                       /* rate_search.c */
 void rate_search_commit_mcs(struct tx_ctx_s *a);                /* tail.c */
 u8 rate_search_current_mcs(u32 a);                              /* rate_search.c */
-u8 rate_search_current_mcs_b(u32 a);                            /* rate_search.c */
+u8 rate_search_current_mcs_try(u32 a);                            /* rate_search.c */
 u32 rate_search_pick_tx_params(struct tx_ctx_s *a, u32 b);      /* tail.c */
 u32 rate_search_reset_stats(struct tx_ctx_s *a, u32 b);         /* tail.c */
 u32 rf_compute_tx_rx_sets(void);                                /* txss.c */
 void rf_gain_adjust_cb(u32 a, u32 b);                           /* cmd.c */
 void rf_power_seq_and_save(u32 a);                              /* txss.c */
-void rf_select_sector_cmd41(u32 a, u32 b);                      /* txss.c */
+void rf_select_sector(u32 a, u32 b);                      /* txss.c */
 void rf_set_normal_mode(u32 a);                                 /* txss.c */
 void rf_set_txrx_sets_save(u32 a, u32 b, u32 *o0, u32 *o1);     /* txss.c */
-void rf_store_last_module_index(void);                          /* txss.c */
+void rf_store_last_set_index(void);                          /* txss.c */
 void rf_update_active_antenna(u32 a, u32 b);                    /* txss.c */
-u32 rf_utils_auto_fill_uc(const struct rf_fill_info *f, u32 b); /* tail.c */
+u32 rfc_auto_fill_apply(const struct rf_fill_info *f, u32 b); /* tail.c */
 void rf_utils_auto_fill_with_byte(u32 a, u32 b);                /* brp.c */
-void rf_utils_fill_step(u32 a0, u32 a1, u32 a2, u32 a3);        /* tail.c */
+void rfc_write_core_on_rf(u32 a0, u32 a1, u32 a2, u32 a3);        /* tail.c */
 void rf_write_sector_awv(u32 a, u32 b);                         /* txss.c */
 void rfc_clear_core_reg1(u32 a);                                /* txss.c */
-void rfc_issue_cmd_10(u32 a);                                   /* txss.c */
-u32 rfc_issue_cmd_20_uc(u32 a, u32 b);                          /* txss.c */
+void rfc_issue_chain_cmd(u32 a);                                   /* txss.c */
+u32 rfc_issue_sector_cmd(u32 a, u32 b);                          /* txss.c */
 u32 rfc_read_core_result(u32 a0, u32 a1, u32 a2);               /* txss.c */
 void rfc_restore_txrx_sets(void);                               /* txss.c */
 void rfc_write_core_checked(u32 a, u32 b, u32 c);               /* txss.c */
-void rfca_access_sector_other_rf(u32 a);                        /* tail.c */
+void rfca_clear_sector_row_other_rf(u32 a);                        /* tail.c */
 u8 rfca_get_rf_mask_uc(void);                                   /* brp.c */
 void rfca_select_rf_uc(u32 a, u32 b);                           /* tail.c */
-u32 rng_rand_below(u32 a);                                      /* util.c */
-void rs_abort(u32 a);                                           /* bf.c */
+void rate_search_abort(u32 a);                                           /* bf.c */
 void rs_end(void);                                              /* tail.c */
 u32 rs_is_sta_enabled(u32 a);                                   /* rate_search.c */
 u32 rs_start(u32 a, u32 b);                                     /* cmd.c */
 u32 rss_wait_get(u32 a);                                        /* util.c */
 void rx_arm_window(void);                                       /* rx.c */
-void rx_arm_window_b(void);                                     /* rx.c */
-u32 rx_arm_window_c(void);                                      /* rx.c */
+u32 rx_ppdu_is_ssw(void);                                      /* rx.c */
 u32 rx_capture_match_filter(struct rx_meas_ctx *m);             /* rx.c */
-void rx_cfg_select_sta(u32 a);                                  /* rx.c */
-u32 rx_check_g8005f8_bit24(void);                               /* rx.c */
+void rx_cfg_set_sta_omni_sector(u32 a);                                  /* rx.c */
+u32 rx_flow_decode_result(void);                               /* rx.c */
 void rx_check_mode_2(struct rx_meas_ctx *m, u32 b);             /* rx.c */
-u32 rx_dispatch_by_g_8005f8(void);                              /* rx.c */
+u32 rx_match_expected_response(void);                              /* rx.c */
 void rx_enter_listen_mode(void);                                /* rx.c */
 void rx_flow_accumulate_busy_time(u32 a);                       /* rx.c */
 u32 rx_flow_handle_frame(struct tx_ctx_s *a);                   /* rx.c */
-void rx_flow_latch_phy_8014e8(u32 a);                           /* tail.c */
-void rx_flow_latch_phy_8014e8_930da4(void);                     /* util.c */
-void rx_flow_latch_phy_8014e8__930da4(void);                    /* rx.c */
+void rx_latch_cur_gain_db(void);                    /* rx.c */
 void rx_flow_measure_snr_select_best(void);                     /* rx.c */
 u32 rx_flow_run(void);                                          /* rx.c */
 u32 rx_flow_run_and_check_bf_abort(u32 a);                      /* rx.c */
-u32 rx_flow_send_imm_response(void);                            /* rx.c */
+u32 rx_send_cf_end_response(void);                            /* rx.c */
 void rx_cf_end_nav_reset(u32 dur);                              /* rx.c */
 u32 rx_flow_step(struct tx_ctx_s *a, u32 b);                    /* rx.c */
-u32 rx_flow_substep_uc(struct tx_ctx_s *a);                     /* rx.c */
-void rx_funcs_handle_ppdu_report(void);                         /* rx.c */
-s32 rx_funcs_record_level_8020f8_8020fc(u32 a);                 /* util.c */
-u32 rx_funcs_rx_flow(void);                                     /* rx.c */
-void rx_funcs_send_direct_frame(u32 a);                         /* tail.c */
+u32 rx_flow_ctrl_qid_empty(struct tx_ctx_s *a);                     /* rx.c */
+void rx_handle_ppdu_report(void);                         /* rx.c */
+s32 bf_rep_record_snr_level(u32 a);                 /* util.c */
+u32 rx_flow_main(void);                                     /* rx.c */
+void direct_tx_send_frame(u32 a);                         /* tail.c */
 u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out); /* rx.c */
 void rx_handle_brp_frame(void);                                 /* rx.c */
 void rx_handle_status_flags(struct tx_ctx_s *a);                /* rx.c */
@@ -581,27 +576,27 @@ void rx_listen_set_flag_and_stamp_tsf(void);                    /* rx.c */
 void rx_mac_prepare(void);                                      /* rx.c */
 void rx_meas_append_sample(struct rx_meas_ctx *m, u32 mp);      /* rx.c */
 void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp);      /* rx.c */
-void rx_meas_finish_with_8830ec(struct rx_meas_ctx *m);         /* rx.c */
+void rx_meas_finish_plcp(struct rx_meas_ctx *m);         /* rx.c */
 void rx_mode_configure(u32 a, u32 b);                           /* bf.c */
 void rx_nav_arm_flag_if_enabled(void);                          /* rx.c */
 void rx_nav_clear_flags(void);                                  /* rx.c */
-void rx_nav_set_flag_b1_if_enabled(u32 a);                      /* rx.c */
+void rx_nav_reset_flags_arm(u32 a);                      /* rx.c */
 void rx_nav_set_from_duration(u32 a, u32 b, u32 c, u32 d);      /* rx.c */
 void rx_nav_update(u32 a, u32 b, u32 c, u32 d);                 /* rx.c */
 void rx_parse_ssw_field(u32 dst0, u32 dst1, u32 dst2);          /* rx.c */
 u32 rx_ppdu_is_ack(void);                                       /* rx.c */
-u32 rx_ppdu_is_cts_b(void);                                     /* rx.c */
+u32 rx_ppdu_is_cts(void);                                     /* rx.c */
 u32 rx_program_mac_and_wait(struct tx_ctx_s *a);                /* rx.c */
 void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c);            /* rx.c */
-void rx_send_dmg_cts(void);                                     /* rx.c */
+void rx_send_grant_ack(void);                                     /* rx.c */
 void rx_end_switch_to_tx(void);                                /* rx.c */
 void rx_update_nav_from_frame(u32 a);                           /* rx.c */
-u32 sched_bitmap_next_set_bit(u32 a, u32 b);                    /* rate_search.c */
-u32 sched_bitmap_prev_set_bit(u32 a, u32 b);                    /* rate_search.c */
+u32 rs_next_enabled_mcs(u32 a, u32 b);                    /* rate_search.c */
+u32 rs_prev_enabled_mcs(u32 a, u32 b);                    /* rate_search.c */
 void sched_cfg_merge_update(const struct lmac_cmd_write_qh *sr); /* tail.c */
-u32 sector_mem_addr_of(u32 a);                                  /* txss.c */
-void sends_pmc_mark_aaab02(struct fsched_peer_ctx *p, u32 b);   /* tail.c */
-void sends_pmc_mark_aaab20(u32 a);                              /* tail.c */
+u32 rfc_clear_sector_row(u32 a);                                  /* txss.c */
+void fsched_slot_resetup_if_time_left(struct fsched_peer_ctx *p, u32 b);   /* tail.c */
+void fsched_bf_req_trigger(u32 a);                              /* tail.c */
 void set_selected_rf_sector_index_cmd_handler(const struct lmac_cmd_rf_sector_sel *c); /* cmd.c */
 void set_tsf_event(u32 a);                                      /* tail.c */
 void sls_build_ssw_ack(struct ssw_ack_frame *f, u32 idx, u32 flag); /* txss.c */
@@ -614,9 +609,9 @@ void ss_update_frames_number(u32 a);                            /* cmd.c */
 void sta_apply_bf_result(u32 a, u32 b);                         /* txss.c */
 void sta_apply_rx_sector_and_mcs(u32 a);                        /* txss.c */
 void sta_ctx_reset_counters(struct pm_ctx_s *p, u32 a1);        /* tail.c */
-u32 sta_find_by_byte(struct fsched_peer_ctx *p, u32 qid);       /* txss.c */
-u32 sta_get_sweep_byte(u32 a, u32 out);                         /* txss.c */
-u8 sta_link_byte_by_index(u32 idx);                             /* rate_search.c */
+u32 sta_find_by_qid(struct fsched_peer_ctx *p, u32 qid);       /* txss.c */
+u32 qid_cfg_get_sta(u32 a, u32 out);                         /* txss.c */
+u8 rs_internal_trigger_disabled(u32 idx);                             /* rate_search.c */
 u32 sta_queue_class(u32 a, u32 b);                              /* txss.c */
 void sta_reset_link_state(u32 a, u32 b, u32 c);                 /* txss.c */
 void sta_set_rx_sector(u32 a, u32 b);                           /* txss.c */
@@ -633,8 +628,8 @@ void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d); /* tx.c */
 struct tx_ctx_s *tx_ctx_alloc_next(u32 a);                     /* stubs.c */
 void tx_ctx_post_status(struct pm_ctx_s *p, u32 arg, u32 type); /* tx.c */
 void tx_fifo_write_bytes(u32 src, u32 len);                     /* mem.c */
-void tx_flow_arm_88606c_0x102(void);                            /* tx.c */
-u32 tx_flow_substep(struct tx_ctx_s *a);                        /* tail.c */
+void tx_crypto_ctl_arm(void);                            /* tx.c */
+u32 rate_search_per_check(struct tx_ctx_s *a);                        /* tail.c */
 void tx_initiator_flow_fixed_scheduling(u32 a);                 /* tail.c */
 void tx_initiator_reset_slot_counters(u32 a);                   /* tx.c */
 void tx_mtp_queue_gate(u32 a);                                  /* tail.c */
@@ -651,13 +646,13 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b);         /* tx.c */
 u32 tx_submit_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d);   /* tx.c */
 void txop_apply_limits_regs(u32 a0);                            /* txss.c */
 u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b);             /* txss.c */
-void txop_clear_dma_ctl_bit1(void);                             /* txss.c */
+void txop_clear_l2_offload_tx_ctl_bit1(void);                             /* txss.c */
 u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a);          /* tail.c */
 u32 txop_pick_ctrl_code_by_peer(struct tx_ctx_s *a);            /* txss.c */
 u8 txq_fifo_ptp_idle_snapshot(void);                            /* txss.c */
-void txrx_api_cmd_step(const struct lmac_cmd_rx_on *a);         /* cmd.c */
-void txrx_api_step_b_uc(u32 a);                                 /* cmd.c */
-void txrx_api_step_c(u32 a, u32 b);                             /* cmd.c */
+void txrx_api_program_bi_tsf_control(const struct lmac_cmd_rx_on *a);         /* cmd.c */
+void txrx_api_program_ifs_timing(u32 a);                                 /* cmd.c */
+void txrx_api_program_edca_ac(u32 a, u32 b);                             /* cmd.c */
 void txrx_umac_if_config_pmc_triggers_handler(u32 a);           /* cmd.c */
 void txss_init_flow(u32 a);                                     /* bf.c */
 void txss_init_send_fdbk_wait_ack(u32 a);                       /* tail.c */
@@ -673,41 +668,40 @@ void txss_set_sweep_param(u32 s, const struct ss_cfg_s *p, u32 a2, u32 a3, u32 a
 void txss_store_sector_ranking(u32 a, u32 b);                   /* txss.c */
 u32 txss_sweep_duration_for_sta(u32 a);                         /* txss.c */
 void txss_sweep_timing(u32 out, u32 byte1, u32 byte2);          /* txss.c */
-u32 uc_ap_read_match_value(u32 a);                              /* uutil.c */
-u8 uc_ap_read_triggered_mask(void);                             /* uutil.c */
 void uc_assert(u32 caller, u32 code);                           /* misc.c */
 u32 uc_bi_counter_in_window(u32 a);                             /* uutil.c */
-void uc_check_g8004f4_0_1_2(void);                              /* uutil.c */
+void l1_task_dispatch_evt4(void);                              /* uutil.c */
 u32 uc_clk_now(void);                                           /* util.c */
 u32 uc_clk_since(u32 *last);                                    /* util.c */
 void uc_delay_clk(u32 clk);                                     /* util.c */
-u64 uc_divmod_signed_qr(s32 a, s32 b);                          /* mem.c */
 u32 uc_divmod_unsigned(u32 n, u32 d);                           /* mem.c */
 u64 uc_divmod_unsigned_qr(u32 n, u32 d);                        /* mem.c */
 void uc_evt_build_and_post_report(const struct sls_peer_rec *p, u32 flag); /* misc.c */
-void uc_evt_enqueue(u32 evt, u32 type, u32 size, u32 a);        /* evt.c */
-u32 uc_evt_queue_peek_field04(void);                            /* evt.c */
-void uc_evt_queue_put(struct uc_mbox_ctx *m, u32 evt, u32 type, u32 cmd_id, u32 len, u32 mid, u32 c, u32 d, u32 e); /* evt.c */
-void uc_evt_send_20(u32 a);                                     /* evt.c */
-void uc_evt_send_21(u8 a0, const void *a1);                     /* evt.c */
-void uc_evt_send_23(u32 src);                                   /* evt.c */
-void uc_evt_send_26(u32 a);                                     /* evt.c */
-void uc_evt_send_29_sync(u32 a);                                /* evt.c */
-void uc_evt_send_2b(u8 a);                                      /* evt.c */
-void uc_evt_send_2c_tsf(u32 a, u32 b, u32 c);                   /* evt.c */
-void uc_evt_send_2e(u32 a, u32 b, u32 c);                       /* evt.c */
-void uc_evt_send_30(const u32 *a);                              /* evt.c */
-u32 uc_field_0x24_is_zero(struct uc_mbox_ctx *m);               /* uutil.c */
-u32 uc_indirect_is_zero(struct uc_ring *r);                     /* uutil.c */
+void uc_evt_enqueue(u32 evt, u32 type, u32 size, u32 mid);      /* evt.c */
+#define UC_EVT_BODY_MAX 0x44                                     /* наибольшее тело события uc (отчёт BF / новый линк) */
+#define UC_EVT_NEW_LINK 0x5                                      /* отчёт BF пира 8 (A-BFT, новый линк), тело lmac_evt_bf_done */
+#define UC_EVT_BF_DONE  0x6                                      /* отчёт BF станции, тело lmac_evt_bf_done */
+u32 uc_mbox_evt_write_slot(void);                            /* evt.c */
+void uc_evt_send_energy_stats_ready(u32 a);                                     /* evt.c */
+void uc_evt_send_plcp_header_ready(u8 a0, const void *a1);                     /* evt.c */
+void uc_evt_send_rx_pkt_data(u32 src);                                   /* evt.c */
+void uc_evt_send_phy_stats_ready(u32 a);                                     /* evt.c */
+void uc_evt_send_sp_slots_reload(u32 a);                                /* evt.c */
+void uc_evt_send_channel_estimation(u8 a);                                      /* evt.c */
+void uc_evt_send_pmc(u32 a, u32 b, u32 c);                   /* evt.c */
+void uc_evt_send_vring_ssn(u32 a, u32 b, u32 c);                       /* evt.c */
+void uc_evt_send_fixed_sched_enabled(const u32 *a);                              /* evt.c */
+u32 uc_cmd_ring_pending(struct uc_mbox_ctx *m);               /* uutil.c */
+u32 uc_ring_cur_empty(struct uc_ring *r);                     /* uutil.c */
 void uc_init(void);                                             /* boot.c */
-void uc_init_cb_801aec(void);                                   /* boot.c */
+void uc_init_cb_bi_sm_name(void);                                   /* boot.c */
 void uc_init_cb_cmdq(void);                                     /* boot.c */
-void uc_init_cb_copy_8006b7(void);                              /* boot.c */
+void uc_init_cb_copy_rf_mask(void);                              /* boot.c */
 void uc_init_cb_globals(void);                                  /* boot.c */
-void uc_init_cb_more(void);                                     /* boot.c */
+void uc_init_cb_rx_meas(void);                                     /* boot.c */
 void uc_init_globals(struct fsched_peer_ctx *p);                /* uutil.c */
 void uc_irq_set_level(u32 a, u32 b);                            /* uutil.c */
-u32 uc_list_head_field4(struct uc_ring *r);                     /* uutil.c */
+u32 uc_ring_cur_addr(struct uc_ring *r);                     /* uutil.c */
 void uc_list_insert_by_prio(u32 obj);                           /* util.c */
 void uc_log_emit1(u32 lvl, u32 token, u32 a0);                  /* bf.c */
 void uc_log_emit2(u32 lvl, u32 token, u32 a0, u32 a1);          /* bf.c */
@@ -720,7 +714,6 @@ u32 uc_mailbox_ring_reg_addr(void);                             /* uutil.c */
 void uc_main(void);                                             /* boot.c */
 void uc_pm_enter_idle(u32 a);                                   /* uutil.c */
 void uc_queue_dispatch_and_commit(struct uc_mbox_ctx *m);       /* misc.c */
-u32 uc_queue_peek_head_word1(struct uc_ring *r);                /* uutil.c */
 u32 uc_read_bi_sync(void);                                      /* uutil.c */
 u32 uc_read_tsf_lo(void);                                       /* stubs.c */
 void uc_res_vote_acquire(u32 a);                                /* uutil.c */
@@ -734,15 +727,15 @@ void uc_send_evt_rs_done(const void *a);                        /* evt.c */
 void uc_send_evt_rs_started(u32 a);                             /* evt.c */
 void uc_send_evt_set_rf_sector_done(u32 a);                     /* evt.c */
 void uc_send_evt_sta_update_field_rsp(u32 a, u32 b);            /* evt.c */
-void uc_send_evt_typed(u32 a, u32 b);                           /* evt.c */
+void uc_send_evt_tsf_val(u32 a, u32 b);                           /* evt.c */
 void uc_send_evt_ucode_ready(void);                             /* boot.c */
-void uc_set_evt_id_5c(u32 a);                                   /* uutil.c */
+void uc_set_bg_task_mask(u32 a);                                   /* uutil.c */
 u64 uc_shl64(u32 lo, u32 hi, u32 shift);                        /* mem.c */
 void uc_sleep_until_event(u32 a, u32 b);                        /* uutil.c */
 u32 uc_sm_handle_event(struct sm_obj *obj, u32 ev, u32 a2);     /* uutil.c */
 u32 uc_spin_until_event(u32 mask);                              /* mac.c */
 void uc_spin_until_event4(u32 a);                               /* uutil.c */
-void uc_spin_until_event4_r0_100(void);                         /* bf.c */
+void uc_spin_until_gp2_end(void);                         /* bf.c */
 void uc_sysassert_emit_mac_trace(u32 a);                        /* misc.c */
 void uc_sysassert_idle_hist(void);                              /* misc.c */
 u32 uc_sysassert_read_hw_state3(void);                          /* phy.c */
@@ -758,7 +751,7 @@ u32 uc_wait_event_busy(u32 a, u32 b);                           /* stubs.c */
 void uc_wait_one_event(u32 a);                                  /* uutil.c */
 void uc_wait_two_events(u32 a, u32 b, u32 c);                   /* uutil.c */
 void ucode_cmd08_noop_hook(void);                               /* cmd.c */
-void ucode_cmd_0b_apply(struct ss_cfg_s *d, const struct ss_cfg_s *s); /* cmd.c */
+void ss_cfg_apply(struct ss_cfg_s *d, const struct ss_cfg_s *s); /* cmd.c */
 void ucode_cmd_0x00_handler(const struct lmac_cmd_mac_cfg *c);  /* cmd.c */
 void ucode_cmd_0x01_handler(const struct lmac_cmd_rx_on *c);    /* cmd.c */
 void ucode_cmd_0x03_handler(u32 a);                             /* cmd.c */
@@ -800,12 +793,11 @@ void ucode_cmd_0x47_handler(const struct lmac_cmd_fsched_peer *c); /* cmd.c */
 void ucode_cmd_0x48_handler(u32 a);                             /* cmd.c */
 void ucode_cmd_0x49_handler(u32 a);                             /* cmd.c */
 void ucode_cmd_0x4a_handler(u32 a);                             /* cmd.c */
-u32 ucode_cmd_28_apply(struct rx_meas_ctx *m, u32 b);           /* cmd.c */
+u32 rx_meas_arm_request(struct rx_meas_ctx *m, u32 b);           /* cmd.c */
 void ucode_cmd_apply_mac_cfg(u32 a);                            /* cmd.c */
 void ucode_cmd_dispatch(u32 a, u32 b);                          /* cmd.c */
 void ucode_cmd_echo(u32 a);                                     /* cmd.c */
-void ucode_cmd_load_table_803124_803128(u32 a, u32 b);          /* misc.c */
-void ucode_cmd_load_table_803124_803128_920b1c(u32 a, u32 b);   /* util.c */
+void abft_cfg_load_from_cmd(u32 a, u32 b);          /* misc.c */
 void ucode_cmd_selective_neighbor_cfg(const struct lmac_cmd_sel_nbr *c); /* cmd.c */
 void ucode_cmd_trigger_bf(u32 a);                               /* cmd.c */
 void ucode_cmdq_handler(struct uc_mbox_ctx *m, u32 item);       /* misc.c */
@@ -813,8 +805,8 @@ void ucode_pm_set_busy_flag(u32 a);                             /* uutil.c */
 void ucode_pm_stamp_tsf_slots(void);                            /* uutil.c */
 void update_sector_sweep_frames_number(u32 a, u32 b);           /* tail.c */
 void vring_disconnect_flush(u32 a, u32 b, u32 c, u32 d);        /* tail.c */
-void vring_is_empty_uc(u32 v);                                  /* boot.c */
-u32 vring_is_empty_uc_quiet(u32 a);                             /* util.c */
+void boot_uc_publish_mac_cmd_log_snap(u32 v);                                  /* boot.c */
+u32 vring_hw_is_empty(u32 a);                             /* util.c */
 void wmi_cmd_txss_set_sectors_number(u32 a);                    /* cmd.c */
 void wmi_cmd_txss_set_sectors_order(const struct lmac_cmd_ss_order *c); /* cmd.c */
 

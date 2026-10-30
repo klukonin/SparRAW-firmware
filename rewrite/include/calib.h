@@ -35,9 +35,9 @@ typedef struct {                                           /* таблица 0x8
 extern calib_vga_cfg_t calib_vga_cfg;
 
 /* Таблица температурных классов silent RSSI (0xa0 Б). Текущая — указатель [0x800408]
- * (в образе — таблица 0); WMI_SET_ACTIVE_SILENT_RSSI_TABLE (calib_start_scheme4) с
+ * (в образе — таблица 0); WMI_SET_ACTIVE_SILENT_RSSI_TABLE (calib_start_silent_rssi) с
  * таблицей 1 ставит таблицу 1, её же загружает WMI_SET_HIGH_POWER_TABLE_PARAMS
- * (rf_cfg_load_800d04, раскладка тела — struct wmi_set_high_power_table_params_cmd, но
+ * (rf_cfg_load_high_power_table, раскладка тела — struct wmi_set_high_power_table_params_cmd, но
  * rx_2_tx_offs здесь сразу за 3-байтовыми порогами). calib_classify_by_thresholds
  * сравнивает температуру модуля RF с тремя знаковыми порогами (°C) каждой пары
  * {temp, conf} и кладёт класс 0..3 в cls[пара][модуль]; temp_ofs = rx_2_tx_offs[класс]. */
@@ -175,7 +175,7 @@ struct calib_hw_snap {
     u32 rx_tbl_force_en;                       /* 0x10: форс индекса RX-таблицы ABIF (0x88a204 б0) */
     u8  rx_tbl_force_val;                      /* 0x14: значение форса (0x88a204[6:1]) */
     u8  rsv15[3];                              /* 0x15 */
-    u32 agc_steps_dis;                         /* 0x18: 0x8831c0 == 0x21 (hwd_phy_get_883180) */
+    u32 agc_steps_dis;                         /* 0x18: 0x8831c0 == 0x21 (hwd_phy_rx_agc_steps_disabled) */
     u32 agc_force_en;                          /* 0x1c: форс AGC-индекса (0x883048 б15) */
     union {                                    /* 0x20: 0x883048[14:0]; vendor пишет u16, читает ldb */
         u16 agc_force_idx;
@@ -183,7 +183,7 @@ struct calib_hw_snap {
     };
     u8  rsv22[2];                              /* 0x22 */
     u32 lpbk_mode;                             /* 0x24: режим петли ABIF (1/2/4/0x10) */
-    u32 abif_88af00;                           /* 0x28: hwd_abif_get_88af00 (0x88af40) */
+    u32 abif_88af00;                           /* 0x28: hwd_abif_analog_lpbk_active_get (0x88af40) */
     u8  ifrx_pwdn;                             /* 0x2c: ifrx_pwdn RX */
     u8  rsv2d[3];                              /* 0x2d */
     u32 self_rx_mode;                          /* 0x30: 0x883010 б2 */
@@ -217,7 +217,7 @@ void abif_set_nibble_all_chains(u32 v);
 void hw_modes_set_loopback(u32 on, u32 b);
 void hwd_abif_battery_config(u32 a, u32 b);
 void hwd_abif_config_vga_rows(u32 idx, const u8 *gain);
-u32 hwd_abif_get_88af00(void);
+u32 hwd_abif_analog_lpbk_active_get(void);
 void hwd_abif_rx_prepare_ifrx_pwdn(u32 a);
 u32 hwd_abif_rx_prepared_ifrx_pwdn_get(void);
 u32 hwd_abif_rx_rgf_read_sar_dc(u32 a, u32 b, u32 c);
@@ -243,14 +243,14 @@ u32 hwd_abif_tx_table_index_force_en_get(void);
 void hwd_abif_tx_table_index_force_mode(u32 mode, u32 idx);
 u32 hwd_abif_tx_table_index_force_val_get(void);
 void hwd_abif_txrx_table_index_lpbk_mode(u32 a0, u32 a1);
-u32 hwd_abif_uses_rgf_88af80_8ce614(void);
-void hwd_args_to_regs_default(u32 a);
+u32 hwd_abif_lpbk_mode_get(void);
+void hwd_rfc_apply_gain_tables_for_mask(u32 a);
 void hwd_mac_trigger_sxd_tx_mode(u32 a);
-void hwd_mac_uses_rgf_886200(u32 v);
+void hwd_mac_prs_ctrl_calib_mode(u32 v);
 void hwd_phy_dbg_clk_enable(u32 on);
 u32 hwd_phy_dbg_clk_enable_get(void);
-u32 hwd_phy_get_883180(void);
-void hwd_phy_get_884100(u8 *out);
+u32 hwd_phy_rx_agc_steps_disabled(void);
+void hwd_phy_tx_predist_atten_man_get(u8 *out);
 u32 hwd_phy_get_rx_swap_iq(void);
 u32 hwd_phy_get_tx_swap_iq(void);
 void hwd_phy_read_sar_sample(u32 idx, u32 *out);
@@ -269,13 +269,13 @@ void hwd_phy_self_rx_mode_entry(void);
 void hwd_phy_self_tx_mode_entry(void);
 void hwd_phy_set_rx_swap_iq(u32 mode);
 void hwd_phy_set_tx_swap_iq(u32 mode);
-void hwd_phy_tx_ctrl_884070(u32 v);
+void hwd_phy_tx_ctrl_set(u32 v);
 void hwd_phy_tx_predist_atten_man_config(u32 en, u32 a1, u32 a2);
 void hwd_phy_tx_self_transmit(u32 n, u32 a1, u32 a2, u32 a3);
 void hwd_phy_tx_self_transmit_wait_completion(void);
 void hwd_phy_tx_singen_config(s32 f0, s32 f1, u32 amp);
 void hwd_phy_tx_singen_transmit(u32 v);
-u32 hwd_phy_uses_rgf_883100(u32 base, u32 d1, u32 d2, u32 d3, u32 d4);
+u32 hwd_phy_pack_agc_gain_arr(u32 base, u32 d1, u32 d2, u32 d3, u32 d4);
 void hwd_program_rf_regs_seq(u32 rf, u32 idx, u32 sel, u32 v0, u32 v1, u32 v2, u32 v3, u32 v4, u32 v5, u8 v6);
 void hwm_set_analog_path(u32 on, u32 tx_idx, u32 rx_idx);
 u32 phy_get_ina_rssi_adc_db(void);
@@ -283,17 +283,17 @@ u32 phy_get_rx_ina_det_mode(void);
 void phy_read_rx_counters(u32 *out);
 void rf_sector_commit_rx(u32 a, u32 b);
 void rf_sector_commit_tx(u32 a, u32 b);
-void rf_set_8894a0_field(u32 v);
+void rf_set_dvs_clk_cfg_level(u32 v);
 void rfc_pack_field_value(u32 unused, const u32 *src, u32 *dst, u32 a, u32 b, u32 c);
-void rfc_read_field_484(u32 rf, u32 *out);
-void rfc_write_gain_idx_reg504(const struct rf_obj *p, u32 a, u32 b);
-void txrx_sel(struct rf_obj *obj, u32 rf, u32 dir, u32 sector);
-void ut_hw_drivers_cmd_0x508(u32 rf, u32 idx, u32 v);
-void ut_hw_modes_step(u32 on, u32 tx_idx, u32 rx_idx);
+void rfc_read_lo_power_fields(u32 rf, u32 *out);
+void rfc_write_gain_index(const struct rf_obj *p, u32 a, u32 b);
+void rf_sector_commit_by_dir(struct rf_obj *obj, u32 rf, u32 dir, u32 sector);
+void ut_hw_drivers_cmd_tx_sector_gain_index(u32 rf, u32 idx, u32 v);
+void ut_hw_modes_set_analog_loopback(u32 on, u32 tx_idx, u32 rx_idx);
 
 /* fw/calib.c */
-u32 Calib_Measure_VGA_Gains(void);
-void IF_GAIN_GAIN(u32 mode, u32 sub, u32 act, struct if_gain_meas *out);
+u32 calib_measure_vga_gains(void);
+void if_gain_adjust(u32 mode, u32 sub, u32 act, struct if_gain_meas *out);
 void agc_get_table_pair(const struct calib_silent_rssi *p, u32 flag, u32 *out1, u32 *out2);
 u32 approx_magnitude(u32 a0, u32 a1);
 u32 approx_magnitude_b(struct calib_obj *obj, u32 b, u32 c);
@@ -302,12 +302,12 @@ u32 ber_test_accumulate_counters(u32 *ctx);
 void ber_test_copy_counters(u32 *dst, const u32 *ctx);
 void ber_test_measure(struct calib_obj *obj, u32 *ctx, u32 *best_xy, u32 *best_metric);
 u32 bitmap_expand_byte4_to_list(const struct calib_est *rfm, u8 *list);
-void bits_set32_s16_w4_ptr(u32 *p, u32 v);
+void silent_rssi_agc_word_set_param2(u32 *p, u32 v);
 void bytes_pick4_by_index(const calib_u8x4_t *idx, calib_u8x4_t lim, calib_row8_t r1, calib_row8_t r2, calib_row8_t r3, calib_row8_t r4, calib_u8x4_t *out);
 void calib_battery_phy_step(u32 shift, calib_vga_pt_t *out, calib_batt_meas_t *meas);
 void calib_battery_prepare(calib_batt_meas_t *out, u32 shift);
 u32 calib_bb_gain_pack_row(const u8 *src, u32 flag);
-void calib_bits_set32_s20_w12(u32 *p, u32 v);
+void calib_mask_set_mode(u32 *p, u32 v);
 void calib_classify_by_thresholds(struct calib_silent_rssi *obj, u32 module_idx);
 void calib_corr_estimate_and_apply_rx_gain(void);
 s32 calib_delta(u32 a, u32 b, u32 c);
@@ -333,24 +333,24 @@ void calib_lo_power_step(u32 bits3, u32 nibble, u32 *fields, u32 level);
 void calib_lo_power_step_save_mode(u32 bits3, u32 nibble, u32 *fields, u32 level);
 void calib_lo_power_substep(u32 *out, u32 idx, u32 target);
 void calib_lo_set_result(u32 *p, u32 a, u32 b, u32 c, u32 d);
-void calib_log_if_nonzero(u32 a, u32 flag);
+void calib_release_hw_if_flag(u32 a, u32 flag);
 void calib_obj_reset_results(struct calib_obj *o);
 void calib_release_hw_thunk(void);
 void calib_req_fill(struct calib_est *dst, u32 unused, u32 val, u32 byte, u32 val2);
-u32 *calib_results_addr_800a28(void);
-u32 *calib_results_addr_800a34(void);
+u32 *calib_lo_power_get_rfc_packed(void);
+u32 *calib_lo_power_get_rfc_saved(void);
 void calib_row_step(u32 row, const calib_u8x4_t *idx, calib_u8x4_t lim, calib_row8_t r1, calib_row8_t r2, calib_row8_t r3, calib_row8_t r4, u32 mode, u32 col, calib_vga_pt_t *meas, u8 *dc);
-void calib_sar_enable_path(u32 sar_off, u32 release);
+void calib_sar_disable_and_release(u32 sar_off, u32 release);
 u32 calib_sar_main(struct calib_obj *obj, u32 mask, u32 a2, u32 a3, struct calib_est *a4);
 void calib_sar_post(struct calib_obj *obj, u32 mask);
 void calib_sar_pre(struct calib_obj *obj, u32 mask);
 u32 calib_sar_step(u32 idx, u32 n, u32 avg, u32 thr);
-void calib_sar_step2(u32 shift);
+void calib_sar_final_step(u32 shift);
 void calib_setup_loopback_hw(u32 acquire, u32 abif, u32 phy, u32 sar, u32 shift);
-void calib_setup_loopback_hw_b(u32 acquire, u32 abif, u32 phy, u32 corr, u32 shift);
+void calib_setup_loopback_hw_corr(u32 acquire, u32 abif, u32 phy, u32 corr, u32 shift);
 void calib_setup_loopback_rx_path(void);
 void calib_silent_rssi_ctor(struct calib_silent_rssi *o);
-void calib_silent_rssi_flag_step(u32 a0, u32 a1, u32 a2, u32 a3);
+void calib_silent_rssi_clear_rf_regs_seq(u32 a0, u32 a1, u32 a2, u32 a3);
 u32 calib_silent_rssi_main(struct calib_obj *o, u32 mask, u32 a2, u32 a3, struct calib_est *a4);
 void calib_silent_rssi_post(struct calib_obj *obj, u32 mask);
 void calib_silent_rssi_pre(struct calib_obj *obj, u32 mask);
@@ -372,13 +372,13 @@ void hwf_calib_all(void);
 void hwf_calib_bb_gain_args(calib_vga_pt_t meas, const calib_u8x4_t *idx, calib_u8x4_t lim, calib_row8_t r1, calib_row8_t r2, calib_row8_t r3, calib_row8_t r4);
 void hwf_calib_bb_gain_create_table(u32 *tbl, calib_vga_pt_t best, calib_u8x4_t lim, calib_row8_t r1, calib_row8_t r2, calib_row8_t r3, calib_row8_t r4);
 u32 hwf_calib_bb_gain_rows(calib_u8x4_t lim, calib_row8_t r1, calib_row8_t r2, calib_row8_t r3, calib_row8_t r4, calib_vga_pt_t *out, u32 *tbl);
-u32 hwf_calib_lo_power_flow(u32 mode, u32 nibble, u32 f0, u32 f1, u32 f2, u32 level, u32 rf);
+u32 hwf_calib_lo_power_apply(u32 mode, u32 nibble, u32 f0, u32 f1, u32 f2, u32 level, u32 rf);
 void hwf_calib_release_hw(void);
 void hwf_calib_restore_path(void);
 u32 hwf_calib_sar_alg(u32 skip_step2, u32 thr, u32 idx);
 void hwf_dc_calib_fix_dac1(u32 lo, u32 hi, u32 mode);
 void hwf_if_gain_apply_agc_table(u32 a0);
-void hwf_set_agc_index_1c(struct calib_obj *obj, u32 x, u32 y);
+void hwf_set_lo_leak_ctrl(struct calib_obj *obj, u32 x, u32 y);
 u32 hwf_vga_dc_calibrate(u32 idx, u32 sel, u32 shift, u32 thr, u32 col);
 s32 hwf_vga_dc_measure(u32 sel, u32 shift);
 u32 if_gain(u32 a0);
@@ -386,17 +386,17 @@ void if_gain_apply_delta(s32 delta, struct if_gain_meas *out);
 u32 if_gain_compute_correction(u32 a0, const struct if_gain_meas *a1);
 u32 if_gain_get_scaled(u32 n);
 s32 if_gain_scale_value(u32 a, u32 c);
-u32 lo_power_calib_get_param_d0(void);
-u32 lo_power_calib_get_state_obj(void);
-u32 lo_power_calib_get_table_idx(void);
+u32 lo_power_calib_get_gc_ctrl(void);
+u32 lo_power_calib_get_stg2_bias(void);
+u32 lo_power_calib_get_xif_gc(void);
 void marlon_r_if_class_rf_hw_write_buffer(struct rf_obj *obj, u32 a1, const struct rf_reg_pair *buf, u32 len);
 u32 marlon_r_if_class_rf_write_with_block_retries(struct rf_obj *obj, u32 a1, const struct rf_reg_pair *buf, u32 len,
                                                   u32 blk, u32 retries, u32 fatal);
 u32 rf_mask_count_modules(const struct calib_est *rfm);
 u32 silent_rssi_agc_param_const_2(const struct calib_silent_rssi *obj, u32 idx);
 u32 silent_rssi_agc_param_const_4(const struct calib_silent_rssi *obj, u32 idx);
-void silent_rssi_bits_set32_s0_w6(u32 *p, u32 v);
-void silent_rssi_bits_set32_s12_w4(u32 *p, u32 v);
+void silent_rssi_agc_word_set_start(u32 *p, u32 v);
+void silent_rssi_agc_word_set_param4(u32 *p, u32 v);
 u32 silent_rssi_calibrate_single_rf_module(struct calib_silent_rssi *obj, u32 mask, u32 module_idx, const struct calib_est *rfm);
 u32 silent_rssi_hist_window_index(struct calib_silent_rssi *obj, u32 idx);
 void silent_rssi_load_params_a(struct calib_silent_rssi *obj);
@@ -405,6 +405,6 @@ void silent_rssi_report_agc_tables(void);
 void silent_rssi_set_agc_search_window(u32 start, u32 arr);
 void silent_rssi_set_rf_gain_index(struct calib_silent_rssi *obj, u32 idx, u32 a2, u32 a3, u32 a4, u32 a5);
 void sm_defer_call(void *obj, u32 event, u32 a2, u32 a3, u32 a4);
-void update_rf_xx_gains_tables(struct calib_silent_rssi *obj, u32 idx, u8 *a, u8 *b);
+void update_rf_gain_tables(struct calib_silent_rssi *obj, u32 idx, u8 *a, u8 *b);
 
 #endif

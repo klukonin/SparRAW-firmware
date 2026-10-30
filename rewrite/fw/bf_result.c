@@ -46,8 +46,8 @@ static void conn_store_bf_id(struct conn *conn, u32 v)
 void conn_update_bf_id_on_rs_done(struct conn *conn, u32 mcs)
 {
     u32 v = conn_threshold_to_offset(bf_thr_rs_mcs, (s32)mcs);
-    connection_cmp_bf_id(conn, v);
-    conn_store_bf_id(conn, connection_bf_id_at_6c(conn));
+    connection_bf_id_window_push(conn, v);
+    conn_store_bf_id(conn, connection_bf_id_window_avg(conn));
 }
 
 /* connection__on_bf_result (0x8c54ec, 102 Б): итог ABFT (st = e[0x30], a2 = e[0]).
@@ -63,8 +63,8 @@ void connection_on_bf_result(struct conn *conn, u32 st, u32 a2)
     if (st >= 3)
         fw_sysassert_fatal((void *)__builtin_return_address(0), 0x11c1);
     if (st != 0) {
-        connection_cmp_bf_id(conn, v);
-        v = connection_bf_id_at_6c(conn);
+        connection_bf_id_window_push(conn, v);
+        v = connection_bf_id_window_avg(conn);
     }
     conn_store_bf_id(conn, v);
 }
@@ -84,14 +84,14 @@ void scan_mngr_handle_abft_bf_result_in_scan(struct scan_mngr *s, const struct l
     key.lo = e->peer_lo;
     key.hi = e->peer_hi;
     fw_log_emit0(0x29, 0x1015aa8);
-    x = find_main_sm_bcon_step(&s->pend, (const u8 *)&key);
+    x = dband_info_find_by_bssid(&s->pend, (const u8 *)&key);
     if (x != 0) {
         x->bf_sector = e->tx_sector_b1;
         x->bf_time = e->snr;
         x->bf_kind = (u8)e->type;
         return;
     }
-    if (find_main_sm_bcon_step(&s->scanned, (const u8 *)&key) != 0)
+    if (dband_info_find_by_bssid(&s->scanned, (const u8 *)&key) != 0)
         return;
     if (s->pend.count >= 8) {
         fw_log_emit0(0x19, 0x1015ad4);
@@ -110,7 +110,7 @@ void scan_mngr_handle_abft_bf_result_in_scan(struct scan_mngr *s, const struct l
     x->status = DBAND_ST_ABFT;
     x->conn = 0;
     x->rx_omni = s->rx_omni;
-    list_find_entry_d(&s->pend, x);
+    llist_append(&s->pend, x);
     fw_log_emit2(0x29, 0x1015b8c, x->bssid_hi, x->bssid_lo);
     fw_log_emit1(0x29, 0x1015a1c, (u32)x->list);
     u_schd_add(scan_mngr_connect_task, (u32)s, (u32)x, 1);
@@ -150,7 +150,7 @@ void dashboard_bf_results(const struct lmac_evt_bf_done *e, struct conn *conn)
 /* ba_sm__lookup_stream (0x8eaad8, 86 Б): в IE Extended Schedule (eid 0x90) сдвинуть
  * Allocation Start (LE u32 по +6 каждого 15-байтного поля распределения) на BI (мкс)
  * и пересобрать бикон (add_bcon([p+0x10])). Число полей — ie[1] / 15 (знаковое). */
-static void ba_sm_lookup_stream(struct sched_scheme *p, u8 *ie)
+static void bcn_ext_sched_shift_by_bi(struct sched_scheme *p, u8 *ie)
 {
     u32 bi = mac_get_beacon_interval_us();
     u32 n = (u8)fw_divmod_signed(ie[1], 0xf);
@@ -170,12 +170,12 @@ static void ba_sm_lookup_stream(struct sched_scheme *p, u8 *ie)
 /* mid__lookup_at_48 (0x8eaab0, 38 Б): блок IE бикона app_ie MID (объект mid+0x48,
  * подтип 8 → +0x1e0) — при наличии Extended Schedule сдвиг на BI ([mid+0x290]).
  * Возврат vendor — мусор r0 (0 / результат add_bcon), вызывающие его не читают. */
-u32 mid_lookup_at_48(struct mid *mid)
+u32 mid_shift_bcn_ext_sched(struct mid *mid)
 {
-    u8 *ie = app_ie_find_by_eid(mid_get_bcon_additional_ies(&mid->bss, 8), 0x90);
+    u8 *ie = app_ie_find_by_eid(mid_get_app_ies_by_subtype(&mid->bss, 8), 0x90);
     if (ie == 0)
         return 0;
-    ba_sm_lookup_stream(mid->sched, ie);                /* ld.as r0,[r13,164] */
+    bcn_ext_sched_shift_by_bi(mid->sched, ie);                /* ld.as r0,[r13,164] */
     return 0;
 }
 

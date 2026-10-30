@@ -22,20 +22,20 @@ static inline u32 mode_nibbles(u32 m)
 __attribute__((section(".textlate"))) void hwd_dma_set_power_mode_map(u32 mode);
 __attribute__((section(".textlate"))) void hwd_mac_set_power_mode_map(u32 mode);
 __attribute__((section(".textlate"))) void hwd_pcie_set_mode_map(u32 mode);
-__attribute__((section(".textlate"))) void hwd_phy_uses_rgf_880c00_8d1d34(u32 mode);
-__attribute__((section(".textlate"))) void mac_set_880bf0_mode_fw(u32 mode);
-__attribute__((section(".textlate"))) void mac_set_880afc_bits26_31_fw(u32 on);
-__attribute__((section(".textlate"))) void pcie_apply_mode_fw_8825c0(u32 mode);
-__attribute__((section(".textlate"))) void hwd_phy_enable_880a80(u32 on);
-__attribute__((section(".textlate"))) void hwd_phy_enable_880b00(u32 on);
-__attribute__((section(".textlate"))) void hwd_phy_uses_rgf_880c00_8d1d04(u32 on);
+__attribute__((section(".textlate"))) void hwd_phy_set_power_mode_map(u32 mode);
+__attribute__((section(".textlate"))) void mac_set_power_mode_map_bf0(u32 mode);
+__attribute__((section(".textlate"))) void mac_set_sw_clk_vec2_high(u32 on);
+__attribute__((section(".textlate"))) void pcie_apply_clk_mode_flags(u32 mode);
+__attribute__((section(".textlate"))) void hwd_phy_clk_vec_enable(u32 on);
+__attribute__((section(".textlate"))) void hwd_phy_rst_vec_enable(u32 on);
+__attribute__((section(".textlate"))) void hwd_phy_pwr_ctl_enable(u32 on);
 __attribute__((section(".textlate"))) void hwd_pcie_set_clk_gating(u32 on);
-__attribute__((section(".textlate"))) void hwd_abif_rgf_880b00(u32 on);
+__attribute__((section(".textlate"))) void hwd_abif_set_clk_vec3(u32 on);
 __attribute__((section(".textlate"))) void hwd_phy_power_up_seq(u32 on);
 __attribute__((section(".textlate"))) void hwd_phy_pwr_fw(u32 value);
 
 /* ============================ power_halt_seq ============================ */
-__attribute__((section(".textlate"))) u32 hwd_dma_get_881bf0_bit27(void)
+__attribute__((section(".textlate"))) u32 hwd_dma_get_ep_misc_icr_b27(void)
 {
     return (MMIO32(HW_RGF_DMA_EP_MISC_ICR_ICR) >> 27) & 1u;
 }
@@ -53,7 +53,7 @@ __attribute__((section(".textlate"))) void hwd_abif_bgap_ctrl(u32 on)
         MMIO32(ABIF_SENSOR_BGAP_CTRL) &= ~1u;
 }
 
-__attribute__((section(".textlate"))) void abif_set_ctrl48_bit18(u32 on)
+__attribute__((section(".textlate"))) void abif_adc_sar_vreg_set_b18(u32 on)
 {
     if (on == 1)
         MMIO32(HW_ABIF_ADC_SAR_VREG_CTRL) |= (1u << 18);
@@ -81,25 +81,25 @@ __attribute__((section(".textlate"))) void abif_mode_switch(u32 on)
 __attribute__((section(".textlate"))) void hw_modes_program_rf_clocks(u32 on)
 {
     if (on == 1) {
-        hwd_program_889_group(0);
+        hwd_rf_clocks_enable(0);
         hwd_abif_fs_off(0);
-        hwd_abif_uses_rgf_889480_8ced4c(1);
+        hwd_abif_dvs_clocks_enable(1);
     } else {
-        hwd_abif_uses_rgf_889480_8ced4c(0);
+        hwd_abif_dvs_clocks_enable(0);
         hwd_abif_fs_on(radio_get_channel(&rf_obj));
-        hwd_program_889_group(1);
+        hwd_rf_clocks_enable(1);
     }
 }
 
-__attribute__((section(".textlate"))) void ut_hw_modes_cmd_0x30b(u32 on)
+__attribute__((section(".textlate"))) void hw_modes_set_adc_sar_vreg_b18(u32 on)
 {
-    abif_set_ctrl48_bit18(on == 1 ? 1u : 0u);
+    abif_adc_sar_vreg_set_b18(on == 1 ? 1u : 0u);
 }
 
 __attribute__((section(".textlate"))) void hw_modes_enable_pll(void)
 {
     abif_mask_pll_unlock_irq();
-    hwd_wait_pll_lock();
+    clk_switch_to_ref();
     hwd_abif_adc_clk_ctrl(0);
     abif_power_up_analog(0);
 }
@@ -126,14 +126,14 @@ __attribute__((section(".textlate"))) void mac_set_usec_clk_div(u32 div, u32 rel
 __attribute__((section(".textlate"))) void hw_modes_pll_bypass(void)
 {
     hwd_abif_rosc_ctrl(1);
-    ut_hw_drivers_cmd_0x203();
+    ut_hw_drivers_pll_bypass_step();
     hwd_abif_xtal_ctrl(0);
 }
 
 __attribute__((section(".textlate"))) void hw_modes_pll_engage(void)
 {
     hwd_abif_xtal_ctrl(1);
-    hwd_wait_pll_lock();
+    clk_switch_to_ref();
     hwd_abif_rosc_ctrl(0);
 }
 
@@ -152,7 +152,7 @@ __attribute__((section(".textlate"))) void hw_pll_mode_switch(u32 on, u32 arg)
     }
 }
 
-__attribute__((section(".textlate"))) void ut_hw_modes_cmd_0x304_fw(u32 on, u32 arg)
+__attribute__((section(".textlate"))) void hw_modes_set_pll_bypass(u32 on, u32 arg)
 {
     if (arg == 0) {
         if (on == 1) {
@@ -188,9 +188,9 @@ __attribute__((section(".textlate"))) void hw_modes_apply_power_mode(u32 mode, u
         fw_sysassert_fatal((void *)0, 0x12dd);
     if (fl[0] & 1u)  hwd_dma_set_power_mode_map(mode);
     if (fl[0] & 2u)  hwd_pcie_set_mode_map(mode);
-    if (fl[0] & 4u)  hwd_phy_uses_rgf_880c00_8d1d34(mode);
+    if (fl[0] & 4u)  hwd_phy_set_power_mode_map(mode);
     if (fl[0] & 8u)  hwd_mac_set_power_mode_map(mode);
-    if (fl[0] & 16u) mac_set_880bf0_mode_fw(mode);
+    if (fl[0] & 16u) mac_set_power_mode_map_bf0(mode);
 }
 
 /* 0x803830: таблица переходов vendor hwd_dma__set_power_mode_map (0x8d0908): ldb.x, 5 записей, цель = 0x8d0924 + 2·запись.
@@ -264,7 +264,7 @@ FWDATA(8038ec) __attribute__((aligned(1))) const u8 hwd_phy_uses_rgf_880c00_8d1d
 };
 
 /* hwd_phy__set_power_mode_map (0x8d1d34): 0x880c08 — bmsk 0x1b (биты 0..27). */
-__attribute__((section(".textlate"))) void hwd_phy_uses_rgf_880c00_8d1d34(u32 mode)
+__attribute__((section(".textlate"))) void hwd_phy_set_power_mode_map(u32 mode)
 {
     if (POWER_MODE_BAD(mode))
         fw_sysassert_fatal((void *)0, 0x12da);
@@ -280,7 +280,7 @@ FWDATA(803958) __attribute__((aligned(1))) const u8 mac_set_880bf0_mode_fw_jt[5]
 };
 
 /* (0x8d0144): младший байт 0x880bf0 = extb(mode<<4 | mode) (нулевое расширение). */
-__attribute__((section(".textlate"))) void mac_set_880bf0_mode_fw(u32 mode)
+__attribute__((section(".textlate"))) void mac_set_power_mode_map_bf0(u32 mode)
 {
     if (POWER_MODE_BAD(mode))
         fw_sysassert_fatal((void *)0, 0x12d7);
@@ -291,14 +291,14 @@ __attribute__((section(".textlate"))) void mac_set_880bf0_mode_fw(u32 mode)
 __attribute__((section(".textlate"))) void hwm_apply_mode_flags(u32 mode, u32 *flags)
 {
     volatile u32 *fl = flags;
-    if (fl[0] & 1u)  mac_set_880afc_bits26_31_fw(mode);
-    if (fl[0] & 2u)  pcie_apply_mode_fw_8825c0(mode);
-    if (fl[0] & 4u)  hwd_phy_enable_880a80(mode);
+    if (fl[0] & 1u)  mac_set_sw_clk_vec2_high(mode);
+    if (fl[0] & 2u)  pcie_apply_clk_mode_flags(mode);
+    if (fl[0] & 4u)  hwd_phy_clk_vec_enable(mode);
     if (fl[0] & 8u)  hwd_pcie_set_clk_gating(mode);
-    if (fl[0] & 16u) hwd_abif_rgf_880b00(mode);
+    if (fl[0] & 16u) hwd_abif_set_clk_vec3(mode);
 }
 
-__attribute__((section(".textlate"))) void ut_hw_modes_cmd_0x308(u32 on, u32 *flags)
+__attribute__((section(".textlate"))) void hw_modes_apply_power_state(u32 on, u32 *flags)
 {
     u32 f = *flags;
     if (on != 0) {
@@ -316,7 +316,7 @@ __attribute__((section(".textlate"))) void ut_hw_modes_cmd_0x308(u32 on, u32 *fl
 /* ============================ PHY ============================ */
 
 /* (0x8d2158) */
-__attribute__((section(".textlate"))) void hwd_phy_enable_880b00(u32 on)
+__attribute__((section(".textlate"))) void hwd_phy_rst_vec_enable(u32 on)
 {
     if (on != 0) {
         MMIO32(HW_RGF_USER_CLKS_CTL_SW_RST_VEC_1) |= 0x3fu;
@@ -330,7 +330,7 @@ __attribute__((section(".textlate"))) void hwd_phy_enable_880b00(u32 on)
 }
 
 /* (0x8d1b2c) */
-__attribute__((section(".textlate"))) void hwd_phy_enable_880a80(u32 on)
+__attribute__((section(".textlate"))) void hwd_phy_clk_vec_enable(u32 on)
 {
     if (on != 0) {
         MMIO32(HW_CLKS_CTL_SW_CLK_VEC_0) = (MMIO32(HW_CLKS_CTL_SW_CLK_VEC_0) & 0x3ffffu) | 0xfffc0000u;
@@ -344,7 +344,7 @@ __attribute__((section(".textlate"))) void hwd_phy_enable_880a80(u32 on)
 }
 
 /* (0x8d1d04): три отдельных RMW 0x880c78 — биты 3, 4, 5 по одному (как vendor). */
-__attribute__((section(".textlate"))) void hwd_phy_uses_rgf_880c00_8d1d04(u32 on)
+__attribute__((section(".textlate"))) void hwd_phy_pwr_ctl_enable(u32 on)
 {
     if (on != 0) {
         MMIO32(HW_PHY_PWR_CTL) &= ~(1u << 3);
@@ -363,17 +363,17 @@ __attribute__((section(".textlate"))) void hwd_phy_uses_rgf_880c00_8d1d04(u32 on
 __attribute__((section(".textlate"))) void hwd_phy_power_up_seq(u32 on)
 {
     if (on != 0) {
-        hwd_phy_uses_rgf_880c00_8d1d34(4);
-        hwd_phy_enable_880b00(1);
-        hwd_phy_enable_880a80(1);
-        hwd_phy_uses_rgf_880c00_8d1d04(1);
+        hwd_phy_set_power_mode_map(4);
+        hwd_phy_rst_vec_enable(1);
+        hwd_phy_clk_vec_enable(1);
+        hwd_phy_pwr_ctl_enable(1);
         hwd_phy_pwr_fw(0);
     } else {
         hwd_phy_pwr_fw(1);
-        hwd_phy_uses_rgf_880c00_8d1d04(0);
-        hwd_phy_enable_880a80(0);
-        hwd_phy_enable_880b00(0);
-        hwd_phy_uses_rgf_880c00_8d1d34(0);
+        hwd_phy_pwr_ctl_enable(0);
+        hwd_phy_clk_vec_enable(0);
+        hwd_phy_rst_vec_enable(0);
+        hwd_phy_set_power_mode_map(0);
         hwd_phy_init();
     }
 }
@@ -416,7 +416,7 @@ __attribute__((section(".textlate"))) void hwd_phy_pwr_fw(u32 value)
 /* ============================ PCIe/mac apply-mode ============================ */
 
 /* (0x8d04b8) */
-__attribute__((section(".textlate"))) void mac_set_880afc_bits26_31_fw(u32 on)
+__attribute__((section(".textlate"))) void mac_set_sw_clk_vec2_high(u32 on)
 {
     if (on != 0)
         MMIO32(HW_CLKS_CTL_SW_CLK_VEC_2) = (MMIO32(HW_CLKS_CTL_SW_CLK_VEC_2) & 0x43ffffffu) | 0xbc000000u;
@@ -425,7 +425,7 @@ __attribute__((section(".textlate"))) void mac_set_880afc_bits26_31_fw(u32 on)
 }
 
 /* (0x8d00cc) */
-__attribute__((section(".textlate"))) void hwd_abif_rgf_880b00(u32 on)
+__attribute__((section(".textlate"))) void hwd_abif_set_clk_vec3(u32 on)
 {
     if (on != 0)
         MMIO32(HW_CLKS_CTL_SW_CLK_VEC_3) = (MMIO32(HW_CLKS_CTL_SW_CLK_VEC_3) & ~0x1b0u) | 0x1b0u;
@@ -447,16 +447,16 @@ __attribute__((section(".textlate"))) void hwd_pcie_set_clk_gating(u32 on)
 
 /* (0x8d10c8): [0x8825c0] читается сразу после hwd_pcie_is_ep_under_serdes — и тогда,
  * когда дальше выход. */
-__attribute__((section(".textlate"))) void pcie_apply_mode_fw_8825c0(u32 mode)
+__attribute__((section(".textlate"))) void pcie_apply_clk_mode_flags(u32 mode)
 {
     u32 serdes = hwd_pcie_is_ep_under_serdes();
     u32 r14 = MMIO32(HW_PCIE_MODE_FLAGS);
     if (serdes != 0)
         return;
     u32 flag = ((r14 >> 2) & 1u) || ((r14 >> 3) & 1u);
-    mac_set_880afc_bits9_11(flag & mode);
-    mac_set_bits_880af4_f8_fc((r14 & 1u) & mode);
+    mac_sw_clk_vec2_set_bits9_11(flag & mode);
+    mac_sw_clk_vec_set_b8_19_4((r14 & 1u) & mode);
     u32 b1 = (r14 >> 1) & 1u;
-    mac_set_880af8_afc_b25_b5(b1 & mode);
-    mac_set_880af8_afc_b30_b6(b1 & mode);
+    mac_sw_clk_vec_set_b25_b5(b1 & mode);
+    mac_sw_clk_vec_set_b30_b6(b1 & mode);
 }

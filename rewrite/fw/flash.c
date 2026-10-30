@@ -38,7 +38,7 @@ void boot_save_mac_address(u8 *mac)
 }
 
 /* Конфигурация ABIF через регистр 0x88afb4 (v — 6-битное значение). */
-void hwd_abif_uses_rgf_88af80(s32 v)
+void hwd_abif_set_ppm(s32 v)
 {
     if (v & ~0x3f)
         fw_sysassert_fatal((void *)0, 0xac);
@@ -76,7 +76,7 @@ void boot_load_from_flash(void)
         fw_log_emit2(0x10, 0x100182c, r15, 0x3f);
         r15 = 0;
     }
-    hwd_abif_uses_rgf_88af80((s32)r15);
+    hwd_abif_set_ppm((s32)r15);
 
     fw_log_emit1(0x20, 0x1001860, cfg->lo_power_xif_gc);
     fw_log_emit1(0x20, 0x1001860, 0);

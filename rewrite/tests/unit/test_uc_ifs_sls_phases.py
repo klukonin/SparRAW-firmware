@@ -6,7 +6,7 @@ RSS, SSW-Ack — MBIFS после SSW-Feedback; вне SLS ответы — че
 MAC отсчитывает ответ/прямую передачу от регистра 0x886d00 (uc/bf.c txss_resp_flow, uc/abft.h H-ORIGIN), поэтому
 проверяется значение этого регистра в момент передачи кадра SLS (вызов функции передачи в трассе) и после выхода из
 потока: MBIFS, оставленный после BF, растянул бы SIFS-ответы (Ack/BA/DMG CTS) до 9 мкс и сорвал бы их у пира.
-Сценарии — целые потоки (txss_init_flow, txss_resp_flow, txss_init_send_fdbk_wait_ack, mac_mode_kick) с заглушками
+Сценарии — целые потоки (txss_init_flow, txss_resp_flow, txss_init_send_fdbk_wait_ack, abft_initiator_feedback_loop) с заглушками
 ожиданий эфира."""
 import pytest
 
@@ -33,12 +33,12 @@ HW_MAC_USEC_TO_TBTT = 0x886ec0
 PEER = bytes.fromhex('24181d243b0b')
 
 # передача SSW-Ack (sls_send_ssw_ack) без эфира: FIFO, RF и ожидания событий не исполняются
-ACK_TX_STUBS = {'direct_tx_program_cmd34': 0, 'mac_program_tx_common': 0, 'rx_funcs_send_direct_frame': 0,
+ACK_TX_STUBS = {'direct_tx_program_desc': 0, 'mac_program_tx_common': 0, 'direct_tx_send_frame': 0,
                 'mac_evt_enable_bit_sync_b': 0, 'mac_set_rf_chain_state_with_sta_sector': 0}
 
 
 def idle(uc):
-    """MAC сконфигурирован (fw: lmac_if_send_init_cfg), регистр и тень — SIFS."""
+    """MAC сконфигурирован (fw: lmac_if_send_mac_init_cfg), регистр и тень — SIFS."""
     lmac_mac_cfg(uc)
     assert ifs_clk(uc.r16(MAC_IFS_SHADOW)) == SIFS_CLK
     return uc
@@ -131,7 +131,7 @@ def test_responder_txss_ack_after_mbifs_and_restores_sifs(uc, iss_ok, fb_ok):
 
 
 RX_STUBS = {'uc_wait_event_busy': 0, 'rx_parse_ssw_field': 0, 'rx_end_switch_to_tx': 0,
-            'rx_funcs_record_level_8020f8_8020fc': 0, 'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0}
+            'bf_rep_record_snr_level': 0, 'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0}
 
 
 def test_iss_reception_loads_mbifs(uc):
@@ -144,7 +144,7 @@ def test_iss_reception_loads_mbifs(uc):
     uc.w32(TXRX_STATE2, 0x100000)
     uc.w16(RX_BUF_SSW, 0)
     uc.ext.update({38: 0, 36: 1 << 6, 37: 1 << 24, 39: 0})
-    uc.call('rx_funcs_handle_ppdu_report', stub=RX_STUBS)
+    uc.call('rx_handle_ppdu_report', stub=RX_STUBS)
     assert ifs_after(uc, init) == MBIFS_CLK
     assert ifs_clk(uc.r16(MAC_IFS_SHADOW)) == MBIFS_CLK
 
@@ -174,7 +174,7 @@ def test_ack_to_retried_feedback_after_mbifs(uc):
     uc.wbytes(STA_TAB + 0x30, PEER)
     uc.w16(RX_BUF_DURATION, 28)
     uc.ext.update({36: 1 << 6, 37: 1 << 25, 42: 1 << 15})
-    uc.call('sls_rx_ssw_frame', stub=dict(ACK_TX_STUBS, rx_parse_ssw_field=0, rx_funcs_record_level_8020f8_8020fc=0,
+    uc.call('sls_rx_ssw_frame', stub=dict(ACK_TX_STUBS, rx_parse_ssw_field=0, bf_rep_record_snr_level=0,
                                           sta_set_tx_sector=0))
     tx = [i for i, e in enumerate(uc.last_trace)
           if e[0] == 'extreg' and e[1] == 'w' and e[2] == 32 and (e[4] >> 24) == 0x19]
@@ -185,13 +185,13 @@ def test_ack_to_retried_feedback_after_mbifs(uc):
 # ---- A-BFT (AP) -----------------------------------------------------------------------------------------------
 
 def test_abft_ap_mbifs_during_abft_then_sifs(uc):
-    """AP в A-BFT (mac_mode_kick): SSW-Feedback на SSW станции — через MBIFS (10.42.5.2: Feedback начинается за
+    """AP в A-BFT (abft_initiator_feedback_loop): SSW-Feedback на SSW станции — через MBIFS (10.42.5.2: Feedback начинается за
     aSSFBDuration + MBIFS до конца слота; MAC отсчитывает его от 0x886d00), по окончании A-BFT (r54.6) — SIFS."""
     idle(uc)
     init = uc.r32(HW_MAC_IFS_SIFS)
     uc.ext[54] = lambda n, k: 0 if k == 0 else 1 << 6       # один слот A-BFT, затем конец
-    uc.call('mac_mode_kick', 0x806900, stub={'uc_spin_until_event4': 0, 'mac_mode_program_c': 0})
-    assert ifs_at_call(uc, 'mac_mode_program_c', init) == [MBIFS_CLK]
+    uc.call('abft_initiator_feedback_loop', 0x806900, stub={'uc_spin_until_event4': 0, 'abft_rx_ssw_tx_feedback': 0})
+    assert ifs_at_call(uc, 'abft_rx_ssw_tx_feedback', init) == [MBIFS_CLK]
     assert_back_to_sifs(uc, init)
 
 
@@ -202,8 +202,8 @@ def tx_cmd_indices(uc):
             if e[0] == 'extreg' and e[1] == 'w' and e[2] == 32 and (e[4] >> 24) == 0x19]
 
 
-GRANT_ACK_STUBS = {'direct_tx_program_cmd34': 0, 'mac_program_tx_with_rate': 0, 'tx_fifo_write_bytes': 0,
-                   'uc_wait_direct_tx_ready': 0, 'direct_tx_issue_cmd_33': 0}
+GRANT_ACK_STUBS = {'direct_tx_program_desc': 0, 'mac_program_tx_with_rate': 0, 'tx_fifo_write_bytes': 0,
+                   'uc_wait_direct_tx_ready': 0, 'direct_tx_commit': 0}
 
 
 @pytest.mark.parametrize('flow,stubs', [
@@ -222,7 +222,7 @@ def test_sifs_response_after_bf_uses_sifs(uc, flow, stubs):
     uc.call(flow, 0, stub=stubs)
     init = uc.r32(HW_MAC_IFS_SIFS)
     uc.w16(RX_BUF_DURATION, 100)
-    uc.call('rx_send_dmg_cts', stub=GRANT_ACK_STUBS)
+    uc.call('rx_send_grant_ack', stub=GRANT_ACK_STUBS)
     tx = tx_cmd_indices(uc)
     assert tx
     assert ifs_clk(reg_at(uc, HW_MAC_IFS_SIFS, tx[0], init) & 0xffff) == SIFS_CLK

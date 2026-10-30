@@ -242,7 +242,7 @@
 0x800370 u32 l2_false_alarm_count              # [gp,0x1ec]: счётчик ложных тревог (потерь связи) high false alarm
 0x800374 u32 l2_false_alarm_lock_time          # [gp,0x1f0]: длительность последнего захвата радио при потере связи (мкс×16)
 0x800378 volatile u32 pcie_perst_assert_irq_en # [gp,0x1f4]: разрешить прерывание PERST assert (1)
-0x80037c volatile u32 pcie_perst_cfg_fix_en    # [gp,0x1f8]: правка DBI 0x10/0x14 в pcie_perst_handler_step (1)
+0x80037c volatile u32 pcie_perst_cfg_fix_en    # [gp,0x1f8]: правка DBI 0x10/0x14 в pcie_perst_reprogram_bars (1)
 0x800384 u32 rf_rfc_div_restart_count          # [gp,0x200]: счётчик перезапусков делителя RFC
 0x800388 u32 calib_first_run_delay             # [gp,0x204]: задержка первого запуска движка калибровки, мкс (20000)
 0x80038c volatile u32 temp_first_meas_done        # [gp,0x208]: первое измерение температуры выполнено (UT 10/32 — статус)
@@ -309,7 +309,7 @@
 0x8004c5 volatile u8 wmi_rf_sector_set_first   # [gp,0x341]: первый WMI_SET_RF_SECTOR_PARAMS — сбросить объект 0x804848 (1)
 0x8004c6 volatile u16 rf_pwr_on_hold           # [gp,0x342]: выдержка включения RF, TSF (не меньше 0x2328; WMI_RF_PWR_ON_DELAY)
 0x8004c8 volatile u16 rf_pwr_on_extra_delay    # [gp,0x344]: доп. задержка ×80×2 nop после SDP 4 = 1 (WMI_RF_PWR_ON_DELAY)
-0x8004cc u8[8] calib_lo_power_tidx_map         # 0x8004cc: индекс таблицы LO power режима 1 по lo_power_calib_get_table_idx (calib_lo_power_main), образ {0,0,0,4,0,4,4,6}
+0x8004cc u8[8] calib_lo_power_tidx_map         # 0x8004cc: индекс таблицы LO power режима 1 по lo_power_calib_get_xif_gc (calib_lo_power_main), образ {0,0,0,4,0,4,4,6}
 0x8004d4 ext[8] disconn_sm_state_names         # имена состояний автомата разрыва (описатель 0x8027a0) — include/link_sm.h, fw/link_sm.c
 0x8004dc ext[8] link_stats_sm_state_names      # имена состояний автомата статистики линка (описатель 0x802f58) — include/link_sm.h, fw/link_sm.c
 0x8004e8 volatile u32 scan_probe_timeout_us # [gp,0x364]: таймаут ответа на probe при скане
@@ -327,7 +327,7 @@
 0x800514 u32 calib_vga_dc_fine_force           # [gp,0x390]: разовый запрос G_RX_VGA_RANGE_CONFIG.VGA_DC_FINE_FORCE
 0x800518 u8 calib_sar_idx                      # 0x800518: индекс/сдвиг SAR (calib_sar_step idx; маска петли 1<<idx), образ 0xc
 0x800519 u8 calib_sar_thr                      # 0x800519: порог SAR-шага hwf_calib_sar_alg, образ 1
-0x80051a u8 calib_sar_skip_step2               # 0x80051a: != 0 — без calib_sar_step2 после SAR-итераций, образ 1
+0x80051a u8 calib_sar_skip_step2               # 0x80051a: != 0 — без calib_sar_final_step после SAR-итераций, образ 1
 0x80051c u32 calib_if_gain_retry_count         # 0x80051c: число повторных if_gain (a0 = 1); 0 — при полной (a0 = 0)
 0x800520 u32 ps_halt_dma_b27                   # 0x800520: бит 27 RGF DMA 0x881bf0, снятый в power_halt_seq (a = 1); 0 — шаг 7 при halt/wake
 0x800524 volatile u32 phy_rx_stats_clear_time  # 0x800524: время u_schd последнего сброса статистики PHY RX
@@ -388,9 +388,9 @@
 0x800bdc ext[36] phy_ina_det_cfg               # конфигурация PHY INA-детектора (LMAC 0x20 при lmac_ready; sniffer) — fw/lmac.c
 0x800c00 ext[12] lmac_edca_mode_cw             # CW AC по режиму EDCA 0..2 (edca__fill_ac_table_by_mode) — fw/lmac.c
 0x800c0c u32 lmac_edca_cur_mode                # 0x800c0c: последний режим EDCA-таблицы, посланный LMAC (команда 0x04); = — не слать
-0x800c10 ext[12] creg_ctor_obj_80426c_vtable  # регистрация конструктора ctor_obj_80426c_vtable (prio 0x0) — fw/ctors.c
-0x800c1c ext[12] creg_ctor_obj_8042c8  # регистрация конструктора ctor_obj_8042c8 (prio 0x0) — fw/ctors.c
-0x800c28 ext[12] creg_ctor_pairs_804914  # регистрация конструктора ctor_pairs_804914 (prio 0x0) — fw/ctors.c
+0x800c10 ext[12] creg_ctor_obj_80426c_vtable  # регистрация конструктора ctor_lmac_mbox_vtable (prio 0x0) — fw/ctors.c
+0x800c1c ext[12] creg_ctor_obj_8042c8  # регистрация конструктора ctor_rf_obj (prio 0x0) — fw/ctors.c
+0x800c28 ext[12] creg_ctor_pairs_804914  # регистрация конструктора ctor_rf_sector_sel_reqs (prio 0x0) — fw/ctors.c
 0x800c34 ext[36] sdp_port_cfg           # слова конфигурации SDP-портов 0..8 (u32[9]: пин, функция GPIO, выход, начальное значение, прерывание, персональность) — include/sys_cfg.h, fw/hw_init.c
 0x800c58 ext[12] creg_ctor_calib_engines  # регистрация конструктора ctor_calib_engines (prio 0x0) — fw/ctors.c
 0x800c64 ext[320] calib_srssi_temp_tbl  # таблицы температурных классов silent RSSI 0/1 (2 × 0xa0; текущая — [0x800408]) — include/calib.h, fw/calib.c
@@ -400,74 +400,74 @@
 0x800de0 ext[16] calib_eng_sm_state_names  # имена состояний автомата движка калибровки (описатель 0x802234) — fw/calib_engine.c
 0x800df0 ext[24] calib_eng_sm_event_names  # имена событий автомата движка калибровки (описатель 0x802234) — fw/calib_engine.c
 0x800e08 u32[6] calib_engine_corr_count           # 0x800e08: число шагов коррекции (READY_FOR_CORRECTION) движка
-0x800e20 ext[12] creg_ctor_sm_802234_id  # регистрация конструктора ctor_sm_802234_id (prio 0x0) — fw/ctors.c
+0x800e20 ext[12] creg_ctor_sm_802234_id  # регистрация конструктора ctor_calib_engine_sm_id (prio 0x0) — fw/ctors.c
 0x800e2c ext[380] calib_schemes             # схемы калибровки (5 × 0x4c) — include/calib_engine.h, fw/calib_engine.c
 0x800fa8 ext[40] calib_scheme_idx           # номер схемы [pcp_ap][системное состояние] (2 × 5) — fw/calib_engine.c
 0x800fd0 ext[16] calib_lo_power_bb_thr      # пороги температурных состояний LO power, BB — fw/calib_engine.c
 0x800fe0 ext[16] calib_lo_power_rf_thr      # пороги температурных состояний LO power, RF — fw/calib_engine.c
 0x800ff0 ext[12] rf_kill_sm_state_names  # имена состояний автомата RF kill (описатель 0x802338) — fw/rf_kill.c
 0x800ffc ext[16] rf_kill_sm_event_names  # имена событий автомата RF kill (описатель 0x802338) — fw/rf_kill.c
-0x80100c ext[12] creg_ctor_sm_802338_id  # регистрация конструктора ctor_sm_802338_id (prio 0x0) — fw/ctors.c
-0x801018 ext[12] creg_ctor_obj_804dbc_vtables  # регистрация конструктора ctor_obj_804dbc_vtables (prio 0x0) — fw/ctors.c
-0x801024 ext[12] creg_ctor_array_854dd4  # регистрация конструктора ctor_array_854dd4 (prio 0x0) — fw/ctors.c
-0x801030 ext[12] creg_ctor_obj_804e90_vtable  # регистрация конструктора ctor_obj_804e90_vtable (prio 0x0) — fw/ctors.c
+0x80100c ext[12] creg_ctor_sm_802338_id  # регистрация конструктора ctor_rf_mgmt_sm_id (prio 0x0) — fw/ctors.c
+0x801018 ext[12] creg_ctor_obj_804dbc_vtables  # регистрация конструктора ctor_vring_schd_vtables (prio 0x0) — fw/ctors.c
+0x801024 ext[12] creg_ctor_array_854dd4  # регистрация конструктора ctor_ll_detectors (prio 0x0) — fw/ctors.c
+0x801030 ext[12] creg_ctor_obj_804e90_vtable  # регистрация конструктора ctor_mid_disc_vtable (prio 0x0) — fw/ctors.c
 0x80103c ext[16] bf_thr_abft_direct  # пороги BF id итога ABFT st 0 (s32[4]) — fw/bf_result.c
 0x80104c ext[16] bf_thr_abft_win  # пороги BF id итога ABFT st 1 (s32[4]) — fw/bf_result.c
 0x80105c ext[16] bf_thr_rs_mcs  # пороги BF id по MCS RS done (s32[4]) — fw/bf_result.c
-0x80106c ext[12] creg_ctor_array_847b48  # регистрация конструктора ctor_array_847b48 (prio 0x0) — fw/ctors.c
+0x80106c ext[12] creg_ctor_array_847b48  # регистрация конструктора ctor_stream_ctxs (prio 0x0) — fw/ctors.c
 0x801078 ext[12] mlme_sm_state_names  # имена состояний автомата MLME (описатель 0x802458) — fw/mlme.c
 0x801084 ext[56] mlme_sm_event_names  # имена событий автомата MLME (описатель 0x802458) — fw/mlme.c
-0x8010bc ext[12] creg_ctor_sm_802458_id  # регистрация конструктора ctor_sm_802458_id (prio 0x0) — fw/ctors.c
+0x8010bc ext[12] creg_ctor_sm_802458_id  # регистрация конструктора ctor_mlme_sm_id (prio 0x0) — fw/ctors.c
 0x8010c8 ext[36] conn_main_sm_state_names  # имена состояний conn_main_sm (описатель 0x802744) — fw/conn.c
 0x8010ec ext[44] conn_main_sm_event_names  # имена событий conn_main_sm (описатель 0x802744) — fw/conn.c
-0x801118 ext[12] creg_ctor_sm_802754_id  # регистрация конструктора ctor_sm_802754_id (prio 0x0) — fw/ctors.c
+0x801118 ext[12] creg_ctor_sm_802754_id  # регистрация конструктора ctor_conn_msm_id (prio 0x0) — fw/ctors.c
 0x801124 ext[28] disc_flush_sm_event_names  # имена событий автомата разрыва sm_8027a0 (описатель 0x8027a0; имена состояний — 0x8004d4) — fw/link_sm.c
-0x801140 ext[12] creg_ctor_sm_802758_id  # регистрация конструктора ctor_sm_802758_id (prio 0x0) — fw/ctors.c
-0x80114c volatile u32[9] temp_first_meas         # первое измерение: [0] BB, [1 + i] RF i, м°C (perform_first_measurement_operations; UT 10/32)
+0x801140 ext[12] creg_ctor_sm_802758_id  # регистрация конструктора ctor_conn_disc_sm_id (prio 0x0) — fw/ctors.c
+0x80114c volatile u32[9] temp_first_meas         # первое измерение: [0] BB, [1 + i] RF i, м°C (temp_store_and_calibrate_first_meas; UT 10/32)
 0x801170 ext[192] rssi_snr_lut_keys  # LUT RSSI → SNR: ключи (s32[48]) — fw/sysapi_stats.c
 0x801230 ext[192] rssi_snr_lut_vals  # LUT RSSI → SNR: значения SNR (s32[48]) — fw/sysapi_stats.c
 0x8012f0 ext[26] mcs_phy_rate_mbps  # PHY-скорость MCS 0..12, Мбит/с (u16[13]) — fw/sysapi_stats.c
-0x80130c ext[12] creg_ctor_obj_805170  # регистрация конструктора ctor_obj_805170 (prio 0x0) — fw/ctors.c
+0x80130c ext[12] creg_ctor_obj_805170  # регистрация конструктора ctor_fw_sysapi_mgr (prio 0x0) — fw/ctors.c
 0x801318 ext[20] ba_sm_state_names  # имена состояний ba_sm (описатель 0x80296c) — fw/ba.c
 0x80132c ext[48] ba_sm_event_names  # имена событий ba_sm (описатель 0x80296c) — fw/ba.c
-0x80135c ext[12] creg_ctor_sm_802940_id  # регистрация конструктора ctor_sm_802940_id (prio 0x0) — fw/ctors.c
+0x80135c ext[12] creg_ctor_sm_802940_id  # регистрация конструктора ctor_stream_sm_id (prio 0x0) — fw/ctors.c
 0x801368 ext[28] ba_setup_sm_state_names  # имена состояний ba_setup_sm (описатель 0x802b50) — fw/ba.c
 0x801384 ext[52] ba_setup_sm_event_names  # имена событий ba_setup_sm (описатель 0x802b50) — fw/ba.c
-0x8013b8 ext[12] creg_ctor_sm_802b08_id  # регистрация конструктора ctor_sm_802b08_id (prio 0x0) — fw/ctors.c
+0x8013b8 ext[12] creg_ctor_sm_802b08_id  # регистрация конструктора ctor_ba_setup_sm_id (prio 0x0) — fw/ctors.c
 0x8013c4 ext[12] ba_wait_sm_state_names  # имена состояний wait_sm (описатель 0x802ba0) — адреса строк в DCCM (0x802bb4..) — fw/ba.c
 0x8013d0 ext[16] ba_wait_sm_event_names  # имена событий wait_sm (описатель 0x802ba0) — адреса строк в DCCM — fw/ba.c
-0x8013e0 ext[12] creg_ctor_sm_802b64_id  # регистрация конструктора ctor_sm_802b64_id (prio 0x0) — fw/ctors.c
-0x8013ec ext[12] creg_ctor_obj_842840_vtables  # регистрация конструктора ctor_obj_842840_vtables (prio 0x0) — fw/ctors.c
-0x8013f8 ext[12] creg_ctor_g8002f0_vtable  # регистрация конструктора ctor_g8002f0_vtable (prio 0x0) — fw/ctors.c
-0x801404 ext[12] creg_ctor_obj_805234  # регистрация конструктора ctor_obj_805234 (prio 0x0) — fw/ctors.c
+0x8013e0 ext[12] creg_ctor_sm_802b64_id  # регистрация конструктора ctor_wait_sm_id (prio 0x0) — fw/ctors.c
+0x8013ec ext[12] creg_ctor_obj_842840_vtables  # регистрация конструктора ctor_rx_pkt_srvs_vtables (prio 0x0) — fw/ctors.c
+0x8013f8 ext[12] creg_ctor_g8002f0_vtable  # регистрация конструктора ctor_eapol_builder_vtable (prio 0x0) — fw/ctors.c
+0x801404 ext[12] creg_ctor_obj_805234  # регистрация конструктора ctor_sched_scheme (prio 0x0) — fw/ctors.c
 0x801410 ext[16] maintain_sm_state_names  # имена состояний maintain_sm (описатель 0x802cc4) — fw/link_sm.c
 0x801420 ext[40] maintain_sm_event_names  # имена событий maintain_sm (описатель 0x802cc4) — fw/link_sm.c
 0x801448 ext[52] maintain_lt_period  # период долгосрочного BF по MCS 0..12 (u32[13]) — include/link_sm.h, fw/link_sm.c
 0x80147c ext[34] maintain_rs_cfg  # шаблон LMAC 0x13 (первые 0x22 Б struct wmi_rs_cfg; mcs_en_vec — следующие 2) — fw/link_sm.c
 0x80149e volatile u16 link_mcs_en_vec_lo       # 0x80149e: разрешённые MCS, младшие 16 бит (0x1dde / 0x1de / 0x10)
 0x8014a0 volatile u16 link_mcs_en_vec_hi       # 0x8014a0: разрешённые MCS, старшие 16 бит
-0x8014a4 ext[12] creg_ctor_sm_802cc4_id  # регистрация конструктора ctor_sm_802cc4_id (prio 0x0) — fw/ctors.c
+0x8014a4 ext[12] creg_ctor_sm_802cc4_id  # регистрация конструктора ctor_maintain_sm_id (prio 0x0) — fw/ctors.c
 0x8014b0 ext[16] lmac_bf_ctrl_tpl        # шаблон LMAC 0x10 (struct lmac_cmd_bf_ctrl) — include/lmac_cmd.h, fw/conn.c
 0x8014c0 ext[28] lm_sm_state_names  # имена состояний lm_sm (описатель 0x802da0) — fw/link_sm.c
 0x8014dc ext[48] lm_sm_event_names  # имена событий lm_sm (описатель 0x802da0) — fw/link_sm.c
-0x80150c ext[12] creg_ctor_sm_802da0_id  # регистрация конструктора ctor_sm_802da0_id (prio 0x0) — fw/ctors.c
+0x80150c ext[12] creg_ctor_sm_802da0_id  # регистрация конструктора ctor_lm_sm_id (prio 0x0) — fw/ctors.c
 0x801518 ext[144] ll_cfg_presets  # наборы параметров поддержания линка 0..3 (struct ll_cid_cfg) — include/link_loss.h, fw/l2mgr.c
 0x8015cc ext[24] link_stats_sm_event_names  # имена событий автомата статистики линка sm_802f58 (описатель 0x802f58; имена состояний — 0x8004dc) — fw/link_sm.c
-0x8015e4 ext[12] creg_ctor_sm_802f58_id  # регистрация конструктора ctor_sm_802f58_id (prio 0x0) — fw/ctors.c
-0x8015f0 ext[12] creg_ctor_obj_8052e4  # регистрация конструктора ctor_obj_8052e4 (prio 0x0) — fw/ctors.c
+0x8015e4 ext[12] creg_ctor_sm_802f58_id  # регистрация конструктора ctor_link_stats_sm_id (prio 0x0) — fw/ctors.c
+0x8015f0 ext[12] creg_ctor_obj_8052e4  # регистрация конструктора ctor_ese_sched (prio 0x0) — fw/ctors.c
 0x8015fc ext[12] creg_ctor_swc_psc_sm  # регистрация конструктора ctor_swc_psc_sm (prio 0x0) — fw/ctors.c
 0x801608 ext[28] chsw_sm_state_names  # имена состояний channels_switch_sm (описатель 0x802fb4) — fw/scan.c
 0x801624 ext[32] chsw_sm_event_names  # имена событий channels_switch_sm (описатель 0x802fb4) — fw/scan.c
-0x801644 ext[12] creg_ctor_scan_timeout_and_sm_802fb4  # регистрация конструктора ctor_scan_timeout_and_sm_802fb4 (prio 0x0) — fw/ctors.c
+0x801644 ext[12] creg_ctor_scan_timeout_and_sm_802fb4  # регистрация конструктора ctor_scan_timeout_and_ch_switch_sm_id (prio 0x0) — fw/ctors.c
 0x801650 ext[60] swc_psc_sm_trans  # переходы swc_psc_sm [4][3] (описатель 0x8030e0) — fw/scan.c
 0x80168c ext[12] swc_psc_sm_state_names  # имена состояний swc_psc_sm (описатель 0x8030e0) — fw/scan.c
 0x801698 ext[16] swc_psc_sm_event_names  # имена событий swc_psc_sm (описатель 0x8030e0) — fw/scan.c
-0x8016a8 ext[12] creg_ctor_sm_8030e0_id  # регистрация конструктора ctor_sm_8030e0_id (prio 0x0) — fw/ctors.c
+0x8016a8 ext[12] creg_ctor_sm_8030e0_id  # регистрация конструктора ctor_swc_psc_sm_id (prio 0x0) — fw/ctors.c
 0x8016b4 ext[20] find_sm_state_names  # имена состояний find_sm (описатель 0x8030f4) — fw/link_sm.c
 0x8016c8 ext[28] find_sm_event_names  # имена событий find_sm (описатель 0x8030f4) — fw/link_sm.c
-0x8016e4 ext[12] creg_ctor_sm_8030f4_id  # регистрация конструктора ctor_sm_8030f4_id (prio 0x0) — fw/ctors.c
+0x8016e4 ext[12] creg_ctor_sm_8030f4_id  # регистрация конструктора ctor_find_sm_id (prio 0x0) — fw/ctors.c
 0x8016f0 ext[12] creg_ctor_fwq_tx_vtables  # регистрация конструктора ctor_fwq_tx_vtables (prio 0x0) — fw/ctors.c
-0x8016fc ext[12] creg_ctor_obj_805fe4_vtable  # регистрация конструктора ctor_obj_805fe4_vtable (prio 0x0) — fw/ctors.c
+0x8016fc ext[12] creg_ctor_obj_805fe4_vtable  # регистрация конструктора ctor_rx_ring_vtable (prio 0x0) — fw/ctors.c
 0x801708 ext[12] creg_radio_mgr_install_vtable  # регистрация конструктора radio_mgr_install_vtable (prio 0x0) — fw/ctors.c
 0x801714 ext[24] rm_sm_state_names  # имена состояний rm_sm (описатель 0x803210) — fw/radio_mgr.c
 0x80172c ext[48] rm_sm_event_names  # имена событий rm_sm (описатель 0x803210) — fw/radio_mgr.c
@@ -475,11 +475,11 @@
 0x801768 ext[12] rm_ch_switch_sm_state_names  # имена состояний rm_ch_switch_sm (описатель 0x80338c) — fw/radio_mgr.c
 0x801774 ext[28] rm_ch_switch_sm_event_names  # имена событий rm_ch_switch_sm (описатель 0x80338c) — fw/radio_mgr.c
 0x801790 ext[12] creg_rm_ch_switch_sm_desc_set_id  # регистрация конструктора rm_ch_switch_sm_desc_set_id (prio 0x0) — fw/ctors.c
-0x80179c ext[12] creg_ctor_obj_84e7e0_vtable  # регистрация конструктора ctor_obj_84e7e0_vtable (prio 0x0) — fw/ctors.c
+0x80179c ext[12] creg_ctor_obj_84e7e0_vtable  # регистрация конструктора ctor_phy_monitor_vtable (prio 0x0) — fw/ctors.c
 0x8017d8 ext[12] creg_ctor_sm_803424_id  # регистрация конструктора ctor_sm_803424_id (prio 0x0) — fw/ctors.c
 0x801818 ext[12] creg_ctor_g800360_and_sm_8034c0  # регистрация конструктора ctor_g800360_and_sm_8034c0 (prio 0x0) — fw/ctors.c
 0x801824 ext[256] if_gain_log2_frac  # дробная часть log2 (u16[128], if_gain_scale_value) — fw/calib.c
-0x801924 ext[12] creg_ctor_obj_80676c_vtable  # регистрация конструктора ctor_obj_80676c_vtable (prio 0x0) — fw/ctors.c
+0x801924 ext[12] creg_ctor_obj_80676c_vtable  # регистрация конструктора ctor_calib_all_lo_power_vtable (prio 0x0) — fw/ctors.c
 0x801930 ext[36] calib_vga_cfg                # таблица VGA-калибровки (calib_vga_cfg_t: лимиты строк + коды усиления 4 столбцов) — include/calib.h, fw/calib.c
 0x801954 u8[19] calib_if_predist_atten_tbl    # аттенюатор предыскажения TX по индексу (IF_GAIN::GAIN out[2] < 0x13)
 0x801968 u8[18] calib_if_dac_fssel_tbl        # DAC fssel TX по индексу (IF_GAIN::GAIN out[4] < 0x12)
@@ -494,7 +494,7 @@
 0x801ad4 volatile u8[32] abif_rx_sar_dc_sh    # сдвиг 5-битного поля SAR DC
 0x801af4 u32[5] abif_rx_vga_bias_word         # слово строки поля VGA bias ступени 1..5 (запись)
 0x801b08 volatile u32[5] abif_rx_vga_bias_rd_word # то же для чтения (копия)
-0x801b2c ext[12] creg_ctor_empty_8005b8  # регистрация конструктора ctor_empty_8005b8 (prio 0x80) — fw/ctors.c
+0x801b2c ext[12] creg_ctor_empty_8005b8  # регистрация конструктора ctor_empty (prio 0x80) — fw/ctors.c
 0x801b38 u32[13] unk_801b38                     # образ {8,0x10,…,0x2000,0x7d00,-1}: степени двойки 8..8192, 32000, маркер -1. Обращений в vendor fw нет: ни литерала/limm 0x801b38..0x801b6b в коде (tools: поиск LE и middle-endian limm по .fw, 6.2/src/asm/fw), ни указателя в fw_data (RELOCS-NUM-fw: «середина линейного кода» — числа таблицы)
 0x801b6c ext[21] vendor_jt_stats_read_counter_by_id  # таблица переходов switch vendor stats__read_counter_by_id (0x8dd7c8) (не используется) — fw/misc_ext_sysapi.c
 0x801b84 s8[32] unk_801b84                      # образ {-29 ×8, -21 ×22, 0, -21}: s8-таблица (вероятно пороги дБм по индексу). Обращений в vendor fw нет: ни литерала/limm 0x801b84..0x801ba3 в коде (поиск LE и middle-endian limm по .fw, 6.2/src/asm/fw), ни указателя в fw_data
@@ -575,9 +575,9 @@
 0x802c34 ext[36] dma_ring_cfg                       # конфигурация DMA-колец [9][4] (dma_mgr_configure_ring, fw/dma_ring.c)
 0x802c58 ext[15] rx_mgmt_srvs_distribute_jt         # таблица переходов vendor rx_mgmt_srvs__distribute (у нас switch; не читается)
 0x802c68 ext[11] rx_mgmt_prs_parse_jt               # таблица переходов vendor rx_mgmt_prs__parse (у нас switch; не читается)
-0x802c74 ext[56] set_parse_ei_jt0                   # таблица переходов vendor set_parse_ei (у нас switch; не читается)
-0x802cac ext[9] set_parse_ei_jt1                   # таблица переходов vendor set_parse_ei (у нас switch; не читается)
-0x802cb8 ext[9] set_parse_ei_jt2                   # таблица переходов vendor set_parse_ei (у нас switch; не читается)
+0x802c74 ext[56] set_parse_ei_jt0                   # таблица переходов vendor rx_mgmt_store_ie (у нас switch; не читается)
+0x802cac ext[9] set_parse_ei_jt1                   # таблица переходов vendor rx_mgmt_store_ie (у нас switch; не читается)
+0x802cb8 ext[9] set_parse_ei_jt2                   # таблица переходов vendor rx_mgmt_store_ie (у нас switch; не читается)
 0x802cc4 ext[20] maintain_sm_desc                   # описатель автомата maintain_sm (struct sm_desc; ид пишет конструктор) — fw/link_sm.c
 0x802cd8 ext[200] maintain_sm_trans                  # таблица переходов maintain_sm [10][4] (struct sm_trans) — fw/link_sm.c
 0x802da0 ext[20] lm_sm_desc                         # описатель автомата lm_sm (struct sm_desc; ид пишет конструктор) — fw/link_sm.c
@@ -604,8 +604,8 @@
 0x8035b4 ext[8] sysapi_tmpl_phy_rx_stats           # шаблон фильтра fw_sysapi__start_phy_rx_stats — fw/phy_ext.c
 0x8035f0 ext[8] sysapi_tmpl_ch_est                 # шаблон фильтра hw_sysapi_channel_estimation — fw/phy_ext.c
 0x803600 ext[146] ut_module_hw_flows_sysapi_cmd_handler_jt # таблица переходов vendor UT_MODULE_HW_FLOWS_SYSAPI_cmd_handler (у нас switch; не читается)
-0x803694 u32[3] calib_lo_power_cur_init         # исходные поля RFC 0x484 (нули образа) — копия в hwf_calib_lo_power_flow перед rfc_read_field_484
-0x8036a0 u32[3] calib_lo_power_packed_init      # исходные упакованные поля (нули образа) — hwf_calib_lo_power_flow → rfc_pack_field_value
+0x803694 u32[3] calib_lo_power_cur_init         # исходные поля RFC 0x484 (нули образа) — копия в hwf_calib_lo_power_apply перед rfc_read_lo_power_fields
+0x8036a0 u32[3] calib_lo_power_packed_init      # исходные упакованные поля (нули образа) — hwf_calib_lo_power_apply → rfc_pack_field_value
 0x8036b0 ext[12] ut_hw_flows_operational_cmd_handler_jt0 # таблица переходов vendor UT_HW_FLOWS_OPERATIONAL_cmd_handler (у нас switch; не читается)
 0x8036bc ext[14] ut_hw_flows_operational_cmd_handler_jt1 # таблица переходов vendor UT_HW_FLOWS_OPERATIONAL_cmd_handler (у нас switch; не читается)
 0x8036cc ext[16] hwf_calib_acquire_hw_jt            # таблица переходов vendor hwf_calib__acquire_hw (у нас switch; не читается)
@@ -623,7 +623,7 @@
 0x80381c ext[5] hw_modes_apply_power_mode_jt       # таблица переходов vendor hw_modes__apply_power_mode (у нас switch; не читается)
 0x803824 ext[9] ut_hw_modes_cmd_handler_jt         # таблица переходов vendor UT_HW_MODES_cmd_handler (у нас switch; не читается)
 0x803830 ext[5] hwd_dma_set_power_mode_map_jt      # таблица переходов vendor hwd_dma__set_power_mode_map (у нас switch; не читается)
-0x803838 ext[168] phy_tx_filter_coef                 # коэффициенты TX-фильтра PHY u16[84] (phy_load_88416c_table, fw/phy.c)
+0x803838 ext[168] phy_tx_filter_coef                 # коэффициенты TX-фильтра PHY u16[84] (phy_load_tx_fir_coef_table, fw/phy.c)
 0x8038e0 ext[4] phy_program_channel_regs_jt        # таблица переходов vendor phy__program_channel_regs (у нас switch; не читается)
 0x8038e4 ext[6] hwd_phy_set_rx_swap_iq_jt          # таблица переходов vendor hwd_phy__set_rx_swap_iq (у нас switch; не читается)
 0x8038ec ext[5] hwd_phy_uses_rgf_880c00_8d1d34_jt  # таблица переходов vendor hwd_phy__uses_rgf_880c00_8d1d34 (у нас switch; не читается)
@@ -638,7 +638,7 @@
 0x803954 ext[4] channel_check_range_jt             # таблица переходов vendor channel__check_range (у нас switch; не читается)
 0x803958 ext[5] mac_set_880bf0_mode_fw_jt          # таблица переходов vendor mac__set_880bf0_mode_fw (у нас switch; не читается)
 0x803966 ext[9] vendor_unref_803966                # не используется (держит образ fw_data)
-0x803970 ext[16] mac_parser_step_a_rules            # правила mac_parser_step_a u32[4] (fw/mac_parser.c)
+0x803970 ext[16] mac_parser_step_a_rules            # правила mac_parser_install_rules_a u32[4] (fw/mac_parser.c)
 0x803980 ext[15] hwd_mac_parser_set_rx_filter_jt0   # таблица переходов vendor hwd_mac_parser__set_rx_filter (у нас switch; не читается)
 0x803990 ext[11] hwd_mac_parser_set_rx_filter_jt1   # таблица переходов vendor hwd_mac_parser__set_rx_filter (у нас switch; не читается)
 0x8039f4 ext[88] ut_hw_drivers_cmd_handler_jt0      # таблица переходов vendor UT_HW_DRIVERS_cmd_handler (у нас switch; не читается)
@@ -665,7 +665,7 @@
 0x804848 ext[204] wmi_rf_sector_set     # запрос WMI_SET_RF_SECTOR_PARAMS, ждущий радио (struct wmi_rf_sector_set_req) — include/wmi.h, fw/wmi_h_bf.c
 0x804914 ext[16] rf_sector_sel          # запросы GET/SET_SELECTED_RF_SECTOR_INDEX (2 × 8 Б) — include/mbox.h, fw/wmi_h_bf.c
 0x804924 ext[440] calib_mngr                # CALIB_MNGR: флаги и таймеры схем, автоматы движков (struct calib_mngr) — include/calib_engine.h, fw/calib_engine.c
-0x804adc ext[128] calib_rf_gain_tbl         # копия таблицы усилений RF со сдвигом (update_rf_xx_gains_tables, 16 × 8 Б) — fw/calib.c
+0x804adc ext[128] calib_rf_gain_tbl         # копия таблицы усилений RF со сдвигом (update_rf_gain_tables, 16 × 8 Б) — fw/calib.c
 0x804b5c ext[216] calib_silent_rssi_obj     # объект класса silent RSSI (struct calib_silent_rssi, движок 4) — include/calib_engine.h, fw/calib_engine.c
 0x804c34 ext[8] rf_mgmt_sm                # объект автомата RF kill (struct basic_sm; описатель 0x802338) — include/rf_kill.h, fw/l2mgr.c
 0x804c3c ext[4] operational_mbox_ref            # struct operational_mbox * — ящик событий хосту (sched__step: = operational_if__mbox_init) — include/mbox.h, fw/stubs.c

@@ -25,7 +25,7 @@ BF — [BF-ENGINE.md](BF-ENGINE.md); протокол команд fw→ucode и
 @0x929738 (572 Б, печатает `L1_TASK PRE TBTT`) **[код]**. Внутри:
 `bi_manager__l1_entry_b`, `bi_manager__l1_rx_entry`,
 `bi_manager__run_rx_flow_by_kind` (окна BTI/A-BFT/AW/DTI), `bi_ap_mon_if__trigger`,
-`l1_bi_trigger_step`, `grant_detect_step`, `bf_sm__check_request_timeout`
+`l1_bi_trigger_step`, `rx_nav_check_idle`, `bf_sm__check_request_timeout`
 (таймауты запросов BF), `power_manager__tick_if_elapsed`,
 `l1_task__check_pending`, `l1_task__kick_and_dispatch`. События L1 — GP-таймеры
 (биты r54); автомат BI ведут GP-таймеры. Путь L1 → DTI-передача —
@@ -54,7 +54,7 @@ BF — [BF-ENGINE.md](BF-ENGINE.md); протокол команд fw→ucode и
 | 0 | 0x922016 | попадает в середину `mac_counter__program_3009` — вход, вероятно, не используется |
 
 Бит снимается `rw_g_800630_921fb0` перед вызовом. Нет заданий →
-`background_bi_step` @0x936bac (с запретом прерываний, `flag`). Фоновый
+`pm_idle_try_enter` @0x936bac (с запретом прерываний, `flag`). Фоновый
 диспетчер BF `bf_sm__background_step` — [BF-ENGINE.md](BF-ENGINE.md).
 
 ### 1.4. Окно AW [4.1]
@@ -153,7 +153,7 @@ fw трогает 388 адресов `fw_data`, ucode — 288, **пересеч�
 | `0x802224` | `calib_silent_rssi_sparrow::run_calibration_fragment` | калибровка silent-RSSI |
 | `0x801a8c` | `hwd_rfc_read_calibrate`, `hwd_rfc_read_handle_driver_input` | обмен с RF-калибровкой |
 | `0x80147c` | `maintain_sm::config_mcs_en_vec` | вектор разрешённых MCS (link maintain → ucode); см. замечание |
-| `0x80114c` | `perform_first_measurement_operations` | первичные измерения |
+| `0x80114c` | `temp_store_and_calibrate_first_meas` | первичные измерения |
 | `0x800000` | `evt_table_ptr` | базовая таблица событий |
 
 Самые «горячие» для ucode адреса `fw_data` вне пересечения (пишет только ucode):
@@ -310,7 +310,7 @@ Long Range — сторож записи в память).
   `phy_params__snapshot` 0x93cedc (параметры PHY принятого PPDU) [6.2].
 * РЧ [6.2]: `hw__power_sequence_rf` 0x92ab40, `hw__power_step` 0x929eec,
   `hwd_rfc_powerup_deep_all_rfs` 0x92a0a0 / `hwd_rfc_powerdown_deep_all_rfs` 0x929fa0,
-  `hwd_rfc_read_rgf_uc` 0x92a1cc, `rf_utils_auto_fill_uc` 0x92ed84 (580 Б — автозаполнение
+  `hwd_rfc_read_rgf_uc` 0x92a1cc, `rfc_auto_fill_apply` 0x92ed84 (580 Б — автозаполнение
   регистров RF по шаблону) с проверкой `hwd_rfc_auto_fill_verify` 0x93e7c4 и шагом
   `rf_utils__fill_step` 0x929f34, `rfc__issue_cmd_20_uc` 0x92f8c8, `rfc__clear_core_reg1` 0x929f94.
 

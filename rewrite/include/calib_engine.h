@@ -155,7 +155,7 @@ struct calib_silent_rssi {
     };
     u8  tbl_rewrite;                           /* 0xd0: число полных переписей таблицы усилений */
     u8  rsv_d1[3];
-    u32 rf_idx;                                /* 0xd4: RF-индекс (сектор) для txrx_sel */
+    u32 rf_idx;                                /* 0xd4: RF-индекс (сектор) для rf_sector_commit_by_dir */
 };
 CE_OFF(struct calib_silent_rssi, rf_gain2, 0x28);
 CE_OFF(struct calib_silent_rssi, agc_start, 0x38);
@@ -175,7 +175,7 @@ enum { CE_ST_IDLE = 0, CE_ST_CHECK_CORRECTION_NEEDED = 1, CE_ST_WAIT_FOR_RADIO_L
        CE_ST_CORRECTION = 3 };
 enum { CE_EV_START = 0, CE_EV_READY_FOR_CORRECTION = 1, CE_EV_LOCK_RADIO = 2,
        CE_EV_FRAG_DONE = 3, CE_EV_CALIB_DONE = 4, CE_EV_ABORT = 5 };
-/* Описатель (ид [0x10] пишет ctor_sm_802234_id) и таблица переходов — fw/calib_engine.c. */
+/* Описатель (ид [0x10] пишет ctor_calib_engine_sm_id) и таблица переходов — fw/calib_engine.c. */
 extern struct sm_desc calib_engine_sm_desc;                   /* 0x802234 */
 extern const struct sm_trans calib_engine_sm_table[6][4];     /* 0x802248 */
 

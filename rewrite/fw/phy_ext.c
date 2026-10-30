@@ -42,13 +42,13 @@ s32 rx_energy_calc_rssi_q4(u32 adc, u32 gain, u32 a2, u32 a3)
 }
 
 /* phy__get_885178_3bit (0x8d1b88, 12 Б). */
-u32 phy_get_885178_3bit(void)
+u32 phy_get_ram_read_sel(void)
 {
     return MMIO32(PHY_RAM_READ_SEL) & 7u;
 }
 
 /* phy__set_885178_3bit (0x8d1b94, 42 Б): v вне 3 бит — ассерт 0xac (затем запись как есть). */
-void phy_set_885178_3bit(u32 v)
+void phy_set_ram_read_sel(u32 v)
 {
     if (v & ~7u)
         fw_sysassert_fatal(CALLER(), 0xac);
@@ -146,13 +146,13 @@ u32 phy_rx_read_rssi_adc_locked(void)
 }
 
 /* phy__get_88312c_6bit (0x8d25a8, 12 Б): стартовый индекс AGC. */
-u32 phy_get_88312c_6bit(void)
+u32 phy_get_ina_agc_start(void)
 {
     return MMIO32(HW_PHY_RX_INA_AGC_START) & 0x3fu;
 }
 
 /* phy__get_88306c_6bit (0x8d25b4, 12 Б). */
-u32 phy_get_88306c_6bit(void)
+u32 phy_get_agc_row(void)
 {
     return MMIO32(HW_PHY_RX_AGC_ROW) & 0x3fu;
 }
@@ -277,7 +277,7 @@ void hwd_phy_tx_predist_iq_config(u32 en, u32 a, u32 b)
 
 /* Режим выборки буфера в 0x8801e0: биты 6..8 — бит 6 всегда 1, бит 7 = b7, бит 8 = b8
  * (общий кусок hwd_phy__recording_mode_set и hwd_phy__tx_play_buffer_start). */
-static void phy_rec_window_bits(void *caller, u32 b7, u32 b8)
+static void phy_rec_set_mem_banks(void *caller, u32 b7, u32 b8)
 {
     if (b7 & ~1u)
         fw_sysassert_fatal(caller, 0xb0);
@@ -327,7 +327,7 @@ void hwd_phy_recording_get(u32 off, u32 n, u32 *out)
 
 /* hwd_phy__recording_mode_set (0x8d1fc8, 400 Б): режим записи PHY.
  *   mode (знаковый): <= 1 — окно 1 банк, выборка 1; 2 — 2 банка, 3; > 2 — 3 банка, 7.
- *   0x8801e0[8:6] — окно (см. phy_rec_window_bits), 0x8838a8[2:0] — выборка.
+ *   0x8801e0[8:6] — окно (см. phy_rec_set_mem_banks), 0x8838a8[2:0] — выборка.
  *   save_rx != 0: запомнить биты 0 и 2 0x883010, на время настройки RX выкл. (бит 0 = 0,
  *   бит 2 = 1, бит 0 = 1 — тремя отдельными RMW, как vendor) и вернуть в конце.
  *   src: бит 0 0x8838a4 = (src != 4); src == 0xb — ещё раз сбросить бит 0, к src бит 15.
@@ -340,7 +340,7 @@ void hwd_phy_recording_mode_set(u32 mode, u32 save_rx, u32 trig, u32 src, u32 le
     u32 sel = ((s32)mode > 2) ? 7u : (1u + (b7 << 1));
     u32 rx_en = 0, rx_b2 = 0;
 
-    phy_rec_window_bits(CALLER(), b7, b8);
+    phy_rec_set_mem_banks(CALLER(), b7, b8);
     if (sel & ~7u)
         fw_sysassert_fatal(CALLER(), 0xac);
     MMIO32(PHY_REC_RAM_MASK) = (MMIO32(PHY_REC_RAM_MASK) & ~7u) | sel;
@@ -400,7 +400,7 @@ void hwd_phy_tx_play_buffer_start(u32 en, u32 len, u32 val)
     MMIO32(PHY_TX_PLAY_BUFFER_MODE) = (MMIO32(PHY_TX_PLAY_BUFFER_MODE) & ~1u) | en;
     MMIO32(HW_PHY_TX_EN) |= 1u;
 
-    phy_rec_window_bits(CALLER(), len > 2047u ? 1u : 0u, len > 0xfffu ? 1u : 0u);
+    phy_rec_set_mem_banks(CALLER(), len > 2047u ? 1u : 0u, len > 0xfffu ? 1u : 0u);
 
     MMIO32(PHY_TX_PLAY_BUFFER_START_ADDR) &= 0xffffe000u;
     if (len & 0xffffe000u)
@@ -463,9 +463,9 @@ void hwd_phy_rx_read_and_parse_brp_ram(u32 unused, u32 row, u8 *out, u32 len)
     (void)unused;
     fw_log_emit1(0x20, 0x101db60, len);
     (void)hwd_phy_dbg_clk_enable_get();
-    u32 saved = phy_get_885178_3bit();
+    u32 saved = phy_get_ram_read_sel();
     hwd_phy_dbg_clk_enable(1);
-    phy_set_885178_3bit(3);
+    phy_set_ram_read_sel(3);
     MMIO32(PHY_BRP_RAM_CTL) &= ~(1u << 2);
     MMIO32(PHY_BRP_RAM_CTL) |= 1u;
 
@@ -490,7 +490,7 @@ void hwd_phy_rx_read_and_parse_brp_ram(u32 unused, u32 row, u8 *out, u32 len)
         }
     }
     hwd_phy_dbg_clk_enable(0);
-    phy_set_885178_3bit(saved);
+    phy_set_ram_read_sel(saved);
 }
 
 /* hwd_phy_rx_sar_rssi_measure (0x8d2968, 232 Б): SAR-измерение мощности по n отсчётам.
@@ -540,7 +540,7 @@ void hwd_phy_rx_sar_rssi_measure(u32 n, s32 *out)
 /* channel_est__stack_args (0x8dbe54, 50 Б): LMAC-команда type (0xc Б): 5 байт фильтра
  * (пара слов w0/w1, переданная по значению на стеке) и слово w2 по +8. Байты 5..7 тела
  * vendor не пишет (остаётся содержимое элемента пула). */
-void channel_est_stack_args(u32 type, u32 w0, u32 w1, u32 w2)
+void lmac_if_send_meas_filter(u32 type, u32 w0, u32 w1, u32 w2)
 {
     u32 f[2];
     f[0] = w0;
@@ -554,7 +554,7 @@ void channel_est_stack_args(u32 type, u32 w0, u32 w1, u32 w2)
 /* channel_est__clamp_64 (0x8f9070, 58 Б; vendor-имя неточно): таймаут запроса
  * mgr->timeout = max(timeout, 100) (беззнаково); прежний таймер снять, новый — cb(mgr)
  * через mgr->timeout (u_schd_schedule(cb, mgr, 0, 1, …)). */
-void channel_est_clamp_64(struct fw_sysapi_mgr *mgr, u32 timeout, u_schd_fn cb)
+void fw_sysapi_mgr_arm_timeout(struct fw_sysapi_mgr *mgr, u32 timeout, u_schd_fn cb)
 {
     mgr->timeout = (timeout > 100u) ? timeout : 100u;
     if (mgr->timer != 0) {
@@ -571,7 +571,7 @@ static void sysapi_filter_post(u32 type, const u8 *p, u32 w2)
 {
     u32 f[2];
     memcpy_fw(f, p, 8);
-    channel_est_stack_args(type, f[0], f[1], w2);
+    lmac_if_send_meas_filter(type, f[0], f[1], w2);
 }
 
 /* Шаблоны фильтров команд sysapi в DCCM (5 байт: слово + байт; в образе нули). */
@@ -634,7 +634,7 @@ static void chan_est_timeout(u32 a0, u32 a1)
     mgr->timer = 0;
     if (mgr->request_type == 6 && mgr->status == 2) {
         fw_log_emit0(0x20, 0x1013168);
-        field_set_0x00_8dbe88(0x3d, 3);
+        lmac_if_send_cmd_u32(0x3d, 3);
     }
     fw_sysapi_mgr_channel_estimation_cmd_complete(mgr, 3);
 }
@@ -658,11 +658,11 @@ void channel_estimation_cmd_start(struct fw_sysapi_mgr *mgr, const u8 *p, u32 ti
         return;
     }
     (void)hwd_phy_dbg_clk_enable_get();
-    (void)phy_get_885178_3bit();
+    (void)phy_get_ram_read_sel();
     hwd_phy_dbg_clk_enable(1);
-    phy_set_885178_3bit(1);
+    phy_set_ram_read_sel(1);
     mgr->completion_cb = chan_est_done_cb;
-    channel_est_clamp_64(mgr, timeout, chan_est_timeout);
+    fw_sysapi_mgr_arm_timeout(mgr, timeout, chan_est_timeout);
     sysapi_filter_post(0x3c, p, 0);
 }
 
@@ -699,7 +699,7 @@ u32 hw_sysapi_get_rx_energy_data_free_run(u32 *out)
         return 1;
     }
     u32 forced = hwd_abif_rx_table_index_force_en_get();
-    u32 gain = (forced != 0) ? abif_get_rx_table_index_force_val() : phy_get_88312c_6bit();
+    u32 gain = (forced != 0) ? abif_get_rx_table_index_force_val() : phy_get_ina_agc_start();
     s32 q4 = rx_energy_calc_rssi_q4(out[0], gain, G_ZERO_DB_ROW,
                                     rf_if_gain_rssi_ofs);
     out[1] = (u32)q4;
@@ -754,7 +754,7 @@ static void energy_timeout(u32 a0, u32 a1)
         fw_sysassert_fatal(CALLER(), 0x1451);
     mgr->timer = 0;
     if (mgr->request_type == 1 && mgr->status == 2)
-        field_set_0x00_8dbe88(0x29, 3);
+        lmac_if_send_cmd_u32(0x29, 3);
 }
 
 /* fw_sysapi_mgr::start_energy_statistics (0x8f2cc0, 192 Б): занят — ответ из нулей
@@ -781,7 +781,7 @@ void fw_sysapi_mgr_start_energy_statistics(struct fw_sysapi_mgr *mgr, const u8 *
         mgr->energy_count = 0x14;
     }
     mgr->completion_cb = energy_done_cb;
-    channel_est_clamp_64(mgr, timeout, energy_timeout);
+    fw_sysapi_mgr_arm_timeout(mgr, timeout, energy_timeout);
     sysapi_filter_post(0x28, p, count);
 }
 
@@ -857,7 +857,7 @@ static void rx_pkt_timeout(u32 a0, u32 a1)
         if (mgr == 0)
             fw_sysassert_fatal(CALLER(), 0x1530);
         fw_log_emit0(0x20, 0x1013074);
-        field_set_0x00_8dbe88(0x2f, 3);
+        lmac_if_send_cmd_u32(0x2f, 3);
     }
 }
 
@@ -880,7 +880,7 @@ void get_rx_pkt_phy_data_cmd_start(struct fw_sysapi_mgr *mgr, const u8 *p, u32 t
         return;
     }
     mgr->completion_cb = rx_pkt_done_cb;
-    channel_est_clamp_64(mgr, timeout, rx_pkt_timeout);
+    fw_sysapi_mgr_arm_timeout(mgr, timeout, rx_pkt_timeout);
     sysapi_filter_post(0x2e, p, 0);
 }
 
@@ -929,7 +929,7 @@ static void phy_rx_stats_timeout(u32 a0, u32 a1)
         if (mgr == 0)
             fw_sysassert_fatal(CALLER(), 0x1531);
         fw_log_emit0(0x20, 0x10130ac);
-        field_set_0x00_8dbe88(0x38, 3);
+        lmac_if_send_cmd_u32(0x38, 3);
     }
 }
 
@@ -951,7 +951,7 @@ void fw_sysapi_mgr_phy_rx_statistics_cmd_start(struct fw_sysapi_mgr *mgr, const 
     *(volatile u32 *)PHY_RX_STATS_ON = 1;
     hwd_phy_dbg_clk_enable(1);
     mgr->completion_cb = phy_rx_stats_done_cb;
-    channel_est_clamp_64(mgr, timeout, phy_rx_stats_timeout);
+    fw_sysapi_mgr_arm_timeout(mgr, timeout, phy_rx_stats_timeout);
     sysapi_filter_post(0x37, p, 0);
 }
 

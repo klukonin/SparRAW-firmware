@@ -26,7 +26,7 @@ void boot_init_subsystems(struct dashboard *dash)
     d->ssid_len = 0;
 
     /* Пароль по умолчанию: имя → passphrase, длина + 1 → passphrase_len. */
-    u32 idx = boot_init_named_object(dash, name, 0, dash->passphrase);
+    u32 idx = boot_copy_name_str(dash, name, 0, dash->passphrase);
     d->passphrase_len = (u16)(idx + 1);
 
     d->pcp_security_en = 0;

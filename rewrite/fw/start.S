@@ -299,13 +299,13 @@ _irq_timer1_wd:
     j.f [ilink2]
 
 /* Вектор 4 — user-ICR 0x880b50 (vendor 0x8c1064 → isr_880b50__dispatch_causes 0x8c161c). */
-    IRQ_TRAMPOLINE _irq_entry, isr_880b50_dispatch_causes
+    IRQ_TRAMPOLINE _irq_entry, host_irq_dispatch_causes
 
 /* Вектор 5 — RX/TX-DMA (vendor 0x8c10fc → txrx_mgr__handle_dma_irq 0x8c9604). */
     IRQ_TRAMPOLINE _irq_txrx_dma, txrx_mgr_handle_dma_irq
 
 /* Вектор 6 — ICR MAC 0x886e40: awake-TSF / сбой ucode (vendor 0x8c1194). */
-    IRQ_TRAMPOLINE _irq_mac_icr_886e40, isr_mac_icr_886e40
+    IRQ_TRAMPOLINE _irq_mac_icr_886e40, isr_mac_sxd_errors
 
 /* Вектор 8 — DMA pring (vendor 0x8c12b8 → pring__isr_dispatch 0x8ebf00). */
     IRQ_TRAMPOLINE _irq_pring_dma, pring_isr_dispatch
@@ -314,14 +314,14 @@ _irq_timer1_wd:
     IRQ_TRAMPOLINE _irq_entry_vring, isr_vring_dma_fw
 
 /* Векторы 10/11 — квитирование ICR MAC 0x887010 / 0x88702c (vendor 0x8c08f0 / 0x8c0990). */
-    IRQ_TRAMPOLINE _irq_mac_icr_887010, isr_mac_icr_887010
-    IRQ_TRAMPOLINE _irq_mac_icr_88702c, isr_mac_icr_88702c
+    IRQ_TRAMPOLINE _irq_mac_icr_887010, isr_mac_cnt_icr
+    IRQ_TRAMPOLINE _irq_mac_icr_88702c, isr_mac_cnt2_icr
 
 /* Вектор 12 — MAC/PHY (vendor 0x8c0a30). */
-    IRQ_TRAMPOLINE _irq_mac_886028, isr_mac_886028
+    IRQ_TRAMPOLINE _irq_mac_886028, isr_mac_phy_irq
 
 /* Вектор 13 — RGF_CAF_ICR 0x889470: срыв PLL5/FS8 (vendor 0x8c0aec). */
-    IRQ_TRAMPOLINE _irq_caf_icr_889470, isr_caf_icr_889470
+    IRQ_TRAMPOLINE _irq_caf_icr_889470, isr_caf_pll_unlock
 
 /* Векторы 15/16/18 — PCIe: debug, PERST/D3, L1 (vendor 0x8c0be4 / 0x8c0cf4 / 0x8c0f64). */
     IRQ_TRAMPOLINE _irq_pcie_debug, isr_pcie_debug

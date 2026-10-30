@@ -4,6 +4,9 @@
 ARC_DIR=<тулчейн> python3 -m pytest tests/unit          # сборка uc.elf во временный каталог + тесты
 SPARRAW_UNIT_BUILD=build python3 -m pytest tests/unit   # без пересборки — готовый каталог сборки
 python3 -m pytest tests -m unit                          # в составе общего прогона
+# PyPy — в 2,5–5 раз быстрее, результаты те же (системные прогоны fw + uc — в 5 раз); плагины pytest из пакетов
+# CPython (numpy и т. п.) PyPy не загрузит — автозагрузку выключить:
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ARC_DIR=<тулчейн> pypy3 -m pytest -p no:cacheprovider tests/unit
 ```
 
 Функция uc исполняется в эмуляторе ARC (`tools/arcemu/cpu.py`) прямо из `uc.elf`: DCCM — по настоящим адресам,

@@ -19,32 +19,29 @@ FWDATA(806014) struct vring_tbl_entry vring_tbl[VRING_TBL_N] = { 0 };
 
 
 /* Поле w бит [lo .. lo+n-1] = v (bits__set32_* → bf__set_field_word_fw 0x8edcb8). */
-static void bf32(u32 *w, u32 lo, u32 n, u32 v)
+static void bitfield_set32(u32 *w, u32 lo, u32 n, u32 v)
 {
     u32 m = ((n >= 32) ? 0xffffffffu : ((1u << n) - 1u)) << lo;
     *w = (*w & ~m) | ((v << lo) & m);
 }
 
 /* bits__set32_s16_w5 (0x8ed400). */
-void bits_set32_s16_w5(u32 *p, u32 v) { bf32(p, 16, 5, v); }
 /* bits__set_s8_w5 (0x8ed580). */
-void bits_set_s8_w5(u32 *p, u32 v) { bf32(p, 8, 5, v); }
+void bits_set_s8_w5(u32 *p, u32 v) { bitfield_set32(p, 8, 5, v); }
 /* bits__set32_s4_w12 (0x8ed4f0) / s16_w12 (0x8ed3e8). */
-void bits_set32_s4_w12(void *p, u32 v) { bf32((u32 *)p, 4, 12, v); }
-void bits_set32_s16_w12(void *p, u32 v) { bf32((u32 *)p, 16, 12, v); }
 /* bits__set16h_s0_w2 (0x8ed2d4) / mac_filter__bits_set16h_s4_w2 (0x8ed304): 16-битные. */
 void bits_set16h_s0_w2(void *p, u32 v) { u16 *w = (u16 *)p; *w = (u16)((*w & ~3u) | (v & 3u)); }
-void mac_filter_bits_set16h_s4_w2(void *p, u32 v) { u16 *w = (u16 *)p; *w = (u16)((*w & ~(3u << 4)) | ((v & 3u) << 4)); }
+void mac_filter_cmd_set_table(void *p, u32 v) { u16 *w = (u16 *)p; *w = (u16)((*w & ~(3u << 4)) | ((v & 3u) << 4)); }
 
-/* 0x802448: таблица переходов switch vendor ba_sm_evt_type (0x8d9c4c;
+/* 0x802448: таблица переходов switch vendor ba_sm_dispatch_event (0x8d9c4c;
  * ldb, цель = 0x8d9c70 + 2·запись). Наш код её не читает (switch в C) — байты как у vendor. */
 FWDATA(802448) const u8 ba_sm_evt_type_jt[7] = {
     0x00, 0x02, 0x04, 0x06, 0x08, 0x0a, 0x0c,
 };
 
-/* ba_sm_evt_type (0x8d9c4c, 116 Б): тип события стрима → событие ba_sm (jump-table
+/* ba_sm_dispatch_event (0x8d9c4c, 116 Б): тип события стрима → событие ba_sm (jump-table
  * 0x802448: 0,1,5,3,4,6,0xa). */
-void ba_sm_evt_type(struct stream_ctx *obj, u32 evt, u32 a0, u32 a1, u32 a2)
+void ba_sm_dispatch_event(struct stream_ctx *obj, u32 evt, u32 a0, u32 a1, u32 a2)
 {
     static const u8 ev_tab[7] = { 0, 1, 5, 3, 4, 6, 0xa };
     u32 ev;
@@ -99,14 +96,14 @@ void *host_if_send_pair(void)
 }
 
 /* mid__state_is_2_or_3 (0x8da488, 30 Б): запись mid — PCP/AP (режим BSS 2 или 3). */
-u32 mid_state_is_2_or_3(u32 mid)
+u32 mid_is_pcp_or_ap(u32 mid)
 {
     u32 st = mid_list_by_mid_fw(mid)->bss.mode;
     return (st == 2u || st == 3u) ? 1u : 0u;
 }
 
 /* dma__set_881b24_bit1 (0x8df5c4, 14 Б). */
-void dma_set_881b24_bit1(void)
+void dma_l2_offload_tx_ctl_set_bit1(void)
 {
     MMIO32(HW_L2_OFFLOAD_TX_CTL) |= (1u << 1);
 }
@@ -119,15 +116,15 @@ void tx_dma_build_desc(void *dst, const u16 *s0, const u16 *s1, u8 a3, u8 a4, u8
     memset0_words(dst, 0x10);
     d[0] = s0[0]; d[1] = s0[1]; d[2] = s0[2];
     d[3] = s1[0]; d[4] = s1[1]; d[5] = s1[2];
-    bf32(w, 0, 4, a3 & 0xfu);
-    bf32(w, 4, 2, a4 & 3u);
-    bf32(w, 16, 7, a5 & 0x7fu);
-    bf32(w, 14, 2, ((a6 & 1u) << 1) | ((a6 & 2u) >> 1));
-    dma_set_881b24_bit1();
+    bitfield_set32(w, 0, 4, a3 & 0xfu);
+    bitfield_set32(w, 4, 2, a4 & 3u);
+    bitfield_set32(w, 16, 7, a5 & 0x7fu);
+    bitfield_set32(w, 14, 2, ((a6 & 1u) << 1) | ((a6 & 2u) >> 1));
+    dma_l2_offload_tx_ctl_set_bit1();
 }
 
 /* conn__alloc_and_fill (0x8dc43c, 54 Б): LMAC-команда 0x45 {q, flags, n, desc[0x70]}. */
-void conn_alloc_and_fill(u32 a0, u32 a1, const struct macq_qdesc *a2, u32 a3)
+void lmac_if_send_write_qh(u32 a0, u32 a1, const struct macq_qdesc *a2, u32 a3)
 {
     struct lmac_cmd_write_qh *r = lmac_cmd_pool_alloc();
     r->q = (u8)a0;
@@ -140,7 +137,7 @@ void conn_alloc_and_fill(u32 a0, u32 a1, const struct macq_qdesc *a2, u32 a3)
 /* qh__write_by_flags_fw (0x8dd90c, 348 Б): по флагам записать/прочитать MACQ-дескрипторы
  * очереди a: 0x10 — окно (+0x40), 0x1..0x8 — четыре под-дескриптора, 0x20 — типизированный.
  * Поля 12-битные (bits__set32_*_w12; прежде маска 0x7ff). */
-void qh_write_by_flags_fw(u32 a, u32 b, struct macq_qdesc *c, u32 d)
+void macq_qh_write_by_flags(u32 a, u32 b, struct macq_qdesc *c, u32 d)
 {
     u32 buf[4];
     if ((b & 0x21) == 0x21)
@@ -150,9 +147,9 @@ void qh_write_by_flags_fw(u32 a, u32 b, struct macq_qdesc *c, u32 d)
         macq_desc_read(buf, a, 2, 0, 1);
         v = buf[1] & 0xfffu;
         c->ba.w1_b[2] = 0;
-        bf32(&c->ba.w1, 0, 12, v);
+        bitfield_set32(&c->ba.w1, 0, 12, v);
         c->ba.w2_b[2] = (u8)(d - 1);
-        bf32(&c->ba.w2, 0, 12, (v + d - 1) & 0xfffu);
+        bitfield_set32(&c->ba.w2, 0, 12, (v + d - 1) & 0xfffu);
         macq_desc_write(&c->ba, a, 2, 3, 0, 0, 0, 3);
     }
     if (b & 0x1)
@@ -170,27 +167,27 @@ void qh_write_by_flags_fw(u32 a, u32 b, struct macq_qdesc *c, u32 d)
             u32 hi = *(volatile u16 *)&c->win.base;
             buf[1] = (hi << 16) | lo;
         }
-        bf32(&buf[2], 0, 12, c->win.w2 & 0xfffu);
-        bf32(&buf[3], 4, 12, (c->win.w3 >> 4) & 0xfffu);
-        bf32(&buf[3], 16, 12, (c->win.w3 >> 16) & 0xfffu);
+        bitfield_set32(&buf[2], 0, 12, c->win.w2 & 0xfffu);
+        bitfield_set32(&buf[3], 4, 12, (c->win.w3 >> 4) & 0xfffu);
+        bitfield_set32(&buf[3], 16, 12, (c->win.w3 >> 16) & 0xfffu);
         macq_desc_write(buf, a, 2, 0, 0, 0, 0, 1);
     }
 }
 
 /* qh__write_or_conn_alloc (0x8ea5b0, 62 Б): при активном режиме fixed_sched.enabled и MID 0 в
  * состоянии 2/3 — через LMAC (0x45), иначе прямо в MACQ. */
-u32 qh_write_or_conn_alloc(u32 a, u32 b, struct macq_qdesc *c, u32 d)
+u32 macq_qh_write(u32 a, u32 b, struct macq_qdesc *c, u32 d)
 {
-    if (*(volatile u8 *)&fixed_sched.enabled != 0 && mid_state_is_2_or_3(0) != 0) {
-        conn_alloc_and_fill(a, b, c, d);
+    if (*(volatile u8 *)&fixed_sched.enabled != 0 && mid_is_pcp_or_ap(0) != 0) {
+        lmac_if_send_write_qh(a, b, c, d);
         return 0;
     }
-    qh_write_by_flags_fw(a, b, c, d);
+    macq_qh_write_by_flags(a, b, c, d);
     return 0;
 }
 
 /* ba_sm__addba_at_10 (0x8c7edc, 20 Б): секторный дескриптор очереди e в буфер +0x10. */
-void ba_sm_addba_at_10(const struct vring_tbl_entry *e, struct macq_qdesc *buf, u32 a2, u32 a3,
+void tx_macq_build_sector_desc(const struct vring_tbl_entry *e, struct macq_qdesc *buf, u32 a2, u32 a3,
                        u32 a4, u32 a5)
 {
     rf_chain_program_sector_desc(&buf->sector, e->mode, a2, a3, a4, a5);
@@ -198,7 +195,7 @@ void ba_sm_addba_at_10(const struct vring_tbl_entry *e, struct macq_qdesc *buf, 
 
 /* obj_vt802b50__ctor (0x8f5280, 36 Б): ba_setup_sm. retry_timer (+0x10) vendor не
  * обнуляет — его снимает ba_setup_close_* перед возвратом в WAIT_FOR_START. */
-void obj_vt802b50_ctor(struct ba_setup_sm *s, struct stream_sm *p)
+void ba_setup_sm_ctor(struct ba_setup_sm *s, struct stream_sm *p)
 {
     s->resp_timer = 0;
     s->global_timer = 0;
@@ -217,9 +214,9 @@ void wait_sm_init(struct ba_wait_sm *s, struct stream_sm *p)
 }
 
 /* obj_vt80296c__ctor (0x8d9230, 50 Б): ba_sm стрима (описатель 0x80296c). */
-void obj_vt80296c_ctor(struct stream_sm *s, struct stream_ctx *p)
+void stream_sm_ctor(struct stream_sm *s, struct stream_ctx *p)
 {
-    obj_vt802b50_ctor(&s->setup, s);
+    ba_setup_sm_ctor(&s->setup, s);
     wait_sm_init(&s->wait, s);
     s->ctx = p;
     basic_sm_bind_descriptor(s, &stream_sm_desc);
@@ -233,7 +230,7 @@ void mac_filter_write_one(const u32 *mac, u32 n, u32 idx)
     if (idx >= 8)
         fw_sysassert_fatal((void *)0, 0x1012);
     bits_set16h_s0_w2(&cmd, 1);
-    mac_filter_bits_set16h_s4_w2(&cmd, 2);
+    mac_filter_cmd_set_table(&cmd, 2);
     MMIO32(HW_PRS_TBL_A_CMD) = ((u32)cmd << 16) | 0x80000000u;
     MMIO32(HW_PRS_TBL_A_ADDR) = idx + n * 8;
     MMIO32(HW_PRS_TBL_A_DATA0) = *mac;
@@ -248,7 +245,7 @@ void install_key_parse_flags(u32 k, u32 i, u32 f)
 {
     u32 val = 0;
     bits_set_s8_w5(&val, f & 0x1fu);
-    bf32(&val, 0, 4, i & 0xfu);
+    bitfield_set32(&val, 0, 4, i & 0xfu);
     val |= 0x10u;
     if (i >= 8)
         fw_sysassert_fatal((void *)0, 0x1013);
@@ -480,7 +477,7 @@ __attribute__((section(".textlate"))) void wmi_evt_walk_list(struct mbox_ring *r
         cb((u32)h);
         h->flags &= ~(1u << 2);
     } else {
-        stream_mgr_check_vring(ring->pool, h);
+        mem_pool_free_checked(ring->pool, h);
     }
     e->addr = 0;
 }

@@ -21,7 +21,7 @@ __attribute__((section(".textlate"))) void rx_chain_configure(u32 cfg, u32 a1, u
  * здесь стоял 0, и очереди/pring не создавались), пул vring, pring 0 и 1, кольца DMA 0/1. */
 __attribute__((section(".textlate"))) void disc_sm_sw_data_stopped(void)
 {
-    u32 count = fixed_sched_get_entry_count();
+    u32 count = txq_get_count();
     if (count != 0) {
         tx_queue_mgr_create_queue(count, 0, 0, 0x40, 0x2000, 0x2800, 0x1f28, 1, 5);
         pring_init_pool();
@@ -35,7 +35,7 @@ __attribute__((section(".textlate"))) void disc_sm_sw_data_stopped(void)
 
 /* rx_chain__reg_8813c8_addr (0x8d0834, 8 Б): адрес регистра хвоста RX-кольца для ответа
  * WMI_CFG_RX_CHAIN_DONE. */
-__attribute__((section(".textlate"))) u32 rx_chain_reg_8813c8_addr(void)
+__attribute__((section(".textlate"))) u32 rx_chain_descq2_sw_tail_addr(void)
 {
     return HW_DMA_DESCQ2_SW_TAIL;
 }
@@ -44,7 +44,7 @@ __attribute__((section(".textlate"))) u32 rx_chain_reg_8813c8_addr(void)
  * struct rx_ba_win_params (кладёт rx_macq_program_ba_win).
  * Прежний порт читал поля как u32 (соседние перекрывались, +6 невыровнен) — ложный
  * ассерт 0x1502 и мусор в дескрипторе. */
-static inline void bf_set32(u32 *w, u32 lo, u32 hi, u32 v)
+static inline void bf_set32_lo_hi(u32 *w, u32 lo, u32 hi, u32 v)
 {
     u32 m = ((hi - lo == 31) ? 0xffffffffu : ((1u << (hi - lo + 1)) - 1)) << lo;
     *w = (*w & ~m) | ((v << lo) & m);
@@ -66,14 +66,14 @@ __attribute__((section(".textlate"))) void rx_macq_build_ba_desc(struct macq_des
     dst->base = w->start;
     dst->lines = w->size;
     u32 *p8 = &dst->w2, *pc = &dst->w3;
-    bf_set32(p8, 0, 11, off & 0xfff);           /* 0x8ed340 */
-    bf_set32(p8, 12, 23, w->param_a & 0xfff);   /* 0x8ed3a0 */
+    bf_set32_lo_hi(p8, 0, 11, off & 0xfff);           /* 0x8ed340 */
+    bf_set32_lo_hi(p8, 12, 23, w->param_a & 0xfff);   /* 0x8ed3a0 */
     dst->param_a_lo = (u8)w->param_a;
-    bf_set32(pc, 0, 3, (w->param_a >> 8) & 0xf);    /* 0x8ed370 */
-    bf_set32(pc, 16, 27, w->param_a & 0xfff);   /* 0x8ed3e8 */
+    bf_set32_lo_hi(pc, 0, 3, (w->param_a >> 8) & 0xf);    /* 0x8ed370 */
+    bf_set32_lo_hi(pc, 16, 27, w->param_a & 0xfff);   /* 0x8ed3e8 */
     *pc &= ~(1u << 28);
-    bf_set32(pc, 4, 15, w->param_b & 0xfff);    /* 0x8ed4f0 */
-    bf_set32(pc, 29, 31, 0);                    /* 0x8ed4c0 */
+    bf_set32_lo_hi(pc, 4, 15, w->param_b & 0xfff);    /* 0x8ed4f0 */
+    bf_set32_lo_hi(pc, 29, 31, 0);                    /* 0x8ed4c0 */
 }
 __attribute__((section(".textlate"))) void rx_macq_pack_desc(u32 *desc, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7)
 {
@@ -168,7 +168,7 @@ __attribute__((section(".textlate"))) void rx_macq_program_ba_win(u32 cfg, u32 a
 }
 
 /* rx_macq__program_desc_848018 (0x8df908, 156 Б). */
-__attribute__((section(".textlate"))) void rx_macq_program_desc_848018(u32 cfg, u32 a1, u32 a2, u32 a3, u32 a4)
+__attribute__((section(".textlate"))) void rx_macq_program_ctl_desc(u32 cfg, u32 a1, u32 a2, u32 a3, u32 a4)
 {
     const struct rx_macq_cfg *p = (const struct rx_macq_cfg *)cfg;
     u32 w = p->sniffer;
@@ -213,7 +213,7 @@ __attribute__((section(".textlate"))) void l2_offload_set_rx_decap_cfg(u32 cfg)
 
 /* dma__set_881b94_bits45 (0x8df560): биты 4,5 регистра 0x881b94
  * (ipv4_checksum_en → бит 4, tcpip_checksum_en → бит 5). */
-__attribute__((section(".textlate"))) void dma_set_881b94_bits45(u32 a0, u32 a1)
+__attribute__((section(".textlate"))) void dma_offload_set_l3l4_checksum(u32 a0, u32 a1)
 {
     if (a0 & ~1u) fw_sysassert_fatal(0, 0xac);
     MMIO32(HW_DMA_OFFLOAD_CTL_B94) = (MMIO32(HW_DMA_OFFLOAD_CTL_B94) & ~(1u << 4)) | ((a0 & 1u) << 4);
@@ -222,7 +222,7 @@ __attribute__((section(".textlate"))) void dma_set_881b94_bits45(u32 a0, u32 a1)
 }
 
 /* rx_macq__program_offload_desc_with_b4 (0x8e2474): entry[4]=b4 + программирование. */
-__attribute__((section(".textlate"))) void rx_macq_program_offload_desc_with_b4(u8 *p, u32 b4)
+__attribute__((section(".textlate"))) void rx_macq_program_offload_desc_decap(u8 *p, u32 b4)
 {
     ((struct rx_macq_cfg *)p)->decap = (u8)b4;
     rx_macq_program_offload_desc((void *)p);
@@ -269,9 +269,9 @@ __attribute__((section(".textlate"))) void l2_offload_cfg_rx_decap(const u8 *p)
     }
 
     dma_offload_pack_decap_cfg(a0, a1, a2, a3, a4, a5);
-    rx_macq_program_offload_desc_with_b4((u8 *)rx_macq_entry_addr(2), b4);
+    rx_macq_program_offload_desc_decap((u8 *)rx_macq_entry_addr(2), b4);
     fw_log_emit2(0x2b, 0x100d714, l3l4 & 1u, (l3l4 >> 1) & 1u);  /* L3 Offloads */
-    dma_set_881b94_bits45(l3l4 & 1u, (l3l4 >> 1) & 1u);
+    dma_offload_set_l3l4_checksum(l3l4 & 1u, (l3l4 >> 1) & 1u);
 }
 
 /* 0x802818: таблица переходов switch vendor rx_chain__build_desc (0x8e40d4;

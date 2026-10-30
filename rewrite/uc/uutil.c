@@ -10,30 +10,18 @@
 /* 64-битный сдвиг влево (0x920458). */
 
 
-/* Голова списка: [[a] + 4] (0x920da4). */
-u32 uc_list_head_field4(struct uc_ring *r)
+/* Адрес записи в голове кольца: [[a] + 4] (0x920da4; та же функция у vendor — 0x927f64). */
+u32 uc_ring_cur_addr(struct uc_ring *r)
 {
     return r->cur->addr;
 }
 
 /* Косвенное [a+0x24] == 0 (0x920dac). */
 /* 1 — в кольце команд есть запись. */
-u32 uc_field_0x24_is_zero(struct uc_mbox_ctx *m)
+u32 uc_cmd_ring_pending(struct uc_mbox_ctx *m)
 {
     /* 0x920dac */
-    return uc_indirect_is_zero(&m->cmd) == 0;
-}
-
-/* (u8)(aux[5] >> 3) — триггерная маска AP (0x920f9c). */
-u8 uc_ap_read_triggered_mask(void)
-{
-    return (u8)(arc_lr(5) >> 3);
-}
-
-/* aux[a*2 + 0x220] — значение совпадения AP (0x920fa8). */
-u32 uc_ap_read_match_value(u32 a)
-{
-    return arc_lr(a * 3 + 0x220);   /* add1_s r0,r0,r0 = ×3 */
+    return uc_ring_cur_empty(&m->cmd) == 0;
 }
 
 /* Установка уровня IRQ (0x921018). */
@@ -53,16 +41,10 @@ u32 uc_tsf_elapsed(u32 a)
 
 /* Косвенная проверка на ноль (0x92be20). */
 /* 1 — текущая запись кольца пуста. */
-u32 uc_indirect_is_zero(struct uc_ring *r)
+u32 uc_ring_cur_empty(struct uc_ring *r)
 {
     /* 0x92be20 */
     return r->cur->sync == 0;
-}
-
-/* Голова очереди: [[a] + 4] (0x927f64). */
-u32 uc_queue_peek_head_word1(struct uc_ring *r)
-{
-    return r->cur->addr;
 }
 
 /* Запись кода ошибки в 0x884804 (0x929d04). */
@@ -109,19 +91,19 @@ void uc_spin_until_event4(u32 a)
 }
 
 /* Диспетчер L1-события по режиму 0x8004f4 (0x92cd0c, зовётся из l1_task_entry(2)):
- * 0 → l1_on_event4, 1/2 → l1_fixed_sched_event_entry (хвостовые переходы), иначе ничего. */
-void uc_check_g8004f4_0_1_2(void)
+ * 0 → l1_task_on_evt4, 1/2 → l1_fixed_sched_event_entry (хвостовые переходы), иначе ничего. */
+void l1_task_dispatch_evt4(void)
 {
     u32 v = dti_qset_mode;
     if (v == 0)
-        l1_on_event4();
+        l1_task_on_evt4();
     else if (v == 1 || v == 2)
         l1_fixed_sched_event_entry();
 }
 
 /* Установка evt-id 0x5c (0x921724): a==0 → 0xffffffff, иначе 0x39, в 0x800584
  * под блокировкой IRQ. */
-void uc_set_evt_id_5c(u32 a)
+void uc_set_bg_task_mask(u32 a)
 {
     u32 saved = arc_irq_disable();
     bg_task_mask = (a == 0) ? 0xffffffff : 0x39;
@@ -227,7 +209,7 @@ void uc_res_vote_release(u32 a)
     if (r1 == 0) {
         qset_enable_mask = qset_enable_mask | 0x70;
         mac_publish_masks();
-        bi_tx_check_idle_and_start_uc(2);
+        mac_backoff_settle_set_chain_modes(2);
     }
     arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
 }
@@ -266,12 +248,14 @@ void ucode_pm_set_busy_flag(u32 a)
 }
 
 /* Штампование TSF-слотов (0x93c7a8). */
+/* TSF читается один раз на все станции (vendor — на каждую: 8 чтений, разница между ними — доли мкс; на завершении BF
+ * хвост с этим циклом стоил 287 тактов, стенд 2026-10-29). */
 void ucode_pm_stamp_tsf_slots(void)
 {
+    u32 tsf = uc_read_tsf_lo();
     for (u32 r13 = 0; r13 < SPARRAW_MAX_STA; r13++) {
         struct link_stat_s *r15 = &link_stat[r13];
-        u32 tsf = uc_read_tsf_lo();
-        r15->ka_ok = 0;                  /* stw_s r0(=0),[r15,2] в delay-слоте */
+        r15->ka_ok = 0;
         r15->stamp_tsf = tsf;
     }
 }

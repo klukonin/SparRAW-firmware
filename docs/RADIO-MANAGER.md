@@ -114,7 +114,7 @@ switch — working channel»); `channels_switch_sm__action_radio_tunned` 0x8c22e
 
 `temp_service__radio_locked_cb` 0x8e20dc — `TEMPERATURE_SERVICE::radio_locked_cb`
 (при выключенной/останавливаемой службе сразу отпускает радио) →
-`perform_first_measurement_operations` 0x8e0908 / 4.1 0x8dc6f4 (калиброванные замеры BB и RF,
+`temp_store_and_calibrate_first_meas` 0x8e0908 / 4.1 0x8dc6f4 (калиброванные замеры BB и RF,
 затем «periodic_info_flow» — Information Response соединениям).
 
 ## 7. Прочее группы

@@ -28,7 +28,7 @@
 #include "../include/radio_mgr.h"
 #include "../include/conn.h"
 
-/* 0x801170 / 0x801230: LUT RSSI ADC → SNR ADC (fw_sysapi_mgr.rssi_snr_lut, ctor_obj_805170;
+/* 0x801170 / 0x801230: LUT RSSI ADC → SNR ADC (fw_sysapi_mgr.rssi_snr_lut, ctor_fw_sysapi_mgr;
  * lut__find_index): возрастающие ключи и значения SNR. */
 FWDATA(801170) const s32 rssi_snr_lut_keys[RSSI_SNR_LUT_N] = {
     3, 4, 5, 7, 8, 10, 13, 16, 19, 23, 28, 34,
@@ -82,7 +82,7 @@ static void fw_sysapi_zero_and_fill(struct fw_sysapi_mgr *mgr)
  * полей, [+0] = id, активна, статус 2 (ждём), TSF старта в +0x24; 1. */
 u32 fw_sysapi_mgr_start_sysapi_cmd(struct fw_sysapi_mgr *mgr, u32 id, const u32 *ctx)
 {
-    if (bf_req_is_claimable(mgr, 0) != 0) {
+    if (bf_req_is_active(mgr, 0) != 0) {
         fw_log_emit0(0x10, 0x1012444);
         return 0;
     }
@@ -102,7 +102,7 @@ u32 fw_sysapi_mgr_start_sysapi_cmd(struct fw_sysapi_mgr *mgr, u32 id, const u32 
  * останова в +0x2c; 1. */
 u32 fw_sysapi_mgr_stop_sysapi_cmd(struct fw_sysapi_mgr *mgr, u32 id)
 {
-    if (bf_req_is_claimable(mgr, id) == 0 || mgr->status == 2) {
+    if (bf_req_is_active(mgr, id) == 0 || mgr->status == 2) {
         fw_log_emit1(0x10, 0x1012a64, id);
         return 0;
     }
@@ -142,11 +142,11 @@ void fw_sysapi_send_measure_evt(struct fw_sysapi_mgr *mgr, const volatile struct
     u32 s[0x8c / 4];
 
     memset0_words(s, 0x8c);
-    hwd_apply_table_entry(mgr, s, &acc[0], &acc[1], &acc[2], &acc[3]);
-    hwd_apply_table_entry_b(mgr, s, st->cnt[6], st->cnt[5], st->cnt[0],
+    stats_pack_u64_counter_block(mgr, s, &acc[0], &acc[1], &acc[2], &acc[3]);
+    stats_pack_u32_counter_block(mgr, s, st->cnt[6], st->cnt[5], st->cnt[0],
                             st->cnt[4], st->cnt[1], st->cnt[2]);
-    hwd_apply_table_entry(mgr, s + 0x40 / 4, &acc[4], &acc[5], &acc[6], &acc[7]);
-    hwd_apply_table_entry_b(mgr, s + 0x40 / 4, st->cnt[13], st->cnt[12],
+    stats_pack_u64_counter_block(mgr, s + 0x40 / 4, &acc[4], &acc[5], &acc[6], &acc[7]);
+    stats_pack_u32_counter_block(mgr, s + 0x40 / 4, st->cnt[13], st->cnt[12],
                             st->cnt[7], st->cnt[11], st->cnt[8], st->cnt[9]);
     if (s[0x34 / 4] != 0) {
         u32 k = *(const volatile u16 *)&mcs_phy_rate_mbps[st->max_mcs];   /* ldh.as */
@@ -235,7 +235,7 @@ static void plcp_header_timeout(u32 a0, u32 a1)
         fw_sysassert_fatal(caller(), 0x145e);
     mgr->timer = 0;
     if (mgr->request_type == 2 && mgr->status == 2)
-        field_set_0x00_8dbe88(0x2b, 3);
+        lmac_if_send_cmd_u32(0x2b, 3);
 }
 
 /* fw_sysapi_mgr::start_plcp_header (0x8f73b0, 152 Б): команда 2; занят — ответ из
@@ -255,9 +255,9 @@ void fw_sysapi_mgr_start_plcp_header(struct fw_sysapi_mgr *mgr, const u8 *prm, u
     }
     memset0_words(mgr->plcp_rsp, 0x20);
     mgr->completion_cb = plcp_header_cb;
-    channel_est_clamp_64(mgr, timeout, plcp_header_timeout);
+    fw_sysapi_mgr_arm_timeout(mgr, timeout, plcp_header_timeout);
     memcpy_fw(t, prm, 8);
-    channel_est_stack_args(0x2a, t[0], t[1], 0);
+    lmac_if_send_meas_filter(0x2a, t[0], t[1], 0);
 }
 
 /* hw_sysapi_plcp_header (0x8ce120, 136 Б): 5 байт параметров (шаблон 0x8035a4 — нули;
@@ -327,7 +327,7 @@ void fw_sysapi_mgr_get_rssi_and_snr_statistics(struct fw_sysapi_mgr *mgr, u32 n,
             x = idx[i];
         } else {
             r = (s32)(locked != 0 ? phy_rx_read_rssi_adc_locked() : phy_rx_read_rssi_adc());
-            x = phy_get_88306c_6bit();
+            x = phy_get_agc_row();
         }
         q = (s32)rx_energy_calc_rssi_q4((u32)r, x, calib_zero_db.row8, rf_if_gain_rssi_ofs);
         if (r > out->rssi_adc_max)
@@ -367,7 +367,7 @@ u32 hw_sysapi_force_mcs(u32 a, u32 b, u32 c)
         fw_log_emit1(5, 0x101a4f4, c);
         return 0;
     }
-    lmac_if_send_cmd_0x30(a, b, c);
+    lmac_if_send_sta_rs_mcs(a, b, c);
     return 1;
 }
 
@@ -408,7 +408,7 @@ static void set_freq_ratio_radio_cb(struct rm_req *radio, u32 p)
 
     fw_log_emit1(0x25, 0x101a560, (u32)radio);
     hwm_analog_channel_switch(a[0], a[1], a[2]);
-    radio_mgr_call_method_10(radio);
+    radio_mgr_lock_free(radio);
 }
 
 /* hw_sysapi__set_freq_ratio (0x8ce484, 100 Б): i — не текущий канал → сразу регистры
@@ -510,7 +510,7 @@ void ut_module_hw_flows_sysapi_cmd_handler(struct wmi_mbox *mb, const struct ut_
         if ((s32)(u32)c->arg8[0] >= 8) {
             fw_log_emit1(0, 0x101aeb0, (u32)c->arg8[0]);
         } else {
-            field_set_0x00_8dbc94((u32)c->arg8[0]); /* thunk 0x8ce408 */
+            lmac_if_send_restart_rs((u32)c->arg8[0]); /* thunk 0x8ce408 */
             r = 1;
         }
         buf->status = r;
@@ -579,7 +579,7 @@ void ut_module_hw_flows_sysapi_cmd_handler(struct wmi_mbox *mb, const struct ut_
         break;
     case 20:                                           /* 0x8fb216 */
         fw_log_emit3(0x20, 0x101b070, c->arg[0], c->arg[1], c->arg[2]);
-        hw_cfg_set_8004fc_and_levels((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8]);
+        hw_cfg_set_sdp_flags_and_levels((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8]);
         break;
     case 21:                                           /* 0x8fb236 */
         hw_sysapi_get_beamforming_statistics(mb, cmd);
@@ -609,10 +609,10 @@ void ut_module_hw_flows_sysapi_cmd_handler(struct wmi_mbox *mb, const struct ut_
             break;
         }
         if (ms == 0) {
-            ut_module_hw_flows_log_101aa08(0, 0);
+            ut_module_hw_flows_delayed_assert(0, 0);
             break;
         }
-        sysapi_hw_flows_log_timer = u_schd_schedule(ut_module_hw_flows_log_101aa08, ms, 0, 0, ms * 1000u,
+        sysapi_hw_flows_log_timer = u_schd_schedule(ut_module_hw_flows_delayed_assert, ms, 0, 0, ms * 1000u,
                                         0, 0);
         break;
     }

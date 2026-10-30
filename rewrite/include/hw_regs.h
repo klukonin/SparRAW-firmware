@@ -291,7 +291,7 @@
 #define PHY_TX_PLAY_BUFFER_START_ADDR 0x884150u /* [12:0] начальный адрес (REGS-KNOWN; UT 0x40b, по использованию) */
 #define PHY_TX_PLAY_BUFFER_LAST_ADDR 0x884154u /* [12:0] play_buffer_last_address (REGS-KNOWN; UT 0x40b) */
 #define PHY_TX_PLAY_BUFFER_LOOPS    0x884158u  /* play_buffer_num_of_loops (REGS-KNOWN; UT 0x40b) */
-#define PHY_TX_FIR_COEF            0x88416cu  /* REGS-KNOWN phy_tx_fir_coef: массив 84 регистров (0x88416c..0x8842b8), коэффициенты TX-фильтра (phy_load_88416c_table из таблицы 0x803838) */
+#define PHY_TX_FIR_COEF            0x88416cu  /* REGS-KNOWN phy_tx_fir_coef: массив 84 регистров (0x88416c..0x8842b8), коэффициенты TX-фильтра (phy_load_tx_fir_coef_table из таблицы 0x803838) */
 #define PHY_SAR_MEAS_LENGTH_LO      0x885008u  /* длина измерения, младшее слово (REGS-KNOWN; UT 0x41b/0x425 sar_cal_length_lo) */
 #define PHY_SAR_MEAS_LENGTH_HI      0x88500cu  /* длина измерения, старшее слово (REGS-KNOWN; UT 0x425 sar_cal_length_hi) */
 #define PHY_SAR_SAMPLE_A_LO        0x885010u  /* SAR-отсчёт A, младшие 16 бит, по idx шаг 8 (с _A_HI; 0x885010..0x88504c); по использованию hwd_phy__read_sar_sample; между PHY_SAR_MEAS_LENGTH_HI и PHY_ONLINE_DC_MEAS */
@@ -308,15 +308,15 @@
 #define PHY_RX_POSTDIST_DC_PER_SAR  0x8851a0u  /* бит 0 postdist_dc_per_sar_mode (REGS-KNOWN; UT 0x417) */
 #define HW_PRS_OWN_ADDR_LO         0x886020u  /* REGS-KNOWN prs_own_addr_lo (по использованию: l2mgr__apply_mac_address) */
 #define HW_MAC_IRQ_CTL_886028             0x886028u  /* по использованию: isr_mac_886028_fw, mac_bringup__ack_and_unmask_irqs */
-#define HW_RX_KEY_TBL_CTRL         0x88602cu  /* REGS-KNOWN rx_key_tbl_ctrl (по использованию: add_key) */
-#define HW_RX_KEY_TBL_CMD          0x886030u  /* REGS-KNOWN rx_key_tbl_cmd (по использованию: add_key) */
-#define HW_RX_KEY_TBL_ADDR         0x886034u  /* REGS-KNOWN rx_key_tbl_addr (лог «In the add_key function. KEY[0]ADDRESS: %x») */
-#define HW_RX_KEY_TBL_DATA0        0x886038u  /* REGS-KNOWN rx_key_tbl_data0 (по использованию: add_key) */
+#define HW_RX_KEY_TBL_CTRL         0x88602cu  /* REGS-KNOWN rx_key_tbl_ctrl (по использованию: mac_rx_key_write) */
+#define HW_RX_KEY_TBL_CMD          0x886030u  /* REGS-KNOWN rx_key_tbl_cmd (по использованию: mac_rx_key_write) */
+#define HW_RX_KEY_TBL_ADDR         0x886034u  /* REGS-KNOWN rx_key_tbl_addr (лог «In the mac_rx_key_write function. KEY[0]ADDRESS: %x») */
+#define HW_RX_KEY_TBL_DATA0        0x886038u  /* REGS-KNOWN rx_key_tbl_data0 (по использованию: mac_rx_key_write) */
 #define HW_RX_KEY_TBL_DATA1        0x88603cu  /* REGS-KNOWN rx_key_tbl_data1 (то же) */
 #define HW_RX_KEY_TBL_DATA2        0x886040u  /* REGS-KNOWN rx_key_tbl_data2 (то же) */
 #define HW_RX_KEY_TBL_DATA3        0x886044u  /* REGS-KNOWN rx_key_tbl_data3 (то же) */
 #define MAC_TEST_REG_8860D4         0x8860d4u  /* тестовый регистр UT, поле [7:1] (REGS-KNOWN mac_test_reg_8860d4) */
-#define HW_RX_KEY_VALID_BITMAP     0x8860d8u  /* REGS-KNOWN rx_key_valid_bitmap (по использованию: add_key) */
+#define HW_RX_KEY_VALID_BITMAP     0x8860d8u  /* REGS-KNOWN rx_key_valid_bitmap (по использованию: mac_rx_key_write) */
 #define HW_MAC_PRS_CTRL_0          0x886200u  /* REGS-KNOWN MAC_PRS_CTRL_0 (пак 11ad PmcRegistersAccessor.cpp) */
 #define HW_PRS_IMC                 0x886224u  /* REGS-KNOWN PRS_IMC (драйвер struct RGF_ICR; база ICR — HW_PRS_ICR) */
 #define HW_PRS_RX_CTRL_886250      0x886250u  /* REGS-KNOWN prs_rx_ctrl_886250 (лог-строка hwd_mac__enable_multicast) */
@@ -358,8 +358,8 @@
 #define HW_MAC_IND_WR_DATA0        0x886c00u  /* REGS-KNOWN mac_ind_wr_data0 (то же) */
 #define HW_MAC_IND_WR_DATA1        0x886c04u  /* REGS-KNOWN mac_ind_wr_data1 (то же) */
 #define HW_MAC_IND_WR_DATA2        0x886c08u  /* REGS-KNOWN mac_ind_wr_data2 (то же) */
-#define HW_MAC_EDCA_AIFS           0x886d68u  /* по AC i (4 регистра, шаг 4, 0x886d68..0x886d74): [31:28] AIFSN, младшие — 0x201ff (uc txrx_api_step_c, LMAC EDCA); нет в REGS-KNOWN */
-#define HW_MAC_EDCA_SEED           0x886d78u  /* по AC i (4 регистра, шаг 4, 0x886d78..0x886d84): 0xc0adc0ad << i (uc txrx_api_step_c); вероятно затравка ГПСЧ отсрочки; нет в REGS-KNOWN */
+#define HW_MAC_EDCA_AIFS           0x886d68u  /* по AC i (4 регистра, шаг 4, 0x886d68..0x886d74): [31:28] AIFSN, младшие — 0x201ff (uc txrx_api_program_edca_ac, LMAC EDCA); нет в REGS-KNOWN */
+#define HW_MAC_EDCA_SEED           0x886d78u  /* по AC i (4 регистра, шаг 4, 0x886d78..0x886d84): 0xc0adc0ad << i (uc txrx_api_program_edca_ac); вероятно затравка ГПСЧ отсрочки; нет в REGS-KNOWN */
 #define HW_FW2UC_ICS                      0x886dd8u  /* драйвер struct RGF_ICR; по использованию: lmac_if__post_cmd, fw2uc__signal_wa… */
 #define HW_MAC_OWN_ADDR_LO         0x886df0u  /* REGS-KNOWN mac_own_addr_lo (по использованию: mac__set_own_addr) */
 #define HW_MAC_OWN_ADDR_HI         0x886df4u  /* REGS-KNOWN mac_own_addr_hi (то же) */
@@ -375,7 +375,7 @@
 #define HW_MAC_BUSY_STATUS         0x886eccu  /* REGS-KNOWN mac_busy_status (по использованию: STREAM_MGR__2, l2mgr__data_port_open_and_keys) */
 #define HW_UCPU_ILINK1                    0x886f50u  /* лог-строка «UCODE :: SYSTEM FATAL CRASH1: … ilink1=0x%X», fw_vector_06 */
 #define HW_UCPU_ILINK2                    0x886f54u  /* лог-строка «UCODE :: SYSTEM FATAL CRASH1: … ilink2=0x%X», fw_vector_06 */
-#define HW_MAC_SLOT_TIMING         0x886f60u  /* REGS-KNOWN mac_slot_timing_886f60: при инициализации BI 0x03780378 (два поля по 888; mac_set_slot_timing_886f60) */
+#define HW_MAC_SLOT_TIMING         0x886f60u  /* REGS-KNOWN mac_slot_timing_886f60: при инициализации BI 0x03780378 (два поля по 888; mac_set_default_slot_timing) */
 #define HW_MAC_BI_INIT_ZERO_F78    0x886f78u  /* REGS-KNOWN mac_886f78: обнуляется при инициализации BI вместе с 0x886f7c (bi_mode_init_sequence); смысл не установлен */
 #define HW_MAC_BI_INIT_ZERO_F7C    0x886f7cu  /* REGS-KNOWN mac_886f7c: обнуляется при инициализации BI (bi_mode_init_sequence); смысл не установлен */
 #define HW_MAC_SCHED_SLOT_END      0x886f84u  /* REGS-KNOWN mac_sched_slot_end (NAMES-EXTRA sched__program_alloc_slot_regs) */
@@ -405,7 +405,7 @@
 #define HW_RGF_CAF_ICR_IMC                0x889484u  /* драйвер RGF_CAF_ICR +0x18 (IMC, снятие маски) */
 #define RF_REGD_CTRL                0x889494u  /* поле [3:0] = 0xf при стране «не задана»/JP (REGS-KNOWN rf_regd_ctrl, по использованию) */
 #define HW_ABIF_DVS_CLK_CFG        0x8894a0u  /* REGS-KNOWN abif_dvs_clk_cfg (по использованию: hwd__program_889_group) */
-#define HW_ABIF_DVS_CTRL_24               0x8894a4u  /* по использованию: ut_hw_modes_cmd_0x304_fw, hwd_abif__fs_on, hwd_abif__fs_off */
+#define HW_ABIF_DVS_CTRL_24               0x8894a4u  /* по использованию: hw_modes_set_pll_bypass, hwd_abif__fs_on, hwd_abif__fs_off */
 #define ABIF_DVS_STAT_64            0x8894e4u  /* поле [21:16] в результат калибровки IF-усиления (REGS-KNOWN abif_dvs_stat_64, по использованию) */
 #define ABIF_DVS_STAT_70            0x8894f0u  /* поля [15:12],[19:16],[23:20] (REGS-KNOWN abif_dvs_stat_70, по использованию) */
 #define ABIF_RX_SAR_DC_TABLE       0x88a608u  /* таблица SAR DC RX-строк: 64 строки × 8 слов, 5-битные поля (сразу за ABIF_RX_TABLE 64 × 4 слова, до HW_ABIF_CAF_PWDN_MODE); hwd_abif__rx_table_config_sar_dc */

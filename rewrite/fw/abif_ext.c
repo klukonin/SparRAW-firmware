@@ -106,7 +106,7 @@ void hwd_abif_out_to_bump_ctl(u32 en, u32 sel)
 
 /* hwd_abif__uses_rgf_889480_8ced4c (0x8ced4c, 40 Б): on == 1 → [0x8894a0] |= 0xffe00000,
  * [0x8894a4] |= бит 5; иначе [0x8894a0] &= 0x1fffff (bmsk 20), [0x8894a4] &= ~бит 5. */
-void hwd_abif_uses_rgf_889480_8ced4c(u32 on)
+void hwd_abif_dvs_clocks_enable(u32 on)
 {
     if (on == 1) {
         MMIO32(HW_ABIF_DVS_CLK_CFG) |= 0xffe00000u;
@@ -235,7 +235,7 @@ void hwd_abif_rx_table_force_reload(void)
 
 /* hwd_abif__uses_rgf_88a208_8cf5fc (0x8cf5fc, 66 Б): чтение строки RX-таблицы —
  * out[i] = [0x88a208 + (row·4 + i)·4], i = 0..2 (lp 3). row ≥ 0x40 → ассерт 0x12ce. */
-void hwd_abif_uses_rgf_88a208_8cf5fc(u32 row, u32 *out)
+void hwd_abif_rx_table_read_row(u32 row, u32 *out)
 {
     u32 i;
 

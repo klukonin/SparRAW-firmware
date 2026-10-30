@@ -19,11 +19,11 @@
 /* уже портированы / стабы */
 
 /* bits__set16h_s0_w4 (0x8ed2ec, 12 Б): поле [0..3] полуслова. */
-__attribute__((section(".textlate"))) void bits_set16h_s0_w4(u16 *p, u32 v)
+__attribute__((section(".textlate"))) void qos_ctrl_set_tid(u16 *p, u32 v)
 { *p = (u16)((*p & ~0xfu) | (v & 0xfu)); }
 
 /* bits__set16h_s5_w2 (0x8ed328, 12 Б): поле [5..6] полуслова. */
-__attribute__((section(".textlate"))) void bits_set16h_s5_w2(u16 *p, u32 v)
+__attribute__((section(".textlate"))) void qos_ctrl_set_ack_policy(u16 *p, u32 v)
 { *p = (u16)((*p & ~(0x3u << 5)) | ((v & 0x3u) << 5)); }
 
 
@@ -45,9 +45,9 @@ __attribute__((section(".textlate"))) void mid_lookup_for_tx(struct mid *mid, u3
     fw_sysassert_fatal(0, 0x11ee);
 }
 
-/* tx_send_packet_step (0x8c736c, 132 Б): собрать тестовый FW2FW MAC-заголовок
+/* tx_build_fw2fw_test_hdr (0x8c736c, 132 Б): собрать тестовый FW2FW MAC-заголовок
  * payload[4..0x1a): RA/TA/BSSID + seq/descriptor. */
-__attribute__((section(".textlate"))) void tx_send_packet_step(struct ieee80211_qos_hdr *q, u32 a1, u32 cid, u32 a3)
+__attribute__((section(".textlate"))) void tx_build_fw2fw_test_hdr(struct ieee80211_qos_hdr *q, u32 a1, u32 cid, u32 a3)
 {
     u8 buf[0x18];
     struct mid *mid = mid_list_by_mid_fw(a1);
@@ -59,7 +59,7 @@ __attribute__((section(".textlate"))) void tx_send_packet_step(struct ieee80211_
     memcpy_fw(q->h.addr3.b, buf + 8, 6);
     q->h.seq = 0;
     q->qos_ctrl = 0;
-    bits_set16h_s5_w2(&q->qos_ctrl, 0);                   /* ACK policy */
+    qos_ctrl_set_ack_policy(&q->qos_ctrl, 0);                   /* ACK policy */
     {
         u16 w = q->qos_ctrl;
         w &= (u16)~(1u << 7);                             /* A-MSDU present */
@@ -67,7 +67,7 @@ __attribute__((section(".textlate"))) void tx_send_packet_step(struct ieee80211_
         w &= (u16)~(1u << 9);
         q->qos_ctrl = w;
     }
-    bits_set16h_s0_w4(&q->qos_ctrl, a3 & 0xfu);           /* TID */
+    qos_ctrl_set_tid(&q->qos_ctrl, a3 & 0xfu);           /* TID */
 }
 
 /* tx_api__get_mgmt_retry_limit (0x8cc3d0, 4 Б): байт [gp+0xd3] = 0x800257. */
@@ -98,13 +98,13 @@ __attribute__((section(".textlate"))) void tx_api_stamp_seq_bytes(u8 *dst, u8 st
 }
 
 /* tx_api__bits_set8_s0_w6 (0x8ed250): поле [0..5] байта. */
-__attribute__((section(".textlate"))) void tx_api_bits_set8_s0_w6(u8 *p, u32 v)
+__attribute__((section(".textlate"))) void tx_pkt_set_prio(u8 *p, u32 v)
 {
     *p = (u8)((*p & ~0x3fu) | (v & 0x3fu));
 }
 
 /* bits__set8_s6_w2 (0x8ed2bc): поле [6..7] байта. */
-__attribute__((section(".textlate"))) void bits_set8_s6_w2(u8 *p, u32 v)
+__attribute__((section(".textlate"))) void tx_pkt_set_chan_type(u8 *p, u32 v)
 {
     *p = (u8)((*p & ~0xc0u) | ((v & 0x3u) << 6));
 }
@@ -145,7 +145,7 @@ void tx_api_send_packet(struct conn *conn, u32 channel_type, u32 api_sel, u32 pa
             /* тестовый FW2FW-кадр: заголовок данных + последовательность байт */
             u32 orig_len = len;
             struct ieee80211_qos_hdr *q = (struct ieee80211_qos_hdr *)payload;
-            tx_send_packet_step(q, 0, cid, 7);
+            tx_build_fw2fw_test_hdr(q, 0, cid, 7);
             q->h.fc = 0x88;                         /* QoS Data */
             len = (u16)(orig_len + IEEE80211_QOS_HDR_LEN);
             tx_api_stamp_seq_bytes((u8 *)q + IEEE80211_QOS_HDR_LEN, 0, orig_len);
@@ -173,9 +173,9 @@ void tx_api_send_packet(struct conn *conn, u32 channel_type, u32 api_sel, u32 pa
     pkt->sent_cb = 0;
     pkt->sent_info = 0;
     pkt->retry_limit = (u8)retry_limit;
-    tx_api_bits_set8_s0_w6(&pkt->prio_ch, a8 & 0x3fu);
+    tx_pkt_set_prio(&pkt->prio_ch, a8 & 0x3fu);
     pkt->cid = cid;
-    bits_set8_s6_w2(&pkt->prio_ch, channel_type & 0x3u);
+    tx_pkt_set_chan_type(&pkt->prio_ch, channel_type & 0x3u);
     pkt->retry_timer = 0;
     pkt->retries_left = (u8)a6;
     pkt->owner = 0;

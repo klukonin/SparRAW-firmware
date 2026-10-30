@@ -78,7 +78,7 @@ cmd_id→обработчик статически снимается тольк
 0x8daeb8. Каждая ветка печатает строку `Ucode-><ИМЯ>` и зовёт обработчик. Типы
 0x1a…0x26 без обработчика падают в заглушку-ассерт 0x8db138.
 
-Отправители в ucode (тип в r1): 0x925b5c…0x925d80 (места установки типа — до 0x925d94), общие `uc_send_evt_typed`
+Отправители в ucode (тип в r1): 0x925b5c…0x925d80 (места установки типа — до 0x925d94), общие `uc_send_evt_tsf_val`
 @0x925da8 и `uc_send_event` @0x925dd8.
 
 ---
@@ -90,22 +90,22 @@ cmd_id→обработчик статически снимается тольк
 | код | len | отправитель (fw) | обработчик (ucode) | тело |
 |---|---|---|---|---|
 | 0x00 | 0x44 | `lmac_if__send_init_cfg_cmd` @0x8d8550 | `ucode_cmd_0x00_handler` @0x934f68 | init_cfg + тайминги IFS (§3.1) |
-| 0x01 | 0x24 | `lmac_if_send_cmd_0x01` @0x8d8a14 | `ucode_cmd__rx_on` | построение @0x8d89f0; +0x20 = 1 |
+| 0x01 | 0x24 | `lmac_if_send_rx_on` @0x8d8a14 | `ucode_cmd__rx_on` | построение @0x8d89f0; +0x20 = 1 |
 | 0x02 | 0x04 | `lmac_if__send_echo` @0x8c71ac | `ucode_cmd__echo` | эхо |
-| 0x03 | 0x04 | `lmac_if_send_cmd_0x03` @0x8d89cc (через 0x8d89c4) | `ucode_cmd__rx_off` | RX OFF; ответ RX_OFF_RSP |
-| 0x04 | 0x30 | `lmac_if_send_cmd_0x04` @0x8d8da4 (через 0x8d8d30) | `ucode_cmd_0x04_handler` | — |
+| 0x03 | 0x04 | `lmac_if_send_rx_off` @0x8d89cc (через 0x8d89c4) | `ucode_cmd__rx_off` | RX OFF; ответ RX_OFF_RSP |
+| 0x04 | 0x30 | `lmac_if_send_edca_cfg` @0x8d8da4 (через 0x8d8d30) | `ucode_cmd_0x04_handler` | — |
 | 0x05 | 0x24 | `lmac_if_send_cmd_0x05` @0x8d8e2c, `lmac_if_send_cmd_0x05_8f1074` @0x8f1074 | `ucode_cmd_0x05_handler` | запись соседа, подкод в +0x0c (§3.8) |
 | 0x07 | 0x10 | `lmac_if_send_cmd_0x07` @0x8efb90 (два места) | `ucode_cmd_0x07_handler` | +0x0c = подкод 1/2, битовые поля в +4/+8 |
-| 0x08 | 0x14 | `lmac_if_send_cmd_0x08` @0x8d8864 | `ucode_cmd__queue_delete` | удаление очереди |
+| 0x08 | 0x14 | `lmac_if_send_vring_cfg` @0x8d8864 | `ucode_cmd__queue_delete` | удаление очереди |
 | 0x09 | 0x0c | `lmac_if_trigger_bf` @0x8d8cb0, `wmi_handler_beamforming_mgmt` | `ucode_cmd_trigger_bf` | `{1, bf_cmd_type, cid}` (§3.9) |
 | 0x0b | 0x94 | `lmac_if__send_bcon_mgt`, `lmac_if__stop_beacon` | `ucode_cmd__bi_config` @0x932f8c | §3.2 |
 | 0x0c | 0x20 | `lmac_if_send_cmd_0x0c` @0x8d83ec | `ucode_cmd_0x0c_handler` | один 28-байтовый дескриптор развёртки (§3.2) |
-| 0x0f | 0x08 | `lmac_if_send_cmd_0x0f` @0x8d8a5c | (встроен) | `{u32 arg0, u16 arg1}` |
+| 0x0f | 0x08 | `lmac_if_send_maint_sta` @0x8d8a5c | (встроен) | `{u32 arg0, u16 arg1}` |
 | 0x10 | 0x30 | `lm_main_sm__config_lmac_bf_sm` @0x8c625c | `ucode_cmd_config_lmac_bf_sm` @0x922970 | §3.4 |
 | 0x11 | 0x10 | `lmac_if_send_cmd_0x11` @0x8d8b40 | `ucode_cmd_0x11_handler` | 4 × u32 из gp-глобалов fw |
 | 0x12 | — | нет отправителя | `ucode_cmd_0x12_handler` | — |
-| 0x13 | 0x28 | `lmac_if_send_cmd_0x13` @0x8d88b8 | `ucode_cmd__rs_enable` | `{u8 cid, u8 en, 38 Б rs cfg}` |
-| 0x14 | 0x08 | `lmac_if_send_cmd_0x14` @0x8d8390 | встроен (0x936fb0) | `{u32 cid, u32 flags b0..b4}` — маска причин ретриггера BF (§3.9) |
+| 0x13 | 0x28 | `lmac_if_send_rs_cfg` @0x8d88b8 | `ucode_cmd__rs_enable` | `{u8 cid, u8 en, 38 Б rs cfg}` |
+| 0x14 | 0x08 | `lmac_if_send_bf_triggers` @0x8d8390 | встроен (0x936fb0) | `{u32 cid, u32 flags b0..b4}` — маска причин ретриггера BF (§3.9) |
 | 0x15 | 0x08 | `lmac_if__send_lmac_personality` @0x8d8b9c | встроен (0x936fba) | §3.3 |
 | 0x16 | 0x04 | `lmac_if_send_cmd_0x16` @0x8d8bd0 | `ucode_cmd_0x16_handler` | байт `[0x800d08]` |
 | 0x18 | 0x20 | `install_key_index_stub` @0x8e9440 | `ucode_cmd_install_key` | `{idx, class, 0x34, 0x10, key[16]}` (§3.9) |
@@ -120,7 +120,7 @@ cmd_id→обработчик статически снимается тольк
 | 0x25 | 0x14 | `lmac_if_update_aw_ie_handler` @0x8d8de0 | `ucode_cmd_update_aw_ie` | `{0x9d, tbtt_start_time, awake_window_duration, 1}` |
 | 0x26 | 0x01 | `lmac_if_keep_alive_trigger_handler` @0x8d85e4 | `ucode_cmd_keep_alive_trigger` | `{u8 cid}` |
 | 0x27 | 0x02 | `lmac_if_send_cmd_0x27` @0x8d8c80 | `traffic_deferral_cfg_cmd_handler` | `{u8 en, u8 val}` |
-| 0x30 | 0x03 | `lmac_if_send_cmd_0x30` @0x8d852c | `ucode_cmd_0x30_handler` | `{u8 idx, u8 bit, u8 val7}` |
+| 0x30 | 0x03 | `lmac_if_send_sta_rs_mcs` @0x8d852c | `ucode_cmd_0x30_handler` | `{u8 idx, u8 bit, u8 val7}` |
 | 0x39 | 0x04 | `lmac_if_send_get_selected_rf_sector_index` | `get_selected_rf_sector_index_cmd_handler` | `{u8 idx, u8 type}` |
 | 0x3a | 0x04 | `lmac_if_send_set_selected_rf_sector_index` | `set_selected_rf_sector_index_cmd_handler` | `{u8 cid, u8 type, u16 sector}`, 0xffff = сброс |
 | 0x41 | 0x04 | `lmac_if_send_long_range` @0x8e7e00 | `txrx_umac_if_long_range_cmd_handler` @0x934fdc | тело не используется (§3.9) |
@@ -139,24 +139,24 @@ cmd_id→обработчик статически снимается тольк
 
 | код | отправитель fw 6.2 | обработчик ucode 6.2 | назначение |
 |---|---|---|---|
-| 0x00 | `lmac_if_send_cmd_0x00` (из `lmac_if__send_init_cfg`) | `ucode_cmd_0x00_handler` → `ucode_cmd__apply_mac_cfg` 0x92f320, `rf__compute_tx_rx_sets`, `mac__cmd_56_57` | начальная конфигурация MAC (§3.1) |
-| 0x01 | `lmac_if_send_cmd_0x01` | `ucode_cmd_0x01_handler` 0x93a9ec (520 Б) | RX ON: режим MAC, RF-цепочка, grant detect, событие RX_ON_RSP |
+| 0x00 | `lmac_if_send_mac_cfg` (из `lmac_if__send_init_cfg`) | `ucode_cmd_0x00_handler` → `ucode_cmd__apply_mac_cfg` 0x92f320, `rf__compute_tx_rx_sets`, `mac__cmd_56_57` | начальная конфигурация MAC (§3.1) |
+| 0x01 | `lmac_if_send_rx_on` | `ucode_cmd_0x01_handler` 0x93a9ec (520 Б) | RX ON: режим MAC, RF-цепочка, grant detect, событие RX_ON_RSP |
 | 0x02 | `wmi_deep_echo` | `ucode_cmd__echo` | эхо |
-| 0x03 | `lmac_if_send_cmd_0x03` | `ucode_cmd_0x03_handler` 0x93a9d0 | RX OFF: сброс TSF-защёлки BI, событие RX_OFF_RSP |
-| 0x04 | `lmac_if_send_cmd_0x04` | `ucode_cmd_0x04_handler_uc` 0x93adf0 | конфиг (шаг `txrx_api_step_c`) |
+| 0x03 | `lmac_if_send_rx_off` | `ucode_cmd_0x03_handler` 0x93a9d0 | RX OFF: сброс TSF-защёлки BI, событие RX_OFF_RSP |
+| 0x04 | `lmac_if_send_edca_cfg` | `ucode_cmd_0x04_handler_uc` 0x93adf0 | конфиг (шаг `txrx_api_program_edca_ac`) |
 | 0x05 | `lmac_if__send_sta_cfg_05`, `lmac_if__send_sta_cfg_05_b` 0x8dc380, `lmac_if__send_sta_cfg_05_c` 0x8dc3c4 | `ucode_cmd_0x05_handler` (индекс — `ucode_cmd_05__index` 0x920cdc) | запись станции/правила по индексу |
 | 0x07 | `ftm_main_sm__radio_allocated_cb` | `ucode_cmd_0x07_handler` | FTM: радио получено |
-| 0x08 | `lmac_if_send_cmd_0x08` (из `tx_api__mask_from_queue`) | `ucode_cmd_0x08_handler` 0x93aea8 (848 Б) | удаление/маскирование очереди (в 4.1 queue_delete); событие ответа |
+| 0x08 | `lmac_if_send_vring_cfg` (из `tx_api__mask_from_queue`) | `ucode_cmd_0x08_handler` 0x93aea8 (848 Б) | удаление/маскирование очереди (в 4.1 queue_delete); событие ответа |
 | 0x09 | `lmac_if_trigger_bf`, `wmi_beamforming_mgmt` | `ucode_cmd_trigger_bf` | запуск BF |
 | 0x0b | `lmac_if__send_bcon_mgt`, `lmac_if__send_bcon_del_0b` (удаление маяка) | `ucode_cmd_0x0b_handler` → `ucode_cmd_0b__apply` 0x92b198, `rf__store_last_module_index` | bi_config / стоп маяка |
 | 0x0c | `lmac_if_config_txss` | `ucode_cmd_0x0c_handler` (тоже `ucode_cmd_0b__apply`) | TXSS |
-| 0x0f | `lmac_if_send_cmd_0x0f` | `ucode_cmd_0x0f_handler` → `ucode_cmd__reset_queue_state` 0x92b210, `ps__release_awake_for_sta` | сброс состояния CID (abort BF, снятие pending) |
+| 0x0f | `lmac_if_send_maint_sta` | `ucode_cmd_0x0f_handler` → `ucode_cmd__reset_queue_state` 0x92b210, `ps__release_awake_for_sta` | сброс состояния CID (abort BF, снятие pending) |
 | 0x10 | `lm_main_sm__config_lmac_bf_sm`, `wmi_bf_control` | `ucode_cmd_0x10_handler` | конфиг BF-автомата |
 | 0x11 | `silent_rssi__report_agc_tables` | `ucode_cmd_0x11_handler` | AGC-старт/таблица усиления |
 | 0x12 | `field_set_0x00__8dbc94` (UT) | `ucode_cmd_0x12_handler_uc` 0x9301e4 | RS старт/стоп (UT) |
-| 0x13 | `lmac_if_send_cmd_0x13` | `ucode_cmd_0x13_handler` 0x92fcc4 | «enable RS» |
+| 0x13 | `lmac_if_send_rs_cfg` | `ucode_cmd_0x13_handler` 0x92fcc4 | «enable RS» |
 | 0x14 | `field_rw_0x00__8db534`, `wmi_bf_control` | встроен в диспетчер (0x93ca22) | слово в 0x8021b8+0x20 **[код]** |
-| 0x15 | `lmac_if_send_cmd_0x15` (из `maintain_sm__set_rs_params`) | встроен (0x93ca30) | два слова в gp-переменные — `personality`/`failure_policy`, как в 4.1 (§3.3) **[код]** |
+| 0x15 | `lmac_if_send_rs_params` (из `maintain_sm__set_rs_params`) | встроен (0x93ca30) | два слова в gp-переменные — `personality`/`failure_policy`, как в 4.1 (§3.3) **[код]** |
 | 0x16 | `lmac_if__send_cmd_0x16_calib_b4` | `ucode_cmd_0x16_handler` | байт поля +0xb4 калибровочного объекта → [gp+0x24] ucode **[код]** |
 | 0x18 | `install_key_index_stub`, `l2_mgr__set_rf_params` | `ucode_cmd_0x18_handler` 0x93ad54 → `uc_send_evt__sta_update_field_rsp` 0x927810 | поле STA (ключ, RF-параметры) |
 | 0x19 | `hw_sysapi_rx__alloc_and_store` | `ucode_cmd_0x19_handler` | RX omni-сектор (UT) |
@@ -165,7 +165,7 @@ cmd_id→обработчик статически снимается тольк
 | 0x20 | `lmac_if__send_phy_ina_det_cfg` | `ucode_cmd_0x20_handler` 0x92e458 | детектор INA; ответ `uc_evt__send_26` 0x9278a8 |
 | 0x21 | `lmac_if__send_txop_limits` | `ucode_cmd_0x21_set_txop_limits` 0x93a9b0 → `txop__apply_limits_regs` 0x936ba8 | **пределы TXOP**: 4 значения ≤0x7ff мкс ([gp+0x26c], 0x500 в OOB R1) → 0x886f70 (пара, второе сдвинуто на [gp-0x24]) и 0x886f74; на стенде 0x07d007d0 = 2000 мкс **[код]** |
 | 0x22 | `lmac_if_send_cmd_0x22` | `ucode_cmd_0x22_handler` 0x92e840 | PSC pending agreement: запись в таблицу 0x802f80 по индексу пира (<8) или общая (0xff) **[код]** |
-| 0x23 | `lmac_if_send_cmd_0x23` | `ucode_cmd_0x23_handler` (+`ucode_cmd__load_table_803124_803128__920b1c`) | загрузка таблицы 0x803124/0x803128 |
+| 0x23 | `lmac_if_send_abft_cfg` | `ucode_cmd_0x23_handler` (+`ucode_cmd__load_table_803124_803128__920b1c`) | загрузка таблицы 0x803124/0x803128 |
 | 0x24 | `lmac_if_discovery_mode_cfg_handler` | `ucode_cmd_0x24_handler` 0x93a830 | «DISCOVERY ON/OFF (Type)», сброс всех STA BF, проверка `ucode_cmd_24__check` 0x93d31c |
 | 0x25 | `lmac_if_update_aw_ie_handler` | `ucode_cmd_0x25_handler` 0x93b1f8 → `aw_ie__copy_to_bcon` | AW IE в маяк |
 | 0x26 | — (отправителя по коду в 6.2 нет) | `ucode_cmd_0x26_handler` 0x92c5dc → `keep_alive__arm_slot` 0x939484 | keep-alive |
@@ -174,7 +174,7 @@ cmd_id→обработчик статически снимается тольк
 | 0x29, 0x2b, 0x2f, 0x38, 0x3d | то же | `ucode_cmd_0x29/2b/2f/38/3d_handler` (по 144 Б) | две команды MAC-ядра (0x1d005000/0x1d006000 с полем из gp) с чтением ответа, затем `bf_pending__set_bit` 0x9216f8 (бит в 0x800648) **[код для 0x29]** |
 | 0x2c | `hwm__alloc_and_store` (из `wmi_tof_set_tx_rx_offset`) | `ucode_cmd_0x2c_handler` 0x9373fc | TX/RX-смещение ToF (0x889800) |
 | 0x2d | `ftm__send_ucode_session_cfg` (FTM) | `ucode_cmd_0x2d_handler` 0x926ab4 → `ucode_cmd_2d__set_bit` 0x9272c0 | FTM-кадр/голос за ресурс |
-| 0x30 | `lmac_if_send_cmd_0x30` | `ucode_cmd_0x30_handler_uc` 0x92ff04 | RS start/abort (force MCS) |
+| 0x30 | `lmac_if_send_sta_rs_mcs` | `ucode_cmd_0x30_handler_uc` 0x92ff04 | RS start/abort (force MCS) |
 | 0x31 | `tof_mgr__aoa_session_start` | `ucode_cmd_0x31_handler` 0x920dc8 | **AoA**: «AOA was started», отказ «BRP is pending or sta isn't connected» |
 | 0x32 | `wmi_brp__alloc_and_store` (`wmi_brp_set_ant_limit`) | `ucode_cmd_0x32_handler` 0x923940 | ограничение антенн BRP |
 | 0x33 | `lmac_if_upm_cfg_handler` | `ucode_cmd_0x33_handler` 0x93d2a8 | UPM: режим 0/1, период в [5000, 80000) **[код]** |
@@ -279,7 +279,7 @@ wil6436 7.5 (декодированы байты `wil6436.fw`) — аппара�
   @0x931be0…0x931c50. Употребление: `0x801a09` (sifs.usec) читает
   `rx_flow__grant_detected`; `0x801a0b` (slot.usec) — `rx_funcs__rx_flow` и
   `mac__prepare_txrx_window`; `0x801a14` (three_sifs = MBIFS 9 мкс) —
-  `mac_mode_kick`, `rx_funcs__handle_ppdu_report`, `txss__flow_body`.
+  `abft_initiator_feedback_loop`, `rx_funcs__handle_ppdu_report`, `txss__flow_body`.
 
 #### Момент ответа RX→TX: 0x886d10 **[код] [железо]**
 
@@ -312,12 +312,12 @@ wil6436 7.5 (декодированы байты `wil6436.fw`) — аппара�
 
 `lmac_if__send_init_cfg` 0x8f3db8 / 4.1 0x8ec070 строит на стеке
 0x24 Б (константы 150, 161, 123, 22, 18, 96, 106, 0x91, 10, 2 и битовые маски)
-и зовёт `lmac_if_send_cmd_0x00` 0x8db8cc / 4.1 `lmac_if__send_init_cfg_cmd` 0x8d8550 (`sifs_clk`=0x1ef,
+и зовёт `lmac_if_send_mac_cfg` 0x8db8cc / 4.1 `lmac_if__send_init_cfg_cmd` 0x8d8550 (`sifs_clk`=0x1ef,
 `sifs_add_clk_limit`=0xa в регистрах), который копирует их в тело, дописывает
 по +0x30 ту же 12-байтовую `fui_cmds_hw_cfg_ifs_timing_cfg_s`, что в 4.1
 (sifs 495, add 10, slot 825, rifs 165, sbifs 165 тактов 165 МГц), и слово
 +0x40 = байт 0x8042c8. В ucode (`ucode_cmd_0x00_handler` 0x93a8d0 / 4.1 0x934f68): +0x40 →
-gp-переменная; +0x30 (12 Б) → 0x802940+0x1c → `txrx_api_step_b_uc`
+gp-переменная; +0x30 (12 Б) → 0x802940+0x1c → `txrx_api_program_ifs_timing`
 пересчитывает такты и пишет регистры 0x886d00/+4/+8/+0x14; +0x00..+0x2f →
 0x802588 → `mac__program_886e0c_20b` 0x92f1a0 / 4.1 0x92b6a8, который раскладывает байты тела
 в регистры MAC:
@@ -803,15 +803,15 @@ UPM 0x33, 0x34, сектора TXSS 0x35/0x36, 0x3b, фиксированное 
 | 0x02 | EVENT_ECHO | `lmac_if_echo_evt_handler` |
 | 0x03 | (RX_OFF_RSP по 4.1) | `rf__get_active_mask` |
 | 0x04 | EVENT_FLUSH_Q_DONE | `event_flush_q_done` |
-| 0x05 | NEW_LINK_EVT | `new_link_evt` |
+| 0x05 | NEW_LINK_EVT | `radio_mgr_get_cur_mid` |
 | 0x06 | (BF_DONE_EVT) | `lmac_if__abft_notify_evt` |
 | 0x08 | QUEUE_DELETED_EVT | `queue_deleted_evt` |
 | 0x09 | LINK_LOST_EVT | `lmac_if_link_lost_evt_handler` |
-| 0x11 | STA_UPDATE_FIELD_RSP | `return_field_type` |
+| 0x11 | STA_UPDATE_FIELD_RSP | `lmac_if_sta_field_rsp_evt` |
 | 0x13 | RS_STARTED_EVT | `LMAC_IF__rs_started` |
 | 0x14 | (RS_DONE_EVT) | `lmac_if__rs_done_evt` |
 | 0x15 | PS_SHALLOW_SLEEP_NTF_EVT | `ps_shallow_sleep_ntf_evt` |
-| 0x16 | (PS_AWAKE_PEER_EVT) | `new_link_evt` |
+| 0x16 | (PS_AWAKE_PEER_EVT) | `radio_mgr_get_cur_mid` |
 | 0x17 | (MAC_MONITOR_EVT) | `lmac_if__update_pct_stats` ([MAC-MON](MAC-MON.md)) |
 | 0x18 | PS_TRAFFIC_DEFERRAL_CFG_EVT | `ps_traffic_deferral_cfg_evt` |
 | 0x19 | PS_WAKE_PCIE_EVT | `ps_wake_pcie_evt` |
@@ -837,7 +837,7 @@ UPM 0x33, 0x34, сектора TXSS 0x35/0x36, 0x3b, фиксированное 
 `uc_send_evt__mac_monitor` 0x927530 (0x925b84), `uc_send_evt__link_lost` 0x927690 (0x925c40),
 `uc_send_evt__rs_started` 0x927764 (0x925cdc), `uc_send_evt__sta_update_field_rsp` 0x927810
 (0x925d54), `uc_send_evt__ps_awake_peer` 0x92757c (0x925ba4), `uc_send_evt__get_rf_sector_done`
-0x927664 (0x925c14), `uc_send_evt__set_rf_sector_done` 0x9277e4 (0x925cfc), `uc_send_evt_typed`
+0x927664 (0x925c14), `uc_send_evt__set_rf_sector_done` 0x9277e4 (0x925cfc), `uc_send_evt_tsf_val`
 0x927928 (0x925da8; тип в аргументе, с TSF); только 6.2 — `uc_evt__send_24` (AoA),
 `uc_evt__send_26` 0x9278a8 (INA), `uc_evt__send_25` 0x9279a0 (ответ на 0x34), `uc_evt__send_2b`
 0x92783c / `uc_evt__send_23` 0x92787c, `uc_evt__send_20` 0x92785c / `uc_evt__send_21` 0x9278c8
@@ -870,9 +870,9 @@ blobs/insns/INSNS-6200.txt`.
 |---|---|---|
 | 0x93160c | `bi_mode__program_ifs_timing` (предлагалось `bi_mode__program_886d88`) | `mac_sxd__program_886d88_and_cmd_1e` |
 | 0x931bd0 | `txrx_api_step_b` (предлагалось `mac__program_ifs_timing_from_cfg`) | `ifs_cfg__program_from_hw_cfg` |
-| 0x8d8b9c | `lmac_if_send_cmd_0x15` | `lmac_if__send_lmac_personality` |
-| 0x8d7efc | `lmac_if_send_cmd_0x23` | `lmac_if__send_abft_resp_ctrl` |
-| 0x8d8550 | `lmac_if_send_cmd_0x00` | `lmac_if__send_init_cfg_cmd` |
+| 0x8d8b9c | `lmac_if_send_rs_params` | `lmac_if__send_lmac_personality` |
+| 0x8d7efc | `lmac_if_send_abft_cfg` | `lmac_if__send_abft_resp_ctrl` |
+| 0x8d8550 | `lmac_if_send_mac_cfg` | `lmac_if__send_init_cfg_cmd` |
 | 0x8dbee8 | `tx_bcon__inject_evt4` | `lm_if__deliver_bf_results` |
 | 0x8c22a8 | `conn__snapshot_bcon_ts` (предлагалось `lm_if__on_bf_results`) | `conn__on_bf_results` |
 | 0x8ca1a8 | `maintain__get_conn` | `lm__get_mid_id` (возвращает mid_id) |

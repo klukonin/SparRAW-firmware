@@ -38,7 +38,7 @@ void fw_image_info_set_flavor(u32 v)
 void bootloader_version_log(void)
 {
     u32 a, b, c, d;
-    mac_read_880a2c_38(&a, &b, &c, &d);
+    mac_read_fw_version(&a, &b, &c, &d);
     MMIO32(HW_BL_VERSION_BUILD) = d;
     MMIO32(HW_BL_VERSION_SUBMINOR) = c;
     MMIO32(HW_BL_VERSION_MINOR) = b;

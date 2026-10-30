@@ -97,7 +97,7 @@ void mac_icr_mask_awake_tsf(void)
     MMIO32(HW_MAC_SXD_ERRORS_IMS) = 0x8000;
 }
 
-void isr_mac_icr_886e40(void)
+void isr_mac_sxd_errors(void)
 {
     u32 tsf[2];
 
@@ -141,7 +141,7 @@ static u32 hwd_dma_read_pring_status(void)
 }
 
 /* hwd_dma__uses_rgf_881c00_8d0b74 (0x8d0b74): [0x881c38] = v под запретом IRQ. */
-static void hwd_dma_ack_pring_881c38(u32 v, u32 sync_flag)
+static void hwd_dma_mask_pring_irq_isr(u32 v, u32 sync_flag)
 {
     u32 s = arc_irq_disable();
     MMIO32(HW_DMA_FW_ICR_C24_IMS) = v;
@@ -171,13 +171,13 @@ static u32 vring_schd_has_pending(const struct vring_schd *s)
 /* (0x8e0eec, 80 Б) vring__stop_hw: бит 0 статуса pring — DMA кольца остановлен: снять
  * бит в 0x881c28 ([p] — ид кольца), VRING — в состояние 4 и vring_schd__stop_vring, если у
  * планировщика есть ожидающие. */
-void pring_task_8e0eec(u32 idx, u32 a1)
+void pring_dma_stopped_task(u32 idx, u32 a1)
 {
     (void)a1;
     struct pring *p = sm_pring_by_index(idx);
     struct vring_rec *vr;
 
-    vring_reg_write_locked_28(1u << p->id, 0);
+    vring_hw_clear_dma_irq(1u << p->id, 0);
     vr = p->bound;
     if (vr == 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x12bd);
@@ -224,7 +224,7 @@ static void pring_on_dma_done(struct pring *p)
 }
 
 /* (0x8e0ecc, 16 Б) задача бита 4. */
-void pring_task_8e0ecc(u32 idx, u32 a1)
+void pring_dma_done_task(u32 idx, u32 a1)
 {
     (void)a1;
     pring_on_dma_done(sm_pring_by_index(idx));
@@ -251,7 +251,7 @@ static void pring_on_stop_req(struct pring *p)
     st = p->state;
     switch (st) {
     case 3: case 4:
-        vring_reg_write_locked_28(1u << (p->id + 4), 1);
+        vring_hw_clear_dma_irq(1u << (p->id + 4), 1);
         entry = vring_tbl_entry_addr(p->vr);
         tx_macq_is_empty(entry, 0);                 /* результат vendor не использует */
         if (dma_is_idle(p->id, 0) != 0) {
@@ -259,7 +259,7 @@ static void pring_on_stop_req(struct pring *p)
         } else {
             p->dma_timer = u_schd_schedule(sm_pring_timeout_task, p->id, 0, 1,
                                            pring_stop_timeout, 0, 0);
-            vring_reg_write_locked_3c(1u << (p->id + 4), 1);
+            vring_hw_unmask_dma_irq(1u << (p->id + 4), 1);
         }
         return;
     case 1: case 2:
@@ -272,7 +272,7 @@ static void pring_on_stop_req(struct pring *p)
 }
 
 /* (0x8e0edc, 16 Б) задача бита 8. */
-void pring_task_8e0edc(u32 idx, u32 a1)
+void pring_stop_req_task(u32 idx, u32 a1)
 {
     (void)a1;
     pring_on_stop_req(sm_pring_by_index(idx));
@@ -290,11 +290,11 @@ static void pring_schedule_bits(u32 bits, u_schd_fn cb)
 void pring_isr_dispatch(void)
 {
     u32 st = hwd_dma_read_pring_status();
-    pring_schedule_bits(st & 1u, pring_task_8e0eec);
-    pring_schedule_bits((st >> 4) & 1u, pring_task_8e0ecc);
-    pring_schedule_bits((st >> 8) & 1u, pring_task_8e0edc);
-    hwd_dma_ack_pring_881c38(st, 1);
-    vring_reg_write_locked_28(st, 1);
+    pring_schedule_bits(st & 1u, pring_dma_stopped_task);
+    pring_schedule_bits((st >> 4) & 1u, pring_dma_done_task);
+    pring_schedule_bits((st >> 8) & 1u, pring_stop_req_task);
+    hwd_dma_mask_pring_irq_isr(st, 1);
+    vring_hw_clear_dma_irq(st, 1);
 }
 
 /* ------------------------------------------------------------------------
@@ -302,24 +302,24 @@ void pring_isr_dispatch(void)
  * (только квитирование). vendor 0x8c08f0 / 0x8c0990.
  */
 /* mac_icr__read_cause_887014 (0x8dd8b8), mac_icr__read_cause_887030 (0x8dd8c4). */
-static u32 mac_icr_read_cause_887014(void) { return MMIO32(HW_MAC_CNT_ICM); }
-static u32 mac_icr_read_cause_887030(void) { return MMIO32(HW_MAC_CNT2_ICM); }
+static u32 mac_icr_read_cnt_cause(void) { return MMIO32(HW_MAC_CNT_ICM); }
+static u32 mac_icr_read_cnt2_cause(void) { return MMIO32(HW_MAC_CNT2_ICM); }
 
-void isr_mac_icr_887010(void)
+void isr_mac_cnt_icr(void)
 {
-    MMIO32(HW_MAC_CNT_ICR) = mac_icr_read_cause_887014();
+    MMIO32(HW_MAC_CNT_ICR) = mac_icr_read_cnt_cause();
 }
 
-void isr_mac_icr_88702c(void)
+void isr_mac_cnt2_icr(void)
 {
-    MMIO32(HW_MAC_CNT2_ICR) = mac_icr_read_cause_887030();
+    MMIO32(HW_MAC_CNT2_ICR) = mac_icr_read_cnt2_cause();
 }
 
 /* ------------------------------------------------------------------------
  * Вектор 12 — MAC/PHY (vendor 0x8c0a30): счётчик [gp,0x18c], выключить RX PHY,
  * [0x886e2c] = 0x8000, [0x886028] = −1.
  */
-void isr_mac_886028(void)
+void isr_mac_phy_irq(void)
 {
     mac_phy_irq_count += 1;                /* [gp,0x18c] */
     hwd_phy_rx_enable(0);
@@ -332,7 +332,7 @@ void isr_mac_886028(void)
  * ICR 0x889470. Бит 2 «PLL5 UNLOCK interrupt!!!», бит 7 «FS8 UNLOCK interrupt!!!»:
  * счётчик (16 бит) и фатал (0x12ec / 0x12ee) только при взведённом байте политики.
  */
-void isr_caf_icr_889470(void)
+void isr_caf_pll_unlock(void)
 {
     u32 cause = MMIO32(HW_RGF_CAF_ICR_ICM);
     MMIO32(HW_RGF_CAF_ICR_ICR) = cause;
@@ -547,7 +547,7 @@ void isr_pcie_debug(void)
  * DBI-записи / обход A2 SSID/SSVID; не дождались — фатал 0x11aa. Ни одного кода — 0x11ab.
  */
 /* hwd_pcie__rgf_882600 (0x8d13d4). */
-static u32 hwd_pcie_read_and_ack_cause_882670(void)
+static u32 hwd_pcie_read_and_ack_pal_cause(void)
 {
     u32 c = MMIO32(HW_RGF_PAL_UNIT_ICR_ICM);
     MMIO32(HW_RGF_PAL_UNIT_ICR_ICR) = c;
@@ -579,7 +579,7 @@ static u32 pcie_get_phy_pll_lock(void)
 /* (0x8e2078, 62 Б) задача таймера кода 0: снять [gp,-0x4c]; при [gp,0x2c0] — снова
  * разрешить бит 3 отладочного блока; при [gp,0x2bc] — выключить обход ISOC и разрешить
  * биты 9 и 0; применить 0x882dd4. */
-void pcie_isr_code0_timer_task(u32 a0, u32 a1)
+void pcie_dbg_rearm_task(u32 a0, u32 a1)
 {
     (void)a0;
     (void)a1;
@@ -597,13 +597,13 @@ void pcie_isr_code0_timer_task(u32 a0, u32 a1)
 
 /* (0x8f0a44, 50 Б; имя ba_setup_sm__addba_resp ошибочно) код 0: перезапустить таймер
  * [gp,-0x4c] = 0x800138 на [gp,0x2c4] = 0x800448. */
-static void pcie_isr_code0_8f0a44(void)
+static void pcie_dbg_rearm_schedule(void)
 {
     if (pcie_dbg_rearm_timer != 0) {
         u_schd_cancel(pcie_dbg_rearm_timer);
         pcie_dbg_rearm_timer = 0;
     }
-    pcie_dbg_rearm_timer = u_schd_schedule(pcie_isr_code0_timer_task, 0, 0, 0,
+    pcie_dbg_rearm_timer = u_schd_schedule(pcie_dbg_rearm_task, 0, 0, 0,
                                                 pcie_code0_timer_delay, 0, 0);
 }
 
@@ -624,13 +624,13 @@ static void pcie_dbi_write_bar(u8 f0, u8 f1, u8 f2, u8 f3, u32 reg, u32 val, u32
 }
 
 /* hwd_pcie__read_8825c0 (0x8d141c). */
-static u32 hwd_pcie_read_8825c0(void) { return MMIO32(HW_PCIE_MODE_FLAGS); }
+static u32 hwd_pcie_read_mode_flags(void) { return MMIO32(HW_PCIE_MODE_FLAGS); }
 
-/* pcie_perst_handler_step (0x8f0d28, 170 Б): при [gp,0x1f8] = 0x80037c по битам 0x8825c0
+/* pcie_perst_reprogram_bars (0x8f0d28, 170 Б): при [gp,0x1f8] = 0x80037c по битам 0x8825c0
  * перепрограммировать BAR0/BAR1 (DBI 0x10/0x14) функций/портов. */
-static void pcie_perst_handler_step(void)
+static void pcie_perst_reprogram_bars(void)
 {
-    u32 cfg = hwd_pcie_read_8825c0();
+    u32 cfg = hwd_pcie_read_mode_flags();
 
     if (pcie_perst_cfg_fix_en == 0)
         return;
@@ -760,9 +760,9 @@ static void pcie_dbi_write_all_ports(u32 reg, u32 val, u32 serdes, u32 cfg)
         dbi_write(reg, val, 0, 0, 1, 1, 1, 1, 0);
 }
 
-static void pcie_device_power_sm_traffic_resume_req(void)
+static void pcie_dbi_write_ssid_ssvid_wa(void)
 {
-    u32 cfg = hwd_pcie_read_8825c0();
+    u32 cfg = hwd_pcie_read_mode_flags();
     u32 serdes = hwd_pcie_is_ep_under_serdes();
 
     pcie_dbi_write_all_ports(0x60, 0x700d, serdes, cfg);
@@ -789,7 +789,7 @@ static u32 pcie_dbi_read_f(u32 reg, u32 f)
 static void pcie_l1_latency_wa(void)
 {
     u32 f = hwd_pcie_is_ep_under_serdes();
-    u32 cfg = hwd_pcie_read_8825c0();
+    u32 cfg = hwd_pcie_read_mode_flags();
     u32 v;
 
     if ((((cfg >> 1) & 1u) | f) != 0) {
@@ -831,7 +831,7 @@ static void pcie_isr_perst_deassert(void)
     for (;;) {
         if (--cnt == 0xffffffffu)
             break;                                  /* время вышло: b80 != 0, lock == 0 */
-        b80 = hwd_pcie_get_882b80();
+        b80 = hwd_pcie_get_perst_status();
         lock = pcie_get_phy_pll_lock();
         if (b80 == 0) {
             fw_log_emit0(0x20, 0x10002f8);          /* снова PERST assert */
@@ -847,9 +847,9 @@ static void pcie_isr_perst_deassert(void)
             fw_log_emit0(0x20, 0x100037c);          /* «starting DBI writes...» */
             pcie_clear_dbi_gateway();
             fw_log_emit0(0x10, 0x100039c);          /* «A2 PCIE SSID/SSVID Workaround» */
-            pcie_device_power_sm_traffic_resume_req();
+            pcie_dbi_write_ssid_ssvid_wa();
             pcie_l1_latency_wa();
-            pcie_perst_handler_step();
+            pcie_perst_reprogram_bars();
             pcie_clear_dbi_gateway();
         } else {
             fw_log_emit0(0, 0x10003c4);             /* phy_pll_lock не готов */
@@ -864,11 +864,11 @@ void isr_pcie_main(void)
 {
     u32 handled;
 
-    u32 cause = hwd_pcie_read_and_ack_cause_882670();
+    u32 cause = hwd_pcie_read_and_ack_pal_cause();
     if (pcie_irq_extract_bit_by_code(cause, 0)) {
         handled = 1;
-        pcie_isr_code0_8f0a44();
-        pcie_perst_handler_step();
+        pcie_dbg_rearm_schedule();
+        pcie_perst_reprogram_bars();
     } else {
         handled = 0;
     }
@@ -894,7 +894,7 @@ void isr_pcie_main(void)
     }
     if (pcie_irq_extract_bit_by_code(cause, 6) && pcie_perst_assert_irq_en != 0) {  /* [gp,0x1f4] */
         fw_log_emit0(0x20, 0x1000404);              /* «perst assert interrupt...» */
-        if (hwd_pcie_get_882b80() == 0)
+        if (hwd_pcie_get_perst_status() == 0)
             pcie_pm_event_unsupported(6);
         else
             fw_log_emit0(0x20, 0x1000428);          /* perst уже снят */
@@ -922,7 +922,7 @@ void isr_pcie_main(void)
  * «PCIE UNIT_ICR_PORT0_LTSSM_DBG_1: UN HANDLED INTERRUPT (CAUSE=0x%X)», фатал 0x130c.
  */
 /* hwd_pcie__rgf_882f80 (0x8d13e0). */
-static u32 hwd_pcie_read_and_ack_cause_882fd0(void)
+static u32 hwd_pcie_read_and_ack_ltssm_cause(void)
 {
     u32 c = MMIO32(HW_UNIT_ICR_PORT0_LTSSM_DBG_1_ICM);
     MMIO32(HW_UNIT_ICR_PORT0_LTSSM_DBG_1_ICR) = c;
@@ -964,7 +964,7 @@ void isr_pcie_ltssm(void)
 {
     u32 handled = 0;
 
-    u32 cause = hwd_pcie_read_and_ack_cause_882fd0();
+    u32 cause = hwd_pcie_read_and_ack_ltssm_cause();
     if (pcie_ltssm_code_to_index(cause, 0)) {
         pcie_l1_enter_count += 1;            /* [gp,0x110] */
         handled = 1;

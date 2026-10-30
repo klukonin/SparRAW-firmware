@@ -29,7 +29,7 @@ FWDATA(8031c8) struct txq_dma_mode txq_dma_mode_tbl[32] = {
 
 /* ---------------- поля-биты ---------------- */
 
-static void bf32(void *p, u32 lo, u32 n, u32 v)
+static void bitfield_set32(void *p, u32 lo, u32 n, u32 v)
 {
     u32 *w = (u32 *)p;
     u32 m = ((n >= 32) ? 0xffffffffu : ((1u << n) - 1u)) << lo;
@@ -86,7 +86,7 @@ void FWQ_TX_AVAILABILITY_init(void)
 /* ---------------- очереди fwq_tx ---------------- */
 
 /* brd_if_multi_array__get_chunk (0x8cbbc4, 38 Б; имя vendor ошибочно): очередь канала. */
-struct llist *brd_if_multi_array_get_chunk_8cbbc4(struct fwq_tx *q, u32 ch)
+struct llist *fwq_tx_channel_queue(struct fwq_tx *q, u32 ch)
 {
     if (ch == 0)
         return &q->chq[0];
@@ -98,7 +98,7 @@ struct llist *brd_if_multi_array_get_chunk_8cbbc4(struct fwq_tx *q, u32 ch)
 
 /* fwq_tx__queue_step (0x8e5620, 92 Б): отдавать кадры в кольцо, пока vt->send_next берёт;
  * каждый — из текущей очереди в «переданные», отметить доступность, колбэк. */
-u32 fwq_tx_queue_step(struct fwq_tx *q)
+u32 fwq_tx_send_pending(struct fwq_tx *q)
 {
     u32 sent = 0;
     u32 r;
@@ -106,7 +106,7 @@ u32 fwq_tx_queue_step(struct fwq_tx *q)
         r = q->vt->send_next(q);
         if (r == 1) {
             struct tx_pkt *pkt = llist_pop_front((u32 *)q->cur);
-            list_find_entry_d((u32 *)&q->sent, (u32 *)pkt);
+            llist_append((u32 *)&q->sent, (u32 *)pkt);
             if (q->mode == 1)
                 ps_mark_data_pending(pkt->cid, TX_PKT_PRIO(pkt));
             q->stats->sent += 1;
@@ -123,10 +123,10 @@ u32 fwq_tx_queue_step(struct fwq_tx *q)
 /* fwq_tx::add_packet (0x8c2af4, 92 Б). */
 u32 fwq_tx_add_packet(struct fwq_tx *q, struct tx_pkt *pkt, u32 ch)
 {
-    list_find_entry_d((u32 *)brd_if_multi_array_get_chunk_8cbbc4(q, ch), (u32 *)pkt);
+    llist_append((u32 *)fwq_tx_channel_queue(q, ch), (u32 *)pkt);
     q->stats->added += 1;
     if (ch == q->channel && q->state == 1) {
-        u32 r = fwq_tx_queue_step(q);
+        u32 r = fwq_tx_send_pending(q);
         if (r != 0)
             return r;
         fw_log_emit3(0x17, 0x1018ac0, q->channel, q->mode, ch);
@@ -145,9 +145,9 @@ void fwq_tx_enable_queue(struct fwq_tx *q, u32 ch)
         fw_sysassert_fatal(__builtin_return_address(0), 0x120d);
     q->state = 1;
     q->channel = ch;
-    q->cur = brd_if_multi_array_get_chunk_8cbbc4(q, ch);
+    q->cur = fwq_tx_channel_queue(q, ch);
     q->flush_cid_mask = 0;
-    fwq_tx_queue_step(q);
+    fwq_tx_send_pending(q);
 }
 
 /* fwq_tx__init (0x8d92e0, 98 Б). У vendor FWQ_TX_AVAILABILITY::init получает r0 = режим
@@ -194,7 +194,7 @@ u32 fwq_tx_flush_list_packets_by_cid(struct fwq_tx *q, u32 cid, struct llist *ds
         cur = iter_next(&it);
         if (prev != 0) {
             tx_list_remove(src, prev);
-            list_find_entry_d((u32 *)dst, (u32 *)prev);
+            llist_append((u32 *)dst, (u32 *)prev);
             prev = 0;
         }
         if (cur->cid == cid) {
@@ -212,7 +212,7 @@ u32 fwq_tx_flush_list_packets_by_cid(struct fwq_tx *q, u32 cid, struct llist *ds
     }
     if (prev != 0) {
         tx_list_remove(src, prev);
-        list_find_entry_d((u32 *)dst, (u32 *)prev);
+        llist_append((u32 *)dst, (u32 *)prev);
     }
     return r;
 }
@@ -220,27 +220,27 @@ u32 fwq_tx_flush_list_packets_by_cid(struct fwq_tx *q, u32 cid, struct llist *ds
 /* fwq_tx__flush_by_prio (0x8cacfc, 74 Б): обе очереди каналов и очередь повторов. */
 u32 fwq_tx_flush_by_prio(struct fwq_tx *q, u32 cid, struct llist *dst)
 {
-    u32 r = fwq_tx_flush_list_packets_by_cid(q, cid, dst, brd_if_multi_array_get_chunk_8cbbc4(q, 0));
-    r |= fwq_tx_flush_list_packets_by_cid(q, cid, dst, brd_if_multi_array_get_chunk_8cbbc4(q, 1));
+    u32 r = fwq_tx_flush_list_packets_by_cid(q, cid, dst, fwq_tx_channel_queue(q, 0));
+    r |= fwq_tx_flush_list_packets_by_cid(q, cid, dst, fwq_tx_channel_queue(q, 1));
     return r | fwq_tx_flush_list_packets_by_cid(q, cid, dst, &q->retry);
 }
 
 /* conn__inject_evt4 (0x8cb69c, 12 Б): событие 4 автомату разрыва соединения. */
-void conn_inject_evt4(struct conn *conn)
+void conn_disc_notify_fw_tx_stopped(struct conn *conn)
 {
     conn_disc_event(&conn->msm.disc, 4, 0, 0, 0);
 }
 
 /* Колбэк «flush cid завершён» (0x8f3468, 14 Б). */
-void tx_internal_api_conn_task(u32 cid, u32 a1)
+void tx_conn_fw_tx_stopped_task(u32 cid, u32 a1)
 {
     (void)a1;
-    conn_inject_evt4(conn_mgr_by_cid(cid));
+    conn_disc_notify_fw_tx_stopped(conn_mgr_by_cid(cid));
 }
 
 /* TX_INTERNAL_API::connection (0x8cb604, 152 Б): если cid ждал flush ([0x8000b4]) и в
  * очередях управления и данных он уже не во flush — сообщить соединению. */
-void TX_INTERNAL_API_connection(u32 cid)
+void tx_conn_flush_done_notify(u32 cid)
 {
     u32 bit = 1u << cid;
     u32 m = (tx_api_mgmt.flush_cid_mask & bit) == 0;   /* vendor: [0x842148 + 0x20] */
@@ -250,7 +250,7 @@ void TX_INTERNAL_API_connection(u32 cid)
         return;
     fw_log_emit1(0x27, 0x1018170, cid);
     tx_flush_cid_mask &= ~bit;
-    u_schd_add(tx_internal_api_conn_task, cid, 0, 1);
+    u_schd_add(tx_conn_fw_tx_stopped_task, cid, 0, 1);
 }
 
 /* notify_conn_flush_done (0x8df4ac, 66 Б). */
@@ -263,7 +263,7 @@ void notify_conn_flush_done(struct fwq_tx *q, u32 cid)
         q->flush_timer = 0;
     }
     fw_log_emit1(0x27, 0x1018a28, q->flush_cid_mask);
-    TX_INTERNAL_API_connection(cid);
+    tx_conn_flush_done_notify(cid);
 }
 
 /* fwq_tx__on_flush_done (0x8e9838, 46 Б): если кадров cid в кольце нет — снять их из
@@ -335,7 +335,7 @@ u32 fwq_tx_long_retry_failures(struct fwq_tx *q, struct llist *list)
         cur = iter_next(&it);
         if (prev != 0) {
             tx_list_remove(list, prev);
-            list_find_entry_d((u32 *)&q->retry, (u32 *)prev);
+            llist_append((u32 *)&q->retry, (u32 *)prev);
             FWQ_TX_AVAILABILITY_remove_packet(prev->cid, TX_PKT_PRIO(prev));
             prev = 0;
         }
@@ -358,7 +358,7 @@ u32 fwq_tx_long_retry_failures(struct fwq_tx *q, struct llist *list)
     if (prev != 0) {
         tx_list_remove(list, prev);
         FWQ_TX_AVAILABILITY_remove_packet(prev->cid, TX_PKT_PRIO(prev));
-        list_find_entry_d((u32 *)&q->retry, (u32 *)prev);
+        llist_append((u32 *)&q->retry, (u32 *)prev);
     }
     return r;
 }
@@ -377,7 +377,7 @@ void rm_ch_switch_sm_fwtx_channel_stopped(void)
 }
 
 /* sm__null_handler (0x8df4f0, 16 Б): очередь остановлена. */
-void sm_null_handler(struct fwq_tx *q)
+void fwq_tx_set_stopped(struct fwq_tx *q)
 {
     q->state = 0;
     q->stats->stopped += 1;
@@ -386,23 +386,23 @@ void sm_null_handler(struct fwq_tx *q)
 
 /* tx_api__call_vmethod_04 (0x8cc748, 124 Б): завершения кольца (vt->handle_completion) в
  * list, повторы, flush по cid, затем — продолжить очередь или остановить. */
-void tx_api_call_vmethod_04(struct fwq_tx *q, struct llist *list)
+void tx_api_process_completions(struct fwq_tx *q, struct llist *list)
 {
     u32 it;
     q->vt->handle_completion(q, list);
     fwq_tx_long_retry_failures(q, list);
-    field_set_0x00_8e5dfc(&it, q->flush_cid_mask);
+    bit_iter_init(&it, q->flush_cid_mask);
     while (bit_iter_has_more(&it) != 0)
         fwq_tx_on_flush_done(q, (u32)bitmap_alloc_bit(&it), list);
     switch (q->state) {
     case 0:
         break;
     case 1:
-        fwq_tx_queue_step(q);
+        fwq_tx_send_pending(q);
         break;
     case 2:
         if (q->sent.count == 0)
-            sm_null_handler(q);
+            fwq_tx_set_stopped(q);
         break;
     default:
         fw_sysassert_fatal((void *)0, 0x1211);
@@ -432,7 +432,7 @@ void TX_API_free_memory(u32 payload)
         fw_sysassert_fatal((void *)0, 0x11e9);
     pkt = TX_PKT_OF(payload);
     if (pkt->status != 0xfd)
-        stream_mgr_check_vring(&tx_pkt_pool, pkt);
+        mem_pool_free_checked(&tx_pkt_pool, pkt);
     else
         fw_log_emit0(0x27, 0x10181d8);
 }
@@ -467,7 +467,7 @@ void TX_API_handle_completed_packets(struct fwq_tx *q)
 {
     struct llist list;
     llist_init((u32 *)&list);
-    tx_api_call_vmethod_04(q, &list);
+    tx_api_process_completions(q, &list);
     while (list.count != 0) {
         struct tx_pkt *pkt = llist_pop_front((u32 *)&list);
         u32 st, release = 1;
@@ -483,7 +483,7 @@ void TX_API_handle_completed_packets(struct fwq_tx *q)
         if (q == &tx_api_mgmt) {
             if (st == 5) {
                 tx_mgmt_cmpl_st5_count += 1;
-                list_find_entry_d((u32 *)&tx_pending, (u32 *)pkt);
+                llist_append((u32 *)&tx_pending, (u32 *)pkt);
                 fw_log_emit1(0x27, 0x1018310, (u32)pkt);
                 release = 0;
             } else if (st != 255 && st != 254) {
@@ -561,7 +561,7 @@ void tx_desc_init_32(struct tx_desc *d, u32 macq, u32 dma_it, u32 addr, u32 len,
     w = (w & ~0x700u) | 0x300u;                     /* EOP | MARK_WB */
     w |= (dma_it & 1u) << 10;
     d->dma_d0 = w;
-    bf32(&d->dma_d0, 16, 5, macq & 0x1fu);
+    bitfield_set32(&d->dma_d0, 16, 5, macq & 0x1fu);
     d->addr_lo = addr & 0x3ffffu;
 }
 
@@ -585,18 +585,18 @@ void tx_desc_build(u32 e, struct tx_desc *d, u32 flags, u32 a3, u32 a4, u32 prio
     w1 = d->mac_d1 & ~((1u << 23) | (1u << 31));
     d->mac_d1 = w1;
     if (a6 == 0) {
-        bf32(&d->mac_d1, 24, 7, retry & 0x7fu);
+        bitfield_set32(&d->mac_d1, 24, 7, retry & 0x7fu);
         d->mac_d1 |= 1u << 31;
     } else if (lifetime != 0) {
         d->mac_d1 = w1 | (1u << 23);
-        bf32(&d->mac_d0, 0, 10, tx_desc_set_lifetime(tx_lifetime_shift, lifetime) & 0x3ffu);
+        bitfield_set32(&d->mac_d0, 0, 10, tx_desc_set_lifetime(tx_lifetime_shift, lifetime) & 0x3ffu);
     }
     d->mac_d0 |= 1u << 27;
-    bf32(&d->mac_d0, 22, 5, prio & 0x1fu);
+    bitfield_set32(&d->mac_d0, 22, 5, prio & 0x1fu);
     d->mac_d1 |= 1u << 20;
-    bf32(&d->mac_d1, 16, 4, cid & 0xfu);
+    bitfield_set32(&d->mac_d1, 16, 4, cid & 0xfu);
     d->mac_d1 |= 1u << 4;
-    bf32(&d->mac_d1, 0, 4, a3 & 0xfu);             /* r0 = d+4 от прошлого вызова */
+    bitfield_set32(&d->mac_d1, 0, 4, a3 & 0xfu);             /* r0 = d+4 от прошлого вызова */
     d->ucode_cmd = flags;
 }
 
@@ -634,7 +634,7 @@ void tx_ring_init(struct tx_ring *tr, u32 macq, u32 dma, u32 base, u32 size)
 void tx_ring_complete(struct tx_ring *tr, struct llist *list, struct llist *sent)
 {
     struct ring_idx *r = &tr->r;
-    vring_reg_write_locked_0c(1u << tr->dma_ring, 0);
+    vring_dma_icr_write_locked(1u << tr->dma_ring, 0);
     for (;;) {
         struct tx_desc *d = (struct tx_desc *)tx_desc_by_index(r, tr->r.tail);
         u32 w = d->status_w;
@@ -653,17 +653,17 @@ void tx_ring_complete(struct tx_ring *tr, struct llist *list, struct llist *sent
         pkt->status = (u8)(w & 7u);
         if (llist_pop_front((u32 *)sent) != pkt)
             fw_sysassert_fatal((void *)0, 0x1228);
-        list_find_entry_d((u32 *)list, (u32 *)pkt);
+        llist_append((u32 *)list, (u32 *)pkt);
         tx_ring_advance_index(r, &tr->r.tail);
     }
-    vring_reg_write_locked_20(1u << tr->dma_ring, 0);
+    vring_fw_ring_unmask_irq(1u << tr->dma_ring, 0);
 }
 
 /* tx_ring::enable (0x8e9804, 20 Б) — vt->enable: LMAC 8 для MACQ кольца (a1 не читает). */
 void tx_ring_enable(struct tx_ring *tr, u32 a1)
 {
     (void)a1;
-    lmac_if_send_cmd_0x08(0, 3, 0, (u8)tr->macq, 0, 1, 0);
+    lmac_if_send_vring_cfg(0, 3, 0, (u8)tr->macq, 0, 1, 0);
 }
 
 /* tx_ring::dma_ring (0x8ed5d0, 4 Б) — vt->dma_ring. */
@@ -706,16 +706,16 @@ u32 fwq_tx_vt_send_next(struct fwq_tx *q)
         fw_sysassert_fatal((void *)0, 0x11d6);
     cat = pkt->cat;
     if (cat & 7u) {
-        bf32(&flags, 0, 4, 2);
+        bitfield_set32(&flags, 0, 4, 2);
         if (cat & 1u)
-            bf32(&flags, 4, 28, 0);
+            bitfield_set32(&flags, 4, 28, 0);
         else if (cat & 4u)
-            bf32(&flags, 4, 28, 1);
+            bitfield_set32(&flags, 4, 28, 1);
         else if (cat & 2u)
-            bf32(&flags, 4, 28, 2);
+            bitfield_set32(&flags, 4, 28, 2);
     }
     if (cat & 8u)
-        bf32(&flags, 0, 4, (flags & 0xfu) | 4u);
+        bitfield_set32(&flags, 0, 4, (flags & 0xfu) | 4u);
     tr = q->ring_p;
     return tr->vt->post_frame(tr, (u32)pkt->payload, pkt->len, 0, pkt->retry_limit, 0, 1,
                               TX_PKT_PRIO(pkt), pkt->cid, flags);
@@ -790,7 +790,7 @@ u32 tx_retry_vt_drain(struct tx_retry *o, struct llist *list, struct llist *src)
             st = 1;
         }
         pkt->status = (u8)st;
-        list_find_entry_d((u32 *)list, (u32 *)pkt);
+        llist_append((u32 *)list, (u32 *)pkt);
         o->pending -= 1;
         o->credit -= 1;
     }
@@ -823,14 +823,14 @@ FWDATA(800778) const struct tx_retry_vt tx_retry_vtbl = {
 
 /* dma_mgr__queue_state_is_1 (0x8da528, 26 Б) / _is_0 (0x8da544, 26 Б): байт состояния
  * очереди q (0x8031c9 + q*2). */
-u32 dma_mgr_queue_state_is_1(u32 q)
+u32 dma_mgr_txq_ctrl_frame_code(u32 q)
 {
     if (q >= 0x20)
         return 0;
     return txq_dma_mode_tbl[q].mode == 1;
 }
 
-u32 dma_mgr_queue_state_is_0(u32 q)
+u32 dma_mgr_txq_null_status(u32 q)
 {
     if (q >= 0x20)
         return 0;
@@ -852,33 +852,33 @@ void dma_mgr_setup_queue_pair(struct fwq_tx *q, u32 mode, struct fwq_tx_stats *s
 }
 
 /* dma_mgr__reset_queue_0x19 (0x8e9ba0, 84 Б): очередь данных — кольцо 5, MACQ 0x19. */
-void dma_mgr_reset_queue_0x19(void)
+void dma_mgr_reset_data_queue(void)
 {
-    u32 s0 = dma_mgr_queue_state_is_0(0x19);
-    u32 s1 = dma_mgr_queue_state_is_1(0x19);
+    u32 s0 = dma_mgr_txq_null_status(0x19);
+    u32 s1 = dma_mgr_txq_ctrl_frame_code(0x19);
     memset0_words(tx_ring_mem_data, sizeof(tx_ring_mem_data));
     dma_mgr_setup_queue_pair(&tx_api_data, 2, &tx_api_stats[TX_STATS_DATA], 0x19, 5,
                              (u32)tx_ring_mem_data, 2);
-    lmac_if_send_cmd_0x08(0, 0, 8, 0x19, s1, s0, 0);
+    lmac_if_send_vring_cfg(0, 0, 8, 0x19, s1, s0, 0);
 }
 
 /* tx_api__tx_complete_cb (0x8e9ae8, 52 Б; имя vendor ошибочно): очередь tx_api_2 —
  * кольцо 3, MACQ 0x1e. */
-void tx_api_tx_complete_cb(void)
+void dma_mgr_reset_bcon_queue(void)
 {
     memset0_words(tx_ring_mem_2, sizeof(tx_ring_mem_2));
     dma_mgr_setup_queue_pair(&tx_api_2, 0, &tx_api_stats[TX_STATS_2], 0x1e, 3, (u32)tx_ring_mem_2, 2);
 }
 
 /* dma_mgr__reset_queue_0x1a (0x8ea15c, 88 Б): очередь управления — кольцо 6, MACQ 0x1a. */
-void dma_mgr_reset_queue_0x1a(void)
+void dma_mgr_reset_mgmt_queue(void)
 {
-    u32 s0 = dma_mgr_queue_state_is_0(0x1a);
-    u32 s1 = dma_mgr_queue_state_is_1(0x1a);
+    u32 s0 = dma_mgr_txq_null_status(0x1a);
+    u32 s1 = dma_mgr_txq_ctrl_frame_code(0x1a);
     memset0_words(tx_ring_mem_mgmt, sizeof(tx_ring_mem_mgmt));
     dma_mgr_setup_queue_pair(&tx_api_mgmt, 1, &tx_api_stats[TX_STATS_MGMT], 0x1a, 6,
                              (u32)tx_ring_mem_mgmt, 2);
-    lmac_if_send_cmd_0x08(0, 0, 8, 0x1a, s1, s0, 0);
+    lmac_if_send_vring_cfg(0, 0, 8, 0x1a, s1, s0, 0);
 }
 
 /* tx_api__reset_state_words (0x8f5270, 16 Б). */
@@ -889,8 +889,8 @@ void tx_api_reset_state_words(void)
     tx_ch_switch_paused = 0;
 }
 
-/* tx_macq_api_step (0x8d986c, 168 Б): TX MACQ 0x1e и 0x1a (записи vring_tbl). */
-void tx_macq_api_step(void)
+/* tx_macq_config_bcon_mgmt_queues (0x8d986c, 168 Б): TX MACQ 0x1e и 0x1a (записи vring_tbl). */
+void tx_macq_config_bcon_mgmt_queues(void)
 {
     struct vring_tbl_entry *e = &vring_tbl[0x1e];
     u32 b;
@@ -909,15 +909,15 @@ void tx_macq_api_step(void)
  * 0x848020), буфер ошибки 0x805ac0 (статус 0xfd), три очереди TX_API, список ждущих. */
 void tx_api_init_pools(void)
 {
-    tx_macq_api_step();
+    tx_macq_config_bcon_mgmt_queues();
     memset0_words(tx_pkt_mem, sizeof(tx_pkt_mem));
     memset0_words(&tx_err_buf, sizeof(tx_err_buf));
     tx_err_buf.status = 0xfd;
     memset0_words(tx_api_stats, sizeof(tx_api_stats));  /* 0x842318: сразу за пулом */
     mem_pool_init(&tx_pkt_pool, tx_pkt_mem, sizeof(struct tx_pkt), TX_PKT_N);
-    dma_mgr_reset_queue_0x19();
-    tx_api_tx_complete_cb();
-    dma_mgr_reset_queue_0x1a();
+    dma_mgr_reset_data_queue();
+    dma_mgr_reset_bcon_queue();
+    dma_mgr_reset_mgmt_queue();
     tx_api_reset_state_words();
     llist_init((u32 *)&tx_pending);
 }

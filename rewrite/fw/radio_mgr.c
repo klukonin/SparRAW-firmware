@@ -63,7 +63,7 @@ FWDATA(800144) struct radio_mgr *volatile radio_mgr_obj = 0;
 
 /* rm_ch_switch_sm::ctor — field_set_0x08__8d8eb4 (0x8d8eb4, 12 Б): владелец rm_main_sm,
  * описатель 0x80338c. */
-void field_set_0x08_8d8eb4(struct rm_ch_switch_sm *cs, struct rm_main_sm *sm)
+void rm_ch_switch_sm_init(struct rm_ch_switch_sm *cs, struct rm_main_sm *sm)
 {
     cs->sm = sm;
     basic_sm_bind_descriptor(cs, &rm_ch_switch_sm_desc);
@@ -71,13 +71,13 @@ void field_set_0x08_8d8eb4(struct rm_ch_switch_sm *cs, struct rm_main_sm *sm)
 
 /* obj_vt803210__ctor (0x8d8c1c, 50 Б): rm_main_sm — владелец radio_mgr, очередь
  * запросов, текущий канал 0xffff, вложенный rm_ch_switch_sm, описатель 0x803210. */
-void obj_vt803210_ctor(struct rm_main_sm *sm, struct radio_mgr *rm, struct rm_queue *queue)
+void rm_main_sm_init(struct rm_main_sm *sm, struct radio_mgr *rm, struct rm_queue *queue)
 {
     sm->rm = rm;
     sm->queue = queue;
     sm->cur_ch = 0xffff;
     sm->cur_param = 0;
-    field_set_0x08_8d8eb4(&sm->cs, sm);
+    rm_ch_switch_sm_init(&sm->cs, sm);
     basic_sm_bind_descriptor(sm, &rm_main_sm_desc);
 }
 
@@ -94,7 +94,7 @@ static void radio_mgr_init_pool_and_sm(struct radio_mgr *rm)
     memset0_words(rm_req_pool, sizeof(rm_req_pool));
     mem_pool_init(&rm->req_pool, rm_req_pool, sizeof(struct rm_req), 0x10);
     radio_mgr_init_list(&rm->queue, rm);
-    obj_vt803210_ctor(&rm->sm, rm, &rm->queue);
+    rm_main_sm_init(&rm->sm, rm, &rm->queue);
 }
 
 /* (0x8c1a3c) статическая инициализация: таблица методов radio_mgr. У vendor — из списка
@@ -154,7 +154,7 @@ static void radio_mgr_kick(struct radio_mgr *rm)
 /* radio_mgr__enqueue_request (0x8e1f70, 20 Б): в конец очереди и разбудить автомат. */
 static void radio_mgr_enqueue_request(struct rm_queue *q, struct rm_req *req)
 {
-    list_find_entry_d((u32 *)&q->l, (u32 *)req);
+    llist_append((u32 *)&q->l, (u32 *)req);
     radio_mgr_kick(q->owner);
 }
 
@@ -361,9 +361,10 @@ void rm_sm_store_primary(struct rm_main_sm *sm, const struct rm_chan *req)
     sm->primary.changed = 1;
 }
 
-/* switch_2_secondary (имя ошибочно; 0x8e83d4, 32 Б): переключиться на основной канал —
- * SWITCH_2_PRIMARY в PRIM_NON_LOCKED / SECONDARY. */
-void rm_sm_switch_2_primary(struct rm_main_sm *sm)
+/* rm_main_sm::switch_2_secondary (имя vendor ошибочно; 0x8e83d4, 32 Б): переключиться на основной канал —
+ * параметры primary в текущие (cur), запустить переключение канала, primary.changed = 0. SWITCH_2_PRIMARY в
+ * PRIM_NON_LOCKED / SECONDARY и SWITCH_2_SEC в PRIM_LOCKED / SEC_LOCKED (прежде — две одинаковые копии). */
+void rm_sm_switch_to_primary(struct rm_main_sm *sm)
 {
     memcpy_fw(&sm->cur, &sm->primary, sizeof(sm->cur));
     rm_kick_channel_switch_sm(sm);
@@ -375,7 +376,7 @@ void rm_sm_set_primary_and_switch(struct rm_main_sm *sm,
                                                     const struct rm_chan *req)
 {
     rm_sm_store_primary(sm, req);
-    rm_sm_switch_2_primary(sm);
+    rm_sm_switch_to_primary(sm);
 }
 
 /* rm__invalidate_tune_slot (0x8ea8b0, 14 Б): основной канал не задан. PRIMARY_UNSET в
@@ -390,7 +391,7 @@ void rm_invalidate_tune_slot(struct rm_main_sm *sm)
 void rm_sm_unset_primary_and_switch(struct rm_main_sm *sm)
 {
     rm_invalidate_tune_slot(sm);
-    rm_sm_switch_2_primary(sm);
+    rm_sm_switch_to_primary(sm);
 }
 
 /* 0x8023e4: таблица переходов switch vendor rm_main_sm__enter_primary_non_locked (0x8c9950;
@@ -428,7 +429,7 @@ void rm_sm_primary_tune_done(struct rm_main_sm *sm, u32 ch, u32 param,
 void rm_main_sm_lock_primary(struct rm_main_sm *sm)
 {
     struct rm_req *req = llist_pop_front((u32 *)&sm->queue->l);
-    list_find_entry_d((u32 *)&sm->holders, (u32 *)req);
+    llist_append((u32 *)&sm->holders, (u32 *)req);
     req->state = RM_REQ_CB_PENDING;
     if (sm->hdr.trace != 0)
         fw_log_emit2(0x28, 0x1019204, (u32)req->cb, (u32)req);
@@ -479,15 +480,6 @@ void rm_sm_goto_idle(void)
 {
 }
 
-/* rm_main_sm::switch_2_secondary (0x8e83d4, 32 Б): SWITCH_2_SEC в PRIM_LOCKED / SEC_LOCKED —
- * параметры primary (0x28 Б) в текущие (cur), запустить переключение канала,
- * primary.changed = 0 (st_s в слоте задержки перед выходом). */
-void rm_main_sm_switch_2_secondary(struct rm_main_sm *sm)
-{
-    memcpy_fw(&sm->cur, &sm->primary, sizeof(sm->cur));
-    rm_kick_channel_switch_sm(sm);
-    sm->primary.changed = 0;
-}
 
 /* rm_sm__action_8e83f4 (0x8e83f4, 68 Б): LOCK_SEC в IDLE / PRIM_NON_LOCKED / SECONDARY —
  * взять вторичный запрос и переключиться на его канал. */
@@ -496,7 +488,7 @@ void rm_sm_lock_secondary(struct rm_main_sm *sm)
     struct rm_req *req = llist_pop_front((u32 *)&sm->queue->l);
     if (sm->hdr.trace != 0)
         fw_log_emit1(0x28, 0x1019288, (u32)req->cb);
-    list_find_entry_d((u32 *)&sm->holders, (u32 *)req);
+    llist_append((u32 *)&sm->holders, (u32 *)req);
     req->state = RM_REQ_GRANTED;
     rm_load_request_params(sm, req);
     rm_kick_channel_switch_sm(sm);
@@ -620,10 +612,10 @@ FWDATA(803224) const struct sm_trans rm_main_sm_trans[12][6] = {
     [1] = {   /* RM_EVT_SWITCH_2_PRIMARY */
         { SM_ACT(basic_sm_error_handler), 0 },               /* RM_ST_IDLE → RM_ST_IDLE */
         { SM_ACT(basic_sm_error_handler), 1 },               /* RM_ST_SWITCH_2_PRIM → RM_ST_SWITCH_2_PRIM */
-        { SM_ACT(rm_main_sm_switch_2_secondary), 1 },        /* RM_ST_PRIM_NON_LOCKED → RM_ST_SWITCH_2_PRIM */
+        { SM_ACT(rm_sm_switch_to_primary), 1 },        /* RM_ST_PRIM_NON_LOCKED → RM_ST_SWITCH_2_PRIM */
         { SM_ACT(basic_sm_error_handler), 3 },               /* RM_ST_PRIM_LOCKED → RM_ST_PRIM_LOCKED */
         { SM_ACT(basic_sm_error_handler), 4 },               /* RM_ST_SWITCH_2_SEC → RM_ST_SWITCH_2_SEC */
-        { SM_ACT(rm_main_sm_switch_2_secondary), 1 },        /* RM_ST_SECONDARY → RM_ST_SWITCH_2_PRIM */
+        { SM_ACT(rm_sm_switch_to_primary), 1 },        /* RM_ST_SECONDARY → RM_ST_SWITCH_2_PRIM */
     },
     [2] = {   /* RM_EVT_CH_SWITCH_DONE */
         { SM_ACT(basic_sm_error_handler), 0 },               /* RM_ST_IDLE → RM_ST_IDLE */
@@ -721,12 +713,12 @@ FWDATA(803210) struct sm_desc rm_main_sm_desc = {
 
 /* tx_api__check_state_2 (0x8e7ec4, 56 Б): остановить TX_API; пустой — сразу «остановлен»
  * (sm__null_handler), иначе [api+8] = 2 (ждёт опустошения). */
-static void tx_api_check_state_2(struct fwq_tx *api)
+static void tx_api_stop_or_wait_drain(struct fwq_tx *api)
 {
     if (api->state == 2)
         fw_sysassert_fatal(caller(), 0x120e);
     if (api->sent.count == 0)
-        sm_null_handler(api);
+        fwq_tx_set_stopped(api);
     else
         api->state = 2;
 }
@@ -738,9 +730,9 @@ static void tx_api_pause_for_ch_switch(void)
     if (tx_ch_switch_paused != 0)              /* [gp,-28] */
         fw_sysassert_fatal(caller(), 0x1223);
     tx_ch_switch_paused = 1;
-    tx_api_check_state_2(&tx_api_mgmt);
-    tx_api_check_state_2(&tx_api_data);
-    tx_api_check_state_2(&tx_api_2);        /* add3 r0,r13,0x12: tx_api_mgmt + 0x90 */
+    tx_api_stop_or_wait_drain(&tx_api_mgmt);
+    tx_api_stop_or_wait_drain(&tx_api_data);
+    tx_api_stop_or_wait_drain(&tx_api_2);        /* add3 r0,r13,0x12: tx_api_mgmt + 0x90 */
 }
 
 /* rm_ch_switch__resume_tx_queue (0x8e7948, 48 Б). */
@@ -757,10 +749,10 @@ static void rm_ch_switch_program_mac(const struct mid *mid)
 {
     const u8 *own = mid->bss.bssid;             /* add2 r14,r0,0x15 */
     const u8 *peer = mid->mac;
-    mac_parser_set_addr_886020(own);
+    mac_parser_set_own_addr(own);
     mac_set_own_addr(own);
     l2_offload_set_own_mac_addr(own);
-    mac_parser_set_addr_886018(peer);
+    mac_parser_set_mcast_addr(peer);
     mac_set_mcast_addr(peer);
 }
 
@@ -786,14 +778,14 @@ static void lmac_if_build_rx_on_cmd(struct lmac_cmd_rx_on *buf, u32 a1, u32 a2, 
     u32 mask;
     lmac_cmd_fill_rx_on_fields(buf, a3 << 10, a1, a2, a4, a5);
     buf->rx_mode = 1;
-    mask = rf_cfg_get_rf_mask_45e(&rf_obj);
+    mask = rf_obj_get_rf_mask(&rf_obj);
     buf->rf_mask = (u8)mask;
     buf->omni_rf_mask = rf_obj.omni_rf_mask;
     buf->rf_sets_mask = (rf_obj.sets_mode == 3) ? (u8)mask : 0;
 }
 
-/* lmac_if_send_cmd_0x01 (0x8dbd2c, 72 Б): ucode — включить RX на канале. */
-static void lmac_if_send_cmd_0x01(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4)
+/* lmac_if_send_rx_on (0x8dbd2c, 72 Б): ucode — включить RX на канале. */
+static void lmac_if_send_rx_on(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4)
 {
     struct lmac_cmd_rx_on *buf = mem_pool_alloc_locked(&lmac_mbox.mb);
     if (buf == 0)
@@ -802,9 +794,9 @@ static void lmac_if_send_cmd_0x01(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4)
     lmac_if_post_cmd(buf, 1, 0x28, 0);
 }
 
-/* lmac_if_send_cmd_0x03 (0x8dbcb8, 34 Б): ucode — выключить RX. Буфер vendor не
+/* lmac_if_send_rx_off (0x8dbcb8, 34 Б): ucode — выключить RX. Буфер vendor не
  * проверяет (field_set_0x00__8dbcb0 пишет 1 в mode). */
-static void lmac_if_send_cmd_0x03(void)
+static void lmac_if_send_rx_off(void)
 {
     struct lmac_cmd_rx_off *buf = mem_pool_alloc_locked(&lmac_mbox.mb);
     buf->mode = 1;
@@ -962,7 +954,7 @@ void rm_ch_switch_sm_on_fwtx_stopped(struct rm_ch_switch_sm *cs)
     tsf = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5);
     if (cs->hdr.trace != 0)
         fw_log_emit1(0x28, 0x1019424, tsf);
-    lmac_if_send_cmd_0x03();
+    lmac_if_send_rx_off();
 }
 
 /* rm_ch_switch_sm__action_8c7f14 (0x8c7f14, 44 Б): DATA_STOPPED в TURN_OFF. */
@@ -1015,13 +1007,13 @@ void rm_ch_switch_sm_switch_on(struct rm_ch_switch_sm *cs)
     cs->ch = p->ch;
     rm_ch_switch_program_mac(mid_list_by_mid_fw(p->mid));
     p = cs->params;
-    lmac_if_send_cmd_0x01(p->rx_on_w0, p->rx_on_w4, p->bcn_int, p->sta_role, p->changed);
+    lmac_if_send_rx_on(p->rx_on_w0, p->rx_on_w4, p->bcn_int, p->sta_role, p->changed);
     rm_ch_switch_resume_tx_queue(cs->params->tx_chan);
 }
 
 /* (0x8c5bb8, 46 Б) rm_ch_switch_sm__notify_ch_switch_done: CH_SWITCH_COMPLETED в
  * TURN_OFF / TURN_ON — CH_SWITCH_DONE автомату rm_main_sm (канал, params->param, mid).
- * Имя rm_ch_switch_sm_notify_ch_switch_done занято в vring.c функцией 0x8c5b44. */
+ * Имя vring_schd_pring_by_type занято в vring.c функцией 0x8c5b44. */
 void rm_ch_switch_sm_ch_switch_completed(struct rm_ch_switch_sm *cs)
 {
     const struct rm_chan *p;

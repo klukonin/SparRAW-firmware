@@ -22,6 +22,9 @@
 #include "../include/rf_obj.h"
 #include "../include/radio_mgr.h"
 #include "../include/temp_sense.h"
+#include "../include/wmi.h"
+#include "../include/logstr.h"
+#include "../include/fwdata.h"
 
 /* Снимок температур в блоке статистики fw (0x853808, вне DCCM — символ fw.ld). */
 struct temp_snap {
@@ -194,7 +197,7 @@ static s32 hwf_bb_temp_measure(void)
 
 /* temp__store_lo_temp (0x8e21f0): температура BB Q8 → мград: целая часть × 1000 +
  * (дробь × 1000) >> 8; в [0x8000a4] и снимок 0x853808. */
-static void temp_store_lo_temp(void)
+static void temp_store_bb_temp(void)
 {
     s32 v = hwf_bb_temp_measure();
     s32 t = (v >> 8) * 1000 + (((s32)(v & 0xff) * 1000) >> 8);
@@ -256,18 +259,20 @@ static u32 temp_sense_measure_rf_raw(u32 rf, u32 cfg, u32 v)
 }
 
 /* temp_sense__measure_rf (0x8e221c; vendor-имя temp_sense__no_rf): температура RF rf
- * (obj — RF-объект rf_obj). Нет сенсора (rf ≥ 8 или бит в [0x800243] снят) или RF —
- * -1 (во втором случае журнал). После импульса RFC 0x3e0 — измерение: при role_pwr_flag
+ * (obj — RF-объект rf_obj). Нет сенсора (rf ≥ 8 или модуль не рабочий) или RF — -1 (во втором случае
+ * журнал). Исправлено (vendor: маска подключённых [0x800243] из XPM): на wAP 60G XPM даёт 0xff при одном
+ * модуле, и RF 1..7 возвращали тот же датчик, что RF 0 (стенд: 48,4…49,1 при RF0 48,7 °C); берётся маска
+ * рабочих модулей obj->rf_mask (подключённые ∩ board, rf.c). После импульса RFC 0x3e0 — измерение: при role_pwr_flag
  * (Sparrow-R) без настройки и режим 3, иначе настройка с флагом a2 и режимом a3. */
 static u32 temp_sense_measure_rf(struct rf_obj *obj, u32 rf, u32 a2, u32 a3)
 {
-    if (rf >= 8 || !(rf_connected_mask & (1u << rf)))
+    if (rf >= 8 || !(obj->rf_mask & (1u << rf)))
         return 0xffffffffu;
     if (rf_is_present() == 0) {
         fw_log_emit0(0x10, 0x10052c4);
         return 0xffffffffu;
     }
-    rfc_read_or_dead();
+    rfc_pulse_probe_bit();
     if (obj->role_pwr_flag != 0)
         return temp_sense_measure_rf_raw((u8)rf, 0, 3);
     return temp_sense_measure_rf_raw((u8)rf, a2, a3);
@@ -316,7 +321,7 @@ static void temp_consume_bb_sensor_calibration_parameters(void)
 static void temp_read_rf_sensor_calibration_parameters(void)
 {
     u32 saved = rfca_get_rf_mask();
-    u32 mask = rf_cfg_get_rf_mask_45e(&rf_obj);
+    u32 mask = rf_obj_get_rf_mask(&rf_obj);
     u32 i, bit;
     s16 cal[2];
 
@@ -347,10 +352,10 @@ static void temp_read_rf_sensor_calibration_parameters(void)
     hwd_abif_dvs_rfca_cmd_enable(saved, 0);
 }
 
-/* perform_first_measurement_operations (0x8e0908): запомнить первые измерения (BB в
+/* temp_store_and_calibrate_first_meas (0x8e0908): запомнить первые измерения (BB в
  * 0x80114c, RF в 0x801150..), принять калибровку сенсоров и применить её: BB +=
  * round([0x8002cc] / 2^13) · 1000, RF += поправка (кроме -1). */
-static void perform_first_measurement_operations(void)
+static void temp_store_and_calibrate_first_meas(void)
 {
     u32 i, v;
     s32 c, k;
@@ -379,6 +384,116 @@ static void perform_first_measurement_operations(void)
     }
 }
 
+/* ---------------- SparRAW: статистика и уровень температуры ----------------
+ * Каждое измерение (полное — BB и RF, и «только BB» в простое, temp_bb_timer) проходит через temp_monitor:
+ * min/max и число измерений (temp_stats — символ в fw.nm, читается хостом через mem_addr), уровень NORMAL/HIGH/
+ * CRITICAL по большему из BB и активного RF с гистерезисом TEMP_HYST_MDEG; смена уровня — журнал и событие хосту
+ * WMI_SPARRAW_TEMP_ALERT_EVENTID (драйвер: при CRITICAL — останов интерфейса). Защиты от перегрева у vendor нет.
+ * Пороги временные — даташита на кристалл/RF-модуль нет: BB-сенсор не откалиброван (OTP Tamb = −1, шаг 3,15 °C,
+ * в работе 54 °C), RF-сенсор точнее (0,16 °C, 35…54 °C в работе, под нагрузкой до 49); запас до порогов HIGH —
+ * ≥ 40 °C. */
+#define TEMP_BB_HIGH_MDEG   100000
+#define TEMP_BB_CRIT_MDEG   115000
+#define TEMP_RF_HIGH_MDEG    90000
+#define TEMP_RF_CRIT_MDEG   105000
+#define TEMP_HYST_MDEG        5000
+#define TEMP_INVALID   0xffffffffu
+
+struct temp_stats {
+    s32 bb_min, bb_max;                        /* м°C с загрузки (n = 0 — не заполнены) */
+    s32 rf_min, rf_max;                        /* активный RF */
+    u32 n;                                     /* измерений (всего) */
+    u32 n_bb_only;                             /* из них — только BB (простой, temp_bb_timer) */
+    u32 last_time;                             /* u_schd_now() последнего */
+    u32 high_cnt, crit_cnt;                    /* входов в HIGH / CRITICAL */
+    u8  level;                                 /* текущий TEMP_LEVEL_* */
+    u8  rsv[3];
+};
+_Static_assert(sizeof(struct temp_stats) == 0x28, "temp_stats");
+/* В промежутке 0x806920..0x8069ff (свои переменные fw: tx_power.c, conn.c, wmi_cmd.c, mlme.c). */
+FWDATA(806960) struct temp_stats temp_stats = { 0 };
+
+/* Уровень по одному сенсору: выше порога — уровень; выход — ниже порога на гистерезис. */
+static u32 temp_level_of(s32 t, u32 cur, s32 high, s32 crit)
+{
+    u32 lv = 0;
+    if (t >= crit || (cur >= TEMP_LEVEL_CRITICAL && t > crit - TEMP_HYST_MDEG))
+        lv = TEMP_LEVEL_CRITICAL;
+    else if (t >= high || (cur >= TEMP_LEVEL_HIGH && t > high - TEMP_HYST_MDEG))
+        lv = TEMP_LEVEL_HIGH;
+    return lv;
+}
+
+static void temp_monitor(u32 bb, u32 rf, u32 bb_only)
+{
+    struct temp_stats *s = &temp_stats;
+    u32 lv = 0, l;
+
+    if (bb != TEMP_INVALID) {
+        if (s->n == 0 || (s32)bb < s->bb_min)
+            s->bb_min = (s32)bb;
+        if (s->n == 0 || (s32)bb > s->bb_max)
+            s->bb_max = (s32)bb;
+        lv = temp_level_of((s32)bb, s->level, TEMP_BB_HIGH_MDEG, TEMP_BB_CRIT_MDEG);
+    }
+    if (rf != TEMP_INVALID) {
+        if (s->rf_min == 0 || (s32)rf < s->rf_min)
+            s->rf_min = (s32)rf;
+        if ((s32)rf > s->rf_max)
+            s->rf_max = (s32)rf;
+        l = temp_level_of((s32)rf, s->level, TEMP_RF_HIGH_MDEG, TEMP_RF_CRIT_MDEG);
+        if (l > lv)
+            lv = l;
+    }
+    s->n++;
+    s->n_bb_only += bb_only;
+    s->last_time = u_schd_now();
+    if (lv == s->level)
+        return;
+    if (lv == TEMP_LEVEL_HIGH && s->level < TEMP_LEVEL_HIGH)
+        s->high_cnt++;
+    if (lv == TEMP_LEVEL_CRITICAL)
+        s->crit_cnt++;
+    s->level = (u8)lv;
+    fw_log_emit3(lv ? 0x2b : 0x26, LS_FW(TEMP_LEVEL), lv, bb, rf);
+    /* через операционный ящик (как WMI_CONNECT/DISCONNECT_EVENT): отладочный драйвер не читает */
+    struct wmi_sparraw_temp_alert_event *e = host_if_send_pair();
+    if (e == 0)
+        return;
+    memset0_words(e, sizeof(*e));
+    e->level = (u8)lv;
+    e->bb_t1000 = bb;
+    e->rf_t1000 = rf;
+    host_if_send_event(e, WMI_SPARRAW_TEMP_ALERT_EVENTID, sizeof(*e), 0, 0, 0, 0);
+}
+
+/* Простой без соединения (temp_sense_on_system_state, состояние A): служба с захватом радио остановлена, а BB
+ * (ABIF, без радио) мерится по своему таймеру с тем же периодом — уровень и hwmon/thermal не замирают. */
+FWDATA(806988) u32 temp_bb_task = 0;
+
+static void temp_bb_timer(u32 a, u32 b)
+{
+    (void)a; (void)b;
+    temp_bb_task = 0;
+    temp_store_bb_temp();
+    temp_monitor(TS_BB_TEMP, TEMP_INVALID, 1);
+    temp_bb_task = u_schd_schedule(temp_bb_timer, 0, 0, 1, temp_period, 0, 0);
+}
+
+void temp_bb_only_start(void)
+{
+    if (temp_bb_task == 0)
+        temp_bb_task = u_schd_schedule(temp_bb_timer, 0, 0, 1, temp_period, 0, 0);
+}
+
+void temp_bb_only_stop(void)
+{
+    if (temp_bb_task != 0) {
+        u_schd_cancel(temp_bb_task);
+        temp_bb_task = 0;
+    }
+}
+
 /* TEMPERATURE_SERVICE::radio_locked_cb (0x8e20dc): радио выдано (radio — дескриптор
  * для возврата, a — аргумент запроса). Плановое измерение (a == 0) при выключенной или
  * останавливающейся службе — вернуть радио. Иначе измерить все RF (первое — с
@@ -390,13 +505,13 @@ static void temperature_service_radio_locked_cb(struct rm_req *radio, u32 a)
 
     if (a == 0 && TS_ENABLED == 0) {
         fw_log_emit1(0x1c, 0x10121f8, (u32)radio);
-        radio_mgr_call_method_10(radio);
+        radio_mgr_lock_free(radio);
         TS_RADIO = 0;
         return;
     }
     if (a == 0 && TS_STOPPED == 1) {
         fw_log_emit1(0x2c, 0x1012250, (u32)radio);
-        radio_mgr_call_method_10(radio);
+        radio_mgr_lock_free(radio);
         TS_STOPPED = 0;
         TS_RADIO = 0;
         return;
@@ -404,8 +519,9 @@ static void temperature_service_radio_locked_cb(struct rm_req *radio, u32 a)
     u_schd_now();
     temp_sense_measure_all();
     if (temp_first_meas_done == 0)
-        perform_first_measurement_operations();
-    radio_mgr_call_method_10(radio);
+        temp_store_and_calibrate_first_meas();
+    temp_monitor(TS_BB_TEMP, temp_get_active_rf(0), 0);
+    radio_mgr_lock_free(radio);
     TS_RADIO = 0;
     if (TS_CB != 0) {
         cb = TS_CB;
@@ -435,7 +551,7 @@ void temperature_service_timer_exp_handler(u32 a, u32 a1)
         return;
     }
     temp_last_meas_time = u_schd_now();
-    temp_store_lo_temp();
+    temp_store_bb_temp();
     if (TS_RADIO != 0) {
         fw_log_emit0(0x16, 0x101218c);
         return;

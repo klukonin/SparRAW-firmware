@@ -118,3 +118,33 @@ def test_station_gone_longer_than_detection(ap, check):
     check.is_true(_peer_linked(ap, 150), 'станция не вошла снова')
     check.is_true(ap.peer.fw_errors() == 0, 'ошибка FW на станции')
     _ap_alive(ap, check)
+
+
+TX_POWER_CMD = 0x0f12          # WMI_SPARRAW_TX_POWER_CMDID (include/wmi.h)
+TX_POWER_LINK_LOST = 2         # код строки TX, при котором связь на стенде пропадает (notes: ступени мощности)
+TX_POWER_BOARD = 0xff
+
+
+@pytest.mark.parametrize('gap_s', [3, 5])
+def test_station_returns_before_detection(ap, check, gap_s):
+    """Связь пропадает на gap_s с (точка опускает мощность TX до кода, при котором станция её не слышит) и
+    возвращается раньше срока обнаружения точкой (~6,5 с): станция входит снова, пока точка ещё держит её запись —
+    переассоциация на месте (11.3.5.3 a, 11.3.5.5; драйвер: «reassociated in place») или, если точка успела снять
+    станцию, обычный вход. Точка и станция живы, связь возвращается."""
+    d = ap.dut
+    _no_recovery(d)
+    d.mark()
+    ap.peer.mark()
+    d.wmi_send(TX_POWER_CMD, bytes([TX_POWER_LINK_LOST, 0, 0, 0]))
+    time.sleep(gap_s)
+    d.wmi_send(TX_POWER_CMD, bytes([TX_POWER_BOARD, 0, 0, 0]))
+    check.is_true(_peer_linked(ap, 60), 'станция не вошла снова')
+    _ap_alive(ap, check)
+    check.is_true(ap.peer.fw_errors() == 0, 'ошибка FW на станции')
+    got = ap.ping(10)
+    check.is_true(got >= 9, 'ping после возвращения %d/10' % got)
+    log = d.dmesg_new()
+    print('gap %d s: in place %d, connect %d, disconnect %d' % (
+        gap_s, log.count('reassociated in place'), log.count('successful connection'),
+        len(re.findall(r'wmi_evt_disconnect: Disconnect', log))))
+    check.is_true('Invalid status' not in log, 'драйвер: Invalid status — CONNECT занятого cid без переассоциации')

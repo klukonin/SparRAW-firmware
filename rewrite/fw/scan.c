@@ -83,7 +83,7 @@ void sort_scan_ch_list(const u8 *cmd, u32 *dst)
  * (wmi_start_scan_cmd) в scan_mngr, упорядочить каналы и запустить скан.
  * a2 — результат паузы колец (≠ 0 — скан отложен), a3 — есть соединение (скан через
  * swc_psc_sm). */
-void find_sm_start_search(struct scan_mngr *scan, u8 *cmd, u32 a2, u32 a3)
+void scan_mngr_apply_start_scan_cmd(struct scan_mngr *scan, u8 *cmd, u32 a2, u32 a3)
 {
     const u16 *h = (const u16 *)cmd;
     scan->postpone_arg = a2;
@@ -110,7 +110,7 @@ u32 hw_sysapi_rx_omni_sector_set(u32 s)
         return 0;
     }
     *(volatile u8 *)&rf_obj.sector_cfg_idx = (u8)s;
-    hw_sysapi_rx_alloc_and_store(*(volatile u8 *)&rf_obj.rf_idx, s);
+    lmac_if_send_rf_chain(*(volatile u8 *)&rf_obj.rf_idx, s);
     return 1;
 }
 
@@ -133,7 +133,7 @@ void radio_mgr_unset_primary_channel(void)
  * первичный канал ch и снять (обход для TSF). Аргументы 2 и 3 set_primary_channel
  * vendor берёт из неинициализированных слов стека (sp+4, sp+8; метод +0x1c пишет только
  * sp+0) — недетерминированы; здесь 0. */
-void discovery_tsf_wa(struct mid_disc *obj, u32 ch, u32 a3, u32 mid)
+void discovery_tsf_workaround(struct mid_disc *obj, u32 ch, u32 a3, u32 mid)
 {
     u32 cur;
     (void)obj;
@@ -209,7 +209,7 @@ void scan_mngr_start_scan(struct scan_mngr *scan, u8 *cmd, u32 a2, u32 a3)
     lmac_if_discovery_mode_cfg(1, scan->ucode_scan_type);
     if (scan_discovery_bcon_on(scan)) {
         struct mid *e = scan->mid;
-        discovery_tsf_wa(&e->disc, 1, 0x47, e->id);
+        discovery_tsf_workaround(&e->disc, 1, 0x47, e->id);
     }
     memcpy_fw(scan->direct_mac, cmd, 6);
     scan_mngr_config_dwell_time(scan, h[4] | (u32)h[5] << 16);
@@ -218,7 +218,7 @@ void scan_mngr_start_scan(struct scan_mngr *scan, u8 *cmd, u32 a2, u32 a3)
         if (e == 0)
             fw_sysassert_fatal((void *)0, 0x1248);
         e->channel = scan->ch_order[i];
-        list_find_entry_d(&scan->channels, e);
+        llist_append(&scan->channels, e);
     }
     fw_log_emit1(0x29, 0x1015304, a2);
     if (a2 == 0) {
@@ -237,7 +237,7 @@ void scan_mngr_start_scan(struct scan_mngr *scan, u8 *cmd, u32 a2, u32 a3)
 void discovery_rx_start(u32 discovery)
 {
     fw_log_emit0(0x2c, 0x1016f98);
-    mac_parser_set_886260(2, (discovery == 0 ? 0x800u : 0u) | 0x3702u);
+    mac_parser_set_rule_ctl(2, (discovery == 0 ? 0x800u : 0u) | 0x3702u);
     hwd_mac_parser_set_rx_filter(0, 1);
 }
 
@@ -245,8 +245,8 @@ void discovery_rx_start(u32 discovery)
 void discovery_rx_stop(void)
 {
     fw_log_emit0(0x2c, 0x1016fb0);
-    mac_parser_set_886260(2, 0x102);
-    mac_parser_set_886260(3, 0x102);
+    mac_parser_set_rule_ctl(2, 0x102);
+    mac_parser_set_rule_ctl(3, 0x102);
     hwd_mac_parser_set_rx_filter(0, 0);
 }
 
@@ -256,7 +256,7 @@ void discovery_rx_stop(void)
 
 /* tx_bcon::del_bcon (0x8c8be8, 26 Б): снять бикон — LMAC 0x0b (0x70 Б) с op = 1,
  * bi.bi_mode = 0 (lmac_if__send_bcon_del_0b 0x8db304). */
-void tx_bcon_del_bcon(struct mid *mid_e)
+void tx_bcon_del(struct mid *mid_e)
 {
     fw_log_emit1(0x2c, 0x1017208, mid_e->id);
     struct lmac_cmd_bcn_sweep *b = mem_pool_alloc_locked(&lmac_mbox.mb);
@@ -374,7 +374,7 @@ void scan_mngr_sm_dwelling_ended(struct scan_mngr *scan)
     scan->dwell_stopped = 1;
     if (scan_discovery_bcon_on(scan)) {
         fw_log_emit0(0x29, 0x10165b4);
-        tx_bcon_del_bcon(scan->mid);
+        tx_bcon_del(scan->mid);
     }
     if (scan->active_probs != 0)
         fw_log_emit1(0x19, 0x10165f0, scan->active_probs);
@@ -394,7 +394,7 @@ void scan_mngr_stop_dwelling(struct scan_mngr *scan)
 
 /* scan_mngr__update_step (0x8cbee8, 46 Б): время скана при соединении с учётом идущего
  * скана (TSF − TSF старта). */
-u32 scan_mngr_update_step(struct scan_mngr *scan)
+u32 scan_mngr_get_connected_scan_time(struct scan_mngr *scan)
 {
     if (scan->active == 0)
         return scan->connected_scan_time;
@@ -406,7 +406,7 @@ u32 scan_mngr_update_step(struct scan_mngr *scan)
 /* scan_mngr::update_connected_scan_time (0x8eaa88, 32 Б). */
 void scan_mngr_update_connected_scan_time(struct scan_mngr *scan)
 {
-    u32 t = scan_mngr_update_step(scan);
+    u32 t = scan_mngr_get_connected_scan_time(scan);
     scan->connected_scan_time = t;
     fw_log_emit1(0x29, 0x10153c4, t);
 }
@@ -442,7 +442,7 @@ void l2mgr_send_acs_scan_complete_evt(u32 status, u32 mid, u32 dwell_ms, u32 fil
     u32 len = (u8)(filled * sizeof(struct wmi_scan_acs_info));
     memcpy_fw(p->scan_info, tmp, len);
     fw_log_emit3(0x2b, 0x100eb68, p->dwell_time, p->filled, p->starting_channel);
-    low_sme_send_evt2sw(p, 0x9005, (u16)(len + 8), mid, 0, 0, 0);
+    host_if_send_event(p, 0x9005, (u16)(len + 8), mid, 0, 0, 0);
     l2mgr_pending_op_clear(0);
 }
 
@@ -464,7 +464,7 @@ void l2mgr_scan_complete_handle(u32 mid, u32 resume)
     (void)mid;
     u32 cnt = mids_get_count();
     fw_log_emit0(0x29, 0x100f844);
-    field_set_0x00_8e5dfc(&it, cnt);
+    bit_iter_init(&it, cnt);
     while (bit_iter_has_more(&it)) {
         struct mid *m = mid_list_by_mid_fw(bitmap_alloc_bit(&it));
         if (m == 0)
@@ -640,7 +640,7 @@ void channels_switch_sm_action_pop_ch_and_tune(struct channels_switch_sm *cs)
 }
 
 /* channels_switch_sm::action_radio_tunned (0x8c22ec; CHANNEL_TUNED в TUNNING). */
-void channels_switch_sm_action_radio_tunned(struct channels_switch_sm *cs, u32 a0)
+void channels_switch_sm_action_radio_tuned(struct channels_switch_sm *cs, u32 a0)
 {
     fw_log_emit1(0x29, 0x1017430, a0);
     scan_mngr_sm_ready_for_dwelling(cs->scan);
@@ -680,7 +680,7 @@ void channels_switch_sm_action_scan_complete(struct channels_switch_sm *cs, u32 
         cs->scan_tmr = 0;
     }
     fw_log_emit1(0x29, 0x101749c, (u32)cs->req);
-    radio_mgr_call_method_10(cs->req);
+    radio_mgr_lock_free(cs->req);
     scan_mngr_dwelling_done(cs->scan, a0 == 0);
 }
 
@@ -694,7 +694,7 @@ void channels_switch_sm_action_abort_allocate(struct channels_switch_sm *cs)
 
 /* channels_switch_sm::scan_abort_tunning (0x8c209c; STOP_SCAN в TUNNING): пребывание
  * на настраиваемом канале сократить до 0x20 мкс. */
-void channels_switch_sm_scan_abort_tunning(struct channels_switch_sm *cs)
+void channels_switch_sm_action_abort_tuning(struct channels_switch_sm *cs)
 {
     fw_log_emit0(0x29, 0x1017524);
     cs->scan->dwell_us = 0x20;
@@ -724,7 +724,7 @@ FWDATA(802fc8) const struct sm_trans channels_switch_sm_trans[8][7] = {
     [CS_EVT_CHANNEL_TUNED] = {   /* EVT_CHANNEL_TUNED */
         { SM_ACT(basic_sm_error_handler), 0 },               /* STATE_IDLE → STATE_IDLE */
         { SM_ACT(basic_sm_error_handler), 1 },               /* STATE_ALLOCATING_RADIO → STATE_ALLOCATING_RADIO */
-        { SM_ACT(channels_switch_sm_action_radio_tunned), 3 }, /* STATE_TUNNING → STATE_TUNED */
+        { SM_ACT(channels_switch_sm_action_radio_tuned), 3 }, /* STATE_TUNNING → STATE_TUNED */
         { SM_ACT(basic_sm_error_handler), 3 },               /* STATE_TUNED → STATE_TUNED */
         { SM_ACT(basic_sm_error_handler), 4 },               /* STATE_DWELLING → STATE_DWELLING */
         { SM_ACT(basic_sm_error_handler), 5 },               /* STATE_STOPPING → STATE_STOPPING */
@@ -769,7 +769,7 @@ FWDATA(802fc8) const struct sm_trans channels_switch_sm_trans[8][7] = {
     [CS_EVT_STOP_SCAN] = {   /* EVT_STOP_SCAN */
         { SM_ACT(basic_sm_error_handler), 0 },               /* STATE_IDLE → STATE_IDLE */
         { SM_ACT(channels_switch_sm_action_abort_allocate), 1 }, /* STATE_ALLOCATING_RADIO → STATE_ALLOCATING_RADIO */
-        { SM_ACT(channels_switch_sm_scan_abort_tunning), 2 }, /* STATE_TUNNING → STATE_TUNNING */
+        { SM_ACT(channels_switch_sm_action_abort_tuning), 2 }, /* STATE_TUNNING → STATE_TUNNING */
         { SM_ACT(basic_sm_error_handler), 3 },               /* STATE_TUNED → STATE_TUNED */
         { SM_ACT(channels_switch_sm_abort_dwelling), 4 },    /* STATE_DWELLING → STATE_DWELLING */
         { SM_ACT(channels_switch_sm_action_pop_ch_and_tune), 2 }, /* STATE_STOPPING → STATE_TUNNING */
@@ -797,7 +797,7 @@ void swc_psc_sm_sob_timeout_cb(u32 sm, u32 a1)
 }
 
 /* swc_psc_sm::action_start_scan (0x8c23ac; SCAN_START в SCAN_IDLE): ждать SOB 1 с. */
-void swc_psc_sm_action_start_scan(struct swc_psc_sm *sm, struct scan_mngr *scan)
+void swc_psc_sm_action_wait_sob_start(struct swc_psc_sm *sm, struct scan_mngr *scan)
 {
     fw_log_emit0(0x29, 0x10176d4);
     sm->scan = scan;
@@ -896,7 +896,7 @@ FWDATA(801698) const u32 swc_psc_sm_event_names[4] = {
 /* 0x801650: переходы swc_psc_sm [событие][состояние] (описатель 0x8030e0). */
 FWDATA(801650) const struct sm_trans swc_psc_sm_trans[4][3] = {
     [SWC_EVT_SCAN_START] = {
-        [SWC_ST_SCAN_IDLE] = { SM_ACT(swc_psc_sm_action_start_scan), SWC_ST_WAIT_SOB_START }, /* 0x8c23ac */
+        [SWC_ST_SCAN_IDLE] = { SM_ACT(swc_psc_sm_action_wait_sob_start), SWC_ST_WAIT_SOB_START }, /* 0x8c23ac */
         [SWC_ST_WAIT_SOB_START] = { SM_ACT(basic_sm_error_handler), SWC_ST_WAIT_SOB_START }, /* 0x8c9a54 */
         [SWC_ST_DWELLING] = { SM_ACT(basic_sm_error_handler), SWC_ST_DWELLING }, /* 0x8c9a54 */
     },

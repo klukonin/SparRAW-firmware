@@ -226,7 +226,7 @@ static void wmi_cfg_rx_chain_open_sniffer(struct wmi_cfg_rx_chain_cmd *p, u32 mi
     MMIO32(HW_MAC_PRS_CTRL_0) |= 1u << 8;
     MMIO32(HW_PRP_CTRL) |= 1u;
     MMIO32(HW_SXD_LOCAL_WR_DATA) = 0x31000400u;
-    if (mid_state_is_2_or_3(0) != 0) {
+    if (mid_is_pcp_or_ap(0) != 0) {
         struct wmi_bcon_ctrl_cmd stop;                  /* vendor: u16 0 на стеке */
         memset0_words(&stop, sizeof(stop));
         fw_log_emit0(0x2b, 0x100d814);                  /* «stopping PCP» */
@@ -266,7 +266,7 @@ static void wmi_cfg_rx_chain(struct wmi_cfg_rx_chain_cmd *p, u32 mid)
         if (bad) {
             rsp->rx_ring_tail_ptr = 0;
             rsp->status = 0;
-            low_sme_send_evt2sw(rsp, 0x1820, sizeof(*rsp), mid, 0, 0, 0);
+            host_if_send_event(rsp, 0x1820, sizeof(*rsp), mid, 0, 0, 0);
             return;
         }
         rx_chain_configured = 1;
@@ -317,10 +317,10 @@ static void wmi_cfg_rx_chain(struct wmi_cfg_rx_chain_cmd *p, u32 mid)
                            p->wb_thrsh, 0, (u32)max_pl);
     l2_offload_cfg_rx_decap((const u8 *)p);
 
-    rsp->rx_ring_tail_ptr = rx_chain_reg_8813c8_addr();
+    rsp->rx_ring_tail_ptr = rx_chain_descq2_sw_tail_addr();
     rsp->status = 1;                                /* WMI_CFG_RX_CHAIN_SUCCESS */
     fw_log_emit1(0x2b, 0x100d914, mid);
-    low_sme_send_evt2sw(rsp, 0x1820, sizeof(*rsp), mid, 0, 0, 0);
+    host_if_send_event(rsp, 0x1820, sizeof(*rsp), mid, 0, 0, 0);
 }
 
 /* ---------------- l2mgr: ожидающие операции, события отказа ---------------- */
@@ -377,7 +377,7 @@ void l2mgr_send_disconnect_evt(const u8 *bssid, u32 proto_reason, u32 reason, u3
     p->disconnect_reason = (u8)r;
     p->assoc_resp_len = 0;
     fw_log_emit2(0x2b, 0x100d2b4, r, proto_reason);
-    low_sme_send_evt2sw(p, 0x1003, sizeof(*p), mid, 0, 0, 0);
+    host_if_send_event(p, 0x1003, sizeof(*p), mid, 0, 0, 0);
     l2mgr_pending_op_clear(2);
     l2mgr_pending_op_clear(1);
     l2mgr_pending_op_clear(5);
@@ -418,7 +418,7 @@ void host_if_send_scan_complete(u32 mid)
     struct wmi_word_event *p = host_if_send_pair();  /* WMI_SCAN_COMPLETE {status} */
     p->value = 2;                                   /* WMI_SCAN_ABORTED */
     fw_log_emit1(0, 0x1007b40, mid);
-    low_sme_send_evt2sw(p, 0x100a, sizeof(*p), mid, 0, 0, 0);
+    host_if_send_event(p, 0x100a, sizeof(*p), mid, 0, 0, 0);
 }
 
 /* ---------------- START_SCAN (0x07) / ABORT_SCAN (0xf007) ---------------- */
@@ -439,13 +439,13 @@ void l2mgr_send_scan_complete_evt(u32 status, u32 mid)
     struct wmi_word_event *p = host_if_send_pair();  /* WMI_SCAN_COMPLETE {status} */
     p->value = status;
     fw_log_emit2(0x2b, 0x100eb24, status, mid);
-    low_sme_send_evt2sw(p, 0x100a, sizeof(*p), mid, 0, 0, 0);
+    host_if_send_event(p, 0x100a, sizeof(*p), mid, 0, 0, 0);
     l2mgr_pending_op_clear(0);
 }
 
 /* mid_list__any_in_state2_fw (0x8c37ac, 62 Б): есть ли в mid_list запись с активным BSS
  * (bss.state == 2). */
-u32 mid_list_any_in_state2(void)
+u32 mid_list_any_bss_active(void)
 {
     u32 it;
     iter_init(&it, &mid_list);
@@ -469,7 +469,7 @@ u32 l2mgr_validate_scan(u32 mid)
      * байте [0x85773c] < 2 и байте [0x800231] < 2. */
     if (scan_validate_skip_state2 == 0 || VOL(fwsh_sets.n_sec[1][0]) >= 2
         || conn_multi_omni_count >= 2) {
-        if (mid_list_any_in_state2() != 0) {
+        if (mid_list_any_bss_active() != 0) {
             fw_log_emit0(0x19, 0x100f078);
             return 0;
         }
@@ -478,7 +478,7 @@ u32 l2mgr_validate_scan(u32 mid)
         fw_log_emit0(0x19, 0x100f0ac);
         return 0;
     }
-    if (mid_state_is_2_or_3(mid) != 0) {
+    if (mid_is_pcp_or_ap(mid) != 0) {
         fw_log_emit1(0x19, 0x100f0e8, mid);
         return 0;
     }
@@ -494,7 +494,7 @@ u32 l2mgr_validate_scan(u32 mid)
         fw_log_emit0(0x19, 0x100f190);
         return 0;
     }
-    field_set_0x00_8e5dfc(&it, mids_get_count());
+    bit_iter_init(&it, mids_get_count());
     while (bit_iter_has_more(&it)) {
         struct mid *m = mid_list_by_mid_fw(bitmap_alloc_bit(&it));
         if (m == 0)
@@ -509,7 +509,7 @@ u32 l2mgr_validate_scan(u32 mid)
 }
 
 /* lm_if__inject_evt9 (0x8e011c, 42 Б): событие 9 автомату lm_sm линка obj. */
-void lm_if_inject_evt9(struct lm_if *obj)
+void lm_if_inject_pause_evt(struct lm_if *obj)
 {
     if (obj->lm_sm == 0)
         fw_sysassert_fatal((void *)0, 0x1262);
@@ -521,13 +521,13 @@ void lm_if_inject_evt9(struct lm_if *obj)
 void l2mgr_scan_start(struct mid_disc *obj, struct wmi_start_scan_cmd *cmd, u32 a2, u32 a3)
 {
     fw_log_emit1(0x2c, 0x1016dd8, u_schd_now());
-    find_sm_start_search(obj->scan, (u8 *)cmd, a2, a3);
+    scan_mngr_apply_start_scan_cmd(obj->scan, (u8 *)cmd, a2, a3);
 }
 
 /* l2_mgr::wmi_scan_cmd (0x8eca58, 196 Б): скан разрешён — у всех mid с подключением
  * (find_by_kind 1) метод [7] активной таблицы колец (cid) и событие 9 lm_sm соединения;
  * затем смена системного состояния (2) и запуск поиска для mid.
- * Исправлено: событие 9 уходило в lm_if_inject_evt9(conn + 0x38) — vendor 0x8ecb14
+ * Исправлено: событие 9 уходило в lm_if_inject_pause_evt(conn + 0x38) — vendor 0x8ecb14
  * add3 r0,r14,0xe = conn + 0x70 (add3 масштабирует ×8, не ×4): прежде [conn+0x38] (байты
  * парного ключа tk) читался как указатель автомата, и событие 9 шло по мусорному адресу
  * (или ассерт 0x1262 при нулевом ключе) — событие 9 перед сканом до lm_sm соединения
@@ -537,7 +537,7 @@ void l2mgr_wmi_scan_cmd(struct wmi_start_scan_cmd *cmd, u32 mid)
     u32 it;
     u32 res = 0;
     l2mgr_pending_op_set(0);
-    field_set_0x00_8e5dfc(&it, mids_get_count());
+    bit_iter_init(&it, mids_get_count());
     while (bit_iter_has_more(&it)) {
         struct mid *m = mid_list_by_mid_fw(bitmap_alloc_bit(&it));
         if (m == 0)
@@ -548,13 +548,13 @@ void l2mgr_wmi_scan_cmd(struct wmi_start_scan_cmd *cmd, u32 mid)
             fw_log_emit2(0x29, 0x100df5c, cid, m->id);
             struct vring_schd_if *tbl = vring_active_ring_table();
             res = tbl->vt->prohibit(tbl, cid);
-            lm_if_inject_evt9(&conn->lm);
+            lm_if_inject_pause_evt(&conn->lm);
         }
     }
     struct mid *e = mid_list_by_mid_fw(mid);
     fw_log_emit2(0x29, 0x100df14, cmd->scan_type, cmd->num_channels);
     sys_state_broadcast(2, 0);
-    l2mgr_scan_start(&e->disc, cmd, res, mid_list_any_in_state2());
+    l2mgr_scan_start(&e->disc, cmd, res, mid_list_any_bss_active());
 }
 
 /* low_sme::wmi_scan_cmd_handler (0x8ecb1c, 120 Б): WMI_START_SCAN_CMDID (struct
@@ -672,7 +672,7 @@ static u32 mac_hi16(const u8 *m)
 
 /* mac_parser__set_886000_8dfb84 (0x8dfb84, 28 Б): MAC в 0x886018/0x88601c; бит 31
  * старшего слова (действителен) — последней записью. */
-void mac_parser_set_addr_886018(const u8 *m)
+void mac_parser_set_mcast_addr(const u8 *m)
 {
     MMIO32(HW_PRS_MCAST_ADDR_HI) = 0;
     MMIO32(HW_PRS_MCAST_ADDR_LO) = mac_lo32_h(m);
@@ -680,7 +680,7 @@ void mac_parser_set_addr_886018(const u8 *m)
 }
 
 /* mac_parser__set_886000_8dfb68 (0x8dfb68, 28 Б): то же в 0x886020/0x886024. */
-void mac_parser_set_addr_886020(const u8 *m)
+void mac_parser_set_own_addr(const u8 *m)
 {
     MMIO32(HW_PRS_OWN_ADDR_HI) = 0;
     MMIO32(HW_PRS_OWN_ADDR_LO) = mac_lo32_h(m);
@@ -775,7 +775,7 @@ void mac_apply_multicast_addr(struct mid *e, const u8 *mac)
     memcpy_fw(a, mac, 6);
     if (e->mac_h[0] & 1)
         fw_log_emit0(0xb, 0x100cf04);
-    mac_parser_set_addr_886018(a);
+    mac_parser_set_mcast_addr(a);
     mac_set_mcast_addr(a);
 }
 
@@ -786,7 +786,7 @@ void l2mgr_apply_mac_address(struct mid_bss *obj, const u8 *mac)
     u8 *a = obj->bssid;
     memcpy_fw(a, mac, 6);
     dmg_cap_build_sta_capability(obj, obj->owner->mac);
-    mac_parser_set_addr_886020(a);
+    mac_parser_set_own_addr(a);
     mac_set_own_addr(a);
     l2_offload_set_own_mac_addr(a);
 }
@@ -979,7 +979,7 @@ u32 l2mgr_validate_connect(u32 mid, u32 channel)
         fw_log_emit0(0x1b, 0x100ef4c);
         return 0;
     }
-    if (mid_list_any_in_state2() != 0) {
+    if (mid_list_any_bss_active() != 0) {
         fw_log_emit1(0x2b, 0x100ef88, mid);
         return 0;
     }
@@ -1130,21 +1130,21 @@ void radio_mgr_set_primary_channel(u32 ch, u32 rx_on_w0, u32 rx_on_w4, u32 bcn_i
 
 /* l2_mgr__connect_args (0x8dca38, 28 Б): radio_mgr->request_primary(cb, arg, mid) —
  * запросить радио на основном канале; по готовности вызывается cb. */
-struct rm_req *l2mgr_connect_args(rm_req_cb cb, u32 arg, u32 mid)
+struct rm_req *l2mgr_connect_request_radio(rm_req_cb cb, u32 arg, u32 mid)
 {
     struct radio_mgr *rm = radio_mgr_obj;
     return rm->vt->request_primary(rm, cb, arg, mid);
 }
 
 /* radio_mgr__call_method_10 (0x8ea800, 10 Б): radio_mgr->lock_free(req) — отпустить радио. */
-void radio_mgr_call_method_10(struct rm_req *req)
+void radio_mgr_lock_free(struct rm_req *req)
 {
     struct radio_mgr *rm = radio_mgr_obj;
     rm->vt->lock_free(rm, req);
 }
 
 /* mid__link_acquisition_action (0x8da928): соединение с пиром — scan_mngr.c (порт под
- * именем find_main_sm_bcon_lookup); conn_mgr__ranking_remove (0x8ca6fc) — conn.c. */
+ * именем mid_link_acquire_peer); conn_mgr__ranking_remove (0x8ca6fc) — conn.c. */
 
 /* mid__connect (0x8c71a8, 84 Б): захват линка с dst_mac (инициатор, без бикона, RX-сектор
  * не задан) — соединение снимается из списка ранжирования (переход 0x8e7978), wvs_mode
@@ -1153,7 +1153,7 @@ void mid_connect(struct mid *e, const union mac_addr *dst_mac, u32 a2)
 {
     struct conn *conn = 0;
     fw_log_emit3(0x2b, 0x100cbfc, dst_mac->h[2], dst_mac->h[1], dst_mac->h[0]);
-    if (find_main_sm_bcon_lookup(e, dst_mac, 0, 1, &conn, 0, 1, 0xffff) != 1)
+    if (mid_link_acquire_peer(e, dst_mac, 0, 1, &conn, 0, 1, 0xffff) != 1)
         return;
     conn->wvs_mode = a2;
     conn_mgr_ranking_remove(conn);
@@ -1177,7 +1177,7 @@ void l2mgr_connect_radio_cb(struct rm_req *req, u32 arg)
     if (l2mgr_connect_cancelled) {                  /* WMI_DISCONNECT до выделения радио — подключение снято */
         l2mgr_connect_cancelled--;
         fw_log_emit1(0x2b, 0x100f9b4, (u32)req);
-        radio_mgr_call_method_10(req);
+        radio_mgr_lock_free(req);
         if (!l2mgr_connect_waiting_radio) {
             /* откат l2mgr_connect как в обычном разрыве STA (mlme_sm_on_disconnect): основной канал, состояние fw,
              * системное состояние «разрыв»; при новом CONNECT, уже ждущем радио, — его канал и состояние не трогать */
@@ -1193,7 +1193,7 @@ void l2mgr_connect_radio_cb(struct rm_req *req, u32 arg)
         fw_sysassert_fatal((void *)0, 0x16c7);
     mid_connect(e, &connect_req.dst_mac, l2mgr_connect_vs_mode);
     fw_log_emit1(0x2b, 0x100f9b4, (u32)req);
-    radio_mgr_call_method_10(req);
+    radio_mgr_lock_free(req);
     vendor_ie_build_wilocity(&e->bss, e->network_type, l2mgr_connect_vs_mode == 1);
 }
 
@@ -1231,7 +1231,7 @@ void l2mgr_connect(const struct wmi_connect_cmd *cmd, u32 mid)
                                   ((volatile struct connect_req *)&connect_req)->chan_p2,
                                   pcp_bcon_interval, 1, mid & 0xff);
     l2mgr_connect_waiting_radio = 1;
-    l2mgr_connect_args(l2mgr_connect_radio_cb, 0, mid & 0xff);
+    l2mgr_connect_request_radio(l2mgr_connect_radio_cb, 0, mid & 0xff);
 }
 
 /* l2_mgr::connect_multi_omni_cb (0x8c7300, 60 Б; задача u_schd, у vendor числом 0x7300):
@@ -1272,7 +1272,7 @@ static void l2mgr_connect_multi_omni_deferred(u32 a0, u32 mid)
 void l2mgr_connect_multi_omni(const struct wmi_connect_cmd *cmd, u32 mid)
 {
     struct mid *e = mid_list_by_mid_fw(mid);
-    struct scan_peer *t = l2_mgr_connect_next(e->disc.scan, cmd->dst_mac, cmd->channel);
+    struct scan_peer *t = scan_peer_find_by_bssid(e->disc.scan, cmd->dst_mac, cmd->channel);
 
     conn_multi_omni_target = t;
     if (t == 0) {
@@ -1354,7 +1354,7 @@ void l2mgr_disconnect_mid(u32 mid, u32 reason, u32 protocol)
         l2mgr_connect_waiting_radio = 0;
         l2mgr_connect_cancelled++;
         if (e->bss.mode == 1)
-            obj_set_field4_one(&e->bss);
+            bss_set_state_idle(&e->bss);
         l2mgr_send_disconnect_evt(connect_req.dst_mac.b, 1, reason, mid);
     }
     mid_list_disconnect_all(e, reason, protocol);
@@ -1447,7 +1447,7 @@ static void wmi_disconnect_sta(const struct wmi_disconnect_sta_cmd *cmd, u32 mid
 
 /* boot__clear_object_48 (0x8c1848, 12 Б): ящик и запрос радио = 0, затем memset0_words(req, 4)
  * (b.d с r1 = 4 в слоте) — обнулить 12 Б. Второй аргумент (у вызывающего r1 = 0) не читается. */
-static void clear_object_48(struct wmi_rf_sector_get_req *o)
+static void wmi_rf_sector_get_req_reset(struct wmi_rf_sector_get_req *o)
 {
     o->mbox = 0;
     o->radio = 0;
@@ -1455,7 +1455,7 @@ static void clear_object_48(struct wmi_rf_sector_get_req *o)
 }
 
 /* boot__clear_object_tail (0x8c1854, 16 Б): ящик и запрос радио = 0, memset0_words(req, 0xc4). */
-static void clear_object_tail(struct wmi_rf_sector_set_req *o)
+static void wmi_rf_sector_set_req_reset(struct wmi_rf_sector_set_req *o)
 {
     o->mbox = 0;
     o->radio = 0;
@@ -1836,7 +1836,7 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
             /* Первый запрос — сброс объекта 0x80483c (флаг [0x8004c4] = 1 в fw_data). */
             if (wmi_rf_sector_get_first != 0) {
                 wmi_rf_sector_get_first = 0;
-                clear_object_48(&wmi_rf_sector_get);
+                wmi_rf_sector_get_req_reset(&wmi_rf_sector_get);
             }
             if (get_rf_sector_params_set(&wmi_rf_sector_get, body, mb) != 0)
                 get_rf_sector_params_handle(&wmi_rf_sector_get);
@@ -1845,7 +1845,7 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
             HOST_CMD_LOG(0x1007804);
             if (wmi_rf_sector_set_first != 0) {
                 wmi_rf_sector_set_first = 0;
-                clear_object_tail(&wmi_rf_sector_set);
+                wmi_rf_sector_set_req_reset(&wmi_rf_sector_set);
             }
             if (set_rf_sector_params_set(&wmi_rf_sector_set, body, mb) != 0)
                 set_rf_sector_params_handle(&wmi_rf_sector_set);

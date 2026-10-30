@@ -12,6 +12,8 @@ REW = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 # ---- WMI (include/wmi.h) ----
 WMI_CONNECT, WMI_DISCONNECT, WMI_DISCONNECT_STA = 0x1, 0x3, 0x4
 WMI_START_SCAN = 0x7
+WMI_SET_MAC_ADDRESS = 0xF003
+WMI_SET_SSID = 0x827
 WMI_VRING_CFG, WMI_BCAST_VRING_CFG, WMI_VRING_BA_EN, WMI_VRING_BA_DIS = 0x821, 0x822, 0x823, 0x824
 WMI_PCP_START, WMI_PCP_STOP = 0x918, 0x919
 EV_CONNECT, EV_DISCONNECT, EV_VRING_CFG_DONE, EV_NOT_SUPPORTED = 0x1002, 0x1003, 0x1821, 0xffff
@@ -39,6 +41,36 @@ SPARRAW_MAX_STA, SPARRAW_PEER_UNKNOWN, SPARRAW_STA_SLOTS = _sta_max()
 AP_MAC = bytes([0x04, 0xd4, 0xc4, 0x11, 0x22, 0x33])
 STA_MAC = bytes([0x04, 0xd4, 0xc4, 0x55, 0x66, 0x77])
 OWN_MAC = bytes(6)                                          # fw после загрузки: WMI_SET_MAC_ADDRESS не было
+
+
+WMI_VRING_CFG, WMI_VRING_CFG_DONE = 0x821, 0x1821
+WMI_RING_BA_EN, WMI_RCP_ADDBA_RESP = 0x823, 0x825
+WMI_BA_STATUS_EVENT, WMI_RCP_ADDBA_REQ_EVENT = 0x1823, 0x1824
+
+
+def ring_ba_en_cmd(ring, wsize=32, timeout=0):
+    """WMI_RING_BA_EN (struct wmi_ring_ba_en_cmd), как wil6210 wmi_addba: без A-MSDU."""
+    return struct.pack('<BBHB3x', ring, wsize, timeout, 0)
+
+
+def rcp_addba_resp_cmd(req_body, wsize=32, status=0):
+    """WMI_RCP_ADDBA_RESP на WMI_RCP_ADDBA_REQ_EVENT, как wil_addba_rx_request: окно min(запрошенное, wsize)."""
+    cidxtid, token = req_body[0], req_body[1]
+    pset, tmo = struct.unpack_from('<HH', req_body, 2)
+    req = (pset >> 6) & 0x3ff
+    w = min(req, wsize) if req else wsize
+    return struct.pack('<BBHHHBB2x', cidxtid, token, status, (pset & 0x3f) | w << 6, tmo, 0, 0)
+
+
+def vring_cfg_cmd(ringid, cid, tid=0, size=128, base=0x20000000, mpdu=2048):
+    """WMI_VRING_CFG (struct wmi_vring_cfg_cmd), как wil6210 wil_vring_init_tx: ADD, 802.3, без BA, приоритет 0,
+    timeslot 0xfff."""
+    b = bytearray(0x20)
+    struct.pack_into('<IQHH', b, 0, 0, base, size, mpdu)       # action ADD, tx_sw_ring {base, size, max_mpdu}
+    b[0x10] = ringid
+    b[0x11] = (cid & 0xf) | (tid & 0xf) << 4                    # cidxtid
+    struct.pack_into('<HH', b, 0x18, 0, 0xfff)                  # schd_params {priority, timeslot_us}
+    return bytes(b)
 
 
 def connect_cmd(bssid=AP_MAC, channel=2, ssid=b'test', network_type=1):
@@ -107,7 +139,7 @@ def vring_cfg_cmd(ringid, cid, tid=0, action=0, mpdu=0x800, wsize=0, timeslot_us
 def uc_reply(fw, cmd):
     """Ответ uc на команду LMAC (по uc/cmd.c, uc/evt.c): [(тип события, тело)]. Команды без ответа — [].
     0x03 RX off → 0x03; 0x01 RX on → 0x01; 0x08 op 1 (снять очередь) → 0x08 QUEUE_DELETED {qid};
-    0x18 запись поля станции → 0x11 {sta, mode}; 0x09 запуск BF к cid → 0x06 BF_DONE (uc_send_evt_bf_done) с
+    0x18 запись поля станции → 0x11 {sta, mode}; 0x09 запуск BF к cid → 0x06 BF_DONE (bf_done_report_build_send) с
     итогом fw.uc_bf_status (1 — успех, по умолчанию) и MAC пира соединения cid."""
     t, b = cmd.type, cmd.body
     gone_cids = fw.gone[1] if getattr(fw, 'gone', None) else ()
@@ -190,7 +222,7 @@ M32 = 0xffffffff
 
 def run_tsf(fw):
     """TSF MAC идёт вместе со временем u_schd (тик 16 мкс): детекторы потери линка (fw/link_loss.c), учёт времени
-    pring (sm_pring_notify_step) считают прошедшее по TSF. Без этого TSF стоит и ни один срок по TSF не истекает."""
+    pring (sm_pring_accum_time) считают прошедшее по TSF. Без этого TSF стоит и ни один срок по TSF не истекает."""
     fw.mmio_read_hook[HW_MAC_TSF_LO] = lambda fw, a: (fw.now() << 4) & M32
     fw.mmio_read_hook[HW_MAC_TSF_HI] = lambda fw, a: (fw.now() << 4) >> 32
 
@@ -337,6 +369,16 @@ class Fw:
         r = self.fw.wmi(WMI_VRING_CFG, vring_cfg_cmd(ringid, cid, tid))
         settle(self.fw)
         return r
+
+    def set_mac(self, mac):
+        """WMI_SET_MAC_ADDRESS (struct wmi_set_mac_address_cmd): свой адрес — до старта AP/подключения."""
+        self.fw.wmi(WMI_SET_MAC_ADDRESS, bytes(mac) + bytes(2))
+        settle(self.fw)
+
+    def set_ssid(self, ssid=b'test'):
+        """WMI_SET_SSID (struct wmi_set_ssid_cmd: ssid_len, ssid[32]) — драйвер шлёт его при старте AP."""
+        self.fw.wmi(WMI_SET_SSID, struct.pack('<I', len(ssid)) + bytes(ssid).ljust(32, b'\0'))
+        settle(self.fw)
 
     # ---- AP ----
     def own_mac(self):

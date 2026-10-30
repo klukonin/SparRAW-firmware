@@ -420,7 +420,7 @@ static void brd_if_bounds_check(const u32 *p, u32 addr, u32 data, u32 mode, stru
 /* brd_if__parse_chunk_header (0x8c7444): bounds = {окна (по 24 Б), u16 число окон};
  * одно окно — проверка напрямую, несколько — сначала общий диапазон
  * [первое.начало, последнее.конец], затем каждое окно. */
-static void brd_if_parse_chunk_header(const u32 *p, u32 addr, u32 data, u32 mode,
+static void brd_if_bounds_check_windows(const u32 *p, u32 addr, u32 data, u32 mode,
                                       const struct brd_bounds *bounds)
 {
     u32 n = bounds->n;
@@ -453,7 +453,7 @@ static u32 brd_if_get_chunk_pairs(const struct brd_if *o, const struct brd_secti
         out[i].addr = p[0];
         out[i].val = p[1];
         if (bounds != 0)
-            brd_if_parse_chunk_header(p, p[0], p[1], 0, bounds);
+            brd_if_bounds_check_windows(p, p[0], p[1], 0, bounds);
     }
     blk_end = brd_at(o, blk->off + blk->len);
     if (p > blk_end) {
@@ -498,7 +498,7 @@ static u32 brd_if_get_chunk_data_only(const struct brd_if *o, const struct brd_s
                 out[i].addr = addr;
                 out[i].val = v;
                 if (bounds != 0)
-                    brd_if_parse_chunk_header(p, addr, v, 1, bounds);
+                    brd_if_bounds_check_windows(p, addr, v, 1, bounds);
                 i++;
                 p++;
                 if (i >= n)
@@ -1031,7 +1031,7 @@ u32 marlon_r_if_class_load_brd_rf_cfg_section(struct rf_obj *rf, u32 sec,
             }
         }
     }
-    hwd_args_to_regs_default(rf_connected_mask);
+    hwd_rfc_apply_gain_tables_for_mask(rf_connected_mask);
     hwd_abif_dvs_rfca_cmd_enable(rf_active_mask, 0);
     fw_log_emit2(0x20, 0x10056d4, sec, (u_schd_now() - t0) << 4);
     return 1;

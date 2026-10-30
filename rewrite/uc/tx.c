@@ -19,13 +19,19 @@ void internal_tx_clear_exclude_mask(void)
     itx_pending.exclude = 0;
 }
 
-void internal_tx_drop_event_mask_and_publish(void)
+/* Снять очередь internal TX (qset 7, qid 31) без публикации масок qset — её делает вызывающий. */
+void internal_tx_drop_event_mask(void)
 {
     u32 r0 = qset_enable_mask & ~(1u << 7);
     qset_enable_mask = r0;
     u32 r1 = mac_tx_qid_en_shadow & 0x7fffffffu;
     mac_tx_qid_en_shadow = r1;
     MMIO32(HW_MAC_TX_QID_ENABLE_MASK) = r1;
+}
+
+void internal_tx_drop_event_mask_and_publish(void)
+{
+    internal_tx_drop_event_mask();
     mac_publish_masks();
 }
 
@@ -56,7 +62,7 @@ void internal_tx_clear_pending_bit(u32 bit)
     arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
 }
 
-void internal_tx_check_idle(u32 a)
+void internal_tx_set_pending_bit(u32 a)
 {
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~(1u << 1));
@@ -67,14 +73,14 @@ void internal_tx_check_idle(u32 a)
 }
 
 
-void direct_tx_issue_cmd_33(void)
+void direct_tx_commit(void)
 {
     uc_mac_cmd(0x33000002);
     if (tx_fifo_free != 0)
         uc_assert((u32)__builtin_return_address(0), 0x36);
 }
 
-void direct_tx_program_cmd34(u32 a, u32 b)
+void direct_tx_program_desc(u32 a, u32 b)
 {
     uc_mac_cmd(0x33000001);
     tx_fifo_free = b;
@@ -82,13 +88,13 @@ void direct_tx_program_cmd34(u32 a, u32 b)
     uc_mac_cmd((a << 16) | (b | 0x34000000));
 }
 
-void direct_tx_init_rx_desc(struct dtx_ctrl_frame *a, u32 b, u32 c)
+void direct_tx_init_grant_ack(struct dtx_ctrl_frame *a, u32 b, u32 c)
 {
     a->fc = 0x764;
     a->alloc = 0;
     a->bf_ctl0 = 0;
     a->bf_ctl1 = 0;
-    bf_set32((u32)&a->alloc, 4, 3, 1);
+    bf_set32_lo_hi((u32)&a->alloc, 4, 3, 1);
     a->bf_ctl0 = 1 | ((b & 1) << 1) | ((c & 1) << 2);
 }
 
@@ -113,7 +119,7 @@ u32 itx_wait_cts_b(void)
     for (;;) {
         uc_wait_event1_or_event4(MAC_EVT1_RX_FRAME, MAC_EVT4_GP0_END, 0);
         if (mac_evt1() & MAC_EVT1_RX_FRAME) {
-            if (rx_ppdu_is_cts_b() != 0)
+            if (rx_ppdu_is_cts() != 0)
                 return 1;
         } else if (mac_evt4() & MAC_EVT4_GP0_END) {
             return 0;
@@ -145,7 +151,7 @@ void direct_tx_send_after_delay(u32 a, u32 b, u32 c)  /* 6.2 asm 0x938218 */
         uc_mac_cmd(0x33000443);
     }
     uc_wait_direct_tx_ready();
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
 }
 void mac_program_tx_result_ctx_uc(u32 a, u32 b, u32 c)  /* 6.2 asm 0x92db20 */
 {
@@ -158,7 +164,7 @@ void mac_program_tx_result_ctx_uc(u32 a, u32 b, u32 c)  /* 6.2 asm 0x92db20 */
     arc_nops(3);
 }
 
-void tx_flow_arm_88606c_0x102(void)
+void tx_crypto_ctl_arm(void)
 {
     MMIO32(HW_TX_CRYPTO_CTL) = 0x102;
 }
@@ -174,12 +180,15 @@ void tx_initiator_reset_slot_counters(u32 a)
 
 u32 tx_submit_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 {
+    UC_STAMP_T0(STAMP_MTP_LAT, mtp_t0);
     mac_program_tx_result_ctx_uc(a->qid, b, c);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
+    UC_STAMP_T0(STAMP_MTP_LAT, mtp_t1);
     { u32 _r51 = mac_mtp_desc(); mtp_desc_lo = _r51 & 0xf; mtp_desc_hi = _r51 >> 4; }
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
+    UC_STAMP(STAMP_MTP_LAT, 2u << 16 | (mtp_t1 - mtp_t0), arc_lr(0x100) - mtp_t0);
     if (c == 1) {
         d |= (1u << 15) | (1u << 27) | (1u << 28);
         uc_mac_cmd(d);
@@ -188,7 +197,7 @@ u32 tx_submit_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 }
 
 
-u32 itx_rr_pick_pending_b(u32 out)
+u32 itx_ka_rr_pick(u32 out)
 {
     /* 0x927f00: циклический выбор старшей ожидающей станции ниже указателя [0x800442];
      * указатель 0 или пустая выборка — заново с 8. */
@@ -213,7 +222,7 @@ u32 itx_rr_pick_pending_b(u32 out)
 
 void direct_tx_send_short_frame(u32 a)   /* 6.2 asm 0x93b32c */
 {
-    direct_tx_program_cmd34(0x10, 0x16);
+    direct_tx_program_desc(0x10, 0x16);
     tx_fifo_write_bytes((u32)&ssw_tpl_fc, 4);
     tx_fifo_free -= 0xf;
     uc_mac_cmd((a << 10) | (a << 8) | 0x330000e3);
@@ -222,7 +231,7 @@ void direct_tx_send_short_frame(u32 a)   /* 6.2 asm 0x93b32c */
     arc_core_wr(34, ssw_tpl_fb_snr);
     arc_core_wr(34, ssw_tpl_fb_b2);
     tx_fifo_free -= 3;
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
 }
 
 u32 direct_tx_send_ctrl_frame(const struct dtx_grant_req *a)
@@ -290,7 +299,7 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
  * Аппаратный срок MAC (что считает «поздно» после 0x29000001) не установлен.
  * Путь ~160 инструкций + ответ MTP (vendor ~ так же, тот же порядок команд); запас: сотни
  * тактов до конца слота. Тот же участок «слот → CCA → mac_program_rx_window(5) → 0x19000001»
- * есть в internal_tx_flow_sm2 (~78 инструкций), direct_tx_send_from_desc (~86), tx_bcast_flow,
+ * есть в internal_tx_keepalive_flow (~78 инструкций), direct_tx_send_from_desc (~86), tx_bcast_flow,
  * bcon_txss_sweep_step (b == 5), txop_await_cts_ppdu (txss.c). Срыв: поздний старт после
  * слота — коллизия с соседом, отсчитавшим отсрочку; кадр/TXOP теряется, растёт CW. */
 void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
@@ -298,7 +307,11 @@ void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
     u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
     uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
+    UC_STAMP_T0(STAMP_CCA_SLOT, t_s0);
+    UC_STAMP_V(STAMP_CCA_SLOT, ps0, mac_status_sel());
     mac_select_all_sectors_and_wait();
+    UC_STAMP_T0(STAMP_CCA_SLOT, t_s1);
+    UC_STAMP_V(STAMP_CCA_SLOT, ps1, mac_status_sel());
     mac_cmd_29000001();
     if (mac_cca_ok()) {
         u32 r3 = a->sta;
@@ -308,6 +321,8 @@ void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
     } else {
         uc_mac_cmd(0x29000002);
     }
+    UC_STAMP(STAMP_CCA_SLOT, (ps0 >> 8 & 0x3f) | (ps1 >> 8 & 0x3f) << 8 | (ps1 >> 16 & 0x3f) << 16 | (ps1 >> 24 & 1) << 24,
+             (t_s1 - t_s0) | mac_rx_rep1() << 16);
     txrx_state2 |= (1u << 9);
 }
 
@@ -330,7 +345,7 @@ void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b)   /* 6.2 asm 0x9
         u8 *d = (u8 *)b;
     /* FC = 0x0964 (SSW-Feedback). Vendor: stw 0 в d[0..1], затем ld/st всего слова с
      * битовыми полями FC (поворот на 32 бита в сумме) — Duration (d[2..3]) остаётся
-     * мусором стека вызывающего (direct_tx_step), как в txss_init_send_ssw_fdbk.
+     * мусором стека вызывающего (direct_tx_ssw_feedback), как в txss_init_send_ssw_fdbk.
      * Здесь Duration = 0, как в кадрах из шаблонов DCCM. */
     *(u32 *)d = 0x964;
     d[0x10] = s->rx_sector | (s->rx_antenna << 6);
@@ -365,13 +380,13 @@ void direct_tx_send_with_seq(u32 a, u32 b, u32 c)
     *(volatile u32 *)HW_MAC_MGMT_SEQ_NUM = (((r0 + 1) << 16) & 0xfff0000) | (1u << 28);
     arc_core_wr(34, (r0 << 4) | (1u << 24));
     tx_fifo_free -= 2;
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
 }
 
 /* СРОК: команда передачи ответа 0x19000001 (а за ней кадр в FIFO у вызывающего) до SIFS
  * (3 мкс, допуск −0/+0.49 мкс) от конца принятого кадра — DMG CTS на RTS, Grant Ack, немедленный
- * ответ (802.11-2020 10.3.2.3.3, 10.3.2.9). Зовут rx_send_dmg_cts /
- * rx_flow_send_imm_response (rx.c) из ветки rx_flow_handle_frame — путь до входа сюда и
+ * ответ (802.11-2020 10.3.2.3.3, 10.3.2.9). Зовут rx_send_grant_ack /
+ * rx_send_cf_end_response (rx.c) из ветки rx_flow_handle_frame — путь до входа сюда и
  * подача кадра после 0x19 (MCS ctrl_frame_mcs = 1, SC) — там же.
  * Здесь: вход → 0x19000001 ~79 инструкций (vendor 0x9385d8 ~93, с __st_r15_to_r13); запас:
  * не измерен, по аналогии с rx_frame_tx_resp_seq (ХРУПКО, rx.c) — единицы-десятки
@@ -391,7 +406,7 @@ void tx_send_imm_response(u32 a, u32 b, u32 c)
     r0 |= rf_set_tx << 24;
     abif_dvs_rf_ctrl_shadow = r0;
     *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r0;
-    direct_tx_program_cmd34(0x10, c);
+    direct_tx_program_desc(0x10, c);
     r15 |= (1u << 26) | (1u << 28);
     uc_mac_cmd(r15);
     uc_mac_cmd(0x14000007);
@@ -469,6 +484,7 @@ u32 tx_slot_pick_queue(u32 a, u32 b)
 
     u32 r13 = MAC_QSEL_LOWEST_QSET_OF(mac_queue_sel());
     u32 r15 = MAC_QSEL_QID_OF(mac_queue_sel());
+    UC_STAMP(STAMP_QSEL, mac_queue_sel(), uc_read_tsf_lo() - MMIO32(HW_MAC_BI_START_TSF_LO));
     *(u32 *)a = r15;                                    /* st_s — слово */
 
     u32 r14 = r13 - 1;
@@ -511,7 +527,7 @@ void tx_slot_dispatch(u32 a)   /* 6.2 asm 0x938e34 */
     u32 sp;
     struct tx_ctx_s *ctx = tx_ctx_alloc_next(1);
     if (tx_slot_pick_queue((u32)&sp, 1) == 0) {
-        bi_tx_check_idle_and_start_uc(2);
+        mac_backoff_settle_set_chain_modes(2);
         uc_stats.tx_no_queue += 1;           /* [0x8022c8 + 8] */
         uc_mac_cmd(0xeeee01);
         return;
@@ -553,7 +569,7 @@ void tx_slot_dispatch(u32 a)   /* 6.2 asm 0x938e34 */
  * Путь r45 → 0x33000002 ~167 инструкций + ожидание события 6 (vendor ~172); запас: десятки
  * тактов (не измерен; зависит от того, когда PHY реально стартует после r45). Срыв: опустошение
  * TX FIFO — испорченный кадр в эфире / ошибка MAC. Не вставлять код между 0x19000001 и
- * direct_tx_issue_cmd_33. */
+ * direct_tx_commit. */
 u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_cfg, u32 rate, u32 len)
 {
     const struct dtx_ctrl_frame *fd = (const void *)desc;   /* FC/Duration — общие для кадров direct TX */
@@ -563,7 +579,7 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
         r13 = (rf_chain_cfg | 0x30) | (cfg_hi << 8);   /* ld_s [gp,-12] */
     else
         r13 = sta_tab[sta].tx_sel;
-    direct_tx_program_cmd34(0x10, len);
+    direct_tx_program_desc(0x10, len);
     uc_mac_cmd(fd->duration | (1u << 24) | (1u << 26) | (1u << 28));
     uc_mac_cmd(0x14000007);
     mac_program_tx_with_rate(rate);
@@ -605,7 +621,7 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
     uc_mac_cmd(0x33000443);
     uc_wait_direct_tx_ready();
     tx_fifo_write_bytes(desc + 0x10, len - 0x10);
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
     uc_spin_until_event(MAC_EVT1_TX_END);
     return 1;
 }
@@ -619,6 +635,7 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
     if (b != 0) {
         uc_mac_cmd(1u << 29);
         tx_submit_frame(a, 0, 1, 0);            /* vendor: 0x400 в UPM-doze — PS вырезан */
+        UC_STAMP_T0(STAMP_MTP_RESULT, t_go);
         txr.submit += 1;                  /* [0x80242c + 2], ldw/stw */
         uc_mac_cmd(mac_evt_en_shadow | 0x27004000);
         uc_mac_cmd(0x2004000);
@@ -627,6 +644,8 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
         if (!(mac_evt1() & MAC_EVT1_BUSY2))
             uc_assert((u32)__builtin_return_address(0), 0x92);
         uc_spin_until_event(MAC_EVT1_TX_END);
+        UC_STAMP(STAMP_MTP_RESULT, mac_mtp_resp(), (mac_mtp_perm() & 0xffff) | mac_mtp_desc() << 16);
+        UC_STAMP(STAMP_MTP_RESULT, arc_lr(0x100) - t_go, a->qid | sta << 8);
     }
     u32 v = ((sta_tab[sta].flags >> 1) & 1) ^ 1;   /* ldw; lsr; bxor bit0 */
     u32 r16 = (v ? 0x17 : 0x22) + 4;
@@ -641,6 +660,9 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
     }
     txr.awaiting = 1;
     u32 r1 = (r14 != 0) ? 0x17 : 0x22;
+    /* Срок ответа (GP0, мкс): CBAP — CF-End с Duration ≠ 0, ответный CF-End ждём AckTimeout 18 мкс. Фиксированное
+     * расписание (усечение SP) — Duration 0 (r17), ответ получатель шлёт только при Duration ≠ 0 (10.39.8.1): ответа
+     * нет, 1 мкс — сразу дальше. */
     u32 r18 = (dti_qset_mode == 0) ? 0x12 : 1;
     u32 r17 = (dti_qset_mode == 0) ? r1 : 0;
     if (b != 0) {
@@ -657,7 +679,7 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
     uc_mac_cmd(0x2004000);
     arc_nops(3);
     uc_sleep_until_event(MAC_EVT1_BUSY2, 0xa);
-    gp0_arm_usec_b(r18);
+    gp0_timer_arm_usec(r18);
     if (!(mac_evt1() & MAC_EVT1_BUSY2))
         uc_assert((u32)__builtin_return_address(0), 0xaa);
     uc_spin_until_event(MAC_EVT1_TX_END);
@@ -715,7 +737,7 @@ void tx_sta_run_txop(struct tx_ctx_s *ctx)
     u32 r2 = r1v->sta;
     if (sta_tab[r2].qid_mask_q6 & (1u << r1v->qid)) {
         if (txop_dma_bit1_pending == 1) {
-            txop_clear_dma_ctl_bit1();
+            txop_clear_l2_offload_tx_ctl_bit1();
             txop_dma_bit1_pending = 0;
         }
     }
@@ -747,7 +769,7 @@ void tx_sta_run_txop(struct tx_ctx_s *ctx)
             r16 = 1;
         if (r16 != 0) {
             tx_initiator_reset_slot_counters(r13);
-            bf_pending_set_bit(2);
+            bg_task_set_pending_bit(2);
         }
     }
     if (ba_stats.active != 0)
@@ -798,7 +820,7 @@ void tx_sta_flow_loop(struct tx_ctx_s *a)   /* 6.2 asm 0x939e88 */
             if (v != 0)
                 rate_search_pick_tx_params(r14, 0);
             else   /* L_939fa4 */
-                bitstream_push((u32)sp, bf_ctrl.ctrl_code_rx, 0,
+                bit_hist_push((u32)sp, bf_ctrl.ctrl_code_rx, 0,
                                bf_ctrl.stat_bit);
             tx_resp_sent = 1;   /* L_939fb6 */
         }
@@ -816,7 +838,7 @@ void tx_sta_flow_loop(struct tx_ctx_s *a)   /* 6.2 asm 0x939e88 */
                 u32 cfg = txrx_cfg_flags;
                 u32 b = (cfg & (1u << 9)) ? bf_ctrl.ctrl_code_rx_alt
                                           : bf_ctrl.ctrl_code_rx;
-                if (bitstream_push((u32)sp, b, 1, bf_ctrl.stat_bit) == 1) {
+                if (bit_hist_push((u32)sp, b, 1, bf_ctrl.stat_bit) == 1) {
                     if (bf_ctrl.triggers & (1u << 3))
                         VOL(link_stat[r14->sta].bf_reasons) |= (1u << 3);
                 } else {
@@ -846,7 +868,7 @@ void tx_sta_flow_loop(struct tx_ctx_s *a)   /* 6.2 asm 0x939e88 */
     state_bits_set:   /* L_93a018 */
         {
             u32 v = rs_state[r14->sta].active;
-            if (v != 0 && tx_flow_substep(r14) == 2 &&
+            if (v != 0 && rate_search_per_check(r14) == 2 &&
                 (bf_ctrl.triggers & 1)) {
                 /* L_939f90 */
                 VOL(link_stat[r14->sta].bf_reasons) |= 1;
@@ -884,7 +906,11 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
         txrx_state2 = r0 & ~(1u << 17);   /* bclr 0x11 */
         return 1;
     }
-    if (sxd_hal_wait_slot2_busy2(resp_wait_slots) == 0) {   /* [gp,-0x20] */
+    UC_STAMP_T0(STAMP_TXOP_WAIT, t_w0);
+    u32 got = sxd_hal_wait_slot2_busy2(resp_wait_slots);   /* [gp,-0x20] */
+    UC_STAMP_T0(STAMP_TXOP_WAIT, t_w1);
+    if (got == 0) {
+        UC_STAMP(STAMP_TXOP_WAIT, t_w1 - t_w0, txrx_state2 & 0xffff);
         /* L_93a6bc */
         r0 = txrx_state2;
         r0 &= ~(1u << 8);
@@ -901,6 +927,9 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
         return 1;
     }
     rx_flow_run();
+    UC_STAMP(STAMP_TXOP_WAIT, (t_w1 - t_w0) | 1u << 31, (txrx_state2 & 0xffff) | mac_rx_rep1() << 16);
+    UC_STAMP(STAMP_TXOP_WAIT, mac_rx_rep2(), mac_rx_rep3());
+    UC_STAMP(STAMP_TXOP_WAIT, mac_rx_misc(), mac_bap_if());
     r0 = txrx_state2;
     if (r0 & (1u << 7)) {
         /* L_93a648 */
@@ -928,19 +957,19 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
 /* Keep-alive: RTS → CTS → кадр из очереди станции → ACK (6.2 asm 0x939100).
  * СРОК: команда передачи данных 0x19000001 до SIFS (3 мкс, допуск −0/+0.49 мкс) от конца
  * принятого CTS (802.11-2020 10.3.2.9, 10.23.2.8). Путь: выход из ожидания r42.rx_frame
- * (itx_wait_cts_b) → rx_ppdu_is_cts_b (ждёт r42.ppdu_report, 0x32, 0x2011000, r37) →
+ * (itx_wait_cts_b) → rx_ppdu_is_cts (ждёт r42.ppdu_report, 0x32, 0x2011000, r37) →
  * mac_program_rx_window(1) → tx_submit_frame (0x1b/0x16/0x17, r43, r45) → 0x20000400 →
- * gp0_arm_usec_b(0xc) → 0x2008000 → 0x19000001: ~208 инструкций + задержки ppdu_report и MTP
+ * gp0_timer_arm_usec(0xc) → 0x2008000 → 0x19000001: ~208 инструкций + задержки ppdu_report и MTP
  * (vendor ~218). Запас: десятки инструкций (не измерен; ~300 тактов пути из 495). Срыв: данные
  * позже SIFS — сосед может занять среду; NAV из Duration RTS (0x15000028 = 40 мкс, фиксирован)
  * может кончиться до ACK — keep-alive считается неудачным (ka_noack, рост CW).
  * Участок слот → CCA → RTS (0x19000001) ~78 инструкций — см. tx_cca_check_and_send.
  * Переход TX→RX после RTS/данных (событие 5 → rf_set_rx, ~12 инструкций) — запас большой. */
-void internal_tx_flow_sm2(u32 a)
+void internal_tx_keepalive_flow(u32 a)
 {
     (void)a;
     u32 sp[2];
-    if (itx_rr_pick_pending_b((u32)sp) == 0) {
+    if (itx_ka_rr_pick((u32)sp) == 0) {
         internal_tx_clear_pending(8);
         return;
     }
@@ -950,7 +979,7 @@ void internal_tx_flow_sm2(u32 a)
         return;
     }
     if (dti_qset_mode == 1)
-        rx_cfg_select_sta(sta);
+        rx_cfg_set_sta_omni_sector(sta);
     struct tx_ctx_s *ctx = tx_ctx_alloc_next(1);
     sta = sp[0];
     VOL(link_stat[sta].ka_sent) += 1;
@@ -959,7 +988,7 @@ void internal_tx_flow_sm2(u32 a)
     ctx->resp_ctx8 = 0;
     u32 v = sta_tab[sta].qid_mask_q6;
     ctx->qid = (30 - arc_norm(v));      /* norm + rsub 0x1e */
-    gp0_arm_usec_b(0x12);
+    gp0_timer_arm_usec(0x12);
     /* Duration RTS = 40 мкс (vendor), оставлено. По 802.11-2020 9.2.5.2 a) 1) —
      * TXTIME(кадр) + TXTIME(DMG CTS) + TXTIME(Ack) + 3·SIFS, с округлением вверх. Известно:
      * DMG CTS 20 Б на control PHY = 14,04 мкс (ответ на RTS в control PHY; окно GP0 18 мкс от конца
@@ -972,7 +1001,7 @@ void internal_tx_flow_sm2(u32 a)
      * — это перестройка пути CTS → данные (СРОК выше), без стенда не делается. */
     uc_mac_cmd(0x15000028);
     uc_mac_cmd(0x14000007);
-    direct_tx_program_cmd34(0x10, 0x10);
+    direct_tx_program_desc(0x10, 0x10);
     mac_program_tx_with_rate(0);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
@@ -1004,7 +1033,7 @@ void internal_tx_flow_sm2(u32 a)
             mac_program_rx_window(1, sta_tab[sta].tx_sel, 1);
             tx_submit_frame(ctx, 1, 0, 0);
             uc_mac_cmd(0x20000400);
-            gp0_arm_usec_b(0xc);
+            gp0_timer_arm_usec(0xc);
             uc_mac_cmd(0x2008000);
             uc_mac_cmd(0x19000001);
             while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))

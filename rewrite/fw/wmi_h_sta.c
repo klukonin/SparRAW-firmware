@@ -172,7 +172,7 @@ static void lm_if_notify_timer_expired(u32 a0, u32 unused)
      * → сразу fill_sta_entry); у нас нули (mem_pool_alloc_locked обнуляет). */
     link_stats_fill_sta_entry(lm, e);
     fw_log_emit0(0x2b, 0x10143cc);
-    low_sme_send_evt2sw(e, 0x1863, sizeof(*e), ((volatile struct mid *)lm->conn->mid)->id, 0, 0, 0);
+    host_if_send_event(e, 0x1863, sizeof(*e), ((volatile struct mid *)lm->conn->mid)->id, 0, 0, 0);
     if (lm->notify_period != 0)
         l2mgr_arm_notify_timer(lm);
 }
@@ -264,7 +264,7 @@ void host_if_get_status_hal(struct wmi_mbox *mb, const void *cmd, u32 mid)
         p->network_type = (u8)((volatile struct mid *)m)->network_type;
         mid_copy_bssid(e, p->bssid);
         vp->ssid_len = mid_copy_ssid(e, p->ssid);
-        vp->is_secured = conn_sec_mode_not_1(conn);
+        vp->is_secured = conn_is_secured(conn);
     } else {
         vp->is_associated = 0;
     }
@@ -462,7 +462,7 @@ void wmi_link_maintain_cfg_read(const struct wmi_link_maintain_cfg_read_cmd *cmd
     vp->status = st;
     vp->cid = cmd->cid;
     fw_log_emit2(0x2b, 0x100b824, st, cmd->cid);
-    low_sme_send_evt2sw(p, 0x1843, sizeof(*p), 0, 0, 0, 0);
+    host_if_send_event(p, 0x1843, sizeof(*p), 0, 0, 0, 0);
 }
 
 /* wmi_link_maintain_cfg_write (0x8ec7f8, 72 Б): {type u32, cid u32, параметры @+8} →
@@ -474,7 +474,7 @@ void wmi_link_maintain_cfg_write(const struct wmi_link_maintain_cfg_write_cmd *c
     p->status = st;
     p->cid = cmd->cid;
     fw_log_emit2(0x2b, 0x100b7d4, st, cmd->cid);
-    low_sme_send_evt2sw((void *)p, 0x1842, sizeof(*p), 0, 0, 0, 0);
+    host_if_send_event((void *)p, 0x1842, sizeof(*p), 0, 0, 0, 0);
 }
 
 /* ======================= SSID / MAC / версия ======================= */
@@ -513,7 +513,7 @@ void wmi_mac_addr_req(u32 mid, struct wmi_mbox *mb)
 
 /* mac__read_880a14_28 (0x8f3354, 88 Б): младшие байты 0x880a14..0x880a28 в шесть выходов
  * (порядок vendor: o2 ← 14, o1 ← 18, o0 ← 1c, o3 ← 20, o4 ← 24, o5 ← 28; stb). */
-static void mac_read_880a14_28(u8 *o0, u8 *o1, u8 *o2, u8 *o3, u8 *o4, u8 *o5)
+static void mac_read_fw_timestamp(u8 *o0, u8 *o1, u8 *o2, u8 *o3, u8 *o4, u8 *o5)
 {
     if (o2) *o2 = (u8)MMIO32(HW_FW_TIMESTAMP_HOUR);
     if (o1) *o1 = (u8)MMIO32(HW_FW_TIMESTAMP_MINUTE);
@@ -524,7 +524,7 @@ static void mac_read_880a14_28(u8 *o0, u8 *o1, u8 *o2, u8 *o3, u8 *o4, u8 *o5)
 }
 
 /* mac__read_880a00_0c (0x8f34c4, 56 Б): четыре регистра 0x880a00..0x880a0c (с конца). */
-static void mac_read_880a00_0c(u32 *a, u32 *b, u32 *c, u32 *d)
+static void mac_read_bl_version(u32 *a, u32 *b, u32 *c, u32 *d)
 {
     if (d) *d = MMIO32(HW_BL_VERSION_BUILD);
     if (c) *c = MMIO32(HW_BL_VERSION_SUBMINOR);
@@ -534,8 +534,10 @@ static void mac_read_880a00_0c(u32 *a, u32 *b, u32 *c, u32 *d)
 
 /* 0x801ba4: список возможностей FW (одно слово; не const — wmi_fw_ver читает из памяти). */
 /* Бит 0 (WMI_FW_CAPABILITY_FTM) снят: FTM — только SparRAW-pro (vendor 0x305f). Бит 28
- * (WMI_FW_CAPABILITY_REASSOC_INPLACE, наш) — переассоциация на месте (mlme.c, WMI_REASSOC_INPLACE_CFG). */
-FWDATA(801ba4) u32 fw_caps_list[1] = { 0x305e | (1u << 28) };
+ * (WMI_FW_CAPABILITY_REASSOC_INPLACE, наш) — переассоциация на месте (mlme.c, WMI_REASSOC_INPLACE_CFG). Бит 29
+ * (WMI_FW_CAPABILITY_SPARRAW_TX_POWER, наш) — мощность TX на ходу (tx_power.c, WMI_SPARRAW_TX_POWER): драйвер
+ * шлёт команду только при нём (vendor fw её не знает). */
+FWDATA(801ba4) u32 fw_caps_list[1] = { 0x305e | (1u << 28) | (1u << 29) };
 
 /* 0x8f3560 (16 Б): список возможностей FW — fw_caps_list (0x801ba4). */
 static void fw_caps_get(u32 *pp, u8 *pn)
@@ -558,11 +560,11 @@ void wmi_fw_ver(struct wmi_mbox *mb, u32 mid)
     if (p == 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1039);
     memset0_words(p, sizeof(*p));
-    mac_read_880a2c_38(&p->fw_major, &p->fw_minor, &p->fw_subminor, &p->fw_build);
+    mac_read_fw_version(&p->fw_major, &p->fw_minor, &p->fw_subminor, &p->fw_build);
     /* время сборки — младшими байтами слов (stb) */
-    mac_read_880a14_28((u8 *)&p->second, (u8 *)&p->minute, (u8 *)&p->hour, (u8 *)&p->day,
+    mac_read_fw_timestamp((u8 *)&p->second, (u8 *)&p->minute, (u8 *)&p->hour, (u8 *)&p->day,
                        (u8 *)&p->month, (u8 *)&p->year);
-    mac_read_880a00_0c(&p->bl_major, &p->bl_minor, &p->bl_subminor, &p->bl_build);
+    mac_read_bl_version(&p->bl_major, &p->bl_minor, &p->bl_subminor, &p->bl_build);
     fw_log_emit0(0x20, 0x100631c);
     fw_log_emit2(0x20, 0x1006344, vp->fw_major, vp->fw_minor);
     fw_log_emit2(0x20, 0x1006358, vp->fw_subminor, vp->fw_build);
@@ -596,7 +598,7 @@ static void rf_get_module_info(struct rf_obj *obj, u32 *o0, u32 *o1, u32 *o2, u3
     if (arr) {
         u32 it;
         memset_fw(arr, 1, n);
-        field_set_0x00_8e5dfc(&it, *(volatile u8 *)&obj->rf_mask);
+        bit_iter_init(&it, *(volatile u8 *)&obj->rf_mask);
         while (bit_iter_has_more(&it)) {
             u32 i = bitmap_alloc_bit(&it);
             if (i < n)
@@ -623,7 +625,7 @@ void wmi_get_rf_status(struct wmi_mbox *mb, u32 mid)
     fw_log_emit0(0x20, 0x100644c);
     fw_log_emit3(0x20, 0x100647c, vp->rf_type, vp->attached_rf_vector, vp->enabled_rf_vector);
     fw_log_emit0(0x20, 0x10064bc);
-    field_set_0x00_8e5dfc(&it, vp->enabled_rf_vector);
+    bit_iter_init(&it, vp->enabled_rf_vector);
     while (bit_iter_has_more(&it)) {
         u32 i = bitmap_alloc_bit(&it);
         fw_log_emit2(0x20, 0x10064d8, i, p->rf_status[i]);
@@ -682,10 +684,10 @@ void wmi_temp_sense(struct wmi_mbox *mb, const struct wmi_temp_sense_cmd *cmd)
 
 /* ======================= ключи / пароль ======================= */
 
-/* add_key (0x8d0edc, 100 Б): ключ 16 Б (копия на стеке) в 0x886038..44, слот в
+/* mac_rx_key_write (0x8d0edc, 100 Б): ключ 16 Б (копия на стеке) в 0x886038..44, слот в
  * 0x886034, 0x886030 = 0x80000000, 0x88602c = 0x40000000, бит слота в 0x8860d8
  * (bic+or — по сути or). Порядок записей — как у vendor. */
-static void add_key(const u8 *key, u32 slot)
+static void mac_rx_key_write(const u8 *key, u32 slot)
 {
     u32 k[4];
     u32 bit;
@@ -713,7 +715,7 @@ static void key_install_by_type(const u8 *key, u32 idx, u32 type, u32 cid)
         slot = (idx & 1) + (cid << 1) + 0x10;
     else
         return;
-    add_key(key, (u8)slot);
+    mac_rx_key_write(key, (u8)slot);
 }
 
 /* set_tk (0x8e7140, 104 Б): парный ключ — 16 Б в обратном порядке в tk, индекс в
@@ -804,7 +806,7 @@ static void wmi_add_key_ptk_timer(u32 mid, u32 cid)
         fw_log_emit1(0x10, 0x100ee0c, cid);
         return;
     }
-    if (conn_sec_mode_not_1(conn) == 0)
+    if (conn_is_secured(conn) == 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x141e);
     if (conn->mlme.busy == 0) {
         fw_log_emit1(0x10, 0x100ee90, mid);

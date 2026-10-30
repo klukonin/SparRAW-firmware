@@ -2,7 +2,7 @@
 /* Дескрипторы MAC-очередей (MACQ) в памяти fw: дескриптор окна очереди (16 Б, пишется в
  * окно MACQ 0x886600 через macq_desc_write / читается macq_desc_read) и набор дескрипторов
  * TX-очереди (0x70 Б на стеке: tx_macq_setup, ba_sm_build_addba_params, ...), который
- * qh_write_by_flags_fw раздаёт по флагам (0x1..0x20) или LMAC-командой 0x45 (копия 0x70 Б).
+ * macq_qh_write_by_flags раздаёт по флагам (0x1..0x20) или LMAC-командой 0x45 (копия 0x70 Б).
  * Поля окна — из txq_ring_param_config_queue / stream_params_copy_hdr (журнал vendor
  * 0x101346c: payload_length_lines, max_msdu_size_bytes, PTP_PAYLOAD_PIPE_LEN_BYTE). */
 #ifndef MACQ_DESC_H
@@ -61,7 +61,7 @@ MACQ_OFF(struct macq_mode_desc, field0e, 0x0e);
 _Static_assert(sizeof(struct macq_mode_desc) == 0x10, "macq_mode_desc");
 
 /* Дескриптор типа/BA очереди (3 строки по 16 Б, +0x40 набора): qdesc__build_by_type
- * (0x8fa224) обнуляет 0x30 Б; qh_write_by_flags_fw (флаг 0x10) пишет его в MACQ тремя
+ * (0x8fa224) обнуляет 0x30 Б; macq_qh_write_by_flags (флаг 0x10) пишет его в MACQ тремя
  * строками (macq_desc_write …, 3). */
 struct macq_ba_desc {
     u32 w0;                                    /* 0x00: бит 0 — флаг, [10:8], 1, [19:16] TID, 2,
@@ -131,7 +131,7 @@ MACQ_OFF(struct rx_macq_bufs, ctl, 0x50);
 _Static_assert(sizeof(struct rx_macq_bufs) == 0x58, "rx_macq_bufs");
 extern struct rx_macq_bufs rx_macq_bufs;               /* 0x847fc8 (fw.ld) */
 
-/* Набор дескрипторов TX-очереди (0x70 Б). Флаги qh_write_by_flags_fw: 0x1 win, 0x2 sector,
+/* Набор дескрипторов TX-очереди (0x70 Б). Флаги macq_qh_write_by_flags: 0x1 win, 0x2 sector,
  * 0x4 mode, 0x8 addr, 0x10 ba, 0x20 — win как «типизированный». */
 struct macq_qdesc {
     struct macq_desc win;                      /* 0x00: окно (stream_params_copy_hdr) */

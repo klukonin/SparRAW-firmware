@@ -31,7 +31,7 @@ u32 vring_get_pring_id_of_obj(const struct stream_sm *obj)
 }
 
 /* stream_mgr__pring_by_index (0x8da0dc, 46 Б): поле +0xc (bcast) стрима vring vr. */
-u32 stream_mgr_pring_by_index(u32 vr)
+u32 stream_mgr_vring_is_bcast(u32 vr)
 {
     struct stream_ctx *s = stream_by_vr[vr];
     if (s == 0)
@@ -63,15 +63,15 @@ struct stream_ctx *vring_ctx_alloc(void)
 }
 
 /* wmi_vring_cfg__with_847b34 (0x8cb204, 12 Б): вернуть контекст в пул. */
-void wmi_vring_cfg_with_847b34(struct stream_ctx *c)
+void vring_ctx_free(struct stream_ctx *c)
 {
-    stream_mgr_check_vring(&stream_pool, c);
+    mem_pool_free_checked(&stream_pool, c);
 }
 
 /* sm_obj__store_desc (0x8d96c0, 60 Б): поля контекста стрима + конструктор ba_sm. noinline —
  * как у vendor отдельная функция (с полями по имени gcc встраивает её в vring_configure_tx
  * и переставляет записи). */
-__attribute__((noinline)) void sm_obj_store_desc(struct stream_ctx *d, u8 vr, struct conn *conn, u8 tid, u32 ba_en,
+__attribute__((noinline)) void stream_ctx_init(struct stream_ctx *d, u8 vr, struct conn *conn, u8 tid, u32 ba_en,
                        u8 tbl_vr, u8 pring_type, u32 mid, u32 bcast)
 {
     d->conn = conn;
@@ -85,7 +85,7 @@ __attribute__((noinline)) void sm_obj_store_desc(struct stream_ctx *d, u8 vr, st
     d->mid = mid;
     d->configured = 0;
     d->bcast = bcast;
-    obj_vt80296c_ctor(&d->sm, d);
+    stream_sm_ctor(&d->sm, d);
 }
 
 /* mid__type_of (0x8ccecc, 54 Б): тип MID по типу сети записи. */
@@ -107,12 +107,12 @@ u32 mid_type_of(const struct mid *mid)
 }
 
 /* l2mgr__program_args (0x8c6c04, 40 Б): адреса RA/TA в TX-дескриптор очереди. */
-u32 l2mgr_program_args(const struct vring_tbl_entry *e, const void *p1, const void *p2, u8 a3, u8 a4,
+u32 l2mgr_program_macq_ra_ta(const struct vring_tbl_entry *e, const void *p1, const void *p2, u8 a3, u8 a4,
                        u8 a5)
 {
     struct macq_qdesc buf;
     tx_dma_build_desc(buf.addr, p1, p2, a3, 0, a5, a4);
-    return qh_write_or_conn_alloc(e->macq, 8, &buf, 0);
+    return macq_qh_write(e->macq, 8, &buf, 0);
 }
 
 /* mac_enable_bcast_ring (0x8c14d4, 28 Б). */
@@ -123,7 +123,7 @@ void mac_enable_bcast_ring(void)
 }
 
 /* vring_hw__clear_tx_ctl_bit0 (0x8df5b4, 14 Б). */
-void vring_hw_clear_tx_ctl_bit0(void)
+void vring_hw_disable_bcast_ring(void)
 {
     MMIO32(HW_L2_OFFLOAD_TX_CTL) &= ~1u;
 }
@@ -136,8 +136,8 @@ void tx_macq_setup_params(struct vring_tbl_entry *e, u32 a1, u32 a2, u32 a3, u32
     e->sector_mode = (u8)a1;
     e->to_res = (u8)a3;
     e->ctl = (u16)((e->ctl & ~2u) | ((a2 & 1u) << 1));
-    ba_sm_addba_at_10(e, &buf, a1, a2, e->to_res, a4);
-    qh_write_or_conn_alloc(e->macq, 2, &buf, 0);
+    tx_macq_build_sector_desc(e, &buf, a1, a2, e->to_res, a4);
+    macq_qh_write(e->macq, 2, &buf, 0);
 }
 
 /* 0x802450: адреса MACQ-записи широковещательного vring (vring__configure_tx: mov_s
@@ -153,24 +153,24 @@ u32 vring_configure_tx(struct stream_ctx *desc, u32 idx, struct conn *cfg, u8 a3
 {
     struct vring_tbl_entry *entry;
     (void)a4;                                       /* vendor: r4 затирается нулём (8e602a) */
-    sm_obj_store_desc(desc, (u8)idx, cfg, a3, 0, (u8)idx, a8, a10, a11);
+    stream_ctx_init(desc, (u8)idx, cfg, a3, 0, (u8)idx, a8, a10, a11);
     entry = vring_tbl_entry_addr(idx);
     if (a11 != 0) {
         u16 bc[3];
         bc[0] = vring_bcast_addr[0];
         bc[1] = vring_bcast_addr[1];
         bc[2] = vring_bcast_addr[2];
-        l2mgr_program_args(entry, bc, bc, 8, a9, 255);
+        l2mgr_program_macq_ra_ta(entry, bc, bc, 8, a9, 255);
     } else {
         struct mid *mid = cfg->mid;
-        l2mgr_program_args(entry, cfg->peer, mid->mac, cfg->cid,
+        l2mgr_program_macq_ra_ta(entry, cfg->peer, mid->mac, cfg->cid,
                            (u8)mid_type_of(mid), 255);
     }
     if (flag != 0 && flag != 1) {
         mac_enable_bcast_ring();
         tx_macq_setup_params(entry, 0, a7, a6, 0);
     } else {
-        vring_hw_clear_tx_ctl_bit0();
+        vring_hw_disable_bcast_ring();
         tx_macq_setup_params(entry, 1, a7, a6, 0);
     }
     desc->configured = 1;
@@ -191,14 +191,14 @@ void l2mgr_send_vring_en_evt(u32 vring, u32 chan)
     memset0_words(p, 4);
     p[0] = (u8)vring;
     fw_log_emit1(0x2b, 0x100d534, vring);
-    low_sme_send_evt2sw(p, 0x1865, 4, chan, 0, 0, 0);
+    host_if_send_event(p, 0x1865, 4, chan, 0, 0, 0);
 }
 
 /* STREAM_MGR::ADD (0x8c2dc4, 310 Б): зарегистрировать стрим ctx (cfg — vring_cfg
  * WMI-команды, mpdu — max_mpdu_size): в vring_schd (vt[3]), правила ключей, при
  * agg_max_wsize — BA (vt[6] контекста), ответ WMI_VRING_CFG_DONE; для соединения в
  * состоянии 7 — ещё событие 0x1865. Возврат 0 — успех (ctx остаётся у стрима). */
-u32 STREAM_MGR_ADD(struct stream_ctx *ctx, const struct wmi_vring_cfg *cfg, u32 mpdu)
+u32 stream_mgr_add(struct stream_ctx *ctx, const struct wmi_vring_cfg *cfg, u32 mpdu)
 {
     u32 vr = ctx->vr;
     struct conn *conn = conn_mgr_by_cid(cfg->cidxtid & 0xfu);
@@ -263,11 +263,11 @@ void stream_mgr_delete_vring(u32 vring)
     if (s->bcast != 0) {
         fw_log_emit2(0x2b, 0x1010b34, vring, 1);
         s->removing = 1;
-        ba_sm_evt_type(s, 6, 0x24, 0, 0);
+        ba_sm_dispatch_event(s, 6, 0x24, 0, 0);
     } else {
         s->ba_en = 0;
         s->removing = 1;
-        ba_sm_evt_type(s, 1, 0x25, 0, 0);
+        ba_sm_dispatch_event(s, 1, 0x25, 0, 0);
     }
 }
 

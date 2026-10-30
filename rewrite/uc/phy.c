@@ -24,14 +24,14 @@ void phy_rx_set_ina_det_mode_uc(u32 a)
     MMIO32(HW_PHY_RX_INA_DET_MODE) = a;
 }
 
-void hwd_phy_uses_rgf_883000(u32 v)
+void phy_rx_ctrl_set_enable(u32 v)
 {
     if (v & ~1u)
         uc_assert((u32)__builtin_return_address(0), 0xac);
     MMIO32(HW_PHY_RX_CTL) = (MMIO32(HW_PHY_RX_CTL) & ~1u) | v;
 }
 
-void hwd_phy_uses_rgf_884000(u32 v)
+void phy_tx_en_set_enable(u32 v)
 {
     if (v & ~1u)
         uc_assert((u32)__builtin_return_address(0), 0xac);
@@ -41,7 +41,7 @@ void hwd_phy_uses_rgf_884000(u32 v)
 /* ===== uCode PHY/DMA (портировано по заказу) ===== */
 
 /* Таблица патчей PHY (0x929684). */
-void hwd_phy_init_2(void)
+void phy_apply_patch_table(void)
 {
     u32 *table = (u32 *)0x1003174;
     u32 addr = table[0];
@@ -61,7 +61,7 @@ void hwd_phy_init_2(void)
 }
 
 /* RGF 0x880c78 биты 3..5 (0x9296e0). */
-void hwd_phy_uses_rgf_881000_9296e0(u32 v)
+void phy_pwr_ctl_set_mode_bits(u32 v)
 {
     if (v != 0) {
         MMIO32(HW_PHY_PWR_CTL) &= ~(1u << 3);
@@ -75,7 +75,7 @@ void hwd_phy_uses_rgf_881000_9296e0(u32 v)
 }
 
 /* RGF 0x880c04/0x880c08 — повторяющийся ниббл (0x929730). */
-void hwd_phy_uses_rgf_881000_929730(u32 v)
+void phy_pwr_mode_map_set(u32 v)
 {
     /* 0x929730: допустимо 0,1,2,4 (assert иначе, но запись всё равно). */
     if (!(v == 0 || v == 1 || v == 2 || v == 4))
@@ -143,7 +143,7 @@ void hwd_phy_pwr(u32 v)
 }
 
 /* Конфигурация DMA/MAC 0x880c2c (0x9298f8). */
-void dma_mac_cfg_880c2c(u32 v)
+void sw_rst_ext1_set(u32 v)
 {
     if (v != 0) {
         MMIO32(HW_RGF_USER_CLKS_CTL_SW_RST_VEC_1) |= 0x3fu;
@@ -183,7 +183,7 @@ void hwd_phy_set_mode_uc(u32 mode)
 }
 
 /* Дамп регистров RGF 0x883800 (0x929af4). */
-void hwd_phy_uses_rgf_883800_929af4(u32 *out)
+void phy_rx_stats_read_accs(u32 *out)
 {
     u32 base = HW_PHY_RGF_BASE;
     out[0]  = MMIO32(base + 0x180);
@@ -205,7 +205,7 @@ void hwd_phy_uses_rgf_883800_929af4(u32 *out)
 }
 
 /* Дамп регистров RGF 0x883800 (0x929b94). */
-void hwd_phy_uses_rgf_883800_929b94(u32 *out)
+void phy_rx_stats_read_counters(u32 *out)
 {
     u32 base = HW_PHY_RGF_BASE;
     out[0]  = MMIO32(base + 0x59 * 4);
@@ -224,12 +224,12 @@ void hwd_phy_uses_rgf_883800_929b94(u32 *out)
     out[13] = MMIO32(base + 0x6e * 4);
 }
 
-void phy_stats_clear_counters_883960(void)
+void phy_rx_stats_clear(void)
 {
     MMIO32(HW_PHY_RX_STATISTICS_CLEAR) = 1;
 }
 
-void phy_stats_clear_counters_88395c(void)
+void phy_rx_stats_lock(void)
 {
     MMIO32(HW_PHY_RX_STATISTICS_LOCK) = 1;
 }
@@ -244,7 +244,7 @@ u32 phy_signal_gain_adc_in_range(void)
 }
 
 
-void phy_set_88306c_field(u32 v)
+void phy_set_rx_agc_row(u32 v)
 {
     if (v & ~0x3fu)
         uc_assert((u32)__builtin_return_address(0), 0xac);

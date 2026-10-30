@@ -10,7 +10,7 @@
 
 
 /* Шаг обработки host-команды (0x8cdbb4). */
-void isr_step_22f70_80044c(void)
+void rf_kill_mask_irq_and_defer_task(void)
 {
     rf_kill_mask_irq();
     u_schd_schedule(rf_kill_irq_task,
@@ -23,7 +23,7 @@ void host_irq_mask_awake_tsf(void)
     MMIO32(HW_RGF_USER_USER_ICR_IMS) = 0x10;
 }
 
-void isr_880b50_dispatch_causes(void)
+void host_irq_dispatch_causes(void)
 {
 
     u32 cause = MMIO32(HW_RGF_USER_USER_ICR_ICM); /* ДИАГНОСТИКА: причина (биты) — видно в mbox rx[0].addr */
@@ -33,15 +33,15 @@ void isr_880b50_dispatch_causes(void)
         u_schd_expire_timers_thunk();
 
     if (cause & (1u << 0x12)) {
-        gpio_pulse_880b60_18();
+        operational_mbox_mask_irq_and_defer_drain();
         MMIO32(HW_RX_MBOX_INT_COUNT) += 1;    /* [0x880a3c+0x14] счётчик */
     }
     if (cause & (1u << 0x13))
-        gpio_pulse_880b60_19();
+        debug_mbox_mask_irq_and_defer_drain();
     if (cause & (1u << 0x9))
         uc_evt_mask_irq_and_defer_drain();
     if (cause & (1u << 0x1b))
-        isr_step_22f70_80044c();
+        rf_kill_mask_irq_and_defer_task();
     if (cause & (1u << 0x4)) {                  /* Awake TSF: взводил только deep sleep (вырезан) — защитно */
         host_irq_mask_awake_tsf();
         u32 buf[2];
@@ -65,7 +65,7 @@ void rf_kill_irq_task(u32 a0, u32 a1)
     (void)a1;
     u32 v = MMIO32(HW_RF_KILL_PIN);
     basic_sm_handle_event(&rf_mgmt_sm, (v & 1) ? 0 : 1, 0, 0, 0);
-    mac_toggle_880288_b1();
+    mac_rf_kill_pin_toggle();
     rf_kill_ack_irq();
     rf_kill_unmask_irq();
 }
@@ -93,5 +93,5 @@ void uc_evt_mask_irq_and_defer_drain(void)
 }
 
 /* lmac_mbox__drain_task — в lmac.c (разбор событий ucode). */
-/* Прежний скелет isr_mac_886028_fw (смесь векторов 12 и 13) заменён isr_mac_886028 и
- * isr_caf_icr_889470 (fw/vectors.c). */
+/* Прежний скелет isr_mac_886028_fw (смесь векторов 12 и 13) заменён isr_mac_phy_irq и
+ * isr_caf_pll_unlock (fw/vectors.c). */

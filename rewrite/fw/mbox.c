@@ -21,25 +21,25 @@ FWDATA(804280) struct lmac_mbox lmac_mbox = { 0 };
 
 /* mem_pool__put_block (0x8c6414): снятие RX-кольца было остановлено (пул исчерпан) —
  * снова разрешить его прерывание. */
-void mem_pool_put_block(struct rx_ring *o)
+void rx_ring_resume_dma_irq(struct rx_ring *o)
 {
-    if (mem_pool_get_field14(&o->ring))
-        tx_api_mask_from_queue(&o->ring);
+    if (rx_dma_ring_is_pended(&o->ring))
+        rx_dma_ring_retrigger_irq(&o->ring);
 }
 
 /* 0x8cb19c: вернуть RX-кадр в пул RX-кольца. */
-void mem_pool_free_8cb19c(u32 obj)
+void rx_ring_pool_free(u32 obj)
 {
-    stream_mgr_check_vring(&rx_ring.pool, (void *)obj);   /* obj — по контракту free_cb (u32) */
-    mem_pool_put_block(&rx_ring);
+    mem_pool_free_checked(&rx_ring.pool, (void *)obj);   /* obj — по контракту free_cb (u32) */
+    rx_ring_resume_dma_irq(&rx_ring);
 }
 
 /* Колбэк освобождения WMI-события (0x8cb07c). */
-void wmi_evt_alloc_and_fill(u32 a0)
+void wmi_evt_free_buf(u32 a0)
 {
     if (a0 == 0)
         fw_sysassert_fatal((void *)0, 0x1003);
-    mem_pool_free_8cb19c(a0 - 0x28);
+    rx_ring_pool_free(a0 - 0x28);
 }
 
 /* mbox__init_descriptor (0x8f942c): ящик хоста m — описатели колец hw[0] (команды хоста,
@@ -72,7 +72,7 @@ void mbox_init_descriptor(struct wmi_mbox *m, struct mbox_ring_hw *hw, u32 rx_ba
 
     /* Колбэки возврата буферов событий — в кольцо tx ([r16,0x18]/[r16,0x1c]). Прежде писались
      * в m[10]/m[11] — это rx.base/rx.end (0x804218/0x80421c), ломало wrap курсора. */
-    m->mb.tx.free_cb = wmi_evt_alloc_and_fill;
+    m->mb.tx.free_cb = wmi_evt_free_buf;
     m->mb.tx.free_cb2 = tx_api_free_memory;
     /* vendor 0x8f94cc..0x8f94d6: [mbox+0x70] = 3-й, [mbox+0x74] = 4-й элемент desc. Прежде
      * писались desc[1]/desc[2] (сдвиг на одно слово). */

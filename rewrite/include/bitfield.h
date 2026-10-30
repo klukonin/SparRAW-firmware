@@ -11,7 +11,7 @@ static inline __attribute__((always_inline)) u32 bf_put(u32 word, unsigned shift
     return (word & ~(m << shift)) | ((v & m) << shift);
 }
 
-static inline __attribute__((always_inline)) void bf_set32(u32 addr, unsigned shift, unsigned width, u32 v)
+static inline __attribute__((always_inline)) void bf_set32_lo_hi(u32 addr, unsigned shift, unsigned width, u32 v)
 {
     u32 *p = (u32 *)addr;
     *p = bf_put(*p, shift, width, v);

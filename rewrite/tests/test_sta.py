@@ -52,10 +52,10 @@ def test_link_stats_sane(sta):
     assert m and float(m.group(1)) > 0, out
 
 
-@pytest.mark.known_issue
 @pytest.mark.slow
 def test_reconnect_after_peer_restart(sta):
-    """Точка перезапускает радио — станция переподключается; известная проблема: после потери линка станция может не переподключиться."""
+    """Точка перезапускает радио — станция замечает разрыв и переподключается (пропажа точки по питанию —
+    test_sta_vanish.py)."""
     before = len(sta.disconnects())
     sta.peer.run('wifi down; sleep 3; wifi up', check=False, timeout=60)
     ok = sta._wait(sta.dut, 'iw dev %s link 2>/dev/null | grep Connected' % sta.dut.iface(), 90)

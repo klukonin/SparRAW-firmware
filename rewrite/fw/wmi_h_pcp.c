@@ -166,14 +166,14 @@ void wmi_get_pcp_channel(u32 mid, struct wmi_mbox *mb)
     wmi_evt_post(mb, p, 0, 0x182a, sizeof(*p), mid, 0, 0);
 }
 
-/* pcp_factor_evt_step (0x8c5594, 152 Б): слово PCP factor из своего DMG Capabilities
+/* pcp_build_factor_word (0x8c5594, 152 Б): слово PCP factor из своего DMG Capabilities
  * c (= mobj + 0x5e) и флага: биты 0..6 — 0, 7..14 — байт из битов 3..10
  * слова c[0xf..0x10], 15..21 — 7 бит из битов 7..13 слова c[7..8], 22 — бит 1 c[0xf],
  * 23 — бит 0 c[0xf], 24 — бит 4 c[0x10], 25 — бит 0 флага, 26..31 — 0. mobj (r0) vendor
  * не использует. Слово стека у vendor не инициализировано, но все 32 бита пишутся
  * (bits__set32_s0_w7 0x8ed394, bits__set32_s7_w8 0x8ed55c, bits__set16_s7_w7 0x8ed214 по
  * sp+1, байтовые поля, bits__set8_s2_w6 0x8ed280 по sp+3). */
-static void pcp_factor_evt_step(const struct mid_bss *mobj, const struct dmg_cap *cap, u32 flag,
+static void pcp_build_factor_word(const struct mid_bss *mobj, const struct dmg_cap *cap, u32 flag,
                                 u32 *out)
 {
     const u8 *c = (const u8 *)cap;
@@ -199,9 +199,9 @@ void wmi_get_pcp_factor(u32 mid)
     u32 *p = host_if_send_pair();
     struct mid *e = mid_list_by_mid_fw(mid);
 
-    pcp_factor_evt_step(&e->bss, &e->bss.dmg_cap, POWER_SOURCE, p);
+    pcp_build_factor_word(&e->bss, &e->bss.dmg_cap, POWER_SOURCE, p);
     fw_log_emit1(0x2b, 0x100e0ac, mid);
-    low_sme_send_evt2sw(p, 0x191a, 4, mid, 0, 0, 0);
+    host_if_send_event(p, 0x191a, 4, mid, 0, 0, 0);
 }
 
 /* ======================= PORT_ALLOCATE (0x911) ======================= */
@@ -226,7 +226,7 @@ void wmi_port_allocate(const struct wmi_port_allocate_cmd *cmd)
         p->status = (l2mgr_mac_started_log(mid, cmd->mac, 0, 0) == 1) ? 0 : 1;
     }
     fw_log_emit1(0x2b, 0x100e63c, cmd->mid);
-    low_sme_send_evt2sw(p, 0x1911, sizeof(*p), cmd->mid, 0, 0, 0);
+    host_if_send_event(p, 0x1911, sizeof(*p), cmd->mid, 0, 0, 0);
 }
 
 /* ======================= discovery: find_mngr (x = e + 0x240) ======================= */
@@ -239,7 +239,7 @@ void wmi_port_allocate(const struct wmi_port_allocate_cmd *cmd)
 static void l2mgr_send_discovery_started(u32 mid)
 {
     fw_log_emit1(0x2b, 0x100ec10, mid);
-    low_sme_send_evt2sw(host_if_send_pair(), 0x1916, 0, mid, 0, 0, 0);
+    host_if_send_event(host_if_send_pair(), 0x1916, 0, mid, 0, 0, 0);
 }
 
 static void find_mng_listen(struct find_mngr *x);
@@ -411,7 +411,7 @@ void l2mgr_start_listen(u32 mid)
 
     if (e == 0)
         fw_sysassert_fatal(RA(), 0x16c2);
-    if (e->bss.is_go != 0 || mid_list_any_in_state2() != 0) {
+    if (e->bss.is_go != 0 || mid_list_any_bss_active() != 0) {
         fw_log_emit0(0x2b, 0x100e128);
         l2mgr_send_listen_started(1, e->id);
         return;
@@ -428,7 +428,7 @@ void l2mgr_start_search(u32 mid)
 
     if (e == 0)
         fw_sysassert_fatal(RA(), 0x16c3);
-    if (e->bss.is_go != 0 || mid_list_any_in_state2() != 0) {
+    if (e->bss.is_go != 0 || mid_list_any_bss_active() != 0) {
         fw_log_emit0(0x1b, 0x100e1d4);
         l2mgr_send_search_started(1, e->id);
         return;
@@ -458,7 +458,7 @@ static void l2mgr_send_p2p_cfg_done(u32 status, u32 mid)
     memset0_words(p, sizeof(*p));
     p->status = (u8)status;
     fw_log_emit1(0x2b, 0x100df94, mid);
-    low_sme_send_evt2sw(p, 0x1910, sizeof(*p), mid, 0, 0, 0);
+    host_if_send_event(p, 0x1910, sizeof(*p), mid, 0, 0, 0);
 }
 
 /* find_mngr__cfg_offload (0x8c6b88, 124 Б): параметры discovery в x (discovery уже идёт
@@ -479,7 +479,7 @@ static void find_mngr_cfg_offload(struct find_mngr *x, struct mid *e, u32 quiet,
     x->mode = mode;
     x->bcon_added = 0;
     fw_log_emit3(0x2c, 0x10178dc, quiet, bi, mode);
-    discovery_tsf_wa(&x->mid->disc, x->channel, x->bi, e->id);
+    discovery_tsf_workaround(&x->mid->disc, x->channel, x->bi, e->id);
     l2mgr_send_p2p_cfg_done(0, e->id);
 }
 
@@ -501,7 +501,7 @@ void l2mgr_p2p_cfg(const struct wmi_p2p_cfg_cmd *cmd, u32 mid)
     u32 st;
     if (e == 0)
         fw_sysassert_fatal(RA(), 0x16b9);
-    if (e->bss.is_go == 0 && mid_list_any_in_state2() == 0) {
+    if (e->bss.is_go == 0 && mid_list_any_bss_active() == 0) {
         p2p_cfg(&e->disc, cmd->discovery_mode == 1, cmd->channel, cmd->bcon_interval,
                 cmd->discovery_mode);
         return;
@@ -537,7 +537,7 @@ static void send_pcp_start_status_evt(u32 status, u32 mid)
     memset0_words(p, sizeof(*p));
     p->status = (u8)status;
     fw_log_emit3(0x2b, 0x100ed14, mid, status, u_schd_now());
-    low_sme_send_evt2sw(p, 0x1918, sizeof(*p), mid, 0, 0, 0);
+    host_if_send_event(p, 0x1918, sizeof(*p), mid, 0, 0, 0);
     l2mgr_pending_op_clear(3);
 }
 
@@ -556,7 +556,7 @@ static void pcp_start(struct mid_disc *o)
     fw_log_emit2(0x2c, 0x1016d30, (v >> 1) & 1u, ((u32)b[5] >> 4) & 3u);
     add_bcon(o->mid);
     mgmt_stats.bcon_set = mgmt_stats.bcon_set + 1;
-    lmac_if_send_cmd_0x23(1);
+    lmac_if_send_abft_cfg(1);
 }
 
 /* l2_mgr__pcp_start_flow (0x8e0778, 256 Б): поднять BSS записи e как PCP/AP. Групповой
@@ -598,7 +598,7 @@ static u32 l2mgr_pcp_start_flow(struct mid *e, u32 nettype, u32 abft, u32 hidden
     o->hidden = hidden;                             /* field_set_0x58__8e6788 */
     bss_set_active(o);
     if (pcp_parser_rule2_en != 0)
-        mac_parser_set_886260(2, 0x3f02);
+        mac_parser_set_rule_ctl(2, 0x3f02);
     return 0;
 }
 
@@ -672,8 +672,8 @@ void wmi_bcon_ctrl(const struct wmi_bcon_ctrl_cmd *cmd, u32 mid)
     a4 = (n >= 1 && n < 9) ? ((n - 1) & 0xffu) : ABFT_LEN_SLOTS_DEFAULT - 1u;   /* поле A-BFT Length (include/abft_cfg.h) */
     fw_log_emit2(0x20, 0x100b4c8, a4, n);
     l2mgr_pcp_start(mid, cmd->network_type, cmd->hidden_ssid, cmd->is_go, a4);
-    conn_alloc_and_link(0, 1, mid);
-    lmac_if_send_cmd_0x04(1);                       /* lmac_if__send_cmd_04_thunk 0x8db718 */
+    lmac_if_send_role(0, 1, mid);
+    lmac_if_send_edca_cfg(1);                       /* lmac_if__send_cmd_04_thunk 0x8db718 */
 }
 
 /* wmi_pcp_start (0x8ec91c, 84 Б): WMI_PCP_START {bcon_interval, pcp_max_assoc_sta +2,
@@ -719,7 +719,7 @@ static void l2mgr_send_sw_tx_complete(u32 status, u32 mid)
     memset0_words(p, sizeof(*p));
     p->status = (u8)status;
     fw_log_emit2(0x2b, 0x100dc84, mid, status);
-    low_sme_send_evt2sw(p, 0x182b, sizeof(*p), mid, 0, 0, 0);
+    host_if_send_event(p, 0x182b, sizeof(*p), mid, 0, 0, 0);
 }
 
 /* sw_tx_mgmt__acquire_link (0x8dab34, 168 Б): соединения с адресатом кадра SW TX нет —
@@ -743,7 +743,7 @@ static void sw_tx_mgmt_acquire_link(void)
     e = mid_list_by_mid_fw(SW_TX_CTX->mid);
     if (e == 0)
         fw_sysassert_fatal(RA(), 0x16bc);
-    conn = find_main_sm_bcon_args(e, SW_TX_CTX->dst, 0, 0, 0xffff);
+    conn = mid_link_acquisition(e, SW_TX_CTX->dst, 0, 0, 0xffff);
     if (conn != 0) {
         SW_TX_CID = conn->cid;
         fw_log_emit0(0x27, 0x1018860);
@@ -925,7 +925,7 @@ static u32 mgmt_tx_probe_resp_ies_sm(u8 *dst, struct mid *e, u8 *src, u32 len)
     (void)sm_copy_host_ie(&dst, src, len8, 0x9e, &ielen, &total, 0x100fe10);
     sm_add_own_ie(&dst, ie_push_dmg_capabilities(dst, (u8 *)&mobj->dmg_cap, 0), &ielen, &total,
                   0x100fe50);
-    sm_add_own_ie(&dst, ie_push_eid151_len10(dst, mobj->blk_f8), &ielen, &total,
+    sm_add_own_ie(&dst, ie_push_dmg_operation(dst, mobj->blk_f8), &ielen, &total,
                   0x100fe90);
     sm_copy_host_vendor_ie(&dst, src, len8, len, 0, &ielen, &total, 0x100fed0);
     sm_copy_host_vendor_ie(&dst, src, len8, len, 1, &ielen, &total, 0x100ff1c);
@@ -1023,7 +1023,7 @@ static u32 mgmt_tx_build_assoc_resp_sm(u8 *dst, struct mid *e, u8 *src, u32 len)
 
 /* handle_packet__args (0x8ea0a0, 54 Б): Assoc Response хоста собрать заново в dst:
  * MAC-заголовок хоста (0x18 Б) + тело (0x8d8230). *lenp (u16) — новая длина. */
-static void handle_packet_args(u8 *dst, u16 *lenp, struct mid *e, u8 *src, u32 len)
+static void mgmt_tx_rebuild_assoc_resp(u8 *dst, u16 *lenp, struct mid *e, u8 *src, u32 len)
 {
     u32 n;
 
@@ -1034,7 +1034,7 @@ static void handle_packet_args(u8 *dst, u16 *lenp, struct mid *e, u8 *src, u32 l
     *lenp = (u16)(n + 0x18);
 }
 
-/* handle_packet_splitmac (0x8f3ba4, 248 Б): split MAC — Assoc Response (подтип 1) и
+/* sw_tx_splitmac_handle_frame (0x8f3ba4, 248 Б): split MAC — Assoc Response (подтип 1) и
  * Disassociation (0xa) хоста пиру dst (body). Assoc Response пересобирается своими IE
  * (handle_packet__args), автомату MLME соединения — событие 0xa (payload);
  * Disassociation — событие 0xc. Затем кадр уходит через SW_TX_MGMT.
@@ -1042,7 +1042,7 @@ static void handle_packet_args(u8 *dst, u16 *lenp, struct mid *e, u8 *src, u32 l
  * без SW_TX_COMPLETE хосту (payload терялся, драйвер ждал события 2 с; 0x8f3bdc / 0x8f3be8 → 0x8f3c96).
  * Соединения нет при гонке с уходом станции (кадр хоста к уже отключённой) — SparRAW: кадр освобождается,
  * хосту SW_TX_COMPLETE (1). */
-static void handle_packet_splitmac(const struct wmi_sw_tx_req_cmd *cmd, u32 payload, u32 len, u32 mid)
+static void sw_tx_splitmac_handle_frame(const struct wmi_sw_tx_req_cmd *cmd, u32 payload, u32 len, u32 mid)
 {
     u16 nlen = 0;                                   /* sth.aw r15,[sp,-4] */
     struct mid *e;
@@ -1061,7 +1061,7 @@ static void handle_packet_splitmac(const struct wmi_sw_tx_req_cmd *cmd, u32 payl
     if (sub == 1) {
         fw_log_emit0(0x2b, 0x100dd5c);
         tmp = TX_API_alloc_tx_payload();
-        handle_packet_args((u8 *)tmp, &nlen, e, (u8 *)payload, len);   /* буферы TX (u32 fwq_tx) */
+        mgmt_tx_rebuild_assoc_resp((u8 *)tmp, &nlen, e, (u8 *)payload, len);   /* буферы TX (u32 fwq_tx) */
         len = nlen;
         memcpy_fw((void *)payload, (const void *)tmp, len);
         TX_API_free_memory(tmp);
@@ -1118,7 +1118,7 @@ static u32 sw_tx_scan_or_find_active(struct mid_disc *o)
 /* wmi_sw_tx_req (0x8fbe18, 354 Б): WMI_SW_TX_REQ {dst_mac[6], len (u16) +6, payload +8}.
  * len > 1280 — SW_TX_COMPLETE (1). Кадр копируется в буфер TX. Скан/поиск или
  * (PCP-запись [e+0x9c] и probe response) — send_sw_packet; split MAC ([0x803c28] == 1)
- * и Assoc Response / Disassociation — handle_packet_splitmac; иначе probe response
+ * и Assoc Response / Disassociation — sw_tx_splitmac_handle_frame; иначе probe response
  * отбрасывается с SW_TX_COMPLETE (0), прочее — SW_TX_MGMT_API::send_packet.
  * Запись mid vendor на 0 не проверяет. */
 void wmi_sw_tx_req(const struct wmi_sw_tx_req_cmd *cmd, u32 mid)
@@ -1152,7 +1152,7 @@ void wmi_sw_tx_req(const struct wmi_sw_tx_req_cmd *cmd, u32 mid)
         sub = (fc >> 4) & 0xfu;
         if (sub == 1 || sub == 0xa) {
             fw_log_emit2(0x2b, 0x100de00, (fc >> 2) & 3u, sub);
-            handle_packet_splitmac(cmd, payload, cmd->len, mid);
+            sw_tx_splitmac_handle_frame(cmd, payload, cmd->len, mid);
             return;
         }
     }

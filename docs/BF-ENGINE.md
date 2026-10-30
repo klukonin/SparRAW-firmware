@@ -23,7 +23,7 @@ search, очередь запросов, развилка «BRP после SLS»
 
 | поток | где | кто запускает | чем кончается |
 |---|---|---|---|
-| SLS в BTI/A-BFT (развёртка маяка + ответ в A-BFT) | ucode `bcon_txss_sweep_step`, `abft_responder_*`, `mac_mode_program_c` | расписание BI (GP-таймеры), без запроса BF SM | событие BF_DONE, flow 2 `ABFT_TXSS`, поля STATE=3/SUBSTATE фиктивные (@0x9293a6 `mov r10,3`) **[код]** |
+| SLS в BTI/A-BFT (развёртка маяка + ответ в A-BFT) | ucode `bcon_txss_sweep_step`, `abft_responder_*`, `abft_rx_ssw_tx_feedback` | расписание BI (GP-таймеры), без запроса BF SM | событие BF_DONE, flow 2 `ABFT_TXSS`, поля STATE=3/SUBSTATE фиктивные (@0x9293a6 `mov r10,3`) **[код]** |
 | I-TXSS в DTI (свой SLS как инициатор) | слой B, состояние 3: `txss__flow_body` → `txss__init_sweep` | запрос BF (LMAC 0x09 или причина-триггер) | подсост. 5 = успех (пришёл SSW-ACK) |
 | R-TXSS в DTI (ответ на чужой SLS) | слой B, состояние 4: `txss_flow_step_b` → `txss__init_sweep_b` | приём SSW соседа в `rx_funcs__rx_flow` @0x92f89c | подсост. 9 = успех (пришёл SSW-Feedback) |
 | BRP-I (инициатор BRP) | слой B, состояние 9: `brp__mode_step` → `mac_mode_step_b`/`mac_mode_brp_step` → `brp__flow_main` | успешный TXSS + сосед «связан» (`0x801034`) | 0x30 успех / 0x31 провал |
@@ -493,9 +493,9 @@ quasi-omni и свипом секторов. Ломается первый об�
   у партнёра (он ответчик TXSS), `TRIGGER CAUSE: UNKNOWN (0x0)` (BF начал другой узел)
   и время от времени `BF_TRIGGER_MAX_CTS_FAILURE_MSK_IN_TXOP`;
 * у глухого узла: `STATE=0x3 SUBSTATE=0x2` (BRP не пройден), `omni_address: 0x60`;
-  в журнале uc `handle_bf_triggers … triggers:4`, `bf_init_sm`, `rs_abort`/`rs_start`
+  в журнале uc `handle_bf_triggers … triggers:4`, `bf_init_sm`, `rate_search_abort`/`rs_start`
   с MCS 1;
-* у партнёра в журнале uc: `bf_sm_handler in state:4:11`, `rs_abort`, `rs_start`;
+* у партнёра в журнале uc: `bf_sm_handler in state:4:11`, `rate_search_abort`, `rs_start`;
 * через ~3 с ключ не установлен (4-way handshake не прошёл) — fw станции рвёт связь
   по `data_port_open_timeout_cb` (`WMI_DISCONNECT` protocol 1, WMI 6); точка с
   hostapd — по тайм-ауту 4-way (причина 15); дальнейшие попытки ассоциации тоже
@@ -549,13 +549,13 @@ IDLE / COARSE_ACTIVE / TRACKING, `rs_converge_state_e` NONE/PARTIAL/FULL. В uco
   (RS_DONE, тип 0x14).
 
 **[6.2]** (по строкам и графу вызовов): `rs_start` 0x9300ec («rs_start cid, next_tx_mcs»),
-`rs_end` 0x92fdb4 («rs_end cid, mcs» → событие RS_DONE), `rs_abort` 0x92fb80. Общие с 4.1 по
+`rs_end` 0x92fdb4 («rs_end cid, mcs» → событие RS_DONE), `rate_search_abort` 0x92fb80. Общие с 4.1 по
 имени (6.2 / 4.1): `rate_search__pick_tx_params` 0x9301fc / 0x92c44c, `rate_search__commit_mcs`
 0x92fd8c / 0x92c034, `rate_search__reset_stats` 0x93003c / 0x92c29c, `rate_search__current_mcs`
 0x930018 / 0x92c278, `rate_search__current_mcs_b` 0x92ff44 / 0x92c1c8, `bitstream__push` 0x93cd00
 / 0x93708c. Только 6.2: `sched_bitmap__next_set_bit`, `sched_bitmap__prev_set_bit` 0x92ffec,
 `sta__apply_bf_result` (старт RS из BF), `rs__is_sta_enabled` 0x9300ac. На стенде 6.2↔6.2 AP
-крутит ~11 000 циклов `rs_start/rs_abort` на MCS 1 за 2 мин
+крутит ~11 000 циклов `rs_start/rate_search_abort` на MCS 1 за 2 мин
 ([../6.2/docs/BENCH.md](../6.2/docs/BENCH.md)).
 
 Адаптация скорости («Start Rate Search», COARSE/TRACKING) живёт в fw

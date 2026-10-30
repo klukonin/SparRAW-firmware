@@ -7,7 +7,6 @@
 #include "../include/sta_max.h"
 
 
-#include "evt17.h"
 
 
 
@@ -32,7 +31,7 @@ void fsched_peer_clear_qid(struct fsched_peer_ctx *p, u32 idx)
     p->ent[idx].qid = 0xff;
 }
 
-void field_set_0x00_934b8c(u32 a, u32 b)
+void mem_write_u32(u32 a, u32 b)
 {
     *(u32 *)a = b;
 }
@@ -61,15 +60,15 @@ void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 arg1, u32 arg2, const struct
     dst->bf_ctl1 = 0;                              /* stb_s r0,[r14,0x16] */
 
     /* alloc [23,32) = длительность >> 7 */
-    bf_set32((u32)&dst->alloc, 23, 9, src->alloc_dur >> 7);
+    bf_set32_lo_hi((u32)&dst->alloc, 23, 9, src->alloc_dur >> 7);
     /* w14 [0,7) = длительность & 0x7f */
-    bf_set32((u32)&dst->w14, 0, 7, src->alloc_dur & 0x7f);
+    bf_set32_lo_hi((u32)&dst->w14, 0, 7, src->alloc_dur & 0x7f);
     /* alloc [4,7) = (alloc_type == 1) */
-    bf_set32((u32)&dst->alloc, 4, 3, (src->alloc_type == 1) ? 1 : 0);
+    bf_set32_lo_hi((u32)&dst->alloc, 4, 3, (src->alloc_type == 1) ? 1 : 0);
     /* alloc [15,23) = dst AID */
-    bf_set32((u32)&dst->alloc, 15, 8, src->dst_aid);
+    bf_set32_lo_hi((u32)&dst->alloc, 15, 8, src->dst_aid);
     /* alloc [7,15) = src AID */
-    bf_set32((u32)&dst->alloc, 7, 8, src->src_aid);
+    bf_set32_lo_hi((u32)&dst->alloc, 7, 8, src->src_aid);
 
     /* bf_ctl0 = 1 | (arg1&1)<<1 | (arg2&1)<<2 */
     dst->bf_ctl0 = (u8)(1u | ((arg1 & 1) << 1) | ((arg2 & 1) << 2));
@@ -111,7 +110,7 @@ void macq_kick_queue_tx(u32 q, u32 b, u32 c)
         ;
 
     /* 2-я половина (0x925afc..): addr_of_slot + kick + повторный alloc/program. */
-    mac_mem_addr_of_slot(b, 0, q);
+    macq_hw_enable_queue(b, 0, q);
     MMIO32(HW_TXQ_RING_ENABLE) |= 1u << q;
     MMIO32(HW_TXQ_REQ_SELECT) = 1u << q;
     MMIO32(HW_TXQ_REQ_VALUE) = 1u << q;
@@ -160,7 +159,7 @@ u32 dma_is_tx_pipe_idle(u32 a, u32 b, u32 c)
         u32 r16 = (r24 == rptr) ? 1 : 0;
         u32 trig = macq_hw_trigger_read_state(b);    /* L_928fcc */
         u32 r17 = (trig == 0) ? 1 : 0;
-        u32 dma881 = dma_read_881c28();              /* L_928fa8 */
+        u32 dma881 = dma_fw_icr_c24_read();              /* L_928fa8 */
         u32 r18 = (dma881 & (1u << ((b + 8) & 0x1f))) ? 1 : 0;
         u32 r20 = txq_fifo_ptp_idle_snapshot();      /* L_92e8a8 */
         u32 r15 = macq_is_idle(a);                   /* L_92609c */
@@ -181,7 +180,7 @@ u32 dma_is_tx_pipe_idle(u32 a, u32 b, u32 c)
             return 1;
     }
 }
-void peer_masks_or_into_8571c4(u32 a)
+void ll_ctx_merge_keepalive_pending(u32 a)
 {
     /* 0x9263d0: для каждого установленного бита маски a взять бит из 0x800570
      * и OR-нуть в 0x8571c4. norm r0,r1; rsub r2,r0,0x1e = 30 - clz. */
@@ -199,19 +198,19 @@ void peer_masks_update_sta_bit(struct fsched_peer_ctx *p, u32 sta, u32 set)
 {
     /* 6.2 asm 0x926404 (отдельная функция внутри блока peer_masks__or_into_8571c4;
      * вход из ucode_cmd_0x47_handler). Пир по qid sta — в active_mask или из неё; снятие
-     * текущего пира откладывается до конца слота (fixed_sched_read_slot_id). */
-    u32 idx = sta_find_by_byte(p, sta);
+     * текущего пира откладывается до конца слота (fixed_sched_complete_peer_off). */
+    u32 idx = sta_find_by_qid(p, sta);
     if (idx >= SPARRAW_MAX_STA)
         uc_assert((u32)__builtin_return_address(0), 0x1584);
     if (set != 0) {
         p->active_mask |= (u8)(1u << (idx & 31));
-        uc_evt_send_2e(sta, 1, qh_build_descriptor_b(sta));
+        uc_evt_send_vring_ssn(sta, 1, qh_read_desc_start(sta));
     } else if (idx == p->cur_idx) {
         p->pend_off_qid = (u8)sta;
         p->pend_off_idx = (u8)idx;
     } else {
         p->active_mask &= (u8)~(1u << (idx & 31));
-        uc_evt_send_2e(sta, 0, qh_build_descriptor_b(sta));
+        uc_evt_send_vring_ssn(sta, 0, qh_read_desc_start(sta));
     }
 }
 /* СРОК: пауза между импульсом FS_CTRL.3 и пуском делителя RFC — 160 тактов ≈ 0,97 мкс, как vendor
@@ -271,8 +270,8 @@ void dump_vring_pring_info(u32 q)
     uc_log_emit2(0x20, 0x1002de0, r13c[0xc1] & 0xf, r13c[0xc3] & 0xf);
     uc_log_emit1(0x20, 0x1002e04, r13c[0x4d] & 0xf);
 }
-/* dma_mac_cfg_880c14 — ниже. */
-/* dma_mac_cfg_880c28 — ниже. */
+/* clk_gate_ext0_enable — ниже. */
+/* clk_gate_ext1_enable — ниже. */
 void hwd_phy_rx_set_agc_start_val_and_gain_array_uc(u32 a, u32 b)
 {
     u32 r4 = b & 0x3f;
@@ -315,10 +314,10 @@ void hwd_rfc_powerup_deep_all_rfs(void)
         rfca_select_rf_uc(0xff, (u32)&saved_rf);
         rfc_restore_txrx_sets();
         rfca_select_rf_uc(saved_rf, 0);
-        field_set_0x00_934b8c((u32)&mask, r17);   /* mask = r17 */
+        mem_write_u32((u32)&mask, r17);   /* mask = r17 */
         if (bit_iter_has_more_uc((u32)&mask)) {
             for (;;) {
-                /* notify_aoa (0x92de8c): взять и сбросить старший бит маски */
+                /* mask_pop_msb_index (0x92de8c): взять и сбросить старший бит маски */
                 u32 bit = (30 - arc_norm(mask));       /* norm + rsub 0x1e */
                 mask &= ~(1u << (bit & 0x1f));            /* bclr */
                 rfca_select_rf_uc((u8)(1u << bit), 0);    /* asl r3,0x1,r0 = 1<<bit; extb */
@@ -454,9 +453,8 @@ void peer_slots_scan_by_masks(u32 a)
 }
 void uc_evt_build_and_post_report(const struct sls_peer_rec *p, u32 flag)
 {
-    /* 0x93e624: собрать отчёт BF (0x44 Б, 17 слов) и отослать bf_done/new_link.
-     * Слова 0..7 — регистры, 8..16 — стек (sp+0x44..0x64 vendor). Байты, которые
-     * vendor не пишет (неинициализированный стек), здесь 0. */
+    /* 0x93e624: собрать отчёт BF (0x44 Б, 17 слов) и отослать bf_done/new_link — прямо в записи кольца событий (как
+     * bf_done_report_build_send). Слово 15 vendor не пишет (неинициализированный стек), здесь 0. */
     u32 r14 = (flag != 0) ? p->sta : p->abft_sta;          /* тип события */
     u32 r13 = (flag != 0) ? p->x0c : p->snr;
     u32 r2  = (flag != 0) ? p->fb_sector : p->abft_sector;
@@ -465,7 +463,7 @@ void uc_evt_build_and_post_report(const struct sls_peer_rec *p, u32 flag)
     u32 h5  = (flag != 0) ? p->peer_mac[2] : bcn_rx.bssid[2];
     u32 r9  = (flag != 0) ? 3 : 4;
     u32 r10 = (rf_chain_word >> 8) & 0x7fff;
-    u32 w[17];
+    u32 *w = (u32 *)uc_evt_write_slot(&uc_mbox);
     w[0] = r13;
     w[1] = r14 | (0xffu << 8) | (r2 << 16);                       /* sp+0x28 */
     w[2] = ((u32)bf_rep.ssw_rx_cnt << 8) | (r10 << 16);                     /* sp+0x2c */
@@ -483,10 +481,7 @@ void uc_evt_build_and_post_report(const struct sls_peer_rec *p, u32 flag)
     w[14] = h5 | (r9 << 16);                                      /* sp+0x5c, [0x5f] = 0 */
     w[15] = 0;                                                    /* sp+0x60: vendor не пишет */
     w[16] = uc_read_tsf_lo();                                     /* sp+0x64 */
-    if (r14 == 8)
-        uc_send_evt_new_link(EVT17(w));
-    else
-        uc_send_evt_bf_done(EVT17(w));
+    uc_evt_enqueue((u32)w, r14 == 8 ? UC_EVT_NEW_LINK : UC_EVT_BF_DONE, 0x44, 0);
 }
 u32 hwd_rfc_auto_fill_verify(const struct rf_fill_info *f, u32 b, u32 c)
 {
@@ -560,15 +555,25 @@ u32 dma_is_idle_uc(u32 q, u32 verbose)
  * освободить запись, сдвинуться. */
 void ucode_cmdq_handler(struct uc_mbox_ctx *m, u32 item)
 {
+#ifdef UC_STAMP_MASK
+    u32 t0 = arc_lr(0x100);
     ucode_cmd_dispatch(item, item + sizeof(struct uc_evt_hdr));
+    {
+        u32 d = arc_lr(0x100) - t0;
+        if (d > STAMP_LONG_CLK && d < 0x1000000u)
+            UC_STAMP(STAMP_FW_CMD, ((const struct uc_evt_hdr *)item)->type, d);
+    }
+#else
+    ucode_cmd_dispatch(item, item + sizeof(struct uc_evt_hdr));
+#endif
     m->cmd.cur->sync = 0;                         /* st_s r2,[r1,0] в слоте bl.d */
-    buf_check_bounds(&m->cmd);
+    uc_ring_advance_cursor(&m->cmd);
 }
 
 /* Разобрать одну команду и сообщить fw новую позицию читателя (0x92fb40). */
 void uc_queue_dispatch_and_commit(struct uc_mbox_ctx *m)
 {
-    u32 item = uc_queue_peek_head_word1(&m->cmd);      /* L_927f64 */
+    u32 item = uc_ring_cur_addr(&m->cmd);      /* L_927f64 */
     struct cmdq_handler_desc *d = m->cmd_desc;
     void (*fn)(struct uc_mbox_ctx *, u32, struct cmdq_handler_desc *) =
         *(void (**)(struct uc_mbox_ctx *, u32, struct cmdq_handler_desc *))((u32)d + 4);   /* cmdq_desc_handler */
@@ -577,7 +582,7 @@ void uc_queue_dispatch_and_commit(struct uc_mbox_ctx *m)
 }
 
 /* Конфиг DMA/MAC 0x880c14 (0x929424). */
-void dma_mac_cfg_880c14(u32 a)
+void clk_gate_ext0_enable(u32 a)
 {
     if (a != 0) {
         MMIO32(HW_CLKS_CTL_EXT_CLK_VEC_0) = (MMIO32(HW_CLKS_CTL_EXT_CLK_VEC_0) & 0xffc00800) | 0x3ff7ff;
@@ -589,7 +594,7 @@ void dma_mac_cfg_880c14(u32 a)
 }
 
 /* Конфиг DMA/MAC 0x880c28 (0x92961c). */
-void dma_mac_cfg_880c28(u32 a)
+void clk_gate_ext1_enable(u32 a)
 {
     if (a != 0) {
         MMIO32(HW_CLKS_CTL_SW_CLK_VEC_0) = (MMIO32(HW_CLKS_CTL_SW_CLK_VEC_0) & 0x3ffff) | 0xfffc0000;
@@ -609,7 +614,7 @@ void uc_isr_l2_task2(void);   /* tail.c */
 void uc_isr_l2_task3(void);   /* tail.c */
 
 /* Загрузка таблицы 0x803124..0x803130 (0x920b1c). */
-void ucode_cmd_load_table_803124_803128(u32 a, u32 b)
+void abft_cfg_load_from_cmd(u32 a, u32 b)
 {
     (void)a;
     const struct lmac_cmd_bi_tbl *c = (const void *)b;

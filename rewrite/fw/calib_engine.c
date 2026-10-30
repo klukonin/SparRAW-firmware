@@ -40,7 +40,7 @@ FWDATA(804924) struct calib_mngr calib_mngr = { 0 };
 FWDATA(804b5c) struct calib_silent_rssi calib_silent_rssi_obj = { 0 };
 
 /* 0x80676c: объект LO power полной калибровки hwf_calib_all (в образе нули;
- * таблица методов — ctor_obj_80676c_vtable). */
+ * таблица методов — ctor_calib_all_lo_power_vtable). */
 FWDATA(80676c) struct calib_lo_power calib_all_lo_power_obj = { 0 };
 
 /* 0x800e2c: схемы калибровки (значения — vendor-образ). */
@@ -223,7 +223,7 @@ static u32 calib_estimate_conditions(struct calib_obj *obj, u32 mask, struct cal
         *forced = 0;
         rf_hit = 1;
     } else if (mask & 2) {
-        field_set_0x00_8e5dfc(&it, rf_cfg_get_rf_mask_45e(&rf_obj));
+        bit_iter_init(&it, rf_obj_get_rf_mask(&rf_obj));
         while (bit_iter_has_more(&it)) {
             i = bitmap_alloc_bit(&it);
             if (i >= 8)
@@ -361,7 +361,7 @@ u32 class_calib_lo_power_estimation_alg(struct calib_obj *o, u32 mask,
                                                                tb->high_to_room);
     if (obj->base.bb_temp == -1)
         return 0;
-    field_set_0x00_8e5dfc(&it, rf_cfg_get_rf_mask_45e(&rf_obj));
+    bit_iter_init(&it, rf_obj_get_rf_mask(&rf_obj));
     while (bit_iter_has_more(&it)) {
         i = bitmap_alloc_bit(&it);
         if (i >= 8)
@@ -506,7 +506,7 @@ static void calib_engine_frag_pause_expired(u32 a0, u32 a1)
 void calib_engine_on_frag_done(struct calib_engine *sm)
 {
     if (sm->radio_req != 0) {
-        radio_mgr_call_method_10(sm->radio_req);
+        radio_mgr_lock_free(sm->radio_req);
         sm->radio_req = 0;
     }
     if (sm->frag == sm->nfrag) {

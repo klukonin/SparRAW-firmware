@@ -22,7 +22,7 @@ void rf_utils_auto_fill_with_byte(u32 a, u32 b)  /* 6.2 asm 0x92f160 */
     buf[2] = rf_fill_template_2;
     buf[3] = rf_fill_template_3;
     *(u8 *)buf = (u8)a;
-    rf_utils_auto_fill_uc((const struct rf_fill_info *)buf, b);         /* r1 сквозь (флаг assert при сбое) */
+    rfc_auto_fill_apply((const struct rf_fill_info *)buf, b);         /* r1 сквозь (флаг assert при сбое) */
 }
 
 /* Локальные stub-ы глубоких подфункций (ещё не портированы). */
@@ -41,15 +41,15 @@ void brp_rf_store_module_byte(u32 a)
 }
 
 /* Запись в PHY-регистр 0x884060 (0x929ee0). */
-void brp_set_phy_884060(u32 a)
+void brp_set_phy_tx_brp_reg(u32 a)
 {
     MMIO32(HW_PHY_TX_BRP_884060) = a;
 }
 
 /* Разделение id на (id&0xf, id>>8) и выдача команды 0x20 (0x934dc8). */
-u32 brp_split_id(u32 a)
+u32 rf_set_cur_sector_word(u32 a)
 {
-    u32 r = rfc_issue_cmd_20_uc(a & 0xf, (a >> 8) & 0x7fff);
+    u32 r = rfc_issue_sector_cmd(a & 0xf, (a >> 8) & 0x7fff);
     rf_cur_sector_word = a;
     return r;
 }
@@ -90,7 +90,7 @@ void brp_program_mac_sequence_uc(void)
 /* Чтение RF-id (0x92ed5c). */
 /* 6.2 asm 0x92ed5c: vendor возвращает r0 последнего вызова (rfca_select_rf_uc) —
  * значения нет, вызывающие его не используют. */
-void brp_read_rf_id(u32 a)
+void brp_program_rf_awv(u32 a)
 {
     u8 mask = rfca_get_rf_mask_uc();
     rf_utils_auto_fill_with_byte(a, 1);
@@ -124,7 +124,7 @@ void brp_update_omni_sector_idx(u32 a, u32 b)
     if (r13 == cur)
         return;
     uc_log_emit2(0, 0x1000958, a, r13);
-    bf_set32((u32)&r14->omni_rx_sel, 8, 15, r13 & 0x7fff);
+    bf_set32_lo_hi((u32)&r14->omni_rx_sel, 8, 15, r13 & 0x7fff);
 }
 
 /* Завершение RF-модуля (0x923208). */
@@ -136,7 +136,7 @@ void brp_rf_module_done(u32 a)
     u32 rem = brp_ctx.resp_rf_pending & ~bit;           /* bic.f — флаг Z переживает вызов хелпера */
     brp_ctx.resp_rf_pending = rem;                      /* [0x800880] */
     u32 r0v = (u8)(brp_ctx.resp_flags >> 1);           /* [0x800884] >> 1 */
-    bf_set32((u32)&brp_ctx.resp_flags, 1, 8, r0v | bit);
+    bf_set32_lo_hi((u32)&brp_ctx.resp_flags, 1, 8, r0v | bit);
     if (rem != 0) {                          /* beq_s по Z от bic.f */
         if (rf_modules.cur_mask & bit)
             rf_utils_auto_fill_with_byte(bit, 1);
@@ -218,7 +218,7 @@ u32 brp_parse_request_fields(u32 a)
     r0 &= 1;
     r3 = (r3 & ~4) | (r0 << 2);
     u32 sp_word = r3;
-    bf_set32((u32)&sp_word, 4, 5, lrx);
+    bf_set32_lo_hi((u32)&sp_word, 4, 5, lrx);
     u32 bit = 1u << a;
     bf_sta_mask &= ~(u16)bit;
     bf_brp_req_mask |= (u16)bit;
@@ -274,7 +274,7 @@ u32 brp_initiator_brp_transaction_flow(void)
     u32 *r21 = (u32 *)bf_sta[r18].req_desc;
     u32 r20 = popcount8(rf_modules.mask);
     u32 r19 = (u16)r20;
-    mac_program_4f_52(DMG_BRP_RESP_TIMEOUT_CLK, 4);   /* GP0: срок ответа BRP (ifs.h) */
+    mac_program_gp_timer0(DMG_BRP_RESP_TIMEOUT_CLK, 4);   /* GP0: срок ответа BRP (ifs.h) */
     (void)uc_read_tsf_lo();                     /* bl.d L_9364c8 — MAC-команда 0x4d000005 */
     u32 r14 = 0, r16 = 0;
     u32 r17;
@@ -308,13 +308,17 @@ u32 brp_initiator_brp_transaction_flow(void)
          * +23 инструкции входа уже давали assert 4). Срыв: meas_not_ready / assert 4, failure 1 после 10 неудач. */
         u32 r0a = mac_evt1();
         if (r0a & MAC_EVT1_RX_FRAME) {
+            UC_STAMP_T0(STAMP_BRP_TRN, t_rx);
+            UC_STAMP_V(STAMP_BRP_TRN, ee2_rx, mac_evt_eng2());
             rx_arm_window();
             if ((mac_rx_rep1() & MAC_RX_REP1_NOACK_MGMT) && rx_is_brp_frame() != 0) {
                 uc_stats.brp_rx_txn = (u8)(uc_stats.brp_rx_txn + 1);
                 u32 r0b = brp_parse_request_fields(r18);
                 brp_ctx.init_peer_req = r0b;
                 if (r0b & 1u) {
-                    if (brp_program_and_measure(r18, r16, r15b) != 0) {
+                    u32 ok = brp_program_and_measure(r18, r16, r15b);
+                    UC_STAMP(STAMP_BRP_TRN, ee2_rx, arc_lr(0x100) - t_rx);
+                    if (ok != 0) {
                         brp_stats.init_trn_ok = (u16)(brp_stats.init_trn_ok + 1);
                         r16 = (u16)(r16 + 1);
                         if ((s32)r16 <= (s32)r19)
@@ -368,7 +372,7 @@ u32 brp_initiator_brp_transaction_flow(void)
     volatile u32 *m = (volatile u32 *)HW_PHY_BRP_883B78;
     *m = ((r14b << 24) & 0xff000000) | (*m & ~((1u << 24) | (1u << 25)));
     if ((s32)r20 >= 2)
-        brp_read_rf_id(rf_modules.cur_mask);
+        brp_program_rf_awv(rf_modules.cur_mask);
     return ret;
 }
 
@@ -409,7 +413,7 @@ void brp_init_flow(u32 a)
             config_brp_rf(r14, r19);    /* станция инициатора; vendor брал resp_sta прошлой сессии ответчика (чужой AWV при ≥2 STA) */
             r16 = (u8)(r16 & ~(1u << r14));
         }
-        rfca_access_sector_other_rf(r19);
+        rfca_clear_sector_row_other_rf(r19);
         brp_update_omni_sector_idx(r17, 1);
     }
     gp_timer_stop(0);
@@ -431,7 +435,7 @@ void brp_initiator_flow_successful_receive_training(u32 a)
     r0 &= ~r13;
     brp_ctx.init_rf_pending = r0;
     r1 = (u8)((r1 >> 1) | r13);
-    bf_set32((u32)&brp_ctx.init_flags, 1, 8, r1);
+    bf_set32_lo_hi((u32)&brp_ctx.init_flags, 1, 8, r1);
     mask = rfca_get_rf_mask_uc();
     uc_log_emit2(0x20, 0x10009d8, r16, (u32)(u8)mask);
     u8 rb = rf_modules.cur_mask;
@@ -451,7 +455,7 @@ void brp_initiator_flow_successful_receive_training(u32 a)
 /* Обмен запросом инициатора (0x922928). */
 u32 brp_init_exchange_request(void)
 {
-    mac_program_4f_52(DMG_BRP_RESP_TIMEOUT_CLK, 4);   /* GP0: срок ответа BRP (ifs.h) */
+    mac_program_gp_timer0(DMG_BRP_RESP_TIMEOUT_CLK, 4);   /* GP0: срок ответа BRP (ifs.h) */
     u32 r14 = 0;
     for (;;) {
         brp_init_tx_request();                  /* L_92293a — в каждой итерации */
@@ -512,7 +516,7 @@ void brp_init_tx_request(void)
         uc_mac_cmd(0x37000005);
         uc_mac_cmd(0x37000002);
     } else {
-        mac_rf_switch_cmd1f(0);
+        mac_rf_switch_wait_idle(0);
         uc_mac_cmd(0x1f006000);
         r0b = sta_tab[r16].tx_sel;
         uc_mac_cmd(r15);
@@ -566,7 +570,7 @@ void brp_init_tx_request(void)
             brp_frame_dmg_br_elem |= (1u << 10);
         }
     }
-    direct_tx_program_cmd34(0x18, 0x26);
+    direct_tx_program_desc(0x18, 0x26);
     mac_program_tx_common();
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
@@ -585,7 +589,7 @@ void brp_init_tx_request(void)
     r0h |= rf_set_rx << 24;
     abif_dvs_rf_ctrl_shadow = r0h;
     *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r0h;
-    brp_set_phy_884060(0);
+    brp_set_phy_tx_brp_reg(0);
     uc_mac_cmd(1u << 29);
     r0h = brp_ctx.init_flags;
     if (r0h & (1u << 16)) {
@@ -656,13 +660,13 @@ void brp_responder_flow_enter(u32 a)
         /* СРОК: MAC_EVT1_RX_FRAME (принят BRP-кадр инициатора с TRN-R) → цикл опроса метрик в
          * brp_program_and_measure — то же окно, что у инициатора (brp_initiator_brp_transaction_flow):
          * AGC 4N×0,18 мкс + CE 0,66 мкс до первого TRN-подполя (802.11-2020 20.9.2.2.5–6). Путь
-         * ~200 инструкций (rx_arm_window_b, при первом кадре ещё команда 0x80|б25, разбор, вход
+         * ~200 инструкций (rx_arm_window, при первом кадре ещё команда 0x80|б25, разбор, вход
          * ~70); запас: единицы–десятки. Ветка без resp_flags б0 (спин MAC_EVT1_BUSY2 без ограничения) —
          * не измеряет. */
         if (!(mac_evt1() & MAC_EVT1_RX_FRAME)) {
             break;                                      /* -> L_923100 */
         }
-        rx_arm_window_b();
+        rx_arm_window();
         if (r15 != 0) {
             uc_mac_cmd(0x80 | (1u << 25));
             r15 = 0;
@@ -722,7 +726,7 @@ void brp_responder_flow_enter(u32 a)
                 config_brp_rf(r14, brp_ctx.resp_sta);
             r17 = (u8)(r17 & ~(1u << (r14 & 31)));
         }
-        rfca_access_sector_other_rf((u8)r18);
+        rfca_clear_sector_row_other_rf((u8)r18);
         gp_timer_stop(0);
         uc_mac_cmd(0x52000000);
     }
@@ -736,11 +740,11 @@ void brp_responder_flow_enter(u32 a)
     uc_mac_cmd(0x52000000);
     bf_flow_exit(brp_ctx.resp_sta);
     if ((s32)r19 >= 2) {
-        brp_read_rf_id(rf_modules.cur_mask);
+        brp_program_rf_awv(rf_modules.cur_mask);
         abif_dvs_rf_ctrl_shadow = MMIO32(HW_ABIF_DVS_RF_CTRL); /* st.as [gp,94] */
     }
     rfca_select_rf_uc(sp4, 0);
-    brp_split_id(rf_chain_word);
+    rf_set_cur_sector_word(rf_chain_word);
 }
 
 /* Поток передачи ответчика (0x923314). */
@@ -749,7 +753,7 @@ void brp_responder_transmission_flow(void)
     u8 r13 = brp_ctx.resp_sta;
     rfca_select_rf_uc(rf_modules.cur, 0);
     mac_switch_rx_to_tx(0);
-    mac_rf_switch_cmd1f(0);
+    mac_rf_switch_wait_idle(0);
     uc_mac_cmd(0x1f006000);
     u32 r14 = sta_tab[r13].tx_sel;
     uc_mac_cmd(0x38000300);
@@ -798,7 +802,7 @@ void brp_responder_transmission_flow(void)
         brp_frame_dmg_br_elem |= (1u << 10);
     }
     uc_log_emit2(0, 0x1000904, brp_frame.brp_req[0] & 0x1f, (brp_frame_dmg_br_elem >> 10) & 1);   /* ldb_s [r14,0x1b] */
-    direct_tx_program_cmd34(0x18, 0x26);
+    direct_tx_program_desc(0x18, 0x26);
     mac_program_tx_common();
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
@@ -816,7 +820,7 @@ void brp_responder_transmission_flow(void)
     r0f |= rf_set_rx << 24;
     abif_dvs_rf_ctrl_shadow = r0f;
     *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r0f;
-    brp_set_phy_884060(0);
+    brp_set_phy_tx_brp_reg(0);
     uc_mac_cmd(1u << 29);
 }
 
@@ -833,7 +837,7 @@ void brp_restore_sectors(u32 a)
         u32 r14 = (30 - arc_norm(r15));
         r15 &= ~(1u << r14);
         u32 r13 = (u8)r14;
-        sector_mem_addr_of(r13);
+        rfc_clear_sector_row(r13);
         r13 = (u8)(r13 + 0x60);                 /* extb */
         const struct brp_rf_regs_s *sh = &brp_rf_regs[r16][r14];
         u32 addr = (r13 << 6) * 3;   /* asl6 + add1 = ×0xc0 */
@@ -863,6 +867,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
     u32 r15 = c;
     u32 r13;
     (void)*(struct bf_req_desc *volatile *)&bf_sta[a].req_desc;   /* vendor: мёртвая загрузка */
+    UC_STAMP_T0(STAMP_BRP_TRN, t_in);
     if (!(mac_evt_eng2() & MAC_EE2_BRP_ON_AIR)) {
         brp_stats.meas_not_ready++;                                   /* L_9238b2 */
         return 0;
@@ -884,6 +889,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
     uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_BF_METRIC);
     arc_nops(3);
     u32 r18 = 0x20;
+    u32 st, r16 = 0;
     for (;;) {
         /* ХРУПКО: метрика в r40 живёт до следующего TRN-подполя; опоздание
          * теряет индекс, и проверка ниже даёт assert 4 (гибрид vendor + лог в цикле
@@ -891,7 +897,6 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
          * MAC_EVT4_RXSS_BF_METRIC или MAC_EE2_BRP_DONE, перечитать r54, в следующей же инструкции взять r40 и
          * сразу отправить uc_mac_cmd(0x49000002) (на таймауте — не отправлять).
          * В C -Os уводил чтение r40 за дальний переход. */
-        u32 st, r16;
         __asm__ volatile("1:\tmov\t%0,r54\n\tbbit1\t%0,1,2f\n"
                          "\tmov\t%0,r49\n\tbbit0\t%0,5,1b\n"
                          "2:\tmov\t%0,r54\n\tbbit0\t%0,1,3f\n"
@@ -925,6 +930,8 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
             break;
         }
     }
+    UC_STAMP(STAMP_BRP_TRN, (0x20 - r18) | r13 << 8 | (st & 0xffff) << 16, arc_lr(0x100) - t_in);
+    UC_STAMP(STAMP_BRP_TRN, r16, mac_evt_eng2());
     if (brp_rf_cfg.enable != 0) {
         volatile u32 *r2 = (volatile u32 *)HW_PHY_RGF_BASE;
         brp_rf.agc_row = (u8)(r2[0xa9] & 0x3f);
@@ -938,7 +945,7 @@ u32 brp_program_and_measure(u32 a, u32 b, u32 c)
     brp_stats.trn_copy[r15][1] = w[1];
     sta_set_rx_sector(a, a + 0x60);                   /* add3 r1,r0,0xc */
     u32 sw = VOL(rf_chain_word);
-    rf_select_sector_cmd41(sw & 0xf, (sw >> 8) & 0x7fff);
+    rf_select_sector(sw & 0xf, (sw >> 8) & 0x7fff);
     rf_cur_sector_word = VOL(rf_chain_word);     /* st.as [gp,-11] */
     cfg = mac_sel_shadow & 0xfff0ffff;
     mac_sel_shadow = cfg | (1u << 16) | (1u << 17);
@@ -974,7 +981,7 @@ void brp_init_reset_ctx(u32 a)
         brp_ctx.init_flags = r16 | (1u << 9);
     } else if (e->peer_l_rx >= 1 && e->peer_l_rx <= BRP_LRX_MAX) {   /* 9.5.4: 17..31 — резерв (vendor: до 124 TRN-R) */
         brp_ctx.init_peer_req |= (1u << 2);
-        bf_set32((u32)&brp_ctx.init_peer_req, 4, 5, e->peer_l_rx & 0x1f);
+        bf_set32_lo_hi((u32)&brp_ctx.init_peer_req, 4, 5, e->peer_l_rx & 0x1f);
     }
     uc_mac_cmd(0x2011000);
 }
@@ -1005,7 +1012,7 @@ void brp_init_ctx(u32 a)
         rfc_clear_core_reg1(0);
         u8 rc = rf_modules.cur_mask;
         rfca_select_rf_uc(rc, 0);
-        brp_split_id(rf_chain_word);
+        rf_set_cur_sector_word(rf_chain_word);
     }
 }
 

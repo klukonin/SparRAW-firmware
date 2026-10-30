@@ -4,4 +4,3 @@
 #include "../include/types.h"
 
 
-__attribute__((section(".textlate"))) void abort(void) { fw_sysassert_fatal((void *)0, 0xdead); }

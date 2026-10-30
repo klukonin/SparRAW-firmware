@@ -59,8 +59,8 @@ __attribute__((weak, section(".textlate"))) void ut_hw_drivers_cmd_handler(struc
     case 0x156: hwd_abif_dvs_rf_activate(a0); break;   /* vendor UT 0x156 = dvs_rf_activate */
     case 0x158: hwd_abif_dvs_rfca_cmd_enable(a0, 0); break;  /* vendor UT 0x158 = dvs_rfca_cmd_enable */
     case 0x201: car_enable_pll3_and_wait_on(); break;
-    case 0x202: hwd_wait_pll_lock(); break;
-    case 0x501: hwd_program_889_group(a0); break;
+    case 0x202: clk_switch_to_ref(); break;
+    case 0x501: hwd_rf_clocks_enable(a0); break;
     case 0x502: hwd_rfc_write_core_fw((u8)a0, c->arg8[4], c->arg16[4], c->arg[3]); break;
     case 0x503: rfc_field_write((u8)a0, c->arg16[2], c->arg[2], 0); break;
     case 0x507: hwd_rfc_write_core_fw(0, 2, (u8)a0, 0); break;   /* rf_sector_commit_rx */
@@ -150,13 +150,13 @@ __attribute__((section(".textlate"))) void hwd_rfc_powerup_deep_all_rfs_fw(void)
     u32 mask;
 
     rf_restore_sets_delay = 10;
-    mask = (u8)rf_cfg_get_rf_mask_45e(&rf_obj);
+    mask = (u8)rf_obj_get_rf_mask(&rf_obj);
     fw_log_emit1(0x21, 0x101e324, mask);
     for (;;) {
         hwd_abif_dvs_rfca_cmd_enable(0xff, &old_mask);
         rfc_restore_txrx_sets_fw();
         hwd_abif_dvs_rfca_cmd_enable(old_mask, 0);
-        field_set_0x00_8e5dfc((u32 *)list, mask);
+        bit_iter_init((u32 *)list, mask);
         while (bit_iter_has_more((u32 *)list)) {
             u32 bit = bitmap_alloc_bit((u32 *)list);
             hwd_abif_dvs_rfca_cmd_enable((u8)(1u << bit), 0);

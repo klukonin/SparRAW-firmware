@@ -27,12 +27,6 @@
 
 /* ======================= список станций PBSS ======================= */
 
-/* mid__copy_mac_addr (0x8c75b0, 14 Б): MAC записи mid (+0x1c, 6 Б) → dst. */
-void mid_copy_mac_addr(u32 obj, u8 *dst)
-{
-    memcpy_fw(dst, (const void *)(obj + 0x1c), 6);
-}
-
 /* ======================= бикон: CMD_BCON_MGT (LMAC 0x0b) ======================= */
 
 /* Параметры бикона — 8-байтная структура по значению в r(n):r(n+1) (w0 — байты 0..3, w1 —
@@ -40,7 +34,7 @@ void mid_copy_mac_addr(u32 obj, u8 *dst)
  * (0x70 Б, пул 0x804280, include/lmac_cmd.h): op = a0, ss — список секторов, bi.bi_mode = a1,
  * bi.* — поля BI, bi.mac — MAC (6 Б), bi.flags — флаги. Доступы volatile (как прежде). */
 
-static u8 bp_byte(u32 w0, u32 w1, u32 i)
+static u8 bcn_param_byte(u32 w0, u32 w1, u32 i)
 {
     return (u8)((i < 4 ? w0 : w1) >> ((i & 3) * 8));
 }
@@ -53,8 +47,8 @@ static u8 bp_byte(u32 w0, u32 w1, u32 i)
  * (add3 r2,r0,8 = cmd + 0x40, поля — от него +0x14..+0x1a.) Журнал discovery_mode = бит 1. */
 void bcn_tx_init_bi_cfg(volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 w1)
 {
-    u8 s0 = bp_byte(w0, w1, 0), s1 = bp_byte(w0, w1, 1), s2 = bp_byte(w0, w1, 2);
-    u8 s3 = bp_byte(w0, w1, 3), s5 = bp_byte(w0, w1, 5);
+    u8 s0 = bcn_param_byte(w0, w1, 0), s1 = bcn_param_byte(w0, w1, 1), s2 = bcn_param_byte(w0, w1, 2);
+    u8 s3 = bcn_param_byte(w0, w1, 3), s5 = bcn_param_byte(w0, w1, 5);
     u32 f;
     cmd->bi.n_bi_abft = (u8)(s3 >> 5);
     cmd->bi.abft_cnt_mod = (u8)(((w1 & 0xffffu) >> 6) & 0x3f);
@@ -138,8 +132,8 @@ void lmac_if_send_bcon_mgt(u32 a0, u32 a1, u32 w0, u32 w1, const u8 *mac)
     lmac_if_post_cmd(cmd, 0xb, 0x70, 0);
 }
 
-/* lmac_if_send_cmd_0x30 (0x8db7f8, 36 Б): LMAC-команда 0x30 {a, b, c} (3 Б). */
-void lmac_if_send_cmd_0x30(u32 a, u32 b, u32 c)
+/* lmac_if_send_sta_rs_mcs (0x8db7f8, 36 Б): LMAC-команда 0x30 {a, b, c} (3 Б). */
+void lmac_if_send_sta_rs_mcs(u32 a, u32 b, u32 c)
 {
     struct lmac_cmd_sta_byte2 *p = lmac_cmd_pool_alloc();
     p->cid = (u8)a;

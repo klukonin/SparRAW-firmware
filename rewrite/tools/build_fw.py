@@ -57,12 +57,12 @@ SM_TABLES = [(0x8015dc, 20, 5)]
 #  - слоты колбэков bf_req_enqueue (0x800fec, 0x8013f4/f8), вызываются bf_sm_process_request_fifo.
 UC_DATA_PTRS = {
     0x8007cc: (0x92097c, 'uc_init_cb_globals'),
-    0x800fe4: (0x920968, 'uc_init_cb_copy_8006b7'),
+    0x800fe4: (0x920968, 'uc_init_cb_copy_rf_mask'),
     0x8013ec: (0x9209a4, 'uc_init_cb_cmdq'),
-    0x801644: (0x920994, 'uc_init_cb_801aec'),
-    0x8016e4: (0x920988, 'uc_init_cb_more'),
+    0x801644: (0x920994, 'uc_init_cb_bi_sm_name'),
+    0x8016e4: (0x920988, 'uc_init_cb_rx_meas'),
     0x800734: (0x92d880, 'ucode_cmdq_handler'),
-    0x800fec: (0x92df38, 'notify_aoa_build'),
+    0x800fec: (0x92df38, 'bf_done_report_build_send'),
     0x8013f4: (0x92dec4, 'notify_aoa_event'),
     0x8013f8: (0x92dec4, 'notify_aoa_event'),
 }

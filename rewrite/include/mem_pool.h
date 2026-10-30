@@ -2,7 +2,7 @@
 /* Пул фиксированных блоков (fw/pool.c): count блоков по elem_size байт, свободные связаны в
  * односвязный список (голова — free_head, в свободном блоке слово 0 — следующий). Раскладка —
  * как у vendor 6.2 (0x14 Б): mem_pool__init 0x8c7cf8, mem_pool__allocate 0x8c354c, проверяющий
- * mem_pool__free 0x8caed0 (у нас stream_mgr_check_vring; mem_pool_free — без проверок). */
+ * mem_pool__free 0x8caed0 (у нас mem_pool_free_checked; mem_pool_free — без проверок). */
 #ifndef MEM_POOL_H
 #define MEM_POOL_H
 #include "types.h"

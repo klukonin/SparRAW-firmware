@@ -153,7 +153,7 @@ struct pring *sm_pring_by_index(u32 i)
 /* ---------------- регистры DMA vring ---------------- */
 
 /* vring__reg_write_locked_28 (0x8d0538, 48 Б): [0x881c28] = v при снятом E1. */
-void vring_reg_write_locked_28(u32 v, u32 flag)
+void vring_hw_clear_dma_irq(u32 v, u32 flag)
 {
     u32 s = arc_irq_disable();
     MMIO32(HW_DMA_FW_ICR_C24_ICR) = v;
@@ -163,7 +163,7 @@ void vring_reg_write_locked_28(u32 v, u32 flag)
 }
 
 /* vring__reg_write_locked_3c (0x8d0568, 48 Б): [0x881c3c] = v при снятом E1. */
-void vring_reg_write_locked_3c(u32 v, u32 flag)
+void vring_hw_unmask_dma_irq(u32 v, u32 flag)
 {
     u32 s = arc_irq_disable();
     MMIO32(HW_DMA_FW_ICR_C24_IMC) = v;
@@ -253,23 +253,23 @@ u32 hwd_dma_get_rings_with_data(void)
 
 /* vring_hw__field_addr_440c0c0 (0x8d0848, 20 Б) / _440c100 (0x8d085c, 20 Б): прочитать
  * регистры vring (значения vendor не использует — диагностика). */
-u32 vring_hw_field_addr_440c0c0(u32 vr)
+u32 vring_hw_read_head_ptr(u32 vr)
 {
     return MMIO32((((vr << 8) + 0x440c0c0u) >> 3) & ~3u);
 }
 
-u32 vring_hw_field_addr_440c100(u32 vr)
+u32 vring_hw_read_tail_ptr(u32 vr)
 {
     return MMIO32((((vr << 8) + 0x440c100u) >> 3) & ~3u);
 }
 
 /* hwd_dma__read_8813c8 (0x8d0828, 8 Б) / hwd_dma__read_8813f0 (0x8d081c, 8 Б). */
-u32 hwd_dma_read_8813c8(void)
+u32 hwd_dma_read_descq2_sw_tail(void)
 {
     return MMIO32(HW_DMA_DESCQ2_SW_TAIL);
 }
 
-u32 hwd_dma_read_8813f0(void)
+u32 hwd_dma_read_descq2_sw_head(void)
 {
     return MMIO32(HW_DMA_DESCQ2_SW_HEAD_CRNT);
 }
@@ -324,7 +324,7 @@ void hwd_dma_reset_vring(u32 vr)
 void hwd_dma_program_vring_desc(u32 vr, u32 lo, u32 hi, u32 size)
 {
     MMIO32((((vr << 8) + 0x440c160u) >> 3) & ~3u) = lo;
-    dpal_cpl_timeout_evt(hi);
+    hwd_dma_set_ring_select(hi);
     MMIO32((((vr << 8) + 0x440c1a0u) >> 3) & ~3u) = size;
 }
 
@@ -355,7 +355,7 @@ void mac_ring_disable(u32 q)
 }
 
 /* macq__clear_886a28_low2 (0x8ea450, 42 Б): импульс битов 0..1 регистра 0x886a28. */
-void macq_clear_886a28_low2(void)
+void macq_pulse_txq_ptr_reset(void)
 {
     MMIO32(HW_TXQ_PTR_RESET) |= 3u;
     arc_sync();
@@ -401,8 +401,8 @@ void vring_program_macq_and_ba(const struct vring_tbl_entry *e, u32 start, u32 s
 
 /* ---------------- LMAC-команды vring ---------------- */
 
-/* lmac_if_send_cmd_0x08 (0x8dbb60, 84 Б): LMAC-команда 8 (конфигурация vring). */
-void lmac_if_send_cmd_0x08(u32 a0, u32 a1, u32 pring, u32 vr, u32 f6, u32 f5, u32 flag)
+/* lmac_if_send_vring_cfg (0x8dbb60, 84 Б): LMAC-команда 8 (конфигурация vring). */
+void lmac_if_send_vring_cfg(u32 a0, u32 a1, u32 pring, u32 vr, u32 f6, u32 f5, u32 flag)
 {
     struct lmac_cmd_vring_cfg *c = lmac_cmd_pool_alloc();
     c->qid = (u8)vr;
@@ -416,8 +416,8 @@ void lmac_if_send_cmd_0x08(u32 a0, u32 a1, u32 pring, u32 vr, u32 f6, u32 f5, u3
     lmac_if_post_cmd(c, 8, 0x14, 0);
 }
 
-/* lmac_if_send_cmd_0x47 (0x8db79c, 32 Б): LMAC-команда 0x47 {vr, on}. */
-void lmac_if_send_cmd_0x47(u32 vr, u32 on)
+/* lmac_if_send_fsched_peer (0x8db79c, 32 Б): LMAC-команда 0x47 {vr, on}. */
+void lmac_if_send_fsched_peer(u32 vr, u32 on)
 {
     struct lmac_cmd_fsched_peer *c = lmac_cmd_pool_alloc();
     c->vr = (u8)vr;
@@ -428,7 +428,7 @@ void lmac_if_send_cmd_0x47(u32 vr, u32 on)
 /* ---------------- pring ---------------- */
 
 /* pring__init (0x8d9174, 42 Б; vendor-имя wmi_evt__init_desc ошибочно): свободный pring. */
-void wmi_evt_init_desc(struct pring *p, u32 id, u32 b, u32 c)
+void pring_init(struct pring *p, u32 id, u32 b, u32 c)
 {
     p->state = 0;
     p->id = (u16)id;
@@ -454,7 +454,7 @@ void vring_schd_add_sniffer_vring(u32 id, u32 b, u32 c)
     vring_schd.n_pring = n;
     if (n >= 3)
         fw_sysassert_fatal((void *)0, 0x12b5);
-    wmi_evt_init_desc(&vring_schd.pring[id], (u16)id, b, c);
+    pring_init(&vring_schd.pring[id], (u16)id, b, c);
 }
 
 /* pring__set_done_handler (0x8e7334, 10 Б): обработчик завершения остановки pring
@@ -521,7 +521,7 @@ void sm_pring_stop_done(struct pring *p)
 }
 
 /* sm_pring__notify_step (0x8eaa38, 80 Б): накопить время работы записи по TSF. */
-void sm_pring_notify_step(struct vring_rec *e, u32 a)
+void sm_pring_accum_time(struct vring_rec *e, u32 a)
 {
     u32 tsf[2];
     u32 dt = 0;
@@ -547,7 +547,7 @@ FWDATA(8023dc) const u8 sm_pring_state_step_jt[5] = {
 /* sm_pring__state_step (0x8ea69c, 184 Б): начать остановку работающего pring
  * (состояние 2 → 3) с таймаутом [0x800348]. Jump-table 0x8023dc: 0 — ассерт,
  * 1/3/4 — журнал, 2 — остановка. */
-void sm_pring_state_step(struct pring *p)
+void sm_pring_begin_stop(struct pring *p)
 {
     u32 st = p->state;
     u32 bit;
@@ -566,7 +566,7 @@ void sm_pring_state_step(struct pring *p)
     }
     bit = p->id + 8;
     p->state = 3;
-    vring_reg_write_locked_28(1u << bit, 1);
+    vring_hw_clear_dma_irq(1u << bit, 1);
     if (p->slot_timer != 0) {
         u_schd_cancel(p->slot_timer);
         p->slot_timer = 0;
@@ -586,7 +586,7 @@ void sm_pring_state_step(struct pring *p)
         fw_sysassert_fatal((void *)0, 0x10e8);   /* vendor 0x8ea72a: mov_s r1,0xe8; bset_s r1,r1,0xc; прежде 0x12e8 */
     p->stop_timer = u_schd_schedule(sm_pring_timeout_task, p->id, 0, 1,
                                     pring_stop_timeout, 0, 0);
-    vring_reg_write_locked_3c(1u << bit, 1);
+    vring_hw_unmask_dma_irq(1u << bit, 1);
 }
 
 /* 0x8023ec: таблица переходов switch vendor sm_pring__timeout (0x8e9268;
@@ -673,7 +673,7 @@ void sm_pring_timeout(struct pring *p)
         struct vring_rec *v = pring_find_by_id(p->vr8);
         if (v == 0)
             fw_sysassert_fatal((void *)0, 0x16ca);
-        lmac_if_send_cmd_0x08(3, 3, v->pring, p->vr8, 0, 1, 0);
+        lmac_if_send_vring_cfg(3, 3, v->pring, p->vr8, 0, 1, 0);
     }
 }
 
@@ -686,7 +686,7 @@ void sm_pring_timeout_task(u32 i, u32 a1)
 
 /* vring_schd__has_waiting (0x8c3800, 44 Б; vendor-имя obj__has_pending_1c_10): есть ли
  * vring в очередях готовых приоритетов 0/1 (счётчики +0x10 и +0x1c). */
-u32 obj_has_pending_1c_10(const struct vring_schd *s)
+u32 vring_schd_has_ready(const struct vring_schd *s)
 {
     return (s->ready[1].count != 0 || s->ready[0].count != 0) ? 1u : 0u;
 }
@@ -704,14 +704,14 @@ void sm_pring_notify_vring_state(u32 i, struct vring_rec *e)
     bound = p->bound;
     if (e != bound)
         return;
-    if (obj_has_pending_1c_10(&vring_schd) == 1) {
+    if (vring_schd_has_ready(&vring_schd) == 1) {
         bound->state = 4;
         vring_schd_stop_vring(&vring_schd, p);
         return;
     }
     sm_pring_bind_vring(p, bound->vr, vring_switch_interval_us, vring_switch_idle_th_us,
                         vring_slot_opt_delay, bound);
-    sm_pring_notify_step(bound, 1);
+    sm_pring_accum_time(bound, 1);
 }
 
 /* sm_pring__connectivity_update (0x8ea254, 44 Б): истёк таймер «окна связи» [+0x28]. */
@@ -780,10 +780,10 @@ void sm_pring_bind_vring(struct pring *p, u32 vr, u32 a2, u32 a3, u32 a4,
         (void)hwd_dma_get_rings_with_data();
         (void)MMIO32(HW_MTP_Q_AVAIL);
         (void)MMIO32(HW_BAP_Q_AVAIL_VEC);
-        (void)vring_hw_field_addr_440c0c0(vr);
-        (void)vring_hw_field_addr_440c100(vr);
-        (void)hwd_dma_read_8813c8();
-        (void)hwd_dma_read_8813f0();
+        (void)vring_hw_read_head_ptr(vr);
+        (void)vring_hw_read_tail_ptr(vr);
+        (void)hwd_dma_read_descq2_sw_tail();
+        (void)hwd_dma_read_descq2_sw_head();
         (void)mac_tx_cnt_get_ok();
         (void)mac_tx_cnt_get_fail();
         *cnt = 0;
@@ -799,7 +799,7 @@ void sm_pring_bind_vring(struct pring *p, u32 vr, u32 a2, u32 a3, u32 a4,
             fw_sysassert_fatal((void *)0, 0x10e6);   /* vendor: mov_s r1,0xe6; bset_s r1,r1,0xc (0x8c4b6e); прежде 0x12e6 — код calib_engine_on_start */
         p->bound = entry;
         p->vr = (u16)vr;
-        pr = stream_mgr_pring_by_index((u16)vr);
+        pr = stream_mgr_vring_is_bcast((u16)vr);
         e = vring_tbl_entry_addr(p->vr);
         if (tx_macq_is_empty(e, 0) == 0) {
             fw_log_emit0(7, 0x100d010);
@@ -808,7 +808,7 @@ void sm_pring_bind_vring(struct pring *p, u32 vr, u32 a2, u32 a3, u32 a4,
         p->bind_time = u_schd_now() << 4;
         p->stop_end = 0;
         vring_program_macq_and_ba(e, p->win_start16, p->win_size16);
-        macq_clear_886a28_low2();
+        macq_pulse_txq_ptr_reset();
         mac_ring_enable(p->vr, 1);
         {
             u32 st = MMIO32(HW_TXQ_PTP_AVAIL) >> p->vr;
@@ -826,8 +826,8 @@ void sm_pring_bind_vring(struct pring *p, u32 vr, u32 a2, u32 a3, u32 a4,
             p->tx_cnt = mac_tx_cnt_delta_88_net_of_20();
             p->slot_timer = u_schd_schedule(sm_pring_slot_optimized_task, (u32)entry,
                                             p->id, 1, a4, 0, 0);
-            vring_reg_write_locked_3c(1u << p->id, 1);
-            vring_reg_write_locked_28(1u << (p->id + 4), 1);
+            vring_hw_unmask_dma_irq(1u << p->id, 1);
+            vring_hw_clear_dma_irq(1u << (p->id + 4), 1);
         }
         break;
     }
@@ -845,14 +845,14 @@ void sm_pring_bind_vring(struct pring *p, u32 vr, u32 a2, u32 a3, u32 a4,
 /* ---------------- vring_schd ---------------- */
 
 /* vring_schd__is_vring_ready (0x8c655c, 14 Б): pring-id запрещён (бит маски +0xa4). */
-u32 vring_schd_is_vring_ready(const struct vring_schd *s, u32 bit)
+u32 vring_schd_is_pring_blocked(const struct vring_schd *s, u32 bit)
 {
     return s->blocked & (1u << bit);
 }
 
 /* vring_schd__pring_by_type (0x8c5b44, 72 Б; vendor-имя rm_ch_switch_sm__notify_
  * ch_switch_done ошибочно): pring для типа t (проверки занятости — только ассерты). */
-struct pring *rm_ch_switch_sm_notify_ch_switch_done(struct vring_schd *s, u32 t)
+struct pring *vring_schd_pring_by_type(struct vring_schd *s, u32 t)
 {
     struct pring *p = &s->pring[t];
     if (p->bound == 0)
@@ -874,14 +874,14 @@ void vring_schd_bind_if_free(struct vring_schd *s, struct vring_rec *e, struct p
     e->state = 3;
     sm_pring_bind_vring(p, e->vr, vring_switch_interval_us, vring_switch_idle_th_us,
                         vring_slot_opt_delay, e);
-    sm_pring_notify_step(e, 1);
+    sm_pring_accum_time(e, 1);
 }
 
 /* vring_schd__stop_vring (0x8e80cc, 6 Б). */
 void vring_schd_stop_vring(struct vring_schd *s, struct pring *p)
 {
     (void)s;
-    sm_pring_state_step(p);
+    sm_pring_begin_stop(p);
 }
 
 /* vring_schd__move_to_ready (0x8c24b0, 256 Б): у vring есть данные — привязать к
@@ -893,16 +893,16 @@ void vring_schd_move_to_ready(struct vring_schd *s, struct vring_rec *e)
 
     if (e->prio >= 2)
         fw_sysassert_fatal((void *)0, 0x1475);
-    p = rm_ch_switch_sm_notify_ch_switch_done(s, e->pring_type);
+    p = vring_schd_pring_by_type(s, e->pring_type);
     if (p == 0) {
         if (e->pring_type == 1)
             fw_sysassert_fatal((void *)0, 0x140d);
-        list_find_entry_d((u32 *)&s->ready[e->prio], (u32 *)e);
+        llist_append((u32 *)&s->ready[e->prio], (u32 *)e);
         e->state = 2;
         return;
     }
     bound = p->bound;
-    if (bound == 0 && vring_schd_is_vring_ready(&vring_schd, e->pring) == 0) {
+    if (bound == 0 && vring_schd_is_pring_blocked(&vring_schd, e->pring) == 0) {
         vring_schd_bind_if_free(s, e, p);
         return;
     }
@@ -915,11 +915,11 @@ void vring_schd_move_to_ready(struct vring_schd *s, struct vring_rec *e)
         bound->state = 4;
         vring_schd_stop_vring(s, p);
     }
-    list_find_entry_d((u32 *)&s->ready[e->prio], (u32 *)e);
+    llist_append((u32 *)&s->ready[e->prio], (u32 *)e);
     e->state = 2;
-    vring_reg_write_locked_28(1u << p->id, 0);
+    vring_hw_clear_dma_irq(1u << p->id, 0);
     vring_hw_set_ready_bit(p->id);
-    vring_reg_write_locked_3c(1u << p->id, 1);
+    vring_hw_unmask_dma_irq(1u << p->id, 1);
 }
 
 /* vring_schd__alloc_pring (0x8c2428, 56 Б): vring vr из списка ожидания → готов. */
@@ -943,7 +943,7 @@ void vring_schd_move_ready_if_idle(u32 vr, u32 a1)
         return;
     if (e->enabled != 1)
         return;
-    if (hwd_dma_get_881c80(vr) == 0)
+    if (hwd_dma_ring_has_data(vr) == 0)
         return;
     tx_list_remove(&vring_schd.waiting, e);
     vring_schd_move_to_ready(&vring_schd, e);
@@ -962,14 +962,14 @@ void vring_schdlr_isr_dispatch(void)
         u_schd_add(vring_schd_move_ready_if_idle, i, 0, 1);
         m &= ~(1u << i);
     }
-    hwd_dma_op(bits, 1);
-    hwd_dma_ack_881c44(bits, 1);
+    hwd_dma_mask_vring_irq(bits, 1);
+    hwd_dma_ack_vring_irq(bits, 1);
 }
 
 /* isr_vring_dma_fw (0x8c1350): тело вектора 9. */
 void isr_vring_dma_fw(void)
 {
-    hwd_dma_bad_cause();
+    hwd_dma_fatal_on_bad_cause();
     vring_schdlr_isr_dispatch();
 }
 
@@ -1004,7 +1004,7 @@ void vring_clear_hw_state(struct vring_rec *e)
     e->tsf_lo = 0;
     e->tsf_hi = 0;
     e->time = 0;
-    hwd_dma_op(1u << e->vr, 1);
+    hwd_dma_mask_vring_irq(1u << e->vr, 1);
 }
 
 /* vring_schd__remove_vring (0x8c8e90, 44 Б). */
@@ -1013,13 +1013,7 @@ void vring_schd_remove_vring(struct vring_schd *s, struct vring_rec *e)
     (void)s;
     fw_log_emit1(0x27, 0x100bb70, e->vr);
     vring_clear_hw_state(e);
-    stream_mgr_check_vring(&vring_rec_pool, e);
-}
-
-/* vring_schd__prohibit_cids (0x8e1218, 14 Б): событие 3 автомату pring 0. */
-void vring_schd_prohibit_cids(struct radio_mgr *rm)
-{
-    basic_sm_handle_event(&rm->sm, 3, 0, 0, 0);
+    mem_pool_free_checked(&vring_rec_pool, e);
 }
 
 /* ---------------- методы vring_schd (таблица 0x8008e8) ---------------- */
@@ -1029,7 +1023,7 @@ void vring_schd_vt_reset_irq(struct vring_schd_if *self)
 {
     (void)self;
     vring_hw_unmask_irq(0xffffffffu, 1);
-    vring_reg_write_locked_3c(0xffffffffu, 1);
+    vring_hw_unmask_dma_irq(0xffffffffu, 1);
 }
 
 /* vring_schd::reset (0x8c8f68, 38 Б) — vt[2]: таймеры снимает только у pring[0]
@@ -1037,8 +1031,8 @@ void vring_schd_vt_reset_irq(struct vring_schd_if *self)
 void vring_schd_vt_reset(struct vring_schd_if *self)
 {
     struct vring_schd *s = (struct vring_schd *)self;
-    hwd_dma_op(0xffffffffu, 1);
-    hwd_dma_write_881c38(0xffffffffu, 1);
+    hwd_dma_mask_vring_irq(0xffffffffu, 1);
+    hwd_dma_mask_pring_irq(0xffffffffu, 1);
     sm_pring_cancel_timers(&s->pring[0]);
 }
 
@@ -1054,7 +1048,7 @@ void vring_schd_vt_add_vring(struct vring_schd_if *self, const struct wmi_sw_rin
     e = mem_pool_allocate(&vring_rec_pool);
     if (e == 0)
         fw_sysassert_fatal((void *)0, 0x12b7);
-    list_find_entry_d((u32 *)&vring_schd.waiting, (u32 *)e);
+    llist_append((u32 *)&vring_schd.waiting, (u32 *)e);
     vr = ctx->vr;
     pr = vring_get_pring_id(ctx);
     bcast = ctx->bcast;
@@ -1069,7 +1063,7 @@ void vring_schd_vt_add_vring(struct vring_schd_if *self, const struct wmi_sw_rin
     }
     hwd_dma_reset_vring(vr);                        /* через thunk 0x8e292c */
     hwd_dma_program_vring_desc(vr, cfg->ring_mem_base32[0], cfg->ring_mem_base32[1], cfg->ring_size);
-    lmac_if_send_cmd_0x08(3, 0, (u8)pr, vr, 0, 0, 0);
+    lmac_if_send_vring_cfg(3, 0, (u8)pr, vr, 0, 0, 0);
     vring_tbl_entry_addr(vr)->state = 3;
     fw_log_emit3(0x27, 0x100bb3c, vr, pr, vr);
     vring_schd_fill_vring_cfg(e, ctx, (u16)prio, (u16)slot, bcast, en);
@@ -1115,7 +1109,7 @@ void vring_schd_vt_suspend_vring(struct vring_schd_if *self, u32 vr)
         }
     }
     if (e != 0) {
-        list_find_entry_d((u32 *)&vring_schd.waiting, (u32 *)e);
+        llist_append((u32 *)&vring_schd.waiting, (u32 *)e);
         vring_ack_and_unmask_irq(e);
     } else if (vring_list_find(&vring_schd, &vring_schd.waiting, vr, &e) == 0) {
         fw_sysassert_fatal((void *)0, 0x12b9);
@@ -1136,7 +1130,7 @@ void vring_schd_vt_resume_vring(struct vring_schd_if *self, u32 vr)
         return;
     }
     e->enabled = 1;
-    if (hwd_dma_get_881c80(vr) == 1) {
+    if (hwd_dma_ring_has_data(vr) == 1) {
         tx_list_remove(&vring_schd.waiting, e);
         vring_schd_move_to_ready(&vring_schd, e);
     } else {
@@ -1185,7 +1179,7 @@ void vring_schd_vt_allow(struct vring_schd_if *self, u32 mask)
             struct vring_rec *e = (struct vring_rec *)l->head;
             if (e == 0)
                 continue;
-            if (vring_schd_is_vring_ready(&vring_schd, e->pring) != 0)
+            if (vring_schd_is_pring_blocked(&vring_schd, e->pring) != 0)
                 continue;
             if (i != e->pring_type)
                 continue;
@@ -1232,7 +1226,7 @@ void vring_schd_alt_vt_reset(struct vring_schd_if *self)
 }
 
 /* (0x8ed598, 2 Б) — vt[2]: пусто. */
-void vring_schd_alt_vt_nop2(struct vring_schd_if *self)
+void vring_schd_alt_vt_reset_nop(struct vring_schd_if *self)
 {
     (void)self;
 }
@@ -1252,12 +1246,12 @@ void vring_schd_alt_vt_add_vring(struct vring_schd_if *self, const struct wmi_sw
     a->vr_of_pring[pr] = (u8)vr;
     hwd_dma_reset_vring(vr);
     hwd_dma_program_vring_desc(vr, cfg->ring_mem_base32[0], cfg->ring_mem_base32[1], cfg->ring_size);
-    lmac_if_send_cmd_0x08(3, 0, (u8)pr, vr, 0, 0, 0);
+    lmac_if_send_vring_cfg(3, 0, (u8)pr, vr, 0, 0, 0);
     fw_log_emit3(0x27, 0x100bca8, vr, pr, vr);
 }
 
 /* (0x8c8f64, 2 Б) — vt[4]: пусто. */
-void vring_schd_alt_vt_nop4(struct vring_schd_if *self, u32 vr)
+void vring_schd_alt_vt_delete_nop(struct vring_schd_if *self, u32 vr)
 {
     (void)self;
     (void)vr;
@@ -1267,18 +1261,18 @@ void vring_schd_alt_vt_nop4(struct vring_schd_if *self, u32 vr)
 void vring_schd_alt_vt_suspend(struct vring_schd_if *self, u32 vr)
 {
     (void)self;
-    lmac_if_send_cmd_0x47(vr, 0);
+    lmac_if_send_fsched_peer(vr, 0);
 }
 
 /* (0x8e2d54, 8 Б) — vt[6]: LMAC 0x47 {vr, 1}. */
 void vring_schd_alt_vt_resume(struct vring_schd_if *self, u32 vr)
 {
     (void)self;
-    lmac_if_send_cmd_0x47(vr, 1);
+    lmac_if_send_fsched_peer(vr, 1);
 }
 
 /* (0x8ed9bc, 4 Б) — vt[7]: 0. */
-u32 vring_schd_alt_vt_ret0(struct vring_schd_if *self, u32 mask)
+u32 vring_schd_alt_vt_prohibit_nop(struct vring_schd_if *self, u32 mask)
 {
     (void)self;
     (void)mask;
@@ -1286,7 +1280,7 @@ u32 vring_schd_alt_vt_ret0(struct vring_schd_if *self, u32 mask)
 }
 
 /* (0x8ed594, 2 Б) — vt[8]: пусто. */
-void vring_schd_alt_vt_nop8(struct vring_schd_if *self, u32 mask)
+void vring_schd_alt_vt_allow_nop(struct vring_schd_if *self, u32 mask)
 {
     (void)self;
     (void)mask;
@@ -1336,13 +1330,13 @@ FWDATA(8008e8) const struct vring_schd_vt vring_schd_vtbl = {
 FWDATA(800918) const struct vring_schd_vt vring_schd_alt_vtbl = {
     .rsv0 = 0,
     .reset_irq = vring_schd_alt_vt_reset,                   /* 0x8c984c */
-    .reset = vring_schd_alt_vt_nop2,                        /* 0x8ed598 */
+    .reset = vring_schd_alt_vt_reset_nop,                        /* 0x8ed598 */
     .add_vring = vring_schd_alt_vt_add_vring,               /* 0x8c2fcc */
-    .delete_vring = vring_schd_alt_vt_nop4,                 /* 0x8c8f64 */
+    .delete_vring = vring_schd_alt_vt_delete_nop,                 /* 0x8c8f64 */
     .suspend_vring = vring_schd_alt_vt_suspend,             /* 0x8e819c */
     .resume_vring = vring_schd_alt_vt_resume,               /* 0x8e2d54 */
-    .prohibit = vring_schd_alt_vt_ret0,                     /* 0x8ed9bc */
-    .allow = vring_schd_alt_vt_nop8,                        /* 0x8ed594 */
+    .prohibit = vring_schd_alt_vt_prohibit_nop,                     /* 0x8ed9bc */
+    .allow = vring_schd_alt_vt_allow_nop,                        /* 0x8ed594 */
     .vring_of_pring = vring_schd_alt_vt_vring_of_pring,     /* 0x8cd078 */
     .time_of_pring = vring_schd_alt_vt_time_of_pring,       /* 0x8cd050 */
     .clear_time = vring_schd_alt_vt_clear_time,             /* 0x8c6938 */

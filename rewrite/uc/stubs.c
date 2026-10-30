@@ -55,8 +55,8 @@ void uc_log_init_ring(void)
     memset0_words_uc(uc_log.ring, sizeof(uc_log.ring));
     MMIO32(HW_RGF_USER_USAGE_2) = (u32)&uc_log;
 }
-/* boot_uc_set_88000c — в boot.c. */
-/* vring_is_empty_uc — в boot.c. */
+/* boot_uc_publish_mac_cmd_log — в boot.c. */
+/* boot_uc_publish_mac_cmd_log_snap — в boot.c. */
 /* bi_mode_init_sequence — в boot.c. */
 void bi_mode_load_cmd1e_operand(void)
 {
@@ -73,7 +73,7 @@ void bi_mode_program_mac_timing(void)
     MMIO32(HW_MAC_USEC_CLK_DIV) = 0x5300a5;
 }
 /* bf_init_globals — в bf.c. */
-/* mac_set_slot_timing_886f60 — в mac.c. */
+/* mac_set_default_slot_timing — в mac.c. */
 struct tx_ctx_s *tx_ctx_alloc_next(u32 a)
 {
     /* 6.2 asm 0x9384d4: следующий слот; a != 0 — сделать его текущим. */
@@ -109,7 +109,7 @@ struct tx_ctx_s *tx_ctx_alloc_next(u32 a)
 }
 /* 0x936398: маски событий, два таймерных канала (0x886d3c/40, 0x886fbc/c0)
  * с уровнями IRQ 0xa/0xe и программированием MAC. */
-void bi_mode_init_substep(void)
+void bi_mode_init_event_timers(void)
 {
     u32 v;
     irq_init_event_masks();
@@ -144,7 +144,7 @@ void bi_mode_init_sta_table(void)
     memset0_words_uc(txss_ss, SPARRAW_STA_SLOTS * sizeof(struct ss_cfg_s));
 }
 /* bti_clear_sweep_counters — в bti.c. */
-/* mac_program_13ab6680 — в boot.c. */
+/* uc_timers_start_with_irq — в boot.c. */
 /* uc_timer_start — в boot.c. */
 /* uc_send_evt_ucode_ready — в boot.c. */
 void uc_mailbox_init_rings(struct uc_mbox_ctx *m)
@@ -156,24 +156,17 @@ void uc_mailbox_init_rings(struct uc_mbox_ctx *m)
     struct mbox_ring_ctl *ctl = *(struct mbox_ring_ctl **)(r0 + 0x24);
     if (ctl[0].base == 0)
         return;
+    if (ctl[0].entry_size < UC_EVT_BODY_MAX)            /* uc_evt_enqueue больше не сверяет длину с пределом */
+        uc_assert((u32)__builtin_return_address(0), 0xc5);
     uc_ring_init_desc(&uc_mbox.cmd, ctl[1].base, ctl[1].size, &ctl[1], 0, 0, 0);
     uc_ring_init_desc(&uc_mbox.evt, ctl[0].base, ctl[0].size, &ctl[0], 0, 0, 0);
 }
-/* mac_ddc_mask_bit3 — в boot.c. */
-/* irq_safe_deref_field_04 — в boot.c. */
-/* uc_list_head_field4 — в uutil.c. */
+/* mac_fw2uc_irq_unmask_cmd_halt_wake — в boot.c. */
+/* uc_evt_write_slot — в boot.c. */
+/* uc_ring_cur_addr — в uutil.c. */
 /* uc_evt_enqueue (L_927958) — в evt.c-хелперах. */
 /* uc_evt_enqueue — в evt.c. */
 /* mac_read_tsf64_uc — в mac.c. */
-/* uc_evt_queue_put — в evt.c. */
-/* 1 — следующая запись не догоняет читателя (ctl->tail). */
-u32 mailbox_free_space(struct uc_ring *r)
-{
-    struct mbox_ring_desc *next = r->cur + 1;
-    if (next == r->end)
-        next = r->base;
-    return ((u32)next != r->ctl->tail) ? 1 : 0;
-}
 void mailbox_debug_dump_uc(struct uc_ring *r)
 {
     uc_log_emit2(0, 0x10011e0, r->ctl->tail, r->ctl->head);
@@ -182,7 +175,6 @@ void mailbox_debug_dump_uc(struct uc_ring *r)
     for (struct mbox_ring_desc *d = r->base; d < r->end; d++)
         uc_log_emit2(0, 0x100128c, d->sync, d->addr);
 }
-/* list_push_locked — в tail.c (0x926984). */
 /* memcpy_uc — в util.c. */
 /* СРОК: r55 читается не раньше 3 тактов после 0x4d000005 (аппаратный; r55 не защёлкивается — до
  * выборки там значение прежнего селектора): 5 инструкций, vendor 0x9364c8 так же; запас — единицы.
@@ -198,9 +190,9 @@ u32 uc_read_tsf_lo(void)
     return r0;
 }
 /* evt_queue_take_locked — в tail.c (0x926a3c). */
-/* cpu_aux28_set_bits12 — в boot.c. */
+/* uc_irq_enable_e1_e2 — в boot.c. */
 /* boot_uc_init_tail — в sched.c. */
-/* bf_pending_clear_bit — в bf.c. */
+/* bg_task_clear_pending_bit — в bf.c. */
 /* uc_assert — в misc.c (uc_sysassert). */
 
 void uc_log_emit_snapshot(u32 a, u32 b)

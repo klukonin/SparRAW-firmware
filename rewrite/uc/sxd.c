@@ -46,6 +46,10 @@ u32 sxd_hal_wait_slot2_busy(u32 n)
 {
     if (n == 0)
         uc_assert((u32)__builtin_return_address(0), 0x52);
+#ifdef UC_STAMP_MASK
+    if (UC_STAMP_ON(STAMP_BUSY_LOST) && (mac_evt1() & MAC_EVT1_BUSY))
+        UC_STAMP(STAMP_BUSY_LOST, 2, mac_evt1());
+#endif
     uc_mac_cmd(0x41u << 0x13);
     while (n >= 1) {
         uc_mac_cmd(0x2000100u);

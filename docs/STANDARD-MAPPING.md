@@ -319,7 +319,7 @@ clustering_ctrl, listen_interval`) — это соответствует рас�
 
 ### Clustering Control в 4.1
 
-**Передача** — `tx_mgmt_build_step` @0x8ec8de **[код]**:
+**Передача** — `tx_mgmt_build_dmg_bcon_fixed` @0x8ec8de **[код]**:
 
     8ec8de ldb_s r0,[r14,0x17]        ; октет 0 BI Control в собираемом кадре
     8ec8e4 bbit0 r0,0x0,0x8ec8f6      ; CC Present == 0 -> пропустить
@@ -492,7 +492,7 @@ Operation AP.
 
 | что | блок |
 |---|---|
-| UPSIM в DMG Beacon, AW при спящих | `tx_mgmt_build_step` (C), `new/ps_upsim.cpp` |
+| UPSIM в DMG Beacon, AW при спящих | `tx_mgmt_build_dmg_bcon_fixed` (C), `new/ps_upsim.cpp` |
 | пересборка маяка при смене маски спящих | `conn_mgr__start_all_detector_services` (C) |
 | вход в doze без договора PSC | `ps__hold_awake_if_active` (C, ucode) |
 | взвод таймера простоя при включении | `ucode_cmd_0x33_handler` (C, ucode) |
@@ -527,7 +527,7 @@ Doze логический — радио не выключается; неглу
   пишет, только в `g_power_manager.m_pend_aw`; по назначению — `power_mngr__set_pend_aw`.
 * Синонимы имён (прежние авто-имена в выгрузках): 0x8e8960 `mgmt_tx__copy_addr_from_mid` =
   `mgmt_tx__push_bi_control`; 0x8e894c `mgmt_tx__copy_addr_from_conn` =
-  `mgmt_tx__push_clustering_control`; 0x8da1f0 `rx_mgmt_prs_step` =
+  `mgmt_tx__push_clustering_control`; 0x8da1f0 `rx_mgmt_parse_dmg_bcon_fixed` =
   `rx_mgmt_prs__parse_dmg_bcon_fixed`.
 * `l2_mgr__scan_start_log` @0x8f0134 — переходник к `scan_mngr__start_scan`;
   `l2mgr__mac_started_log` @0x8f141c — обёртка над `bcon_tx_build_step`.

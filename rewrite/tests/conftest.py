@@ -101,12 +101,18 @@ def pytest_runtest_makereport(item, call):
         try:
             open(os.path.join(d, node.name + '.dmesg.txt'), 'w').write(node.dmesg())
             open(os.path.join(d, node.name + '.fw_peri.bin'), 'wb').write(node.blob('fw_peri'))
+            open(os.path.join(d, node.name + '.uc_data.bin'), 'wb').write(node.blob('uc_data'))
         except Exception as e:                     # узел мог не ответить — журналы остальных всё равно сохранить
             open(os.path.join(d, node.name + '.error.txt'), 'w').write(repr(e))
     try:
         open(os.path.join(d, 'dut.fwlog.txt'), 'w').write('\n'.join(s.dut.fw_log(s.fw_path)))
     except Exception:
         pass
+    if s.role == 'ap' and s.peer_fw == s.fw:       # peer — станция на проверяемом образе: и её журнал fw
+        try:
+            open(os.path.join(d, 'peer.fwlog.txt'), 'w').write('\n'.join(s.peer.fw_log(s.fw_path)))
+        except Exception:
+            pass
 
 
 ORDER = ['test_image', 'test_boot', 'test_sta', 'test_ftm', 'test_sta_robust', 'test_ap']

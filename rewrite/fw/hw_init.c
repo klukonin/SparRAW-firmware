@@ -25,7 +25,7 @@ static void sdp_check_defined_mode(u32 mode)
 /* SDP::hwd_sdp_is_gpio_sdp (0x8f4378): порт — SDP (0x8f4354) и >= 5, иначе 0x1415. */
 static void sdp_check_gpio_sdp(u32 pin)
 {
-    SDP_hwd_sdp_is_defined_sdp(pin);
+    sdp_check_pin_index(pin);
     if (pin < 5) {
         fw_log_emit1(0, 0x101f400, pin);
         fw_sysassert_fatal(__builtin_return_address(0), 0x1415);
@@ -52,7 +52,7 @@ void gpio_set_pin_func_and_dump(u32 func, u32 pin)
 /* Взвести/сбросить бит "defined" SDP (0x8f43d4). */
 void sdp_set_defined_bit(u32 on, u32 bit)
 {
-    SDP_hwd_sdp_is_defined_sdp(bit);
+    sdp_check_pin_index(bit);
     u32 mask = 1u << bit;
     u32 v = MMIO32(HW_SDP_GPIO_ENABLE);
     MMIO32(HW_SDP_GPIO_ENABLE) = on == 0 ? (v & ~mask) : (v | mask);
@@ -60,7 +60,7 @@ void sdp_set_defined_bit(u32 on, u32 bit)
 
 
 /* Шаг персональности SDP-GPIO (0x8f1920). */
-u32 sdp_gpio_personality_step(u32 i)
+u32 sdp_port_personality_enabled(u32 i)
 {
     u32 r2 = sdp_port_cfg[i];
     u32 r0 = (r2 >> 13) & 3;
@@ -79,7 +79,7 @@ u32 sdp_gpio_personality_step(u32 i)
 }
 
 /* Проверить, что индекс SDP в диапазоне (0x8f4354). */
-u32 SDP_hwd_sdp_is_defined_sdp(u32 i)
+u32 sdp_check_pin_index(u32 i)
 {
     if (i >= 0x1c) {
         fw_log_emit1(0, 0x101f2ac, i);
@@ -91,14 +91,14 @@ u32 SDP_hwd_sdp_is_defined_sdp(u32 i)
 /* Импульс GPIO-пина 18 (0x880b60). */
 /* Бит 18 user-ICR — команда хоста в operational-ящике (vendor 0x8cd724): маска + задача
  * mbox__drain_operational; маску снимает vt[2] ящика после разбора. */
-void gpio_pulse_880b60_18(void)
+void operational_mbox_mask_irq_and_defer_drain(void)
 {
     MMIO32(HW_RGF_USER_USER_ICR_IMS) = 0x40000;
     u_schd_add(mbox_drain_operational, 0, 0, 1);
 }
 
 /* Импульс GPIO-пина 19 (0x880b60). */
-void gpio_pulse_880b60_19(void)
+void debug_mbox_mask_irq_and_defer_drain(void)
 {
     gpio19_pulse_count += 1;
     MMIO32(HW_RGF_USER_USER_ICR_IMS) = 0x80000;
@@ -108,7 +108,7 @@ void gpio_pulse_880b60_19(void)
 /* Прочитать strap-пин персональности. */
 u32 hw_personality_read_strap(u32 i)
 {
-    u32 pin = SDP_hwd_sdp_is_defined_sdp(i);
+    u32 pin = sdp_check_pin_index(i);
     u32 v = MMIO32(HW_SDP_GPIO_STRAP_IN);
     return ((1u << pin) & v) >> pin;
 }
@@ -125,11 +125,11 @@ void gpio_reset_config(void)
     MMIO32(HW_GPIO_CFG_5) = 0;
     MMIO32(HW_SDP_GPIO_ENABLE) = 0;
     MMIO32(HW_SDP_GPIO_CFG_B70) = 0;
-    gpio_write_ctrl_b84(1);   /* 0x880b84=1 — «взвести» GPIO-контроллер (иначе 0x880b88/90 виснет) */
+    sdp_gpio_write_ctrl(1);   /* 0x880b84=1 — «взвести» GPIO-контроллер (иначе 0x880b88/90 виснет) */
 }
 
 /* Запись GPIO-контрола в 0x880b84. */
-void gpio_write_ctrl_b84(u32 v)
+void sdp_gpio_write_ctrl(u32 v)
 {
     MMIO32(HW_SDP_GPIO_CTRL) = v;
 }
@@ -218,7 +218,7 @@ void cnt_handler_clear_all(void)
 }
 
 /* sdp_gpio__boot_init (0x8f8384): сброс GPIO → пустая задержка (lp 800 × 2 nop_s) →
- * определение персональности → SDP_sdp_init_2 для портов 0..8, включённых при этой
+ * определение персональности → sdp_port_init для портов 0..8, включённых при этой
  * персональности (0x8f1920). */
 static inline __attribute__((always_inline)) void sdp_nop_delay(u32 n)
 {
@@ -235,8 +235,8 @@ __attribute__((section(".textlate"))) void sdp_gpio_boot_init(void)
     hw_personality_detect();
 
     for (i = 0; i < 9; i++) {
-        if (sdp_gpio_personality_step(i) != 0)
-            SDP_sdp_init_2(i);
+        if (sdp_port_personality_enabled(i) != 0)
+            sdp_port_init(i);
     }
 }
 
@@ -244,7 +244,7 @@ __attribute__((section(".textlate"))) void sdp_gpio_boot_init(void)
  * сисассерт 0x1310. */
 static void sdp_check_int_ctrl_sdp(u32 pin)
 {
-    SDP_hwd_sdp_is_defined_sdp(pin);
+    sdp_check_pin_index(pin);
     if (pin < 0xa || pin >= 0x10) {
         fw_log_emit1(0, 0x101f350, pin);
         fw_sysassert_fatal(__builtin_return_address(0), 0x1310);
@@ -277,7 +277,7 @@ static void sdp_int_ack_unmask(u32 pin)
  * вместо 3, начальное значение 0 не выставлялось (vendor: bmsk.f + cmp.ne → 0 и 1 оба
  * проходят — так на SDP 0xf выставляется 0), задержка порта 4 после выхода и настройка
  * прерываний отсутствовали. */
-__attribute__((section(".textlate"))) void SDP_sdp_init_2(u32 i)
+__attribute__((section(".textlate"))) void sdp_port_init(u32 i)
 {
     volatile u32 *tbl = sdp_port_cfg;
     u32 r13 = tbl[i];
@@ -319,7 +319,7 @@ __attribute__((section(".textlate"))) void SDP_sdp_init_2(u32 i)
 void hwd_sdp_drive_value(u32 value, u32 pin)
 {
     fw_log_emit2(0x20, 0x101f2fc, value, pin);
-    SDP_hwd_sdp_is_defined_sdp(pin);
+    sdp_check_pin_index(pin);
     u32 m = 1u << pin;
     if (value == 1)
         MMIO32(HW_SDP_GPIO_OUT_SET) = m; /* GPIO set → HIGH (деассерт сброса RF) */
@@ -328,7 +328,7 @@ void hwd_sdp_drive_value(u32 value, u32 pin)
 }
 
 /* Порт SDP → реальный GPIO-пин (0x8e4abc). Проверка порта — 0x8e4b04. */
-void SDP_sdp_drive_value(u32 value, u32 port)
+void sdp_port_drive_value(u32 value, u32 port)
 {
     if (port >= 9) {
         fw_log_emit1(0, 0x1009004, port);
@@ -392,7 +392,7 @@ __attribute__((section(".textlate"))) void sdp_drive_pin_timed(u32 v)
         snap[1] = 0;
     }
 
-    SDP_sdp_drive_value(v, 4);              /* порт 4 = RF reset/power → пин 12 */
+    sdp_port_drive_value(v, 4);              /* порт 4 = RF reset/power → пин 12 */
     /* Пустая задержка vendor: lp_count = 0x13880; nop_s; lp, тело — 2 nop_s (0x8d6ef6..0x8d6f08). */
     arc_zol_nops2_mb(0x13880);
     if (v == 1) {

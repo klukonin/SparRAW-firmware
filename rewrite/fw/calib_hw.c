@@ -46,7 +46,7 @@ void hwd_abif_battery_config(u32 a, u32 b)
 }
 
 /* hwd_abif__get_88af00 (0x8ce5d8): инверсия бита 0 регистра 0x88af40. */
-u32 hwd_abif_get_88af00(void)
+u32 hwd_abif_analog_lpbk_active_get(void)
 {
     return (MMIO32(ABIF_CTRL_40) ^ 1u) & 1u;
 }
@@ -61,7 +61,7 @@ FWDATA(803934) __attribute__((aligned(1))) const u8 hwd_abif_uses_rgf_88af80_8ce
 /* hwd_abif__uses_rgf_88af80_8ce614 (0x8ce614): поле 0x88aff0[4:0]; допустимы 1/2/4/8/16
  * (таблица переходов 0x803934: смещение 5 → без ассерта), иначе ассерт 0x10ad.
  * Возвращает поле в любом случае. */
-u32 hwd_abif_uses_rgf_88af80_8ce614(void)
+u32 hwd_abif_lpbk_mode_get(void)
 {
     u32 v = MMIO32(ABIF_STAT_F0) & 0x1fu;
 
@@ -530,7 +530,7 @@ void hwd_abif_txrx_table_index_lpbk_mode(u32 a0, u32 a1)
 }
 
 /* rf__set_8894a0_field (0x8d0198): 0x8894a0[20:17] := v. */
-void rf_set_8894a0_field(u32 v)
+void rf_set_dvs_clk_cfg_level(u32 v)
 {
     if (v & ~0xfu)
         fw_sysassert_fatal(CALLER(), 0xac);
@@ -575,7 +575,7 @@ void abif_set_3bit_all_chains(u32 v)
 }
 
 /* hwd_mac__uses_rgf_886200 (0x8d0fb4): бит 11 регистра 0x886200 = v (0/1). */
-void hwd_mac_uses_rgf_886200(u32 v)
+void hwd_mac_prs_ctrl_calib_mode(u32 v)
 {
     if (v & ~1u)
         fw_sysassert_fatal((void *)0, 0xac);
@@ -727,7 +727,7 @@ void hwd_phy_read_sar_sample(u32 idx, u32 *out)
 
 /* hwd_phy__uses_rgf_883100 (0x8d2568): упаковать 4 индекса AGC (base + d1..d4, каждый
  * ограничен сверху [0x883138] & 0x3f) в поля по 6 бит. */
-u32 hwd_phy_uses_rgf_883100(u32 base, u32 d1, u32 d2, u32 d3, u32 d4)
+u32 hwd_phy_pack_agc_gain_arr(u32 base, u32 d1, u32 d2, u32 d3, u32 d4)
 {
     u32 max = MMIO32(PHY_RX_AGC_MAX_INDEX) & 0x3fu;
     u32 v1 = d1 + base, v2 = d2 + base, v3 = d3 + base, v4 = base + d4;
@@ -777,7 +777,7 @@ u32 phy_get_ina_rssi_adc_db(void)
 }
 
 /* hwd_phy__get_883180 (0x8d26bc): 1, если ([0x8831c0] & 0x3f) == 0x21. */
-u32 hwd_phy_get_883180(void)
+u32 hwd_phy_rx_agc_steps_disabled(void)
 {
     return ((MMIO32(PHY_RX_AGC_STEPS_A) & 0x3fu) == 0x21u) ? 1u : 0u;
 }
@@ -960,7 +960,7 @@ void hwd_phy_tx_predist_atten_man_config(u32 en, u32 a1, u32 a2)
 
 /* hwd_phy__get_884100 (0x8d2ea0): out[0] = бит 0 0x884130, out[1..2] = байты 0/1 0x884134
  * (одно чтение). */
-void hwd_phy_get_884100(u8 *out)
+void hwd_phy_tx_predist_atten_man_get(u8 *out)
 {
     u32 v;
 
@@ -1000,7 +1000,7 @@ void hwd_phy_tx_self_transmit(u32 n, u32 a1, u32 a2, u32 a3)
  * ХРУПКО: у vendor оба опроса без предела. На стенде (2026-10-18) после
  * IF_GAIN::GAIN sub 2 — self_transmit(0xffff) (бесконечно) и сразу self_transmit(1) — счётчик
  * иногда не обнуляется: fw висел здесь (DBG_TIMER0_PC в этой функции, стек
- * calib_silent_rssi → if_gain → IF_GAIN_GAIN), скан не завершался, ассоциации нет —
+ * calib_silent_rssi → if_gain → if_gain_adjust), скан не завершался, ассоциации нет —
  * 3 прогона из 23 (vendor 0 из 16; код идентичен, вероятно иная длительность между стартами).
  * Поэтому предел: SELFTX_POLL_MAX опросов (~20 мс, на порядки дольше штатного завершения), по
  * таймауту — счётчик в DBG_SELFTX_TO и выход; передачу гасит штатный выход калибровки
@@ -1051,7 +1051,7 @@ void hwd_phy_tx_singen_config(s32 f0, s32 f1, u32 amp)
 }
 
 /* hwd_phy__tx_ctrl_884070 (0x8d30f4). */
-void hwd_phy_tx_ctrl_884070(u32 v)
+void hwd_phy_tx_ctrl_set(u32 v)
 {
     MMIO32(PHY_TX_CTRL_884070) = v;
 }
@@ -1063,7 +1063,7 @@ void hwd_phy_tx_singen_transmit(u32 v)
 }
 
 /* rfc__read_field_484 (0x8d32b0): три RGF-регистра RF-модуля rf (484/488/492) в out[0..2]. */
-void rfc_read_field_484(u32 rf, u32 *out)
+void rfc_read_lo_power_fields(u32 rf, u32 *out)
 {
     rf = (u8)rf;
     out[0] = hwd_rfc_read_rgf(rf, 484);
@@ -1083,9 +1083,9 @@ void rfc_pack_field_value(u32 unused, const u32 *src, u32 *dst, u32 a, u32 b, u3
 }
 
 /* hwd__args_to_regs_default (0x8d3380): hwd__args_to_regs(a, 0, 0, 1). */
-void hwd_args_to_regs_default(u32 a)
+void hwd_rfc_apply_gain_tables_for_mask(u32 a)
 {
-    hwd_args_to_regs(a, 0, 0, 1);
+    hwd_rfc_write_core_fw_mask(a, 0, 0, 1);
 }
 
 /* rf_sector_commit_rx (0x8d37dc): RX-сектор b (≤ 0x7f) RF-модулю a (core-fw команда 2). */
@@ -1104,9 +1104,9 @@ void rf_sector_commit_tx(u32 a, u32 b)
     hwd_rfc_write_core_fw(a, 3, b, 0);
 }
 
-/* ut_hw_drivers_cmd_0x508 (0x8d4104): core-fw команда 0xa: биты 0..6 = idx (≤ 0x7f),
+/* ut_hw_drivers_cmd_tx_sector_gain_index (0x8d4104): core-fw команда 0xa: биты 0..6 = idx (≤ 0x7f),
  * биты 7..10 = v (< 0x10). */
-void ut_hw_drivers_cmd_0x508(u32 rf, u32 idx, u32 v)
+void ut_hw_drivers_cmd_tx_sector_gain_index(u32 rf, u32 idx, u32 v)
 {
     if ((s32)idx > 0x7f)
         fw_sysassert_fatal((void *)0, 0x1556);
@@ -1130,12 +1130,12 @@ void hwd_program_rf_regs_seq(u32 rf, u32 idx, u32 sel, u32 v0, u32 v1, u32 v2, u
     rfc_field_write(rf, ((b + 0xa0) >> 3) & ~3u, v4, 0);
     rfc_field_write(rf, ((b + 0x80) >> 3) & ~3u, v5, 0);
     if (v6 < 0x10)
-        ut_hw_drivers_cmd_0x508(rf, (u8)idx, v6);
+        ut_hw_drivers_cmd_tx_sector_gain_index(rf, (u8)idx, v6);
 }
 
-/* ut_hw_modes_step (0x8d7358): вкл/выкл аналоговую петлю TX→RX: индексы таблиц петли,
+/* ut_hw_modes_set_analog_loopback (0x8d7358): вкл/выкл аналоговую петлю TX→RX: индексы таблиц петли,
  * 0x88af40, переключатели, 0x88ae6c биты 11..13, 0x88aeb0 биты 7..8, CAF-петля. */
-void ut_hw_modes_step(u32 on, u32 tx_idx, u32 rx_idx)
+void ut_hw_modes_set_analog_loopback(u32 on, u32 tx_idx, u32 rx_idx)
 {
     hwd_abif_txrx_table_index_lpbk_mode(tx_idx, rx_idx);
     if (on != 0) {
@@ -1185,14 +1185,14 @@ void hw_modes_set_loopback(u32 on, u32 b)
 }
 
 /* rfc__write_gain_idx_reg504 (0x8e62dc): RF-регистр 0x504 модуля *p = (a << 4) | b (с проверкой, 6). */
-void rfc_write_gain_idx_reg504(const struct rf_obj *p, u32 a, u32 b)
+void rfc_write_gain_index(const struct rf_obj *p, u32 a, u32 b)
 {
     hwd_rfc_write_verify(p->rf_idx, 0x504, (a << 4) | b, 6);
 }
 
-/* txrx_sel (0x8ea5f0): RF нет — журнал; dir 0 — TX-сектор, 1 — RX-сектор (байты rf/сектор
+/* rf_sector_commit_by_dir (0x8ea5f0): RF нет — журнал; dir 0 — TX-сектор, 1 — RX-сектор (байты rf/сектор
  * беззнаковые, extb: сектор ≥ 0x80 даёт ассерт в commit). obj не используется (rf__is_present). */
-void txrx_sel(struct rf_obj *obj, u32 rf, u32 dir, u32 sector)
+void rf_sector_commit_by_dir(struct rf_obj *obj, u32 rf, u32 dir, u32 sector)
 {
     (void)obj;
     if (rf_is_present() == 0) {

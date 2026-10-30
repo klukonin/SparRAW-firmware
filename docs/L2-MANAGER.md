@@ -155,7 +155,7 @@ traffic deferral/resume.
 `basic_sm__handle_event__r1_5_r2_0` 0x8c1d98 / 4.1 `tail_basic_sm__inject_event` 0x8c1b38, `basic_sm__handle_event__r1_4_r2_0`
 0x8de384, `basic_sm__handle_event__r1_2_r3_0` 0x8dffe4, `conn__sm_handle_event`
 0x8d9cc0, `sm_obj__reset_evt5` 0x8e1354, `conn__inject_evt3` 0x8dc4cc / 4.1 0x8d8ea0,
-`conn__inject_evt4` 0x8cb69c / 4.1 0x8c9688, `wmi__host_cmd_at_124` 0x8de364, `new_link_evt`
+`conn__inject_evt4` 0x8cb69c / 4.1 0x8c9688, `wmi__host_cmd_at_124` 0x8de364, `radio_mgr_get_cur_mid`
 0x8cc158, `queue_deleted_evt` 0x8dc4a4, `psc_if__post_req_sm_event` 0x8e1af8.
 
 ## 10. Ошибка печати «I'm ROOT» **[код]**

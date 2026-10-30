@@ -116,7 +116,7 @@ __attribute__((section(".textlate"))) struct conn *mid_list_find_by(struct mid *
 }
 
 /* find_main_sm__bcon_step (0x8f8574, 96 Б): dband-инфо списка list с BSSID key или 0. */
-__attribute__((section(".textlate"))) struct dband_info *find_main_sm_bcon_step(const struct llist *list,
+__attribute__((section(".textlate"))) struct dband_info *dband_info_find_by_bssid(const struct llist *list,
                                                                               const u8 *key)
 {
     u32 it;
@@ -219,7 +219,7 @@ __attribute__((section(".textlate"))) void scan_mngr_send_prob_req(struct scan_m
 
 /* tx_bcon__inject_evt4 (0x8dffb8, 42 Б): бикон e — событие 4 автомату lm_sm и событие 1
  * его maintain_sm. */
-__attribute__((section(".textlate"))) void tx_bcon_inject_evt4(struct lm_sm *l, u32 e)
+__attribute__((section(".textlate"))) void lm_sm_inject_bf_results(struct lm_sm *l, u32 e)
 {
     lm_sm_event(l, 4, e, 0, 0);
     maintain_sm_event(&l->msm, 1, e, 0, 0);
@@ -228,14 +228,14 @@ __attribute__((section(".textlate"))) void tx_bcon_inject_evt4(struct lm_sm *l, 
 /* conn__snapshot_step (0x8c28d0, 50 Б): копия dband-инфо e (0x44 Б) в снимок lm_if, время
  * снимка, событие биконов автомату lm_sm (если есть). На FPGA — ничего. Подменяет
  * weak-заглушку lmac_evt.c. */
-__attribute__((section(".textlate"))) void conn_snapshot_step(struct lm_if *lm, const void *e)
+__attribute__((section(".textlate"))) void conn_store_bf_snap(struct lm_if *lm, const void *e)
 {
     if (platform_is_fpga() != 0)
         return;
     memcpy_fw(&lm->snap, e, 0x44);
     lm->snap_time = u_schd_now();
     if (lm->lm_sm != 0)
-        tx_bcon_inject_evt4(lm->lm_sm, (u32)e);   /* аргумент события автомата — u32 */
+        lm_sm_inject_bf_results(lm->lm_sm, (u32)e);   /* аргумент события автомата — u32 */
 }
 
 /* conn_mgr__find_reusable_cid (0x8c656c, 140 Б): нет свободной записи соединения —
@@ -255,7 +255,7 @@ __attribute__((section(".textlate"))) u32 conn_mgr_find_reusable_cid(void)
             fw_log_emit2(0x2b, 0x100bd68, conn->cid, el->conn->msm.sm.state);
             tx_list_remove(&conn_mgr.rank_list, el);
             el->conn = 0;
-            stream_mgr_check_vring(&conn_mgr.rank_pool, el);
+            mem_pool_free_checked(&conn_mgr.rank_pool, el);
             conn_mgr_link_down_evt(conn);
             return 1;
         }
@@ -282,12 +282,12 @@ __attribute__((section(".textlate"))) struct conn *conn_mgr_alloc_cid(void)
 /* mid__link_acquis_step (0x8e6558, 62 Б): RX-сектор связи conn из лучшего ответа на пробу
  * (peer_info_array scan_mngr записи mid по текущему каналу): rx_sector = сектор, bcon_time —
  * время бикона; нет ответа — rx_sector = 0xffff и сектор 0. */
-__attribute__((section(".textlate"))) void mid_link_acquis_step(struct conn *conn)
+__attribute__((section(".textlate"))) void mid_link_set_rx_sector_from_scan(struct conn *conn)
 {
     u32 ch, s = 0;
     struct scan_peer *peer;
     radio_mgr_get_current_channel(&ch);
-    peer = l2_mgr_connect_next(conn->mid->disc.scan, conn->peer, ch);
+    peer = scan_peer_find_by_bssid(conn->mid->disc.scan, conn->peer, ch);
     if (peer == 0) {
         conn->rx_sector = 0xffff;
     } else {
@@ -303,7 +303,7 @@ __attribute__((section(".textlate"))) void mid_link_acquis_step(struct conn *con
  * (сектор a7 ≠ 0xffff, шаг a6, [+0x24] = a3, [+0x2c] = a5) и find_sm__start_listen;
  * нет — новое (conn_mgr__alloc_cid, connection__init, снимок dband-инфо e, в список
  * mid+0x18, cid в битовую карту [mid+0x24]). *out — запись соединения. */
-__attribute__((section(".textlate"))) u32 find_main_sm_bcon_lookup(struct mid *mid, const void *key, const void *e,
+__attribute__((section(".textlate"))) u32 mid_link_acquire_peer(struct mid *mid, const void *key, const void *e,
                                                                    u32 a3,
                                                                    struct conn **out,
                                                                    u32 a5, u32 a6, u32 a7)
@@ -322,7 +322,7 @@ __attribute__((section(".textlate"))) u32 find_main_sm_bcon_lookup(struct mid *m
         if ((a7 & 0xffffu) != 0xffffu)
             (*out)->rx_sector = (u16)a7;
         if (a6 != 0)
-            mid_link_acquis_step(*out);
+            mid_link_set_rx_sector_from_scan(*out);
         (*out)->initiator = a3;
         (*out)->skip_bf = a5;
         conn_disc_detail_take((*out)->cid);             /* НЕ vendor: новый поиск — прежнее уточнение снять */
@@ -338,16 +338,16 @@ __attribute__((section(".textlate"))) u32 find_main_sm_bcon_lookup(struct mid *m
     }
     connection_init(conn, key, mid);
     if (e != 0) {
-        conn_snapshot_step(&(*out)->lm, e);
+        conn_store_bf_snap(&(*out)->lm, e);
         (*out)->rx_sector = ((const struct conn_bf_snap *)e)->rx_sector;   /* e — снимок BF (0x44 Б) */
     }
     if ((a7 & 0xffffu) != 0xffffu)
         (*out)->rx_sector = (u16)a7;
     if (a6 != 0)
-        mid_link_acquis_step(*out);
+        mid_link_set_rx_sector_from_scan(*out);
     (*out)->initiator = a3;
     (*out)->skip_bf = a5;
-    list_find_entry_d((u32 *)&mid->conns, (u32 *)*out);
+    llist_append((u32 *)&mid->conns, (u32 *)*out);
     fw_log_emit2(0x2b, 0x100cb74, ((const union mac_addr *)key)->h[2], mac_lo32((const union mac_addr *)key));
     cid = conn_mgr_activate_conn(*out, 1);
     mid->cid_mask |= (u8)(1u << cid);
@@ -360,7 +360,7 @@ __attribute__((section(".textlate"))) struct conn *mid_link_acquisition(struct m
                                                                u32 a4)
 {
     struct conn *conn = 0;
-    if (find_main_sm_bcon_lookup(mid, key, e, 0, &conn, a3, 0, a4) == 0)
+    if (mid_link_acquire_peer(mid, key, e, 0, &conn, a3, 0, a4) == 0)
         return 0;
     return conn;
 }
@@ -421,13 +421,13 @@ __attribute__((section(".textlate"))) u32 scan_mngr_dband_beacon_ind(struct scan
     u8 ssid[0x20];
     const union mac_addr *bssid = &pkt->hdr->addr1;
     u32 r23 = *pkt->ei->bi_ctrl >> 1;
-    if (a2 != 0 && find_main_sm_bcon_step(&scan->scanned, bssid->b) != 0)
+    if (a2 != 0 && dband_info_find_by_bssid(&scan->scanned, bssid->b) != 0)
         return 0;
     if (scan->cs->hdr.state != CS_ST_DWELLING)
         return 0;
     if (scan->dwell_stopped == 1)
         return 0;
-    field_set_0x00_8e5dfc(&it, mids_get_count());
+    bit_iter_init(&it, mids_get_count());
     struct mid *m = 0;
     u32 own = 0;
     while (bit_iter_has_more(&it)) {
@@ -447,9 +447,9 @@ __attribute__((section(".textlate"))) u32 scan_mngr_dband_beacon_ind(struct scan
         fw_log_emit2(0x19, 0x1015848, mac_lo32(bssid), bssid->h[2]);
         return 0;
     }
-    if (find_main_sm_bcon_step(&scan->pend, bssid->b) != 0)
+    if (dband_info_find_by_bssid(&scan->pend, bssid->b) != 0)
         return 0;
-    if (find_main_sm_bcon_step(&scan->scanned, bssid->b) != 0)
+    if (dband_info_find_by_bssid(&scan->scanned, bssid->b) != 0)
         return 0;
     if (scan->pend.count >= 8) {
         fw_log_emit0(0x19, 0x10158b0);
@@ -479,10 +479,10 @@ __attribute__((section(".textlate"))) u32 scan_mngr_dband_beacon_ind(struct scan
         memcpy_fw(e->ssid, ssid, (u8)len);
     if (a2 != 0) {
         fw_log_emit2(0x29, 0x101594c, e->bssid_hi, e->bssid_lo);
-        list_find_entry_d(&scan->scanned, e);
+        llist_append(&scan->scanned, e);
         return 0;
     }
-    list_find_entry_d(&scan->pend, e);
+    llist_append(&scan->pend, e);
     scan_stats.bss_added += 1;
     fw_log_emit3(0x29, 0x10159bc, e->bssid_hi, e->bssid_lo, r23 & 1);
     fw_log_emit1(0x29, 0x1015a1c, (u32)e->list);

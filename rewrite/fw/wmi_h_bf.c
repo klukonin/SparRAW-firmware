@@ -55,7 +55,7 @@ static inline u32 ld32h(const u8 *p)
 
 /* Поле [lo .. lo+n-1] слова *p = v (bits__set32_* → bf__set_field_word_fw 0x8edcb8:
  * r10 = lo, r11 = n - 1). */
-static void bf_set32(u32 *p, u32 lo, u32 n, u32 v)
+static void bf_set32_lo_hi(u32 *p, u32 lo, u32 n, u32 v)
 {
     u32 m = ((1u << n) - 1u) << lo;
     *p = (*p & ~m) | ((v << lo) & m);
@@ -98,7 +98,7 @@ void host_if_bf_ctrl_hal(struct wmi_mbox *mb, const void *cmd, u32 mid)
 /* lmac_if__send_sta_cfg_05_b (0x8dc380, 68 Б): LMAC 0x05 (0x28 Б) из пула 0x804280:
  * op = 2, cid = a0, tx_sector = a1, tx_rf = a2, rx_sector = a3, rx_rf = a4, omni_sector = 0xffff.
  * Прочие байты vendor не пишет (у vendor — остаток слота пула, у нас нули (mem_pool_alloc_locked обнуляет)). */
-static void bf_lmac_send_sta_cfg_05(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4)
+static void bf_lmac_send_sta_cfg(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4)
 {
     struct lmac_cmd_sta_cfg *b = mem_pool_alloc_locked(&lmac_mbox.mb);
     b->op = 2;
@@ -131,7 +131,7 @@ void host_if_set_sectors_hal(struct wmi_mbox *mb, const struct wmi_set_sectors_c
     }
     w4 = cmd->sector_rf[0];
     w8 = cmd->sector_rf[1];
-    bf_lmac_send_sta_cfg_05(cmd->cid, (w4 >> 4) & 0x7fffu, w4 & 0xfu,
+    bf_lmac_send_sta_cfg(cmd->cid, (w4 >> 4) & 0x7fffu, w4 & 0xfu,
                             (w8 >> 4) & 0x7fffu, w8 & 0xfu);
 }
 
@@ -167,9 +167,9 @@ void wmi_trigger_beamforming(const struct wmi_bf_trig_cmd *cmd, u32 mid)
 
 /* ======================= 0x921 / 0x922: RS ======================= */
 
-/* lmac_if_send_cmd_0x13 (0x8dbbb4, 48 Б): LMAC 0x13 (0x28 Б) {cid, a1, 0x26 Б из src}.
+/* lmac_if_send_rs_cfg (0x8dbbb4, 48 Б): LMAC 0x13 (0x28 Б) {cid, a1, 0x26 Б из src}.
  * Копия static из link_sm.c (там static). */
-static void bf_lmac_send_cmd_0x13(u32 cid, u32 a1, const u8 *src)
+static void bf_lmac_send_rs_cfg(u32 cid, u32 a1, const u8 *src)
 {
     struct lmac_cmd_rs_cfg *b = lmac_cmd_pool_alloc();
     b->cid = (u8)cid;
@@ -232,7 +232,7 @@ void wmi_rs_cfg(struct wmi_mbox *mb, const struct wmi_rs_cfg_cmd *cmd, u32 mid)
     fw_log_emit1(0x25, 0x100622c, cmd->cid);
     fw_log_emit1(0x25, 0x10066f4, cmd->rs_enable);
     if (rs_cfg_validate(cmd) == 1 && conn_mgr_by_cid(cmd->cid) != 0) {
-        bf_lmac_send_cmd_0x13(cmd->cid, cmd->rs_enable, (const u8 *)&cmd->rs_cfg);
+        bf_lmac_send_rs_cfg(cmd->cid, cmd->rs_enable, (const u8 *)&cmd->rs_cfg);
         st = 0;
     }
     p = mem_pool_alloc_locked(&mb->mb);
@@ -305,7 +305,7 @@ static u32 ant_limit_validate(const struct wmi_brp_set_ant_limit_cmd *b, u32 mid
 }
 
 /* wmi_brp__alloc_and_store (0x8db598, 36 Б): LMAC 0x32 (3 Б) {cid, режим, лимит}. */
-static void wmi_brp_alloc_and_store(u32 a, u32 b, u32 c)
+static void wmi_brp_send_ant_limit(u32 a, u32 b, u32 c)
 {
     struct lmac_cmd_sta_byte2 *p = lmac_cmd_pool_alloc();
     p->cid = (u8)a;
@@ -321,7 +321,7 @@ void wmi_brp_set_ant_limit(struct wmi_mbox *mb, const struct wmi_brp_set_ant_lim
     u32 st = 1;
     struct wmi_status_event *p;
     if (ant_limit_validate(cmd, mid) == 1) {
-        wmi_brp_alloc_and_store(cmd->cid, cmd->limit_mode, cmd->ant_limit);
+        wmi_brp_send_ant_limit(cmd->cid, cmd->limit_mode, cmd->ant_limit);
         st = 0;
     }
     p = mem_pool_alloc_locked(&mb->mb);
@@ -354,7 +354,7 @@ static u32 rf_sector_params_check(const struct wmi_get_rf_sector_params_cmd *b, 
         fw_log_emit2(0x25, tok[2], b->sector_idx, 0x40);
         ok = 0;
     }
-    mask = rf_cfg_get_rf_mask_45e(&rf_obj);
+    mask = rf_obj_get_rf_mask(&rf_obj);
     if ((b->rf_modules_vec & mask) == 0) {
         fw_log_emit2(0x25, tok[3], b->rf_modules_vec, mask);
         ok = 0;
@@ -433,7 +433,7 @@ static void get_rf_sector_params_radio_locked(struct wmi_rf_sector_get_req *self
 
     memset0_words(p, sizeof(*p));
     old_out = &old;
-    field_set_0x00_8e5dfc(&it, self->req.rf_modules_vec & rf_cfg_get_rf_mask_45e(&rf_obj));
+    bit_iter_init(&it, self->req.rf_modules_vec & rf_obj_get_rf_mask(&rf_obj));
     while (bit_iter_has_more(&it)) {
         rf = bitmap_alloc_bit(&it);
         if (rf >= 8)
@@ -460,7 +460,7 @@ static void get_rf_sector_params_radio_cb(struct rm_req *req, u32 arg)
 {
     struct wmi_rf_sector_get_req *self = (struct wmi_rf_sector_get_req *)arg;
     get_rf_sector_params_radio_locked(self);
-    radio_mgr_call_method_10(req);
+    radio_mgr_lock_free(req);
     self->radio = 0;
 }
 
@@ -519,7 +519,7 @@ static void set_rf_sector_params_apply(struct wmi_rf_sector_set_req *self)
 
     memset0_words(p, 1);
     old_out = &old;
-    field_set_0x00_8e5dfc(&it, self->req.rf_modules_vec & rf_cfg_get_rf_mask_45e(&rf_obj));
+    bit_iter_init(&it, self->req.rf_modules_vec & rf_obj_get_rf_mask(&rf_obj));
     while (bit_iter_has_more(&it)) {
         rf = bitmap_alloc_bit(&it);
         if (rf >= 8)
@@ -543,7 +543,7 @@ static void set_rf_sector_params_radio_cb(struct rm_req *req, u32 arg)
 {
     struct wmi_rf_sector_set_req *self = (struct wmi_rf_sector_set_req *)arg;
     set_rf_sector_params_apply(self);
-    radio_mgr_call_method_10(req);
+    radio_mgr_lock_free(req);
     self->radio = 0;
 }
 
@@ -672,7 +672,7 @@ void wmi_set_rf_sector_on(const void *cmd, struct wmi_mbox *mb)
 {
     struct wmi_status_event *p;
     (void)cmd;
-    (void)rf_cfg_get_rf_mask_45e(&rf_obj);
+    (void)rf_obj_get_rf_mask(&rf_obj);
     fw_log_emit0(5, 0x1007c18);
     fw_log_emit1(0, 0x1007cb0, 3);
     p = mem_pool_alloc_locked(&mb->mb);
@@ -853,7 +853,7 @@ void wmi_bf_control(const u8 *body, struct wmi_mbox *mb)
  * периодический запуск, фрагментов = число RF, пауза 1. Маска движка — слово с полем
  * 20..31 = r1 = 0 (calib__bits_set32_s20_w12 с r1 = 0 после st_s r1,[sp,0]), т. е. 0 —
  * так у vendor (0x8e7012..0x8e701a). */
-static void calib_start_scheme4(struct calib_silent_rssi *o, u32 table)
+static void calib_start_silent_rssi(struct calib_silent_rssi *o, u32 table)
 {
     /* volatile: порядок записей calib_count / tbl_rewrite — как у vendor (0x8e7010..0x8e701a). */
     volatile struct calib_silent_rssi *obj = o;
@@ -862,7 +862,7 @@ static void calib_start_scheme4(struct calib_silent_rssi *o, u32 table)
         calib_silent_rssi_tbl = (u8 *)&calib_srssi_temp_tbl[0];
     else if (table == 1)
         calib_silent_rssi_tbl = (u8 *)&calib_srssi_temp_tbl[1];   /* таблица высокой мощности */
-    m = rf_cfg_get_rf_mask_45e(&rf_obj);
+    m = rf_obj_get_rf_mask(&rf_obj);
     n = 0;
     while (m != 0) {
         m &= m - 1;
@@ -871,7 +871,7 @@ static void calib_start_scheme4(struct calib_silent_rssi *o, u32 table)
     obj->calib_count = 0;
     w = 0;
     obj->tbl_rewrite = (u8)n;
-    calib_bits_set32_s20_w12(&w, 0);
+    calib_mask_set_mode(&w, 0);
     calib_mngr_engine_start(CALIB_ENG_SILENT_RSSI, w, 1, obj->tbl_rewrite, 1, 0, 0, 0);
 }
 
@@ -880,12 +880,12 @@ static void calib_start_scheme4(struct calib_silent_rssi *o, u32 table)
  * Ответ 0x185c (8 Б): [0] = статус (u32), [4] = таблица — пишутся оба слова целиком. */
 void wmi_set_active_silent_rssi_table(struct wmi_mbox *mb, u32 value, u32 mid)
 {
-    struct calib_silent_rssi *o = calib_obj4_reset_d4();
+    struct calib_silent_rssi *o = calib_silent_rssi_reset();
     struct wmi_set_silent_rssi_table_done_event *p = mem_pool_alloc_locked(&mb->mb);
     u32 st = 1;
     p->table = value;
     if (value == 0 || value == 1) {
-        calib_start_scheme4(o, value);
+        calib_start_silent_rssi(o, value);
         st = 0;
     }
     p->status = st;
@@ -896,7 +896,7 @@ void wmi_set_active_silent_rssi_table(struct wmi_mbox *mb, u32 value, u32 mid)
  * 0x800d04 кусками (3, 0x10, 3, 0x20, 3, 0x10, 3, 0x20, 3, 4). Последний кусок: приёмник
  * +0x73, источник +0x74 (add_s r0,0x73 / add2 r1,r14,0x1d) — у приёмника поле после
  * 3-байтового упаковано; так у vendor. */
-static void rf_cfg_load_800d04(const struct wmi_set_high_power_table_params_cmd *b)
+static void rf_cfg_load_high_power_table(const struct wmi_set_high_power_table_params_cmd *b)
 {
     u8 *d = (u8 *)&calib_srssi_temp_tbl[1];
     memcpy_fw(d, b->tx_dtype_temp, 3);
@@ -920,7 +920,7 @@ void wmi_set_high_power_table_params(const struct wmi_set_high_power_table_param
     (void)mid;
     p = mem_pool_alloc_locked(&mb->mb);
     memset0_words(p, sizeof(*p));
-    rf_cfg_load_800d04(cmd);
+    rf_cfg_load_high_power_table(cmd);
     p->status = 0;
     wmi_evt_post(mb, p, 0, 0x185e, sizeof(*p), 0, 0, 0);
 }
@@ -977,12 +977,12 @@ static void sched_build_alloc_entry(u32 start, u32 nib, const volatile struct wm
 {
     union { u32 w[4]; u16 h[8]; u8 b[16]; } t;     /* vendor: sp, 16 Б; 15 из шаблона */
     memcpy_fw(t.b, &sched_scheme.alloc_tpl, 0xf);
-    bf_set32(&t.w[0], 0, 4, nib & 0xfu);           /* bits__set32_s0_w4 (0x8ed370) */
+    bf_set32_lo_hi(&t.w[0], 0, 4, nib & 0xfu);           /* bits__set32_s0_w4 (0x8ed370) */
     /* Allocation Type (B4..B6, 9.4.2.131): SP (0) из команды; прочее — CBAP (1). Vendor тип не
      * переносил — в маяке оставался тип шаблона (CBAP, mid__init_sched_scheme), и любая
      * аллокация, в том числе SP, объявлялась как CBAP (стенд 2026-10-23: таблица станции
      * ctrl 0x91 на SP 0→1 точки). Свою таблицу точка строит с типом из команды. */
-    bf_set32(&t.w[0], 4, 3, e->type == 0 ? 0u : 1u);
+    bf_set32_lo_hi(&t.w[0], 4, 3, e->type == 0 ? 0u : 1u);
     t.b[4] = e->src_aid;
     t.h[3] = (u16)start;                           /* [6] */
     t.b[5] = e->dest_aid;
@@ -1001,8 +1001,8 @@ static void sched_build_allocation_entry(volatile struct sched_scheme *ssb, u32 
     union { u32 w[3]; u16 h[6]; u8 b[12]; } t;
     u32 own, src;
     memset0_words(t.b, 0xc);
-    bf_set32(&t.w[0], 0, 4, nib & 0xfu);           /* 0x8ed370 */
-    bf_set32(&t.w[0], 4, 2, e->type & 3u);         /* bits__set32_s4_w2 (0x8ed4fc) */
+    bf_set32_lo_hi(&t.w[0], 0, 4, nib & 0xfu);           /* 0x8ed370 */
+    bf_set32_lo_hi(&t.w[0], 4, 2, e->type & 3u);         /* bits__set32_s4_w2 (0x8ed4fc) */
     t.w[0] &= ~(1u << 6);
     own = ssb->mid->aid;
     src = e->src_aid;                              /* vendor: одно ldb на сравнения и аргумент */
@@ -1074,7 +1074,7 @@ static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi
         mid_apply_app_ies(ssb->mid, 0, (u16)(n * 15u + 2), tx);
         add_bcon(ssb->mid);
     }
-    schedule_scheme_sum_two(ssb_);
+    schedule_scheme_start_at_next_bi(ssb_);
     return 0;
 }
 
@@ -1189,11 +1189,11 @@ static void sched_init_default_alloc_table(void)
 
 /* ie__scan_buf_10 (0x8e27bc, 76 Б): MACQ-дескриптор типа 2 очереди [e+0xa]: прочитать
  * (16 Б), поле 4..7 слова 0 = 0 (bits__set32_s4_w4 0x8ed520), записать обратно. */
-static void ie_scan_buf_10(const struct vring_tbl_entry *e)
+static void macq_desc_type2_clear_bits4_7(const struct vring_tbl_entry *e)
 {
     u32 d[4];                                      /* заполняется чтением целиком (4 слова) */
     macq_desc_read_typed(d, e->macq, 2, 0, 1, 1, 4);
-    bf_set32(&d[0], 4, 4, 0);
+    bf_set32_lo_hi(&d[0], 4, 4, 0);
     macq_desc_write(d, e->macq, 2, 0, 0, 0, 1, 1);
 }
 
@@ -1209,14 +1209,14 @@ static void fixed_sched_start(struct wmi_mbox *mb)
     struct wmi_status_event *p;
 
     rf_chain_sector_desc_f4 = 0;                               /* stb [gp,177] */
-    for (i = 0; i < fixed_sched_get_entry_count(); i++)
-        ie_scan_buf_10(vring_tbl_entry_addr(i));
+    for (i = 0; i < txq_get_count(); i++)
+        macq_desc_type2_clear_bits4_7(vring_tbl_entry_addr(i));
     if (FSCHED.virtual_slot_us == 0)
         sched_init_default_alloc_table();
     FSCHED.enabled = 1;
     fwsh_sets.fsched_tbl = &fixed_sched;
     sched_fixed_active = 1;
-    if (mid_state_is_2_or_3(0) != 0) {
+    if (mid_is_pcp_or_ap(0) != 0) {
         tdma_ap_update(mid_list_by_mid_fw(0), 0);  /* SparRAW: снять TDMA точки (fw/tdma.c) */
         add_bcon(mid_list_by_mid_fw(0));
     }
@@ -1231,7 +1231,7 @@ static void fixed_sched_start(struct wmi_mbox *mb)
 
 /* hwd_dma__get_8812d8 (0x8d08a4, 28 Б): бит 4 регистра 0x8812d8; если он установлен —
  * *out = биты 16..20. */
-static u32 hwd_dma_get_8812d8(u32 *out)
+static u32 hwd_dma_get_active_desc_queue(u32 *out)
 {
     u32 v = MMIO32(HW_DMA_DESCQ0_12D8);
     if (v & (1u << 4))
@@ -1263,7 +1263,7 @@ static void wmi_fixed_sched_apply(u32 id, u32 obj)
 {
     u32 out;                                       /* vendor: sp, не читается */
     (void)id;
-    if (hwd_dma_get_8812d8(&out) != 0)
+    if (hwd_dma_get_active_desc_queue(&out) != 0)
         fw_sysassert_fatal(caller(), 0x158b);
     vring_set_pair_mode(1);
     fixed_sched_start((struct wmi_mbox *)obj);
@@ -1282,7 +1282,7 @@ void wmi_enable_fixed_scheduling(struct wmi_mbox *mb, const void *cmd, u32 mid)
         fw_log_emit0(0x10, 0x10068f0);
         return;
     }
-    if (mid_state_is_2_or_3(0) == 0) {
+    if (mid_is_pcp_or_ap(0) == 0) {
         fixed_sched_start(mb);
         return;
     }

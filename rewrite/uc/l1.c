@@ -9,42 +9,49 @@
 
 
 
-u32 l1_task_rx_flow_thunk(void)
+u32 l1_task_rx_flow_run(void)
 {
-    return rx_funcs_rx_flow();
+    return rx_flow_main();
 }
 
 u32 l1_task_rx_flow_thunk_b(void)
 {
-    return rx_funcs_rx_flow();
+    return rx_flow_main();
 }
 
 void l1_task_mask_halt_req_and_defer(void)
 {
     MMIO32(HW_FW2UC_IMS) = 2;
     arc_sync();
-    bf_pending_set_bit(3);
+    bg_task_set_pending_bit(3);
 }
 
 void l1_task_mask_wake_req_and_defer(void)
 {
     MMIO32(HW_FW2UC_IMS) = 4;
     arc_sync();
-    bf_pending_set_bit(4);
+    bg_task_set_pending_bit(4);
 }
 
-void l1_task_entry_uc(void)
+void l1_task_dispatch_evt1(void)
 {
     u32 r0 = dti_qset_mode;
     if (r0 == 0)
-        l1_task_main_step();
+        l1_task_on_evt1();
     else if (r0 == 1 || r0 == 2)
-        l1_task_step_fixed_sched();
+        l1_task_on_evt1_fixed_sched();
 }
 
 
 void l2_task_entry(u32 a)
 {
+#ifdef UC_STAMP_MASK
+    if ((UC_STAMP_MASK) & (1u << STAMP_L2_ENTRY)) {
+        u32 ret;
+        __asm__ volatile("mov %0, ilink2" : "=r"(ret));
+        UC_STAMP(STAMP_L2_ENTRY, a, ret);
+    }
+#endif
     if (a == 0) { l2_task_report_error_bits(); return; }
     if (a == 1 || a == 2) { arc_core_wr(32, 0x21000009); return; }   /* vendor 0x92d026: без лога */
     if (a == 3) { l2_handle_watchdog(); }
@@ -63,36 +70,36 @@ void l2_task_kick_mac_events(void)
 
 /* ---- fixed_sched accessors ---- */
 
-u32 fixed_sched_check_slot_flag(struct fsched_peer_ctx *p)
+u32 fixed_sched_kick_slot_queue(struct fsched_peer_ctx *p)
 {
     if (p->slot_kicked != 0)
         uc_assert((u32)__builtin_return_address(0), 0x158e);
-    u32 qid = fsched_cur_entry_byte0(p);
-    u32 arg = fixed_sched_slot_word8(p);
+    u32 qid = fsched_cur_entry_qid(p);
+    u32 arg = fixed_sched_slot_mac_buff_size(p);
     macq_kick_queue_tx(qid, 0, arg);
     p->slot_kicked = 1;
     return 1;
 }
 
-u32 fixed_sched_slot_word8(struct fsched_peer_ctx *p)
+u32 fixed_sched_slot_mac_buff_size(struct fsched_peer_ctx *p)
 {
-    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_byte1(p)].mac_buff_size;
+    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_cfg_idx(p)].mac_buff_size;
 }
-u16 fixed_sched_slot_cfg_u16_2(struct fsched_peer_ctx *p)
+u16 fixed_sched_slot_stop_vring_us(struct fsched_peer_ctx *p)
 {
     /* 0x927d94 */
-    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_byte1(p)].stop_vring_us;
+    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_cfg_idx(p)].stop_vring_us;
 }
 
 /* Завершить отложенное снятие пира (peer_masks_update_sta_bit): снять бит, событие 0x2e. */
-u32 fixed_sched_read_slot_id(struct fsched_peer_ctx *p)
+u32 fixed_sched_complete_peer_off(struct fsched_peer_ctx *p)
 {
     u8 id = p->pend_off_qid;
     if (id == 0xff)
         return id;
     p->active_mask &= ~(1u << (p->pend_off_idx & 0x1f));
-    u32 desc = qh_build_descriptor_b(id);
-    uc_evt_send_2e(id, 0, desc);
+    u32 desc = qh_read_desc_start(id);
+    uc_evt_send_vring_ssn(id, 0, desc);
     p->pend_off_qid = 0xff;
     return id;
 }
@@ -108,7 +115,7 @@ void fixed_sched_manager_decrement_curr_sta_rd_counter(struct fsched_peer_ctx *p
 }
 
 /* ---- L1 task-слой ---- */
-void l1_task_select_by_mode(void)
+void l1_task_check_bf_req_timeout(void)
 {
     u32 r0 = bf_req.head % BF_REQ_FIFO_N;
     u8 r13 = bf_req.fifo[r0];
@@ -125,7 +132,7 @@ void l1_task_select_by_mode(void)
             bf_sm_set_sta_state(r13, 0x2);
         else
             bf_sm_set_sta_state(r13, 0x11);
-        bf_abort_step(r13);
+        bf_sm_schedule(r13);
     }
     bf_tmo_tick += 1;
 }
@@ -149,7 +156,7 @@ void l1_task_kick_and_dispatch_uc(void)
     arc_sync();
     MMIO32(HW_FW2UC_ICR) = 1;
     arc_sync();
-    while (uc_field_0x24_is_zero(&uc_mbox) != 0)
+    while (uc_cmd_ring_pending(&uc_mbox) != 0)
         uc_queue_dispatch_and_commit(&uc_mbox);
     MMIO32(HW_FW2UC_IMC) = 1;
     arc_sync();
@@ -157,7 +164,7 @@ void l1_task_kick_and_dispatch_uc(void)
 
 u32 l1_rx_then_check_bf_abort(void)
 {
-    u32 r14 = rx_funcs_rx_flow();
+    u32 r14 = rx_flow_main();
     if (r14 == 1) {
         u32 r0 = rxf.sta;
         if (bf_abort_unexpected(r0, 0xa) != 0) {
@@ -176,13 +183,13 @@ void l1_enter_fixed_sched(u32 a)
     rx_nav_clear_flags();
     dti_qset_mode = (uc_role_ap == 0) ? 2 : 1;
     u32 e30[2] = {0, 0};
-    uc_evt_send_30(e30);
+    uc_evt_send_fixed_sched_enabled(e30);
     if (uc_role_ap == 0) {
         rx_mode_configure(2, a);
         mac_read_tsf64_uc(fsched_peers.rx_tsf);
     }
 }
-void l1_on_event4(void)
+void l1_task_on_evt4(void)
 {
     /* 0x92cd20: r54 перечитывается перед каждой проверкой. */
     if (mac_evt4() & MAC_EVT4_EXT_GP012_END) {
@@ -222,7 +229,7 @@ void l1_task_reset_units(void)
     uc_mac_cmd(0x51000284);
     uc_mac_cmd(0x54000508);
 }
-void l1_task_check_pending(void)
+void l1_task_sel_nbr_update(void)
 {
     /* 0x930d44: байты 0x8014e8.. (ldb — беззнаковые, кроме ldb.x [21]); max/min — знаковые. */
     if (sel_nbr.min_sta == 0xff)
@@ -260,7 +267,7 @@ void l1_task_report_link_lost(void)
     u32 r0 = uc_read_tsf_lo();
     rx_on_state = 0;
     rx_on_tsf = r0;
-    uc_set_evt_id_5c(1);
+    uc_set_bg_task_mask(1);
 
     u8 r3 = maint_sta_mask;
     u32 buf[3];
@@ -277,7 +284,7 @@ void l1_task_dispatch(u32 a, u32 b)
     switch (a) {
     case 0:
         mac_mon_slot_idx = (mac_mon_slot_idx == 0) ? 1 : 0;
-        bi_timing_snapshot_b();
+        bi_timing_snapshot();
         uc_sm_handle_event(&bi_sm, 0, b);
         return;
     case 1: {
@@ -295,12 +302,12 @@ void l1_task_dispatch(u32 a, u32 b)
         if (l1_fsched_flag != 0 && g_800494 == 0 && bi_cfg.bi_mode != 2) {
             uc_sm_handle_event(&bi_sm, 3, 0);
         } else {
-            mac_prog_cmd02_body();
+            mac_compute_bi_mon_timings();
             uc_sm_handle_event(&bi_sm, 2, 0);
         }
         return;
     case 4:
-        mac_prog_cmd02_body();
+        mac_compute_bi_mon_timings();
         uc_sm_handle_event(&bi_sm, 4, 0);
         return;
     case 5:
@@ -321,9 +328,31 @@ void l1_task_dispatch(u32 a, u32 b)
 /* Точка входа L1-таска (0x92c974).
  * СРОК (задержка L1): режим 0 (вектор 8) разбирает всё кольцо команд fw внутри прерывания уровня 1 —
  * bi1_event (вектор 9) и GP-события r54 того же уровня ждут конца разбора; длина ограничена только
- * числом команд в кольце (vendor — так же). Добавляется к пути TBTT → маяк (l1_task_main_step). */
+ * числом команд в кольце (vendor — так же). Добавляется к пути TBTT → маяк (l1_task_on_evt1). */
+#ifdef UC_STAMP_MASK
+/* Метка длинных задач L1 (UC_STAMP STAMP_LONG_TASK, a0 = 0x100 | mode): обёртка поверх тела. */
+void l1_task_entry_impl(u32 mode);
 void l1_task_entry(u32 mode)
 {
+    u32 c0 = ((UC_STAMP_MASK) & (1u << STAMP_IRQ_LAT)) && mode == 3 ? arc_lr(0x21) : 0;   /* COUNT0 на входе тика */
+    u32 t0 = arc_lr(0x100);
+    l1_task_entry_impl(mode);
+    if (mode == 3)
+        UC_STAMP(STAMP_IRQ_LAT, c0, arc_lr(0x21));     /* и на выходе: длительность тика */
+    u32 d = arc_lr(0x100) - t0;
+    if (mode != 1 && d > STAMP_LONG_CLK && d < 0x1000000u)      /* приём (режим 1) — сам путь ответа, не помеха */
+        UC_STAMP(STAMP_LONG_TASK, 0x100u | mode, d);
+}
+#define l1_task_entry l1_task_entry_impl
+#endif
+void l1_task_entry(u32 mode)
+{
+    if (mode == 1 || mode == 2)
+        UC_STAMP(STAMP_L1_EVT, mode << 24 | (mac_evt1() & 0xffffff), mac_evt4());
+#ifdef UC_STAMP_MASK
+    if (((UC_STAMP_MASK) & (1u << STAMP_BI1_LEAD)) && mode == 1 && (mac_evt1() & MAC_EVT1_BI1))
+        UC_STAMP(STAMP_BI1_LEAD, MMIO32(HW_MAC_USEC_TO_TBTT), MMIO32(HW_MAC_TIMING_INDIRECT_REG_5));
+#endif
     if (mode == 0) {
         uc_mac_cmd(0xcafcaf);
         u32 r13 = MMIO32(HW_FW2UC_ICM);
@@ -345,11 +374,11 @@ void l1_task_entry(u32 mode)
         return;
     }
     if (mode == 1) {
-        l1_task_entry_uc();
+        l1_task_dispatch_evt1();
         return;
     }
     if (mode == 2) {
-        uc_check_g8004f4_0_1_2();
+        l1_task_dispatch_evt4();
         return;
     }
     if (mode != 3)                              /* cmp_s r0,3; bne_s L_92cacc — выход */
@@ -365,10 +394,10 @@ void l1_task_entry(u32 mode)
     }
     if (phy_signal_gain_adc_in_range() == 1)
         *r13 = uc_read_tsf_lo();
-    l1_task_select_by_mode();
+    l1_task_check_bf_req_timeout();
     power_manager_tick_if_elapsed();
-    grant_detect_step(0, 0, 1);
-    l1_task_check_pending();
+    rx_nav_check_idle(0, 0, 1);
+    l1_task_sel_nbr_update();
     if (*r13 == 0 && phy_signal_gain_adc_in_range() == 1)
         *r13 = uc_read_tsf_lo();
     if (rx_on_state != 0 && dti_qset_mode == 2 &&
@@ -386,18 +415,58 @@ void l1_task_entry(u32 mode)
         }
     }
 }
+#ifdef UC_STAMP_MASK
+#undef l1_task_entry
+#endif
 
 /* Главный шаг L1 (0x92caf4) — портировано.
  * СРОК: путь TBTT → маяк. bi1_event (MAC_EVT1_BI1) — пробуждение до TBTT (упреждение по перезарядке 0x886d18
  * ≈ 8 мкс — гипотеза, HARDWARE-BLOCKS.md); BTI начинается в TBTT (802.11-2020 10.39.2). От bi1_event до
- * ожидания slot_event (uc_wait_event_busy(MAC_EVT1_SLOT | MAC_EVT1_BUSY2) в bti_worker_bti_transmitter_beacon_sweep_flow):
- * 3 трассировочные команды здесь, l1_task_dispatch(0) → bi_timing_snapshot_b (2× TSF64) → автомат BI →
+ * ожидания slot_event (uc_wait_event_busy(MAC_EVT1_SLOT | MAC_EVT1_BUSY2) в bti_ap_beacon_sweep_tx):
+ * 3 трассировочные команды здесь, l1_task_dispatch(0) → bi_timing_snapshot (2× TSF64) → автомат BI →
  * bti_prepare_sweep_set (aw_set_new_tbtt) → развёртка (tx_ctx_alloc_next, bti_measure_frame_duration
  * с тремя спинами MTP r43/r45/r47, bi_ctrl_program_mac_bcon) ~600 инструкций + задержки MTP (vendor
  * ~ так же; aw_set_new_tbtt у нас короче — PS вырезан); запас: не установлен (единицы мкс, если
  * упреждение 8 мкс). busy_event (MAC_EVT1_BUSY) проверяется раньше bi1_event: rx_flow в той же итерации
  * откладывает TBTT. Срыв — маяк позже TBTT (сдвиг BTI и A-BFT), при busy2 — маяк в этом BI пропущен. */
-void l1_task_main_step(void)
+#ifdef UC_STAMP_MASK
+/* Метка STAMP_CCA_DET: когда после busy_event поднимаются phy_rx_frame (PHY_SIGNALS б3), sfd_sync (r42 б11) и
+ * rx_frame_event (r42 б12, заголовок разобран — 9,06 мкс от начала кадра, H-HDR). Опрос держит L1 до заголовка —
+ * только в сборке с меткой, примерно каждый 8-й вход (по младшим битам Timer1: у uc нет .bss). */
+static void l1_stamp_cca_det(void)
+{
+    u32 t0 = arc_lr(0x100), sel = mac_sel_shadow;
+    u32 g = sel & ~MAC_SEL_FIELD, t_cca = 0x1fff, t_comp = 0xffff, t_sfd = 0xffff, t_hdr = 0xffff, f = 0, d = 0, v;
+    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
+    arc_nops(3);
+    v = mac_status_sel();
+    if (!(v & MAC_PHYSIG_CCA_PPDU_COMP))
+        f |= 1u << 31, t_comp = 0;
+    if (v & MAC_PHYSIG_CCA)
+        t_cca = 0;
+    if (mac_evt1() & MAC_EVT1_SFD_SYNC)
+        f |= 1u << 30, t_sfd = 0;
+    if (mac_evt1() & MAC_EVT1_RX_FRAME)
+        f |= 1u << 29, t_hdr = 0;
+    while (t_hdr == 0xffff && d < 2500) {
+        d = arc_lr(0x100) - t0;
+        v = mac_status_sel();
+        if (t_comp == 0xffff && !(v & MAC_PHYSIG_CCA_PPDU_COMP))
+            t_comp = d;
+        if (t_cca == 0x1fff && (v & MAC_PHYSIG_CCA))
+            t_cca = d;
+        if (t_sfd == 0xffff && (mac_evt1() & MAC_EVT1_SFD_SYNC))
+            t_sfd = d;
+        if (mac_evt1() & MAC_EVT1_RX_FRAME)
+            t_hdr = d;
+    }
+    uc_mac_cmd(sel | MAC_CMD_STATUS_SEL);
+    arc_nops(3);
+    UC_STAMP(STAMP_CCA_DET, f | t_cca << 16 | t_hdr, t_comp << 16 | t_sfd);
+}
+#endif
+
+void l1_task_on_evt1(void)
 {
     /* 6.2 asm 0x92caf4. */
     uc_mac_cmd(0xcafcaa);
@@ -418,7 +487,11 @@ void l1_task_main_step(void)
             }
             if (rx_listen_active != 1)
                 uc_assert((u32)__builtin_return_address(0), 0x28);
-            l1_task_phase_of(&bi_ctx);
+#ifdef UC_STAMP_MASK
+            if (((UC_STAMP_MASK) & (1u << STAMP_CCA_DET)) && (arc_lr(0x100) & 0x70) == 0)
+                l1_stamp_cca_det();
+#endif
+            l1_task_run_bi_phase(&bi_ctx);
         } else if (mac_evt1() & MAC_EVT1_BI1) {
             if (fsched_enabled != 0) {
                 if (uc_role_ap == 1) {
@@ -436,6 +509,7 @@ void l1_task_main_step(void)
             bi_win.tbtt_cnt += 1;
             l1_task_dispatch(0, 0);
         } else if (mac_evt1() & MAC_EVT1_BACKOFF) {
+            UC_STAMP(STAMP_BACKOFF, uc_read_tsf_lo() - MMIO32(HW_MAC_BI_START_TSF_LO), mac_tx_qid_en_shadow);
             if (busy_acct.sig_start_tsf != 0) {
                 mac_mon_report.busy_time += 0xa;
                 busy_acct.sig_start_tsf = 0;
@@ -453,8 +527,8 @@ void l1_task_main_step(void)
 }
 
 /* 6.2 asm 0x92cc48: шаг L1 в режимах 1/2 (отдельная функция внутри блока
- * l1_task__main_step; вход из l1_task_entry_uc). Событие -> фаза SM fixed-sched. */
-void l1_task_step_fixed_sched(void)
+ * l1_task__main_step; вход из l1_task_dispatch_evt1). Событие -> фаза SM fixed-sched. */
+void l1_task_on_evt1_fixed_sched(void)
 {
     do {
         u32 phase = 0;
@@ -563,10 +637,10 @@ u32 macq_is_idle(u32 a)                     /* 6.2 asm 0x92609c */
     u32 m2 = (d->rd == d->wr) ? 1 : 0;
     return (m1 && m2) ? 1 : 0;
 }
-void mask_bit_from_index_plus8(u32 a, u32 b)   /* 6.2 asm 0x9262a0 */
+void macq_disable_queue_and_ack_irq(u32 a, u32 b)   /* 6.2 asm 0x9262a0 */
 {
     (void)a;
-    dma_write_881c28(1u << (b + 8));
+    dma_fw_icr_c24_write(1u << (b + 8));
     macq_hw_disable_queue(b);
 }
 
@@ -581,18 +655,18 @@ void fixed_sched_slot_prepare(u32 a)
 
 void fixed_sched_slot_setup(struct fsched_peer_ctx *p)
 {
-    u32 qid = fsched_cur_entry_byte0(p);
-    mask_bit_from_index_plus8(qid, 0);          /* vendor: r0 = qid, не используется */
+    u32 qid = fsched_cur_entry_qid(p);
+    macq_disable_queue_and_ack_irq(qid, 0);          /* vendor: r0 = qid, не используется */
     p->slot_kicked = 0;
 }
 
 /* 0x92b648: возвращаемое значение (r0 после l1_task_dispatch) вызывающий не использует. */
-void l1_task_phase_of(struct bi_ctx_s *c)
+void l1_task_run_bi_phase(struct bi_ctx_s *c)
 {
     u32 r = c->phase;
     u32 v;
     if (r == 0)
-        v = l1_task_rx_flow_thunk();
+        v = l1_task_rx_flow_run();
     else if (r == 1)
         v = l1_rx_then_check_bf_abort();
     else if (r == 2)
@@ -643,7 +717,7 @@ void fixed_sched_run_tx_slot(void)
     uc_mac_cmd(*(u16 *)&txrx_state2 | 0xdb0000);
     uc_mac_cmd((txrx_state2 >> 16) | 0xdb0000);
     uc_mac_cmd(0x81 << 18);
-    mac_set_mode_0000();
+    mac_wait_mode_ack_if_idle();
     if (txr.awaiting == 0 && !(rx_mode_flags & 1u))
         rx_mode_configure(2, rxf.sta);
     txr.awaiting = 0;

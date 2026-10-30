@@ -23,7 +23,7 @@ ENTRY(_reset)
 /* 0x840000.. */
 tx_ring_mem_data = 0x840000; /* struct tx_desc[2] — кольцо DMA 5 */
 flash_ids    = 0x840040;  /* struct flash_ids — секция идентификаторов/калибровок flash (include/sys_cfg.h) */
-evt_ring     = 0x84008c;  /* struct evt_ring — кольцо событий evt_ring_push_1c (include/dbg.h) */
+evt_ring     = 0x84008c;  /* struct evt_ring — кольцо событий evt_ring_push (include/dbg.h) */
 lmac_mbox_shm = 0x840130; /* struct lmac_mbox_shm (SRAM, видна ucode) — include/mbox.h */
 lmac_cmd_ring = 0x840178; /* struct mbox_entry[20] — кольцо команд fw → ucode (include/mbox.h) */
 lmac_evt_ring = 0x840218; /* struct mbox_entry[12] — кольцо событий ucode → fw */

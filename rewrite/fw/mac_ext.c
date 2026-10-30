@@ -34,7 +34,7 @@ FWDATA(8003d4) struct mac_tx_cnt *volatile mac_tx_cnt_blk = &mac_tx_cnt_regs;
  * ХРУПКО: опрос — lp 1000 (тело: ld; btst; bne на конец цикла; nop_s), перед циклом nop_s;
  * проверка после цикла — по ПОСЛЕДНЕМУ прочитанному значению (без повторного чтения).
  * Число итераций и nop сохранены — это единственная выдержка на переключение. */
-void pcie_toggle_880c50_bit2(u32 on)
+void clk_switch_sleep_or_ref(u32 on)
 {
     u32 i, v = 0;
     MMIO32(CLK_SWITCH_STATUS) |= 1u << 2;
@@ -78,23 +78,6 @@ u32 mac_rx_cnt_get_crc_total(void)
 /* ======================= помощники бит-полей (bf__set_field_word_fw 0x8edcb8) ===========
  * mov r10 = младший бит, r11 = ширина − 1; слово *p, соседние биты не меняются. */
 
-/* tx_queue__bits_set32_s0_w3 (0x8ed364, 12 Б). */
-void tx_queue_bits_set32_s0_w3(void *p, u32 v) { bf_set32((u32)p, 0, 3, v); }
-/* tx_queue__bits_set32_s14_w3 (0x8ed3d0, 12 Б). */
-void tx_queue_bits_set32_s14_w3(void *p, u32 v) { bf_set32((u32)p, 14, 3, v); }
-/* tx_queue__bits_set32_s17_w4 (0x8ed418, 12 Б). */
-void tx_queue_bits_set32_s17_w4(void *p, u32 v) { bf_set32((u32)p, 17, 4, v); }
-/* tx_queue__bits_set32_s20_w10 (0x8ed424, 12 Б). */
-void tx_queue_bits_set32_s20_w10(void *p, u32 v) { bf_set32((u32)p, 20, 10, v); }
-/* rx_macq__bits_set32_s21_w5 (0x8ed43c, 12 Б). */
-void rx_macq_bits_set32_s21_w5(void *p, u32 v) { bf_set32((u32)p, 21, 5, v); }
-/* rx_macq__bits_set32_s26_w2 (0x8ed490, 12 Б). */
-void rx_macq_bits_set32_s26_w2(void *p, u32 v) { bf_set32((u32)p, 26, 2, v); }
-/* tx_queue__bits_set32_s6_w14 (0x8ed544, 12 Б). */
-void tx_queue_bits_set32_s6_w14(void *p, u32 v) { bf_set32((u32)p, 6, 14, v); }
-/* lmac_if__bits_set32_s6_w26 (0x8ed550, 12 Б). */
-void lmac_if_bits_set32_s6_w26(void *p, u32 v) { bf_set32((u32)p, 6, 26, v); }
-
 /* ======================= XPM (RF): регистры конфигурации ======================= */
 
 extern const struct xpm_cfg xpm_cfg_preset0;   /* 0x801a0c, ниже */
@@ -112,49 +95,49 @@ const u32 *xpm_get_cfg_preset(u32 idx)
 }
 
 /* xpm__read_3c8 (0x8d45c0, 18 Б): RFC 0x3c8, младшие 24 бита. */
-u32 xpm_read_3c8(u32 rf)
+u32 xpm_read_rd_sample_time(u32 rf)
 {
     return hwd_rfc_read_rgf(rf & 0xff, 0x3c8) & 0xffffff;
 }
 
 /* xpm__write_3c8 (0x8d45d4, 12 Б). */
-void xpm_write_3c8(u32 rf, u32 v)
+void xpm_write_rd_sample_time(u32 rf, u32 v)
 {
     rfc_field_write(rf & 0xff, 0x3c8, v, 0);
 }
 
 /* xpm__read_cfg_350 (0x8d4640, 14 Б): RFC 0x350 + idx·4 (add2). */
-u32 xpm_read_cfg_350(u32 rf, u32 idx)
+u32 xpm_read_rd_wave_word(u32 rf, u32 idx)
 {
     return hwd_rfc_read_rgf(rf & 0xff, 0x350 + idx * 4);
 }
 
 /* xpm__write_cfg_350 (0x8d4650, 14 Б). */
-void xpm_write_cfg_350(u32 rf, u32 idx, u32 v)
+void xpm_write_rd_wave_word(u32 rf, u32 idx, u32 v)
 {
     rfc_field_write(rf & 0xff, 0x350 + idx * 4, v, 0);
 }
 
 /* xpm__read_cfg_378 (0x8d4660, 14 Б): RFC 0x378 + idx·4. */
-u32 xpm_read_cfg_378(u32 rf, u32 idx)
+u32 xpm_read_wr_wave_word(u32 rf, u32 idx)
 {
     return hwd_rfc_read_rgf(rf & 0xff, 0x378 + idx * 4);
 }
 
 /* xpm__wave_rd_set (0x8d4670, 14 Б): запись RFC 0x378 + idx·4 (парная к read_cfg_378). */
-void xpm_wave_rd_set(u32 rf, u32 idx, u32 v)
+void xpm_write_wr_wave_word(u32 rf, u32 idx, u32 v)
 {
     rfc_field_write(rf & 0xff, 0x378 + idx * 4, v, 0);
 }
 
 /* xpm__read_3cc (0x8d4680, 18 Б): RFC 0x3cc, младшие 24 бита. */
-u32 xpm_read_3cc(u32 rf)
+u32 xpm_read_wr_sample_time(u32 rf)
 {
     return hwd_rfc_read_rgf(rf & 0xff, 0x3cc) & 0xffffff;
 }
 
 /* xpm__write_3cc (0x8d4694, 12 Б). */
-void xpm_write_3cc(u32 rf, u32 v)
+void xpm_write_wr_sample_time(u32 rf, u32 v)
 {
     rfc_field_write(rf & 0xff, 0x3cc, v, 0);
 }
@@ -167,19 +150,19 @@ void hwf_rf_xpm_cfg_get(u32 rf, u32 *cfg)
 {
     u32 i, v;
     for (i = 0; i < 20; i++) {
-        v = xpm_read_cfg_378(rf, i);
+        v = xpm_read_wr_wave_word(rf, i);
         cfg[2 + i] = v;
         fw_log_emit2(0x20, 0x101bb3c, i, v);
         fw_log_emit2(0x20, 0x101bb70, cfg[2 + i] & 0xffff, (cfg[2 + i] >> 16) & 0x1ff);
     }
     for (i = 0; i < 10; i++) {
-        v = xpm_read_cfg_350(rf, i);
+        v = xpm_read_rd_wave_word(rf, i);
         cfg[0x16 + i] = v;
         fw_log_emit2(0x20, 0x101bba4, i, v);
         fw_log_emit2(0x20, 0x101bbd8, cfg[0x16 + i] & 0xffff, (cfg[0x16 + i] >> 16) & 7);
     }
-    cfg[0] = xpm_read_3c8(rf);
-    cfg[1] = xpm_read_3cc(rf);
+    cfg[0] = xpm_read_rd_sample_time(rf);
+    cfg[1] = xpm_read_wr_sample_time(rf);
     fw_log_emit2(0x20, 0x101baec, cfg[0], cfg[1]);
 }
 
@@ -190,21 +173,21 @@ void hwf_rf_xpm_cfg_set(u32 rf, const u32 *cfg)
     u32 i;
     for (i = 0; i < 20; i++) {
         fw_log_emit2(0x20, 0x101ba84, i, cfg[2 + i]);
-        xpm_wave_rd_set(rf, i, cfg[2 + i]);
+        xpm_write_wr_wave_word(rf, i, cfg[2 + i]);
     }
     for (i = 0; i < 10; i++) {
         fw_log_emit2(0x20, 0x101bab8, i, cfg[0x16 + i]);
-        xpm_write_cfg_350(rf, i, cfg[0x16 + i]);
+        xpm_write_rd_wave_word(rf, i, cfg[0x16 + i]);
     }
     fw_log_emit2(0x20, 0x101baec, cfg[0], cfg[1]);
-    xpm_write_3c8(rf, cfg[0]);
-    xpm_write_3cc(rf, cfg[1]);
+    xpm_write_rd_sample_time(rf, cfg[0]);
+    xpm_write_wr_sample_time(rf, cfg[1]);
 }
 
 /* xpm__enter_cfg_step (0x8f4960, 114 Б; hwf_rf_xpm_enter_cfg_mode_check_inputs): rf
  * проверен (rf__check_rf_id ≠ 1 — 3) и mode < 2 — 1; иначе журнал «cfg_mode out of valid
  * range [0,1]», при flag — ассерт 0x155f, 3. Нет RF (0 от проверки) — тоже 3. */
-u32 xpm_enter_cfg_step(u32 rf, u32 mode, u32 flag)
+u32 xpm_enter_cfg_check_inputs(u32 rf, u32 mode, u32 flag)
 {
     if (rf_check_rf_id(rf, 0x101bc0c, flag) != 1)
         return 3;
@@ -222,7 +205,7 @@ u32 xpm_enter_cfg_step(u32 rf, u32 mode, u32 flag)
 u32 hwf_rf_xpm_enter_cfg_mode(u32 rf, u32 mode)
 {
     const u32 *preset;
-    if (xpm_enter_cfg_step(rf, mode, 1) != 1)
+    if (xpm_enter_cfg_check_inputs(rf, mode, 1) != 1)
         return 0;
     preset = xpm_get_cfg_preset(mode);
     if (preset == 0) {
@@ -238,7 +221,7 @@ u32 hwf_rf_xpm_enter_cfg_mode(u32 rf, u32 mode)
  * ampdu_mcs, база счётчиков (снимок на старте) — mac_base. */
 
 /* mac_tx_cnt__get_u64_14 (0x8dd7a4, 8 Б): счётчик TX MAC u64 ([gp+0x250] = 0x8003d4, +0x14). */
-u64 mac_tx_cnt_get_u64_14(void)
+u64 mac_tx_cnt_get_u64(void)
 {
     struct mac_tx_cnt *p = mac_tx_cnt_blk;
     return (u64)p->cnt64_lo | ((u64)p->cnt64_hi << 32);
@@ -246,7 +229,7 @@ u64 mac_tx_cnt_get_u64_14(void)
 
 /* mac_rx_cnt__get_u64_bc (0x8dd798, 12 Б): счётчик RX MAC u64 ([gp+0x24c] = 0x8003d0,
  * +0xbc/+0xc0). */
-u64 mac_rx_cnt_get_u64_bc(void)
+u64 mac_rx_cnt_get_u64(void)
 {
     struct mac_rx_cnt *p = mac_rx_cnt_blk;
     return (u64)p->cnt64_lo | ((u64)p->cnt64_hi << 32);
@@ -273,17 +256,17 @@ static void mac_ampdu_stats_timer_expired(u32 a0, u32 a1)
     *(volatile u32 *)&phy_monitor.dump_off = 0;
 }
 
-/* mac_ampdu_statistics_timeout_cb (0x8f6370, 84 Б; имя справки по строке соседней
+/* mac_ampdu_stats_snapshot_baseline (0x8f6370, 84 Б; имя справки по строке соседней
  * функции — по коду это снимок базы счётчиков на старте): база — fw_sysapi_mgr.mac_base
  * (vendor — по абсолютному адресу 0x805170 + 0x94.., аргумент o — только MCS o->ampdu_mcs). */
-void mac_ampdu_statistics_timeout_cb(struct fw_sysapi_mgr *o)
+void mac_ampdu_stats_snapshot_baseline(struct fw_sysapi_mgr *o)
 {
     struct sysapi_mac_stats_base *b = &fw_sysapi_mgr.mac_base;
     u64 v;
-    v = mac_tx_cnt_get_u64_14();
+    v = mac_tx_cnt_get_u64();
     b->tx_lo = (u32)v;
     b->tx_hi = (u32)(v >> 32);
-    v = mac_rx_cnt_get_u64_bc();
+    v = mac_rx_cnt_get_u64();
     b->rx_lo = (u32)v;
     b->rx_hi = (u32)(v >> 32);
     b->tx_ok = mac_tx_cnt_get_ok();
@@ -312,8 +295,8 @@ void fw_sysapi_mgr_mac_ampdu_statistics_cmd_start(struct fw_sysapi_mgr *o, const
     o->ampdu_mcs = filter[3];
     *(volatile u32 *)&phy_monitor.dump_off = 1;
     o->completion_cb = 0;
-    channel_est_clamp_64(o, timeout, mac_ampdu_stats_timer_expired);
-    mac_ampdu_statistics_timeout_cb(o);
+    fw_sysapi_mgr_arm_timeout(o, timeout, mac_ampdu_stats_timer_expired);
+    mac_ampdu_stats_snapshot_baseline(o);
 }
 
 /* ======================= пресет конфигурации XPM (fw_data) ======================= */

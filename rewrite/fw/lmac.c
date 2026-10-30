@@ -111,8 +111,8 @@ static void edca_fill_ac_table_by_mode(struct lmac_cmd_edca *buf, u32 mode)
     }
 }
 
-/* lmac_if_send_cmd_0x04 (0x8dc2f8): RX-enable / EDCA-таблица AC (type 0x04, 0x30 Б). */
-void lmac_if_send_cmd_0x04(u32 mode)
+/* lmac_if_send_edca_cfg (0x8dc2f8): RX-enable / EDCA-таблица AC (type 0x04, 0x30 Б). */
+void lmac_if_send_edca_cfg(u32 mode)
 {
     if (mode == lmac_edca_cur_mode)
         return;
@@ -150,15 +150,15 @@ void lmac_if_send_phy_ina_det_cfg(const struct lmac_cmd_ina_det *src)
 
 
 /* lmac_if__send_cmd_0x16_calib_b4 (0x8dc120): калибровочная команда LO-power
- * (type 0x16, 4 Б). vendor: calib_obj4_reset_d4 → get_byte_b4 → obj[0]=obj[0xb4]
+ * (type 0x16, 4 Б). vendor: calib_silent_rssi_reset → get_byte_b4 → obj[0]=obj[0xb4]
  * → post(obj, 0x16, 4, 0). ucode копирует 4 Б в 0x80054c (uc/cmd.c). */
-void lmac_if_send_cmd_0x16_calib_b4(void)
+void lmac_if_send_calib_gain(void)
 {
     /* Тело — буфер из пула команд (vendor mem_pool_alloc_locked(0x804280)); прежде
      * отправлялся сам калибровочный объект 0x804b5c, и wmi_evt_walk_list потом
      * «освобождал» его в пул команд (ассерт 0xe8). */
     struct lmac_cmd_calib_gain *buf = lmac_cmd_pool_alloc();
-    calib_obj4_reset_d4();
+    calib_silent_rssi_reset();
     struct calib_silent_rssi *obj =
         (struct calib_silent_rssi *)calib_engine_get_by_index(CALIB_ENG_SILENT_RSSI);
     buf->target = obj->target;
@@ -191,7 +191,7 @@ static void lmac_if_send_txop_limits(void)
 }
 
 /* hw_sysapi_rx__alloc_and_store (0x8dbb04): {u8 a, u16 b} → type 0x19 (4 Б). */
-void hw_sysapi_rx_alloc_and_store(u32 a, u32 b)
+void lmac_if_send_rf_chain(u32 a, u32 b)
 {
     struct lmac_cmd_rf_chain *buf = lmac_cmd_pool_alloc();
     buf->rf = (u8)a;
@@ -199,8 +199,8 @@ void hw_sysapi_rx_alloc_and_store(u32 a, u32 b)
     lmac_if_post_cmd(buf, 0x19, 4, 0);
 }
 
-/* lmac_if_send_cmd_0x23 (0x8db04c): 3 слова (type 0x23, 0xc Б). */
-void lmac_if_send_cmd_0x23(u32 a)
+/* lmac_if_send_abft_cfg (0x8db04c): 3 слова (type 0x23, 0xc Б). */
+void lmac_if_send_abft_cfg(u32 a)
 {
     struct lmac_cmd_bi_tbl *buf = lmac_cmd_pool_alloc();
     u32 w1;
@@ -219,7 +219,7 @@ static void lmac_if_send_fw_ready_evt(void)
     host_irq_raise_fw_ready();
     void *p = host_if_send_pair();
     fw_log_emit0(0x20, 0x1000c90);
-    low_sme_send_evt2sw(p, 0x1801, 4, 0, 0, 0, 0);
+    host_if_send_event(p, 0x1801, 4, 0, 0, 0, 0);
 }
 
 
@@ -304,7 +304,7 @@ void lmac_if_config_txss(u32 cid)
 }
 
 /* lmac_if__config_txss_8 (0x8db71c): TXSS по умолчанию (широковещательный cid 8). */
-static void lmac_if_config_txss_8(void)
+static void lmac_if_config_txss_unknown_peer(void)
 {
     lmac_if_config_txss(8);
 }
@@ -338,20 +338,20 @@ void temp_sense_get_cached(temp_done_fn cb, u32 ctx)
 void lmac_if_lmac_ready_evt(void)
 {
     lmac_ucode_ready = 1;               /* st.as [gp,0x91]: lmac_ready */
-    lmac_if_send_cmd_0x04(0);
+    lmac_if_send_edca_cfg(0);
     lmac_if_send_txop_limits();
-    hw_sysapi_rx_alloc_and_store(rf_obj.rf_idx, rf_obj.sector_cfg_idx);
+    lmac_if_send_rf_chain(rf_obj.rf_idx, rf_obj.sector_cfg_idx);
     lmac_if_send_phy_ina_det_cfg(&phy_ina_det_cfg);
     fw_log_emit1(0x20, 0x1003b68, pcie_get_driver_is_up());
     if (platform_is_asic() != 0)
-        lmac_if_send_cmd_0x16_calib_b4();
+        lmac_if_send_calib_gain();
     fw_data_fresh_magic = 0x33333333;      /* st.as 0x33333333,[gp,0x55] */
     lmac_if_send_fw_ready_evt();
     hwd_rfc_read_calibrate(1000);
     l2mgr_on_lmac_ready();              /* l2mgr_init → WMI_READY (0x1001) */
-    lmac_if_config_txss_8();
+    lmac_if_config_txss_unknown_peer();
     led_scheme_apply(4);
-    lmac_if_send_cmd_0x23(0);
+    lmac_if_send_abft_cfg(0);
     temp_sense_get_cached(0, 0);
 }
 
@@ -362,7 +362,7 @@ void lmac_if_lmac_ready_evt(void)
 
 /* brd_if_multi_array::get_section_info (0x8ccb7c; по коду — mid__sched_obj): схема
  * расписания 0x805234. */
-static struct sched_scheme *brd_if_multi_array_get_section_info(void)
+static struct sched_scheme *sched_scheme_addr(void)
 {
     return &sched_scheme;
 }
@@ -419,7 +419,7 @@ void lmac_if_ucode_event_dispatch(struct lmac_mbox *mb, u8 *evt)
         break;
     case 0x05: {                                                     /* NEW_LINK_EVT */
         uc_evt_log(0x1004278, 5, tsf);
-        u32 st = new_link_evt();
+        u32 st = radio_mgr_get_cur_mid();
         lmac_if_bf_done_and_new_link((struct lmac_evt_bf_done *)body, st);
         break;
     }
@@ -436,7 +436,7 @@ void lmac_if_ucode_event_dispatch(struct lmac_mbox *mb, u8 *evt)
         break;
     case 0x11:
         uc_evt_log(0x1004368, 0x11, tsf);
-        return_field_type((const struct lmac_evt_field_rsp *)body);
+        lmac_if_sta_field_rsp_evt((const struct lmac_evt_field_rsp *)body);
         break;
     case 0x13:                                                       /* RS_STARTED */
         uc_evt_log(0x10043a8, 0x13, tsf);
@@ -450,7 +450,7 @@ void lmac_if_ucode_event_dispatch(struct lmac_mbox *mb, u8 *evt)
         break;
     }
     case 0x16:
-        lmac_if_ucode_evt_check_8((struct lmac_evt_ps_peer *)body, new_link_evt());
+        lmac_if_ps_awake_peer_evt((struct lmac_evt_ps_peer *)body, radio_mgr_get_cur_mid());
         break;
     case 0x17:
         lmac_if_update_pct_stats();
@@ -488,7 +488,7 @@ void lmac_if_ucode_event_dispatch(struct lmac_mbox *mb, u8 *evt)
         break;
     case 0x29:                                                       /* затем как 0x2b */
         uc_evt_log(0x10046f4, 0x29, tsf);
-        lmac_if_evt_walk(brd_if_multi_array_get_section_info());
+        lmac_if_evt_walk(sched_scheme_addr());
         /* fallthrough */
     case 0x2b:
         uc_evt_log(0x100474c, type, tsf);

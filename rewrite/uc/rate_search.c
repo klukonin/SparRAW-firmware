@@ -9,12 +9,12 @@
 
 /* MCS-кандидат поиска станции. */
 UC_HOT
-u8 mtp_queue_byte_by_index(u32 idx)
+u8 rs_sta_mcs_try(u32 idx)
 {
     return rs_stats[idx].mcs_try;
 }
 
-u8 sta_link_byte_by_index(u32 idx)
+u8 rs_internal_trigger_disabled(u32 idx)
 {
     return rs_cfg[idx].dbg_disable_internal_trigger;
 }
@@ -26,7 +26,7 @@ u8 rate_search_current_mcs(u32 a)
     return rs_stats[a].mcs_cur;
 }
 
-u8 rate_search_current_mcs_b(u32 a)
+u8 rate_search_current_mcs_try(u32 a)
 {
     if (rs_state[a].active != 0)
         return rs_stats[a].mcs_try;
@@ -48,7 +48,7 @@ void rate_search_apply_mcs(u32 a, u32 b)
 }
 
 /* Предыдущий установленный бит в bitmap станции (0x92ffec). */
-u32 sched_bitmap_prev_set_bit(u32 a, u32 b)
+u32 rs_prev_enabled_mcs(u32 a, u32 b)
 {
     while (b != 0) {
         b--;
@@ -59,7 +59,7 @@ u32 sched_bitmap_prev_set_bit(u32 a, u32 b)
 }
 
 /* Следующий установленный бит в bitmap станции (0x92ff78). */
-u32 sched_bitmap_next_set_bit(u32 a, u32 b)
+u32 rs_next_enabled_mcs(u32 a, u32 b)
 {
     (void)b;
     u32 start = rs_stats[a].mcs_try + 1;

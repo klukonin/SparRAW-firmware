@@ -35,6 +35,12 @@
 
 ## Сознательные отличия от vendor (баги vendor исправлены, с доказательствами в комментариях)
 
+- **MCS ответа через SIFS** (uc/rx.c `rx_frame_tx_resp_seq`, 2026-10-30): vendor запрашивает Ack/BlockAck у MTP без
+  MCS (0xff → `0x17` без [1:0] = 3), MAC шлёт BlockAck на кадр MCS 8 на MCS 1 (стенд: наш uc и vendor-AP, r38
+  received_mcs принятого BlockAck). 802.11-2020 10.6.7.2 — min(MCS запроса, 4) для SC, control PHY для кадра MCS 0.
+  Исправлено: явный MCS только при MCS запроса ≥ 2 (для 0/1 выбор MAC и так по 10.6.7.2), биты скорости считаются
+  до пути ответа; BlockAck на MCS 4 (стенд lowpwr3, FWERR 0); запас срока 0x37000020 — 40–48 тактов.
+
 - Причина разрыва: свои коды `disconnect_reason` ≥ 0x10 (что именно оборвало связь), при отказе точки proto —
   её Status Code (docs/WMI.md «Причины разрыва SparRAW»). Vendor сливал разные отказы в 2/3/6 и терял Status Code.
 - Фатальный ассерт fw/uc: хосту и в журнал — точный адрес вызова, дамп стека fw по нашему диапазону кода
@@ -218,6 +224,21 @@
   max_rx_pl_per_desc не степень двойки (0x1343), VRING_CFG с timeslot_us 0 (0x12b2), RCP_ADDBA_RESP с TID ≥ 8
   (0x1013), P2P_CFG с интервалом 0 (0x1243), DISCOVERY_START/LISTEN/SEARCH при скане или поднятом BSS
   (0x1235..0x123a), BCAST_VRING_CFG на занятое кольцо или до подъёма BSS (0x1287, 0x11f5).
+- uc, SLS: CDOWN — 9 бит (9.5.1, 0..511); vendor держал счётчик развёртки в байте — при 64 секторах × 4 антеннах пира
+  (259 передач) CDOWN 258 уходил как 2, развёртка обрывалась, Duration неверны (tests/unit/test_uc_sls_sweep.py
+  test_cdown_beyond_255_frames, test_uc_ifs_duration.py).
+- uc, SLS ответчик: ожидание SSW-Feedback после RSS — срок на все повторы инициатора (10.42.6.2, ≈ 482 мкс); vendor
+  взводил GP0 словом за концом таблицы rss_wait_clk (индекс 10, никем не пишется — 0) (test_uc_liveness.py).
+- uc, Duration SSW (9.3.1.15) и SSW-Feedback без BRP (9.3.1.16 b) вне A-BFT — не дальше конца текущего выделения
+  (меньшее из «до TBTT» и «до конца окна ESE»); vendor — всегда до конца последовательности
+  (test_uc_ifs_duration.py test_ssw_duration_capped_by_allocation_end, …feedback_duration_capped…).
+- uc, команды LMAC 0x0c, 0x18, порядок и число секторов набора: индекс набора/станции вне таблицы и длина поля > 16 —
+  assert и выход; vendor после assert (он возвращается) писал за txss_ss / запись станции.
+- uc, переход RX→TX (mac_switch_rx_to_tx): заголовок нового кадра, разобранный между ожиданиями «канал свободен /
+  приёма нет» и проверкой после них, — переход заново (дождаться конца кадра) и счётчик uc_stats.rx_to_tx_rewait;
+  vendor — uc_assert 0x93/0x94 (быстрая ветка) и 141 (ветка BRP). На железе phy_rx_frame и cca_ppdu_comp меняются
+  только с разбором заголовка, ≈ 9 мкс от начала кадра (стенд, метка STAMP_CCA_DET): окно ≈ 24 такта есть у любого
+  перехода, например у повтора SSW-Feedback по таймеру (test_machw.py test_rx_to_tx_header_in_switch_window).
 
 ## Сохранённые особенности vendor (с комментариями в коде)
 

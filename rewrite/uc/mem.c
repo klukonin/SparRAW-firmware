@@ -178,24 +178,6 @@ u64 uc_divmod_unsigned_qr(u32 n, u32 d)
     return ((u64)n << 32) | q;
 }
 
-/* Деление со знаком (усечение к нулю, остаток со знаком делимого): возврат
- * (остаток << 32) | частное. Деление на 0 — как у беззнакового от модуля делимого:
- * остаток = |a|, частное 0x7fffffff или 0x80000000 (при a = INT_MIN), без знаков. */
-u64 uc_divmod_signed_qr(s32 a, s32 b)
-{
-    u32 ua = a < 0 ? 0u - (u32)a : (u32)a;
-    u32 ub = b < 0 ? 0u - (u32)b : (u32)b;
-    u64 r = uc_divmod_unsigned_qr(ua, ub);
-    if (ub == 0)
-        return r;
-    u32 q = (u32)r, m = (u32)(r >> 32);
-    if ((a < 0) != (b < 0))
-        q = 0u - q;
-    if (a < 0)
-        m = 0u - m;
-    return ((u64)m << 32) | q;
-}
-
 u32 uc_divmod_unsigned(u32 n, u32 d)
 {
     return (u32)uc_divmod_unsigned_qr(n, d);

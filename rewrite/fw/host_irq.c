@@ -25,7 +25,7 @@ void hwd_pcie_exit_l1(u32 on)
         do {
             l1 = hwd_pcie_is_l1_state();
             cnt--;                                    /* delay-слот bl.d 0x8d1054 */
-            b = hwd_pcie_get_882b80();
+            b = hwd_pcie_get_perst_status();
         } while (l1 == 0 && b == 1 && cnt != 0);
         if (l1 == 0 && b == 1) {
             /* vendor логирует blink — адрес возврата последнего вызова (0x8d1428), т.е.
@@ -90,7 +90,7 @@ void pcie_set_event_bit(u32 bit)
 }
 
 /* pcie__set_event_bit_19 (0x8d1b00): хвостовой вызов 0x8d1a98(0x19). */
-void pcie_set_event_bit_19(void)
+void pcie_set_fw_error_event(void)
 {
     pcie_set_event_bit(0x19);
 }

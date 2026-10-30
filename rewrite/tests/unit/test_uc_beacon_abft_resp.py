@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Ответ станции в A-BFT по полям принятого DMG Beacon (802.11-2020 10.42.5.2, 10.42.2.3, 9.3.1.15, 9.5.1/9.5.2):
-маяк → решение (bti_bi2_event_step) → abft_responder_fast: слот по backoff, пачка SSW (число = FSS + 1, CDOWN,
+маяк → решение (bti_beacon_rx_step) → abft_responder_fast: слот по backoff, пачка SSW (число = FSS + 1, CDOWN,
 Direction, Sector ID, Duration до конца слота), шаблон SSW (RA, SSW Feedback), пропуск A-BFT после Feedback в
 Discovery Mode. Ожидания MAC, отправка кадра и разбор SSW-Feedback — заглушки (Feedback «принят»).
 
@@ -13,7 +13,7 @@ import pytest
 from test_uc_beacon_rx import ABFT_CFG, BCN_RX, AP, OWN, bic_encode, bti_path, dmg_beacon, sta  # noqa: F401
 from test_uc_beacon_tx import CLK, SBIFS, SSW_LEN, ctrl_txtime, ss_slot_time, ssw_field, stubs, zero
 
-REC = 0x803e80                      # sls_peer_rec ответа (bi_ctx.rec), 0x18 Б
+REC = 0x807e80                      # sls_peer_rec ответа (bi_ctx.rec), 0x18 Б
 SSW_TPL = 0x802b4c                  # шаблон SSW: +0 FC, +4 RA, +0x13 SSW Feedback (3 Б)
 RESP_STUBS = ['mac_switch_rx_to_tx', 'uc_spin_until_event4', 'abft_arm_response_window', 'l1_task_dispatch',
               'abft_send_ssw_feedback', 'mac_program_tx_common', 'mac_evt_enable_bit_sync_b', 'mac_evt_enable_bit_sync',
@@ -33,7 +33,7 @@ def respond(uc, slot=0):
         return 0x100 if k >= slot + 2 else 0
     uc.ext.update({54: r54, 55: 0x10, 43: 1 << 31, 42: (1 << 15) | (1 << 12), 45: 1 << 31})
     s = stubs(uc, RESP_STUBS)
-    s.update(abft_resp_parse_fdbk=1, tx_ctx_alloc_next=0x803f80)
+    s.update(abft_resp_parse_fdbk=1, tx_ctx_alloc_next=0x807f80)
     uc.call('abft_responder_fast', REC, 1, slot, stub=s)
     cmds = uc.mac_cmds
     ssw, dur = [], []
@@ -49,7 +49,7 @@ def respond(uc, slot=0):
 
 
 def beacon_then_respond(uc, slot=0, **bic):
-    """Маяк BTI (путь bti_bi2_event_step) → ответ. Сектор лучшего маяка 5, антенна 0."""
+    """Маяк BTI (путь bti_beacon_rx_step) → ответ. Сектор лучшего маяка 5, антенна 0."""
     s = bti_path(uc, dmg_beacon(bic_encode(**bic), bssid=AP, sector=5))
     assert s['abft_go'] == 1
     return respond(uc, slot)

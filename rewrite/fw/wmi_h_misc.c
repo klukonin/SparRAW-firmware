@@ -58,7 +58,7 @@ void wmi_deep_echo(struct wmi_mbox *mb, u32 value)
 void wmi_add_debug_tx_pckt(const struct wmi_add_debug_tx_pckt_cmd *cmd, u32 mid)
 {
     u32 pl = TX_API_alloc_tx_payload();
-    struct conn *conn = ie_list_first(mid_list_by_mid_fw(mid), cmd->cid);
+    struct conn *conn = mid_conn_by_cid(mid_list_by_mid_fw(mid), cmd->cid);
 
     if (conn == 0) {
         fw_log_emit1(0x27, 0x100ba78, cmd->cid);   /* "CMD TX DATA failed - No CID found..." */

@@ -50,13 +50,13 @@
 ## 7. Парсер MAC-кадров (фильтры приёма 0x886000–0x886400)
 
 Шаги
-инициализации `mac_parser__init`: `macq_desc__read_typed` 0x8c4f1c, `mac_parser__pack_rule_halfword` 0x8df6a4 / 4.1 0x8db5bc, `mac_parser__rule_b` 0x8dfde4 / 4.1 0x8dbd14, `mac_parser_step_b` 0x8dfe14 / 4.1 0x8dbd44, `mac_parser_step_a` 0x8dfee4 / 4.1 0x8dbe14, `rx_macq__pack_desc` 0x8e4340, `rx_macq__build_ba_desc` 0x8e4448.
+инициализации `mac_parser__init`: `macq_desc__read_typed` 0x8c4f1c, `mac_parser__pack_rule_halfword` 0x8df6a4 / 4.1 0x8db5bc, `mac_parser__rule_b` 0x8dfde4 / 4.1 0x8dbd14, `mac_parser_install_rules_b` 0x8dfe14 / 4.1 0x8dbd44, `mac_parser_install_rules_a` 0x8dfee4 / 4.1 0x8dbe14, `rx_macq__pack_desc` 0x8e4340, `rx_macq__build_ba_desc` 0x8e4448.
 
 ## 8. Статистика (UT/sysapi)
 
 `link_stats__calc_throughput_mbps` 0x8c5554 / 4.1 0x8c4a00,
 `stats__read_counter_by_id` 0x8dd7b8, `ber_test__copy_counters` 0x8f5cd0 / 4.1 0x8ed830,
-`ber_test__accumulate_counters` 0x8f5cdc / 4.1 0x8ed83c, `mac_ampdu_statistics_timeout_cb`
+`ber_test__accumulate_counters` 0x8f5cdc / 4.1 0x8ed83c, `mac_ampdu_stats_snapshot_baseline`
 0x8f6370 — окно A-MPDU-статистики по таймеру, затем стоп команды.
 
 ## 9. Загрузка и версии
@@ -68,7 +68,7 @@
 
 ## 10. Таймеры и часы
 
-`timer__start` 0x8e94a0 / 4.1 0x8e4610, `power_halt__start_timer` 0x8e9558 / 4.1 0x8e46c8, `mac__set_usec_clk_div` 0x8e99dc / 4.1 `mac__program_gp_timer` 0x8e4920, `mac__reload_tsf64` 0x8e9a58 / 4.1 `mac__load_gp_timer_value` 0x8e499c, `mac__read_bi_start_tsf64` 0x8e9890 / 4.1 `mac__wait_counter_ready` 0x8e47d0, `irq_ack_880b00` 0x8e9190 / 4.1 0x8e42f0, `pcie__toggle_880c50_bit2` 0x8d029c, `periodic_service__tick` 0x8e4828 / 4.1 0x8dfb6c, `detector__deadline_is_unset` 0x8da2ac / 4.1 0x8d71f4
+`timer__start` 0x8e94a0 / 4.1 0x8e4610, `power_halt__start_timer` 0x8e9558 / 4.1 0x8e46c8, `mac__set_usec_clk_div` 0x8e99dc / 4.1 `mac__program_gp_timer` 0x8e4920, `mac__reload_tsf64` 0x8e9a58 / 4.1 `mac__load_gp_timer_value` 0x8e499c, `mac__read_bi_start_tsf64` 0x8e9890 / 4.1 `mac__wait_counter_ready` 0x8e47d0, `user_icr_timer_irq_enable` 0x8e9190 / 4.1 0x8e42f0, `pcie__toggle_880c50_bit2` 0x8d029c, `periodic_service__tick` 0x8e4828 / 4.1 0x8dfb6c, `detector__deadline_is_unset` 0x8da2ac / 4.1 0x8d71f4
 — `timer__start` задаёт уровень прерывания таймера (`irq_set_level`);
 `periodic_service__tick` — тик периодической службы детекторов (перевзвод
 через `u_schd__schedule`); `pcie__toggle_880c50_bit2` — ожидание захвата PLL
@@ -99,7 +99,7 @@
 
 ## 14. Остальное
 
-`add_0c_ret` 0x8cc364, `mlme__assoc_timeout_cb` 0x8f1054, `maintain_sm__config_mcs_en_vec` 0x8c7000 / 4.1 0x8c62a4, `process_expected_bf_results` 0x8e11f8 / 4.1 0x8dd084, `oob__mode_flags` 0x8ccac8, `hw_cfg__set_8004fc_and_levels` 0x8ce060, `bf_ctrl__lowest_trigger_bit` 0x8d97d4, `fw_sysapi__start_phy_rx_stats` 0x8ce0d4, `fw_sysapi__start_ampdu_stats` 0x8ce088, `stats__delta_since_baseline` 0x8f64f4, `sysapi_mgr__apply_ut_args` 0x8cdd60, `ut_hw_cmd_0x008` 0x8eacb0 / 4.1 0x8e59d8
+`add_0c_ret` 0x8cc364, `mlme__assoc_timeout_cb` 0x8f1054, `maintain_sm__config_mcs_en_vec` 0x8c7000 / 4.1 0x8c62a4, `maintain_sm_log_unexpected_mcs` 0x8e11f8 / 4.1 0x8dd084, `oob__mode_flags` 0x8ccac8, `hw_cfg__set_8004fc_and_levels` 0x8ce060, `bf_ctrl__lowest_trigger_bit` 0x8d97d4, `fw_sysapi__start_phy_rx_stats` 0x8ce0d4, `fw_sysapi__start_ampdu_stats` 0x8ce088, `stats__delta_since_baseline` 0x8f64f4, `sysapi_mgr__apply_ut_args` 0x8cdd60, `ut_hw_cmd_0x008` 0x8eacb0 / 4.1 0x8e59d8
 — роли по вызывающим в разделах выше (maintain_sm, UT, PS) **[выз]**.
 
 ## Не установлено

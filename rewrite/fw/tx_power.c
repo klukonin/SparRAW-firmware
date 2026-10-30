@@ -58,7 +58,7 @@ static u32 txpwr_cap(u32 v, u32 n, u32 t)
 static void txpwr_apply_rows(u32 t)
 {
     struct rf_reg_pair p[2 * TXPWR_ROW_N];
-    u32 m = rf_cfg_get_rf_mask_45e(&rf_obj);
+    u32 m = rf_obj_get_rf_mask(&rf_obj);
     u32 k, bit;
 
     for (k = 0; k < TXPWR_ROW_N; k++) {
@@ -101,7 +101,7 @@ static void txpwr_radio_cb(struct rm_req *req, u32 arg)
     (void)arg;
     if (txpwr_brd_valid != 0)
         txpwr_apply_rows(txpwr_code1 != 0 ? txpwr_code1 - 1u : 0xffu);
-    radio_mgr_call_method_10(req);
+    radio_mgr_lock_free(req);
     txpwr_pending = 0;
 }
 

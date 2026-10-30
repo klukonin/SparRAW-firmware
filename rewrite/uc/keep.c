@@ -5,12 +5,12 @@
 
 __attribute__((used, section(".uc_keep")))
 static const void *const uc_keep[] = {
-    bi_sm_action_92150c, bi_sm_action_92153c, bi_sm_action_92156c, bi_sm_action_923a5c,
-    bi_sm_action_9262e8, bi_sm_action_92646c, bi_sm_action_935a08, bi_sm_action_935a94,
-    bi_sm_action_935b4c, bi_sm_action_935d0c,
-    bf_req_report_20_cb, bf_req_report_21_cb, bf_req_report_26_cb,
-    bf_req_claim_and_report_23, bf_req_claim_and_report_2b, rf_gain_adjust_cb,
+    bi_sm_on_bhi_to_aw_in_aw, bi_sm_on_bhi_to_dti_in_aw, bi_sm_on_dti_to_bti_in_aw, bi_sm_on_aw_to_dti_in_bti,
+    bi_sm_on_event_in_dti, bi_sm_action_invalid, bi_sm_on_bti_to_abft, bi_sm_on_enter_aw,
+    bi_sm_on_dti_to_bti, bi_sm_on_enter_dti,
+    bf_req_report_energy_cb, bf_req_report_plcp_cb, bf_req_report_phystat_cb,
+    bf_req_report_pkt_cb, bf_req_report_chest_cb, rf_gain_adjust_cb,
     abft_send_ssw_feedback, direct_tx_short_frame0_cb, direct_tx_short_frame2_cb,
-    uc_init_cb_globals, uc_init_cb_copy_8006b7, uc_init_cb_more, uc_init_cb_801aec,
-    uc_init_cb_cmdq, ucode_cmdq_handler, notify_aoa_build,
+    uc_init_cb_globals, uc_init_cb_copy_rf_mask, uc_init_cb_rx_meas, uc_init_cb_bi_sm_name,
+    uc_init_cb_cmdq, ucode_cmdq_handler, bf_done_report_build_send,
 };

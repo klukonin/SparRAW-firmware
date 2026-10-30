@@ -10,7 +10,7 @@
 /* Уже портированы в boot.c / stubs.c / mac.c — не переопределять. */
 
 /* ---- Локальные stub-ы глубоких подфункций ---- */
-u32 bi_state_from_g800600(void)
+u32 bi_phase_from_sm_state(void)
 {
     u8 r0 = bi_sm.state;
     if (r0 == 0) return 0;
@@ -23,7 +23,7 @@ void pm_wake_sequence(void)
 {
     internal_tx_clear_pending_bit(0);
     uc_mac_cmd(0x49008000);
-    mac_ddc_mask_bit3();
+    mac_fw2uc_irq_unmask_cmd_halt_wake();
     pm_event_mask_restore();
 }
 void gp_timer_stop(u32 a)
@@ -31,7 +31,7 @@ void gp_timer_stop(u32 a)
     uc_mac_cmd((a + 0x52) << 24);
     uc_mac_cmd((0x49u << 24) | (1u << (a + 6)));
 }
-void field_set_0x00_934998(u32 a)
+void mem_clear_word(u32 a)
 {
     *(u32 *)a = 0;
 }
@@ -40,14 +40,13 @@ void field_set_0x00_934998(u32 a)
 void bits_set_u8_s0_w5_uc(u32 ptr, u32 value) { bf_set8(ptr, 0, 5, value); }
 void bits_set_u8_s0_w6_uc(u32 ptr, u32 value) { bf_set8(ptr, 0, 6, value); }
 void bits_set_u8_s0_w7_uc(u32 ptr, u32 value) { bf_set8(ptr, 0, 7, value); }
-void bits_set_u8_s3_w5_uc(u32 ptr, u32 value) { bf_set8(ptr, 3, 5, value); }
 void bits_set_u8_s6_w2_uc(u32 ptr, u32 value) { bf_set8(ptr, 6, 2, value); }
 /* 0x9263c8 — не функция: хвост цикла aw__walk_peer_bits_noop (переход на 0x9263ba). */
 
 /* ---- Простые accessors ---- */
 u32 bit_iter_has_more_uc(u32 a) { return (*(u32 *)a != 0) ? 1 : 0; }
 
-void bi_mode_set_1000_units165(struct aw_win_s *w) { w->qset_val = 0x28488; }
+void bi_aw_set_qset_1ms(struct aw_win_s *w) { w->qset_val = 0x28488; }
 
 void bi_init_set_mac_arg_pair(u32 a, u32 b)
 {
@@ -57,7 +56,7 @@ void bi_init_set_mac_arg_pair(u32 a, u32 b)
 
 void bi_ctx_clear_state_words(void) { memset0_words_uc(&bcn_rx.bcn_sent, 2); }   /* bcn_sent, abft_go */
 
-void bi_ctx_clear_word0(u32 a) { field_set_0x00_934998(a); }
+void bi_ctx_clear_word0(u32 a) { mem_clear_word(a); }
 
 /* no-store-merging: x2/next_beacon — два stb, как у vendor (иначе gcc сливает в stw [r0,2]). */
 __attribute__((optimize("no-store-merging")))
@@ -74,8 +73,6 @@ void bi_cfg_fill_slot_desc(u32 a, u32 b)
     d->abft_idx = 0;
 }
 
-void bi_cfg_pack_words_thunk(u32 a) { bi_cfg_pack_words_78_7c(a, 0); /* 6.2 asm 0x938000 → 0x938004 */ }
-
 u64 bi_tsf_delta64(u32 a, u32 b)
 {
     u32 tsf[2];
@@ -91,14 +88,14 @@ void bi_ctx_set_active(struct bi_ctx_s *c)
     c->phase = 1;
     bti_reset_sweep_state(c);
     bi_ctx_clear_state_words();                 /* vendor передаёт a+8, функция его не использует */
-    bi_mode_set_1000_units165(&c->aw);
+    bi_aw_set_qset_1ms(&c->aw);
     bi_ctx_clear_word0((u32)&c->dti_wake);
 }
 
 /* ---- State-machine действия ---- */
-void bi_sm_init(void) { obj_vt801adc_ctor(&bi_sm); /* 6.2 asm 0x92acf8 → 0x92aeb4 */ }
+void bi_sm_init(void) { bi_sm_obj_init(&bi_sm); /* 6.2 asm 0x92acf8 → 0x92aeb4 */ }
 
-void bi_sm_action_92646c(u32 a) { (void)a; uc_assert((u32)__builtin_return_address(0), 0x1033); }
+void bi_sm_action_invalid(u32 a) { (void)a; uc_assert((u32)__builtin_return_address(0), 0x1033); }
 
 void bi_dispatch_by_role(struct bi_ctx_s *c)
 {
@@ -106,14 +103,14 @@ void bi_dispatch_by_role(struct bi_ctx_s *c)
     if (role == 0)
         uc_assert((u32)__builtin_return_address(0), 0x67);
     else if (role == 1)
-        bi_manager_start_tx_or_initiator();
+        bi_dti_start_tx_slot();
     else if (role == 2)
         bi_rx_slot_handler(&c->aw);
     else
         uc_assert((u32)__builtin_return_address(0), 0x68);
 }
 
-void bi_manager_start_tx_or_initiator(void)
+void bi_dti_start_tx_slot(void)
 {
     /* vendor: при своём расписании PS (psc.state ≠ 0) — особый путь; PS вырезан */
     fixed_sched_run_tx_slot();
@@ -121,7 +118,7 @@ void bi_manager_start_tx_or_initiator(void)
 
 void bi_after_enter_aw(struct bi_ctx_s *c)
 {
-    u32 st = bi_state_from_g800600();
+    u32 st = bi_phase_from_sm_state();
     c->phase = st;
     if (st != 2)
         uc_assert((u32)__builtin_return_address(0), 0x64);
@@ -130,7 +127,7 @@ void bi_after_enter_aw(struct bi_ctx_s *c)
 
 void bi_after_enter_dti(struct bi_ctx_s *c)
 {
-    u32 st = bi_state_from_g800600();
+    u32 st = bi_phase_from_sm_state();
     c->phase = st;
     if (st != 1)
         uc_assert((u32)__builtin_return_address(0), 0x62);
@@ -160,10 +157,10 @@ void bi_dti_step(void)
     } else {
         sxd_hal_write_qset_field(0, 0);
     }
-    ese_dti_dti_start();                        /* расписание ESE: DTI закрыт вне разрешённых окон */
+    ese_dti_on_dti_start();                        /* расписание ESE: DTI закрыт вне разрешённых окон */
 }
 
-void bi_manager_step_b(struct sls_peer_rec *r)
+void bi_bti_end_reset_timers(struct sls_peer_rec *r)
 {
     /* 0x922258 */
     (void)r;
@@ -179,7 +176,7 @@ void bi_manager_step_b(struct sls_peer_rec *r)
 }
 
 /* ---- BI state-machine действия (bi_sm_action_*) ---- */
-void bi_sm_action_92150c(u32 obj)
+void bi_sm_on_bhi_to_aw_in_aw(u32 obj)
 {
     uc_mac_cmd(0xcaf662);
     (void)obj;
@@ -187,7 +184,7 @@ void bi_sm_action_92150c(u32 obj)
     bi_aw_flag = 1;                       /* st.as 1,[gp,-52]: ×4 = 0x800458 */
 }
 
-void bi_sm_action_92153c(u32 obj)
+void bi_sm_on_bhi_to_dti_in_aw(u32 obj)
 {
     uc_mac_cmd(0xcaf661);
     (void)obj;
@@ -195,7 +192,7 @@ void bi_sm_action_92153c(u32 obj)
     bi_aw_flag = 1;                       /* st.as 1,[gp,-52]: ×4 = 0x800458 */
 }
 
-void bi_sm_action_92156c(void)
+void bi_sm_on_dti_to_bti_in_aw(void)
 {
     uc_mac_cmd(0xcaf660);
     uc_mac_cmd(0x2000010);
@@ -204,19 +201,19 @@ void bi_sm_action_92156c(void)
     bi_aw_flag = 1;
 }
 
-void bi_sm_action_923a5c(void)
+void bi_sm_on_aw_to_dti_in_bti(void)
 {
     uc_mac_cmd(0xcaf440);
     bi_win.aw_to_dti_in_bti += 1;
 }
 
-void bi_sm_action_9262e8(void)
+void bi_sm_on_event_in_dti(void)
 {
     uc_mac_cmd(0xcaf550);
     bi_win.evt_in_dti += 1;
 }
 
-void bi_sm_action_935a08(u32 obj)
+void bi_sm_on_bti_to_abft(u32 obj)
 {
     u8 state = *(u8 *)obj;
     uc_mac_cmd((state & 0xf) | 0xcaf000);
@@ -224,7 +221,7 @@ void bi_sm_action_935a08(u32 obj)
     bi_win.bti_to_abft += 1;
 }
 
-void bi_sm_action_935a94(u32 obj)
+void bi_sm_on_enter_aw(u32 obj)
 {
     u8 state = *(u8 *)obj;
     uc_mac_cmd((state & 0xf) | 0xcaf220);
@@ -234,7 +231,7 @@ void bi_sm_action_935a94(u32 obj)
     bi_after_enter_aw(&bi_ctx);                 /* 6.2: 0x92b798 */
 }
 
-void bi_sm_action_935b4c(u32 obj, u32 a)
+void bi_sm_on_dti_to_bti(u32 obj, u32 a)
 {
     u8 state = *(u8 *)obj;
     uc_mac_cmd((state & 0xf) | 0xcaf000);
@@ -243,7 +240,7 @@ void bi_sm_action_935b4c(u32 obj, u32 a)
     bti_dispatch_sweep_step(&bi_ctx, a);        /* 6.2: 0x92b7dc */
 }
 
-void bi_sm_action_935d0c(u32 obj)
+void bi_sm_on_enter_dti(u32 obj)
 {
     u8 state = *(u8 *)obj;
     uc_mac_cmd((state & 0xf) | 0xcaf110);
@@ -276,7 +273,7 @@ void bi_cfg_tick_counters(void)
     }
 }
 
-void bi_cfg_pack_words_78_7c(u32 a, u32 b)
+void bi_cfg_pack_bcon_cfg(u32 a, u32 b)
 {
     (void)b;
     u32 r2 = bi_cfg.flags;
@@ -363,41 +360,18 @@ void bi_run_bti_cycle(struct bi_ctx_s *c)
             bf_ctx_dispatch_by_role(r13);
         }
     }
-    bi_manager_step_a(c);
-    bi_manager_step_b(r13);
+    bi_bti_end_update_counters(c);
+    bi_bti_end_reset_timers(r13);
     if (mac_ifs_shadow != 0x300)
         uc_assert((u32)__builtin_return_address(0), 0x60);
     l1_task_dispatch(3, 0);
-}
-
-/* 0x92e7c8. Таблица 0x801ba8: 0,2,4 → l1_task_dispatch(1,0); 1 → bi_run_bti_cycle(a);
- * 3 → assert 0x76; 5 → l1_task_dispatch(6,0); 6 → ничего. */
-void bi_bti_timer_step(u32 a, u32 b)
-{
-    uc_read_tsf_lo();
-    switch (b) {
-    case 0: case 2: case 4:
-        l1_task_dispatch(1, 0);
-        break;
-    case 1:
-        bi_run_bti_cycle((struct bi_ctx_s *)a);
-        break;
-    case 5:
-        l1_task_dispatch(6, 0);
-        break;
-    case 6:
-        break;
-    default:
-        uc_assert((u32)__builtin_return_address(0), 0x76);
-        break;
-    }
 }
 
 /* 0x939530: r0 = a, r1 = rate, r2 = b, r3 = flag. */
 void bi_rx_send_response(u32 a, u32 rate, u32 b, u32 flag)
 {
     u32 v;
-    direct_tx_program_cmd34(0x16, 0x18);
+    direct_tx_program_desc(0x16, 0x18);
     mac_program_tx_with_rate(rate);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
@@ -416,7 +390,7 @@ u32 bi_rx_start_rx_window(u32 a, u32 b)
     u32 r14 = b;
     u32 r13;
     u32 limit = (r14 != 0) ? 0x1ef0 : 0x13fb;
-    if (mac_read_time_88c120() < limit) {
+    if (mac_read_ext_window_remain() < limit) {
         r13 = 0;
         goto tail;
     }
@@ -495,10 +469,10 @@ tail:
     tx_ctx_pool.slot[0].flags = 0;
     tx_ctx_pool.slot[1].flags = 0;
     uc_mac_cmd(0x81u << 18);
-    mac_set_mode_0000();
+    mac_wait_mode_ack_if_idle();
     return r13;
 }
-void bi_manager_step_a(struct bi_ctx_s *c)
+void bi_bti_end_update_counters(struct bi_ctx_s *c)
 {
     /* 0x92218c */
     (void)c;
@@ -523,7 +497,7 @@ void bi_manager_step_a(struct bi_ctx_s *c)
         rx_nav_arm_flag_if_enabled();
     memset0_words_uc(&bcn_rx, 0x1c);            /* до x1c */
 }
-void bi_timing_snapshot_b(void)
+void bi_timing_snapshot(void)
 {
     bi_win.bi_len_us = bi_tsf_delta64(bi_win.bti_tsf[0], bi_win.bti_tsf[1]);
     mac_read_tsf64_uc(bi_win.bti_tsf);
@@ -558,7 +532,7 @@ void bi_rx_slot_handler(struct aw_win_s *w)
     u32 sp0 = 0, sp1 = 0;
     u32 r0 = bi_manager_eval_bcon_slot(w, (u8 *)&sp0, (u32 *)&sp1);
     if (r0 == 0) {
-        bi_tx_check_idle_and_start_uc(2);
+        mac_backoff_settle_set_chain_modes(2);
         uc_mac_cmd(0x81u << 18);
         internal_tx_clear_pending_bit(0);
         return;

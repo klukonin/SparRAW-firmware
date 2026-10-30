@@ -33,6 +33,7 @@ CID = 0
 WMI_ECHO, WMI_ECHO_RSP = 0x803, 0x1803
 WMI_PCP_STOPPED = 0x1919
 SCALE = 1                         # AP: пороги старения / keep-alive (наборы поддержания — 5 с / 1 с) — без укорочения
+FULL_SCALE = 5                    # ap_full (полная база станций): не срок, а «снята только пропавшая» — укорочение
 QUIESCE_US = 5_000_000            # окно проверки частоты ложных тревог (4,5 с, l2mgr_link_lost_radio_cb) истекает само
 TICK_US = 16
 # Как в test_fw_conn_cleanup: очереди TX fw останавливаются вместе с каналом и включаются следующим переключением.
@@ -46,12 +47,13 @@ def _preset(fw, idx, off):
     return fw.r32(fw.a('ll_cfg_presets') + 0x24 * idx + off)
 
 
-def ap_bound_us(fw):
-    """Срок обнаружения пропавшей станции точкой: после ассоциации — набор поддержания 0 (в тесте укорочен); после SLS
-    в A-BFT без Assoc Request — ожидание запроса CONN_ASSOC_WAIT_US (10 с, fw/conn.c)."""
+def ap_bound_us(fw, connected=False):
+    """Срок обнаружения пропавшей станции точкой: подключённая станция (connected) — набор поддержания 0 (в тесте
+    укорочен); иначе (SLS в A-BFT без Assoc Request, ассоциация не завершена) — ещё и ожидание запроса
+    CONN_ASSOC_WAIT_US (10 с, fw/conn.c)."""
     period, ka, ageing = _preset(fw, 0, 0x04), _preset(fw, 0, 0x0c), _preset(fw, 0, 0x08)
-    return max(ka + ageing + 3 * period, 10_000_000) + \
-        fw.r32(fw.a('pring_stop_timeout'))
+    keep = ka + ageing + 3 * period
+    return (keep if connected else max(keep, 10_000_000)) + fw.r32(fw.a('pring_stop_timeout'))
 
 
 def sta_bound_us(fw):
@@ -79,10 +81,10 @@ def _record(fw, n_cmd, n_evt):
 
 # =============================== AP: станция пропала ===============================
 
-def _ap_fresh(elf):
+def _ap_fresh(elf, scale=SCALE):
     fw = fwemu.FW(elf).boot()
     F.run_tsf(fw)
-    F.scale_link_loss(fw, SCALE)
+    F.scale_link_loss(fw, scale)
     F.track_event_times(fw)
     w = F.Fw(fw)
     w.ap_start()
@@ -237,7 +239,7 @@ def _ap_reference_join(elf):
 def _ap_path(elf, name):
     w = _ap_fresh(elf)
     fw = w.fw
-    r = {'ap_idle': F.idle_state(fw), 'bound': ap_bound_us(fw)}
+    r = {'ap_idle': F.idle_state(fw), 'bound': ap_bound_us(fw, connected=_AP[name][1])}
     r['uc0'] = F.uc_station(list(fw.boot_lmac_cmds) + list(fw.lmac_cmds), CID)
     try:
         _AP[name][0](w)
@@ -268,9 +270,11 @@ def _ap(elf, name):
     return r
 
 
-def _p(name, xfails=None):
+def _p(name, xfails=None, group='ap'):
+    """Параметр пути; тесты одного пути делят кэш сценария (_ap_path/_sta_path) — под xdist (--dist loadgroup) одна
+    группа на путь, сценарий считается один раз."""
     marks = [_xf(xfails[name])] if xfails and name in xfails else []
-    return pytest.param(name, id=name, marks=marks)
+    return pytest.param(name, id=name, marks=marks + [pytest.mark.xdist_group('%s:%s' % (group, name))])
 
 
 @pytest.mark.parametrize('path', [_p(n) for n, _, _ in AP_PATHS])
@@ -329,19 +333,22 @@ def _sta_mac(i):
 
 @pytest.fixture(scope='module')
 def ap_full(fw_elf):
-    """Точка с SPARRAW_MAX_STA станциями, станция VICTIM пропала; срок обнаружения прошёл."""
-    w = _ap_fresh(fw_elf)
+    """Точка с SPARRAW_MAX_STA станциями, станция VICTIM пропала; срок обнаружения прошёл. Пороги поддержания укорочены
+    в FULL_SCALE раз: проверяется, что снимается только пропавшая, а не срок (его — тесты одной станции с настоящими
+    5 с / 1 с); без укорочения 6,5 с модельного времени при 8 станциях — 2,5 мин эмуляции."""
+    w = _ap_fresh(fw_elf, FULL_SCALE)
     fw = w.fw
     for i in range(F.SPARRAW_MAX_STA):
         w.ap_sta_join(peer=_sta_mac(i), cid=i)
         w.sta_add_vring(cid=i, ringid=i)
     cmds0 = list(fw.boot_lmac_cmds) + list(fw.lmac_cmds)
     _gone(w, macs=(_sta_mac(VICTIM),), cids=(VICTIM,))
-    bound = ap_bound_us(fw)
+    bound = ap_bound_us(fw, connected=True)                  # все SPARRAW_MAX_STA станций подключены
     fw.advance(bound + F.BI_US, between=F.settle)
     return w, cmds0, bound
 
 
+@pytest.mark.xdist_group('ap_full')                     # одна модульная фикстура на воркер
 def test_ap_one_of_max_sta_vanishes_only_it_disconnected(ap_full):
     w, _, bound = ap_full
     fw = w.fw
@@ -353,6 +360,7 @@ def test_ap_one_of_max_sta_vanishes_only_it_disconnected(ap_full):
     assert (uc['enabled'], uc['maint'], uc['key_valid']) == (False, False, False), uc
 
 
+@pytest.mark.xdist_group('ap_full')                     # одна модульная фикстура на воркер
 def test_ap_one_of_max_sta_vanishes_others_unaffected(ap_full):
     """Остальные станции: соединение то же, KEY_ASSOC / ASSOCIATED, uc держит запись и сопровождение, стрим на месте."""
     w, _, _ = ap_full
@@ -369,6 +377,7 @@ def test_ap_one_of_max_sta_vanishes_others_unaffected(ap_full):
         assert fw.r32(fw.a('stream_by_vr') + 4 * i) != 0, 'стрим кольца %d снят' % i
 
 
+@pytest.mark.xdist_group('ap_full')                     # одна модульная фикстура на воркер
 def test_ap_one_of_max_sta_vanishes_slot_reused(ap_full):
     """Новая станция занимает освободившийся cid и проходит вход до KEY_ASSOC; WMI_ECHO отвечает."""
     w, _, _ = ap_full
@@ -596,7 +605,7 @@ def _sta_path(elf, name):
         r['disc_before'] = len(_disc_evts(fw, 0)) - len(r['disc'])
         fw.advance(QUIESCE_US, between=F.settle)
         r['after'] = F.idle_state(fw)
-        r['scan_connected'] = fw.call('mid_list_any_in_state2')
+        r['scan_connected'] = fw.call('mid_list_any_bss_active')
         r['uc'] = F.uc_station(list(fw.boot_lmac_cmds) + list(fw.lmac_cmds), CID)
         r['wild'] = list(fw.wild)
         r['echo'] = _echo(fw)
@@ -616,7 +625,7 @@ def _sta(elf, name):
     return r
 
 
-@pytest.mark.parametrize('path', [_p(n) for n, _ in STA_PATHS])
+@pytest.mark.parametrize('path', [_p(n, group='sta') for n, _ in STA_PATHS])
 def test_sta_ap_vanish_disconnect_once_in_bound(fw_elf, path):
     """Подключение начал хост — ровно одно WMI_DISCONNECT_EVENT за всё время, не позже срока после пропажи."""
     r = _sta(fw_elf, path)
@@ -625,7 +634,7 @@ def test_sta_ap_vanish_disconnect_once_in_bound(fw_elf, path):
     assert all(t <= r['bound'] for t in r['disc']), 'разрыв через %s мкс, срок %d мкс' % (r['disc'], r['bound'])
 
 
-@pytest.mark.parametrize('path', [_p(n) for n, _ in STA_PATHS])
+@pytest.mark.parametrize('path', [_p(n, group='sta') for n, _ in STA_PATHS])
 def test_sta_ap_vanish_returns_to_idle(fw_elf, path):
     """Состояние — «после загрузки» (idle_state), START_SCAN — не «скан при соединении», uc о станции ничего не держит,
     обращений вне карты памяти нет, WMI_ECHO отвечает."""
@@ -638,7 +647,7 @@ def test_sta_ap_vanish_returns_to_idle(fw_elf, path):
     assert r['echo'] == [(WMI_ECHO_RSP, 0x5a5a1234)], r['echo']
 
 
-@pytest.mark.parametrize('path', [_p(n) for n, _ in STA_PATHS])
+@pytest.mark.parametrize('path', [_p(n, group='sta') for n, _ in STA_PATHS])
 def test_sta_ap_vanish_reconnect_same_as_first(fw_elf, path):
     """Точка вернулась: подключение — те же команды uc и события хосту, что первое с загрузки; KEY_ASSOC /
     ASSOCIATED, BSS активен; счётчики keep-alive — с нуля."""

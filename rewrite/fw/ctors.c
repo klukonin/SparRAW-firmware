@@ -53,7 +53,7 @@ static void calib_est_reset(struct calib_est *o)
 }
 
 /* (0x8ed154) автомат движка калибровки calib_mngr.eng[i]: поле est. */
-static void elem_804944_ctor(void *e)
+static void calib_engine_elem_ctor(void *e)
 {
     struct calib_engine *eng = e;
 
@@ -64,7 +64,7 @@ static void elem_804944_ctor(void *e)
  * 0x8008c4) и keep-alive (0x80075c) не привязаны (cid 0xff, ctx 0); детектор биконов —
  * cid 0xff, ctx 0, armed 0 (vendor: stb.a r13,[r0,0x98] сдвигает r0 на +0x98 до двух
  * последних st_s). */
-static void elem_854dd4_ctor(void *a)
+static void ll_detectors_elem_ctor(void *a)
 {
     /* порядок записей — vendor (cid, ctx, vt): volatile, иначе gcc переставляет */
     volatile struct ll_detectors *e = a;
@@ -80,7 +80,7 @@ static void elem_854dd4_ctor(void *a)
 }
 
 /* (0x8ed190) элемент массива stream_ctxs 0x847b48 (9 × 0x78): таблица методов 0x800888. */
-static void elem_847b48_ctor(void *e)
+static void stream_ctx_elem_ctor(void *e)
 {
     struct stream_ctx *c = e;
 
@@ -126,7 +126,7 @@ static void rf_obj_ctor(volatile struct rf_obj *o)
 }
 
 /* (0x8c1864 / 0x8c1870) запрос rf_sector_sel (include/mbox.h): ящика нет, тело — нули. */
-static void pair_reset(struct rf_sector_sel_req *o)
+static void rf_sector_sel_req_reset(struct rf_sector_sel_req *o)
 {
     o->mbox = 0;
     memset0_words(o->req, 4);
@@ -154,7 +154,7 @@ static void fw_sysapi_mgr_ctor(struct fw_sysapi_mgr *o)
 }
 
 /* (0x8c18bc) */
-static void obj_805234_ctor(volatile struct sched_scheme *o)
+static void sched_scheme_ctor(volatile struct sched_scheme *o)
 {
     o->ese = 0;
     o->seq = 0;
@@ -165,7 +165,7 @@ static void obj_805234_ctor(volatile struct sched_scheme *o)
 }
 
 /* (0x8c18a0) */
-static void obj_8052e4_ctor(volatile struct ese_sched *o)
+static void ese_sched_ctor(volatile struct ese_sched *o)
 {
     o->tbl = &ese_slot_tbl;
     o->cur = 0;
@@ -216,22 +216,22 @@ FWDATA(800bd0) struct ctor_reg ctor_reg_debug_mbox_vtable = { .ctor = ctor_debug
 
 /* (0x8c1a2c) таблица методов ящика ucode lmac_mbox 0x804280 (+0x44; vendor адресует
  * как 0x80426c + 0x58). */
-void ctor_obj_80426c_vtable(void)
+void ctor_lmac_mbox_vtable(void)
 {
     lmac_mbox.vt = &lmac_mbox_vtbl;
 }
 
 /* (0x8c199c) объект RF 0x8042c8 (0x8c17c0, второй аргумент 0). */
-void ctor_obj_8042c8(void)
+void ctor_rf_obj(void)
 {
     rf_obj_ctor(&rf_obj);
 }
 
 /* (0x8c1a0c) два запроса rf_sector_sel: 0x804914 (0x8c1864) и 0x80491c (0x8c1870). */
-void ctor_pairs_804914(void)
+void ctor_rf_sector_sel_reqs(void)
 {
-    pair_reset(&rf_sector_sel[RF_SECTOR_SEL_GET]);
-    pair_reset(&rf_sector_sel[RF_SECTOR_SEL_SET]);
+    rf_sector_sel_req_reset(&rf_sector_sel[RF_SECTOR_SEL_GET]);
+    rf_sector_sel_req_reset(&rf_sector_sel[RF_SECTOR_SEL_SET]);
 }
 
 /* (0x8c1a5c) массив движков калибровки calib_mngr.eng (0x804944, 6 × 0x44, ctor 0x8ed154,
@@ -239,7 +239,7 @@ void ctor_pairs_804914(void)
 void ctor_calib_engines(void)
 {
     vec_construct(calib_mngr.eng, CALIB_ENG_NUM, sizeof(struct calib_engine),
-                  elem_804944_ctor);
+                  calib_engine_elem_ctor);
 }
 
 /* (0x8c18d4) таблицы методов классов калибровки (в NAMES-EXTRA — boot__install_handler_ptrs):
@@ -256,56 +256,56 @@ void ctor_calib_classes(void)
 }
 
 /* (0x8c1b44) ид автомата движка калибровки 0x802234 ([gp,-44] = 0x800158). */
-void ctor_sm_802234_id(void)
+void ctor_calib_engine_sm_id(void)
 {
     sm_set_id(&calib_engine_sm_desc, &calib_engine_sm_name_id);
 }
 
 /* (0x8c1bec) ид автомата rf_mgmt_sm 0x802338 ([gp,52] = 0x8001b8). */
-void ctor_sm_802338_id(void)
+void ctor_rf_mgmt_sm_id(void)
 {
     sm_set_id(&rf_mgmt_sm_desc, &rf_kill_sm_name_id);
 }
 
 /* (0x8c19ec) таблицы методов vring_schd (0x804dbc) и его варианта (0x804e64). */
-void ctor_obj_804dbc_vtables(void)
+void ctor_vring_schd_vtables(void)
 {
     vring_schd.base.vt = &vring_schd_vtbl;
     vring_schd_alt.base.vt = &vring_schd_alt_vtbl;
 }
 
 /* (0x8c1abc) массив 0x854dd4 (8 × 0xa4, ctor 0x8ed15c, флаги 0x402). */
-void ctor_array_854dd4(void)
+void ctor_ll_detectors(void)
 {
-    vec_construct(ll_detectors, 8, sizeof(struct ll_detectors), elem_854dd4_ctor);
+    vec_construct(ll_detectors, 8, sizeof(struct ll_detectors), ll_detectors_elem_ctor);
 }
 
 /* (0x8c1ad4) таблица методов объекта discovery записи mid 0x804e90 (+0x234, st.as [r1,141]). */
-void ctor_obj_804e90_vtable(void)
+void ctor_mid_disc_vtable(void)
 {
     ((volatile struct mid_disc *)&mid_recs[0].disc)->vt = &mid_disc_vtbl;
 }
 
 /* (0x8c1c28) массив 0x847b48 (9 × 0x78, ctor 0x8ed190, флаги 0x402). */
-void ctor_array_847b48(void)
+void ctor_stream_ctxs(void)
 {
-    vec_construct(stream_ctxs, STREAM_CTX_N, sizeof(struct stream_ctx), elem_847b48_ctor);
+    vec_construct(stream_ctxs, STREAM_CTX_N, sizeof(struct stream_ctx), stream_ctx_elem_ctor);
 }
 
 /* (0x8c1ba4) ид автомата mlme_sm 0x802458 ([gp,56] = 0x8001bc). */
-void ctor_sm_802458_id(void)
+void ctor_mlme_sm_id(void)
 {
     sm_set_id(&mlme_sm_desc, &mlme_sm_name_id);
 }
 
 /* (0x8c1b5c) ид автомата conn_main_sm 0x802744 (vendor: 0x802754 + 0, [gp,60] = 0x8001c0). */
-void ctor_sm_802754_id(void)
+void ctor_conn_msm_id(void)
 {
     sm_set_id(&conn_msm_desc, &conn_msm_name_id);
 }
 
 /* (0x8c1b50) ид автомата разрыва conn_disc_sm 0x8027a0 (vendor: таблица 0x802758 + 0x58, [gp,64] = 0x8001c4). */
-void ctor_sm_802758_id(void)
+void ctor_conn_disc_sm_id(void)
 {
     sm_set_id(&conn_disc_sm_desc, &disconn_sm_name_id);
 }
@@ -313,7 +313,7 @@ void ctor_sm_802758_id(void)
 /* (0x8c196c) fw_sysapi_mgr 0x805170 (0x8f0000) и obj::store3 (0x8c17b4 → 0x8d8fdc):
  * LUT RSSI → SNR (0x8051f8) = {ключи 0x801170, значения 0x801230, 0x30}
  * (rssi_snr_lut_keys / rssi_snr_lut_vals). */
-void ctor_obj_805170(void)
+void ctor_fw_sysapi_mgr(void)
 {
     struct sysapi_lut *l = &fw_sysapi_mgr.rssi_snr_lut;
 
@@ -324,25 +324,25 @@ void ctor_obj_805170(void)
 }
 
 /* (0x8c1b2c) ид автомата 0x802940 (поле +0x3c, [gp,68] = 0x8001c8). */
-void ctor_sm_802940_id(void)
+void ctor_stream_sm_id(void)
 {
     sm_set_id(&stream_sm_desc, &ba_sm_name_id);
 }
 
 /* (0x8c1b20) ид автомата 0x802b08 (поле +0x58, [gp,72] = 0x8001cc). */
-void ctor_sm_802b08_id(void)
+void ctor_ba_setup_sm_id(void)
 {
     sm_set_id(&ba_setup_sm_desc, &ba_setup_sm_name_id);
 }
 
 /* (0x8c1b38) ид автомата 0x802b64 (поле +0x4c, [gp,76] = 0x8001d0). */
-void ctor_sm_802b64_id(void)
+void ctor_wait_sm_id(void)
 {
     sm_set_id(&wait_sm_desc, &wait_sm_name_id);
 }
 
 /* (0x8c19b8) таблицы методов 0x842840 / 0x842844. */
-void ctor_obj_842840_vtables(void)
+void ctor_rx_pkt_srvs_vtables(void)
 {
     /* volatile: две записи подряд — порядок и ширина как у vendor */
     ((volatile struct rx_pkt_srvs *)&rx_pkt_srvs)->vt = &rx_pkt_srvs_vtbl;
@@ -350,39 +350,39 @@ void ctor_obj_842840_vtables(void)
 }
 
 /* (0x8c1928) [0x8002f0] = 0x8006f4 (st.as [gp,91]). */
-void ctor_g8002f0_vtable(void)
+void ctor_eapol_builder_vtable(void)
 {
     eapol_builder_obj = (u32)&eapol_builder_vtbl;
 }
 
 /* (0x8c1c5c) объект 0x805234 (0x8c18bc). */
-void ctor_obj_805234(void)
+void ctor_sched_scheme(void)
 {
-    obj_805234_ctor(&sched_scheme);
+    sched_scheme_ctor(&sched_scheme);
 }
 
 /* (0x8c1b98) ид автомата 0x802cc4 ([gp,-40] = 0x80015c). */
-void ctor_sm_802cc4_id(void)
+void ctor_maintain_sm_id(void)
 {
     sm_set_id(&maintain_sm_desc, &maintain_sm_name_id);
 }
 
 /* (0x8c1b8c) ид автомата 0x802da0 ([gp,-36] = 0x800160). */
-void ctor_sm_802da0_id(void)
+void ctor_lm_sm_id(void)
 {
     sm_set_id(&lm_sm_desc, &lm_sm_name_id);
 }
 
 /* (0x8c1b80) ид автомата 0x802f58 ([gp,-32] = 0x800164). */
-void ctor_sm_802f58_id(void)
+void ctor_link_stats_sm_id(void)
 {
     sm_set_id(&link_stats_sm_desc, &link_stats_sm_name_id);
 }
 
 /* (0x8c1c40) объект 0x8052e4 (0x8c18a0). */
-void ctor_obj_8052e4(void)
+void ctor_ese_sched(void)
 {
-    obj_8052e4_ctor(&ese_sched);
+    ese_sched_ctor(&ese_sched);
 }
 
 /* (0x8c1c68) swc_psc_sm 0x8054bc = scan_mngr записи mid 0 + 0x1d0 (0x8c179c, scan.c). */
@@ -393,20 +393,20 @@ void ctor_swc_psc_sm(void)
 
 /* (0x8c19d0) таймаут скана [0x800488] = 4·[0x800484] (add1 + add_s) и ид автомата
  * channels_switch_sm 0x802fb4 ([gp,20] .as = 0x8001d4). */
-void ctor_scan_timeout_and_sm_802fb4(void)
+void ctor_scan_timeout_and_ch_switch_sm_id(void)
 {
     scan_timeout = scan_alloc_timeout * 4;
     sm_set_id(&channels_switch_sm_desc, &channels_switch_sm_name_id);
 }
 
 /* (0x8c1c1c) ид автомата 0x8030e0 ([gp,84] = 0x8001d8). */
-void ctor_sm_8030e0_id(void)
+void ctor_swc_psc_sm_id(void)
 {
     sm_set_id(&swc_psc_sm_desc, &swc_psc_sm_name_id);
 }
 
 /* (0x8c1b68) ид автомата 0x8030f4 ([gp,88] = 0x8001dc). */
-void ctor_sm_8030f4_id(void)
+void ctor_find_sm_id(void)
 {
     sm_set_id(&find_sm_desc, &find_main_sm_name_id);
 }
@@ -428,13 +428,13 @@ void ctor_fwq_tx_vtables(void)
 }
 
 /* (0x8c1a4c) таблица методов RX-кольца rx_ring 0x805fe4 (include/rx_ring.h). */
-void ctor_obj_805fe4_vtable(void)
+void ctor_rx_ring_vtable(void)
 {
     rx_ring.vt = &rx_ring_vtbl;
 }
 
 /* (0x8c19a8) таблица методов монитора PHY 0x84e7e0 (0x8007a0). */
-void ctor_obj_84e7e0_vtable(void)
+void ctor_phy_monitor_vtable(void)
 {
     phy_monitor.svc.vt = &phy_monitor_vtbl.psvc;
 }
@@ -442,13 +442,13 @@ void ctor_obj_84e7e0_vtable(void)
 
 
 /* (0x8c1c4c) таблица методов объекта LO power полной калибровки (0x80676c + 0x24). */
-void ctor_obj_80676c_vtable(void)
+void ctor_calib_all_lo_power_vtable(void)
 {
     calib_all_lo_power_obj.base.vt = &calib_lo_power_vtbl;
 }
 
 /* (0x8c191c) пустой (r0 = 0x8005b8, переход на j_s [blink] 0x8c1d68), prio 0x80. */
-void ctor_empty_8005b8(void)
+void ctor_empty(void)
 {
 }
 
@@ -461,43 +461,43 @@ void static_ctors_run(void)
     /* ctor_sm_801ca8_id (ид автомата питания PCIe) — автомат вырезан */
     ctor_operational_mbox_vtable();
     ctor_debug_mbox_vtable();
-    ctor_obj_80426c_vtable();
-    ctor_obj_8042c8();
-    ctor_pairs_804914();
+    ctor_lmac_mbox_vtable();
+    ctor_rf_obj();
+    ctor_rf_sector_sel_reqs();
     ctor_calib_engines();
     ctor_calib_classes();
-    ctor_sm_802234_id();
-    ctor_sm_802338_id();
-    ctor_obj_804dbc_vtables();
-    ctor_array_854dd4();
-    ctor_obj_804e90_vtable();
-    ctor_array_847b48();
-    ctor_sm_802458_id();
-    ctor_sm_802754_id();
-    ctor_sm_802758_id();
-    ctor_obj_805170();
-    ctor_sm_802940_id();
-    ctor_sm_802b08_id();
-    ctor_sm_802b64_id();
-    ctor_obj_842840_vtables();
-    ctor_g8002f0_vtable();
-    ctor_obj_805234();
-    ctor_sm_802cc4_id();
-    ctor_sm_802da0_id();
-    ctor_sm_802f58_id();
-    ctor_obj_8052e4();
+    ctor_calib_engine_sm_id();
+    ctor_rf_mgmt_sm_id();
+    ctor_vring_schd_vtables();
+    ctor_ll_detectors();
+    ctor_mid_disc_vtable();
+    ctor_stream_ctxs();
+    ctor_mlme_sm_id();
+    ctor_conn_msm_id();
+    ctor_conn_disc_sm_id();
+    ctor_fw_sysapi_mgr();
+    ctor_stream_sm_id();
+    ctor_ba_setup_sm_id();
+    ctor_wait_sm_id();
+    ctor_rx_pkt_srvs_vtables();
+    ctor_eapol_builder_vtable();
+    ctor_sched_scheme();
+    ctor_maintain_sm_id();
+    ctor_lm_sm_id();
+    ctor_link_stats_sm_id();
+    ctor_ese_sched();
     ctor_swc_psc_sm();
-    ctor_scan_timeout_and_sm_802fb4();
-    ctor_sm_8030e0_id();
-    ctor_sm_8030f4_id();
+    ctor_scan_timeout_and_ch_switch_sm_id();
+    ctor_swc_psc_sm_id();
+    ctor_find_sm_id();
     ctor_fwq_tx_vtables();
-    ctor_obj_805fe4_vtable();
+    ctor_rx_ring_vtable();
     radio_mgr_install_vtable();
     rm_sm_desc_set_id();
     rm_ch_switch_sm_desc_set_id();
-    ctor_obj_84e7e0_vtable();
-    ctor_obj_80676c_vtable();
-    ctor_empty_8005b8();
+    ctor_phy_monitor_vtable();
+    ctor_calib_all_lo_power_vtable();
+    ctor_empty();
 }
 
 /* ======================= регистрации конструкторов (fw_data) ======================= */
@@ -511,40 +511,40 @@ void static_ctors_run(void)
 #define CTOR_REG(addr, prio, fn) FWDATA(addr) const struct ctor_reg creg_##fn = { prio, fn, 0 }
 
 /* 0x800c10..0x801b2c: регистрации в порядке вызовов 0x8fc364 (хвост списка из 49). */
-CTOR_REG(800c10, 0x0, ctor_obj_80426c_vtable);                  /* vendor 0x8c1a2c */
-CTOR_REG(800c1c, 0x0, ctor_obj_8042c8);                         /* vendor 0x8c199c */
-CTOR_REG(800c28, 0x0, ctor_pairs_804914);                       /* vendor 0x8c1a0c */
+CTOR_REG(800c10, 0x0, ctor_lmac_mbox_vtable);                  /* vendor 0x8c1a2c */
+CTOR_REG(800c1c, 0x0, ctor_rf_obj);                         /* vendor 0x8c199c */
+CTOR_REG(800c28, 0x0, ctor_rf_sector_sel_reqs);                       /* vendor 0x8c1a0c */
 CTOR_REG(800c58, 0x0, ctor_calib_engines);                      /* vendor 0x8c1a5c */
 CTOR_REG(800dbc, 0x0, ctor_calib_classes);                      /* vendor 0x8c18d4 */
-CTOR_REG(800e20, 0x0, ctor_sm_802234_id);                       /* vendor 0x8c1b44 */
-CTOR_REG(80100c, 0x0, ctor_sm_802338_id);                       /* vendor 0x8c1bec */
-CTOR_REG(801018, 0x0, ctor_obj_804dbc_vtables);                 /* vendor 0x8c19ec */
-CTOR_REG(801024, 0x0, ctor_array_854dd4);                       /* vendor 0x8c1abc */
-CTOR_REG(801030, 0x0, ctor_obj_804e90_vtable);                  /* vendor 0x8c1ad4 */
-CTOR_REG(80106c, 0x0, ctor_array_847b48);                       /* vendor 0x8c1c28 */
-CTOR_REG(8010bc, 0x0, ctor_sm_802458_id);                       /* vendor 0x8c1ba4 */
-CTOR_REG(801118, 0x0, ctor_sm_802754_id);                       /* vendor 0x8c1b5c */
-CTOR_REG(801140, 0x0, ctor_sm_802758_id);                       /* vendor 0x8c1b50 */
-CTOR_REG(80130c, 0x0, ctor_obj_805170);                         /* vendor 0x8c196c */
-CTOR_REG(80135c, 0x0, ctor_sm_802940_id);                       /* vendor 0x8c1b2c */
-CTOR_REG(8013b8, 0x0, ctor_sm_802b08_id);                       /* vendor 0x8c1b20 */
-CTOR_REG(8013e0, 0x0, ctor_sm_802b64_id);                       /* vendor 0x8c1b38 */
-CTOR_REG(8013ec, 0x0, ctor_obj_842840_vtables);                 /* vendor 0x8c19b8 */
-CTOR_REG(8013f8, 0x0, ctor_g8002f0_vtable);                     /* vendor 0x8c1928 */
-CTOR_REG(801404, 0x0, ctor_obj_805234);                         /* vendor 0x8c1c5c */
-CTOR_REG(8014a4, 0x0, ctor_sm_802cc4_id);                       /* vendor 0x8c1b98 */
-CTOR_REG(80150c, 0x0, ctor_sm_802da0_id);                       /* vendor 0x8c1b8c */
-CTOR_REG(8015e4, 0x0, ctor_sm_802f58_id);                       /* vendor 0x8c1b80 */
-CTOR_REG(8015f0, 0x0, ctor_obj_8052e4);                         /* vendor 0x8c1c40 */
+CTOR_REG(800e20, 0x0, ctor_calib_engine_sm_id);                       /* vendor 0x8c1b44 */
+CTOR_REG(80100c, 0x0, ctor_rf_mgmt_sm_id);                       /* vendor 0x8c1bec */
+CTOR_REG(801018, 0x0, ctor_vring_schd_vtables);                 /* vendor 0x8c19ec */
+CTOR_REG(801024, 0x0, ctor_ll_detectors);                       /* vendor 0x8c1abc */
+CTOR_REG(801030, 0x0, ctor_mid_disc_vtable);                  /* vendor 0x8c1ad4 */
+CTOR_REG(80106c, 0x0, ctor_stream_ctxs);                       /* vendor 0x8c1c28 */
+CTOR_REG(8010bc, 0x0, ctor_mlme_sm_id);                       /* vendor 0x8c1ba4 */
+CTOR_REG(801118, 0x0, ctor_conn_msm_id);                       /* vendor 0x8c1b5c */
+CTOR_REG(801140, 0x0, ctor_conn_disc_sm_id);                       /* vendor 0x8c1b50 */
+CTOR_REG(80130c, 0x0, ctor_fw_sysapi_mgr);                         /* vendor 0x8c196c */
+CTOR_REG(80135c, 0x0, ctor_stream_sm_id);                       /* vendor 0x8c1b2c */
+CTOR_REG(8013b8, 0x0, ctor_ba_setup_sm_id);                       /* vendor 0x8c1b20 */
+CTOR_REG(8013e0, 0x0, ctor_wait_sm_id);                       /* vendor 0x8c1b38 */
+CTOR_REG(8013ec, 0x0, ctor_rx_pkt_srvs_vtables);                 /* vendor 0x8c19b8 */
+CTOR_REG(8013f8, 0x0, ctor_eapol_builder_vtable);                     /* vendor 0x8c1928 */
+CTOR_REG(801404, 0x0, ctor_sched_scheme);                         /* vendor 0x8c1c5c */
+CTOR_REG(8014a4, 0x0, ctor_maintain_sm_id);                       /* vendor 0x8c1b98 */
+CTOR_REG(80150c, 0x0, ctor_lm_sm_id);                       /* vendor 0x8c1b8c */
+CTOR_REG(8015e4, 0x0, ctor_link_stats_sm_id);                       /* vendor 0x8c1b80 */
+CTOR_REG(8015f0, 0x0, ctor_ese_sched);                         /* vendor 0x8c1c40 */
 CTOR_REG(8015fc, 0x0, ctor_swc_psc_sm);                         /* vendor 0x8c1c68 */
-CTOR_REG(801644, 0x0, ctor_scan_timeout_and_sm_802fb4);         /* vendor 0x8c19d0 */
-CTOR_REG(8016a8, 0x0, ctor_sm_8030e0_id);                       /* vendor 0x8c1c1c */
-CTOR_REG(8016e4, 0x0, ctor_sm_8030f4_id);                       /* vendor 0x8c1b68 */
+CTOR_REG(801644, 0x0, ctor_scan_timeout_and_ch_switch_sm_id);         /* vendor 0x8c19d0 */
+CTOR_REG(8016a8, 0x0, ctor_swc_psc_sm_id);                       /* vendor 0x8c1c1c */
+CTOR_REG(8016e4, 0x0, ctor_find_sm_id);                       /* vendor 0x8c1b68 */
 CTOR_REG(8016f0, 0x0, ctor_fwq_tx_vtables);                     /* vendor 0x8c1a74 */
-CTOR_REG(8016fc, 0x0, ctor_obj_805fe4_vtable);                  /* vendor 0x8c1a4c */
+CTOR_REG(8016fc, 0x0, ctor_rx_ring_vtable);                  /* vendor 0x8c1a4c */
 CTOR_REG(801708, 0x0, radio_mgr_install_vtable);                /* vendor 0x8c1a3c */
 CTOR_REG(80175c, 0x0, rm_sm_desc_set_id);                       /* vendor 0x8c1c04 */
 CTOR_REG(801790, 0x0, rm_ch_switch_sm_desc_set_id);             /* vendor 0x8c1bf8 */
-CTOR_REG(80179c, 0x0, ctor_obj_84e7e0_vtable);                  /* vendor 0x8c19a8 */
-CTOR_REG(801924, 0x0, ctor_obj_80676c_vtable);                  /* vendor 0x8c1c4c */
-CTOR_REG(801b2c, 0x80, ctor_empty_8005b8);                       /* vendor 0x8c191c */
+CTOR_REG(80179c, 0x0, ctor_phy_monitor_vtable);                  /* vendor 0x8c19a8 */
+CTOR_REG(801924, 0x0, ctor_calib_all_lo_power_vtable);                  /* vendor 0x8c1c4c */
+CTOR_REG(801b2c, 0x80, ctor_empty);                       /* vendor 0x8c191c */

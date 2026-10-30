@@ -6,7 +6,7 @@
 
 
 /* Статус PLL3, бит 3. */
-u32 car_get_pll3_status_bit3(void)
+u32 car_get_pll3_lock_status(void)
 {
     return (MMIO32(RGF_CAF_PLL_LOCK_STATUS) >> 3) & 1;
 }
@@ -21,7 +21,7 @@ void hwd_abif_adc_clk_ctrl(u32 on)
 void abif_ack_unmask_pll_unlock_irq(void)
 {
     MMIO32(HW_RGF_CAF_ICR_ICR) = 4;   /* ack PLL-unlock ICR bit2 (W1C) — пропущено было */
-    if (car_get_pll3_status_bit3() != 1)
+    if (car_get_pll3_lock_status() != 1)
         fw_sysassert_fatal((void *)0, 0x1417);
     MMIO32(HW_RGF_CAF_ICR_IMC) = 4;   /* unmask PLL-unlock IMC bit2 — пропущено было */
 }
@@ -39,13 +39,13 @@ void car_enable_pll3_and_wait(u32 on)
             /* ХРУПКО: vendor 0x8d034c..0x8d0362 — опрос, пока бит3 [0x880c60] == 0 И PLL3
              * активен; счётчик r16 = 1000..1, продолжение при (r16 - 1) >= 1 — ровно 1000
              * итераций (прежний порт делал 999). Каждая итерация — чтение 0x880c60 и вызов
-             * чтения 0x88afec (car_get_pll3_status_bit3). Проверки после цикла — по значениям
+             * чтения 0x88afec (car_get_pll3_lock_status). Проверки после цикла — по значениям
              * последней итерации. Это ожидание смены такта ядра: ARC в это время ещё на XTAL. */
             u32 cnt = 1000;
             u32 c60, pll3_active;
             for (;;) {
                 c60 = MMIO32(CLK_SWITCH_STATUS);
-                pll3_active = car_get_pll3_status_bit3();
+                pll3_active = car_get_pll3_lock_status();
                 if ((c60 & (1u << 3)) || pll3_active != 1)
                     break;
                 if (cnt - 1 < 1)
@@ -88,7 +88,7 @@ void car_enable_pll3_and_wait_on(void)
 }
 
 /* RFC тактирование и рестарт делителя: бит 0 [0x889394] (0x8ced8c). */
-void hwd_abif_rgf_889380(u32 on)
+void hwd_abif_rfc_divider_ctrl(u32 on)
 {
     u32 v = MMIO32(HW_RFC_DIVIDER_CTRL);
     MMIO32(HW_RFC_DIVIDER_CTRL) = (on == 1) ? (v & ~1u) : (v | 1u);
@@ -108,11 +108,11 @@ void hwd_abif_rfc_divider_restart(u32 a)
         u32 v = rf_rfc_div_restart_count;
         rf_rfc_div_restart_count = v + 1;
     }
-    hwd_abif_rgf_889380(1);
+    hwd_abif_rfc_divider_ctrl(1);
     hwd_abif_rfc_clk_ctrl(0);
     hwd_abif_rfc_clk_ctrl(1);
     arc_zol_nops2(0x50);                /* vendor 0x8cedc4: lp 0x50 × 2 nop_s */
-    hwd_abif_rgf_889380(0);
+    hwd_abif_rfc_divider_ctrl(0);
 }
 
 /* Loopback-режим ABIF (0x8ce5e8). */
@@ -224,7 +224,7 @@ void hwd_abif_fs_on(u32 v)
 }
 
 /* Конфигурация ABIF через регистры 0x88939c/0x889398 (0x8d0098). */
-void hwd_abif_uses_rgf_889380(u32 a0, u32 a1)
+void hwd_abif_rgf_config_write(u32 a0, u32 a1)
 {
     MMIO32(ABIF_RGF_88939C) = a0;
     if (a1 & ~0x1fu)
@@ -235,7 +235,7 @@ void hwd_abif_uses_rgf_889380(u32 a0, u32 a1)
 
 /* Бит 27 регистра 0x889488 = "uses RGF 889480" (режим доступа к полям через RGF).
  * Vendor 0x8cebac: flag==0 → УСТАНОВИТЬ бит 27; flag!=0 → сбросить. (была инверсия!) */
-void hwd_abif_uses_rgf_889480(u32 flag)
+void hwd_abif_dvs_rf_ctrl_bit27_write(u32 flag)
 {
     if (flag == 0)
         MMIO32(HW_ABIF_DVS_RF_CTRL) |= (1u << 27);

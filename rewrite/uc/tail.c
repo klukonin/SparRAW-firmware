@@ -9,7 +9,6 @@
 #include "abft.h"
 
 
-#include "evt17.h"
 
 
 
@@ -39,7 +38,7 @@ void internal_tx_isr(void)
         switch (idx) {
         case 5: break;                         /* sm6 (UPM) — энергосбережение вырезано, бит 6 не ставится */
         case 0: internal_tx_noop_isr_hook(); break;
-        case 1: internal_tx_flow_sm2(0); break;
+        case 1: internal_tx_keepalive_flow(0); break;
         case 2: {
             /* бит 6: TxSS-sweep — возможно отложить, если мало времени. */
             u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
@@ -64,10 +63,10 @@ void internal_tx_isr(void)
             if (ok != 0) {
                 bf_sm_run_sta(bf_cur_sta);
                 internal_tx_clear_pending_bit(3);
-                bf_pending_set_bit(1);
+                bg_task_set_pending_bit(1);
                 itx_pending.txss_postponed = 0;
             }
-            bi_tx_check_idle_and_start_uc(2);
+            mac_backoff_settle_set_chain_modes(2);
             break;
         }
         case 4: break;                                 /* 0x92bd2c: возврат */
@@ -79,14 +78,14 @@ void internal_tx_isr(void)
 void dti_alloc_scheduled_event_thunk(u32 *wake) { dti_worker_scheduled_dti_allocation_event(wake); }
 
 /* noinline: vendor — отдельная функция (0x928308); с полем struct gcc иначе встраивает её
- * в l1_fixed_sched_ap_ev4_state2 (codecmp). */
+ * в l1_fixed_sched_ap_start_slot (codecmp). */
 __attribute__((noinline))
-u32 get_mem_857744_x2_928308(void)
+u32 fsched_virtual_slot_us(void)
 {
     return FWSH(fwsh_sets, fsched_tbl)->virtual_slot_us;
 }
 
-/* ucode_cmd_load_table_803124_803128 - в другом файле. */
+/* abft_cfg_load_from_cmd - в другом файле. */
 
 void rate_search_commit_mcs(struct tx_ctx_s *a)
 {
@@ -128,16 +127,6 @@ void set_tsf_event(u32 a)
     MMIO32(HW_MAC_TSF_EVENT_HI) = tsf[1];
     MMIO32(HW_MAC_TSF_EVENT_CTRL) = 0xc0050;
 }
-
-void rx_flow_latch_phy_8014e8(u32 a)
-{
-    (void)a;
-    u32 r0 = phy_read_signal_gain_adc_db_sfd_locked();
-    sel_nbr.cur_gain_db = (u8)r0;
-    if (r0 > 0x3f)
-        sel_nbr.cur_gain_db = 0;
-}
-
 
 void disable_tsf_event(void)
 {
@@ -188,7 +177,7 @@ void abif_set_enable_bit(u32 a)
     MMIO32(HW_ABIF_CAF_PWDN_MODE) = (MMIO32(HW_ABIF_CAF_PWDN_MODE) & ~1u) | a;
 }
 
-void abif_set_88a204_field(u32 a, u32 b)
+void abif_program_rx_table_ctrl(u32 a, u32 b)
 {
     /* 6.2 asm 0x928cd8. */
     if (a & ~1u)
@@ -199,7 +188,7 @@ void abif_set_88a204_field(u32 a, u32 b)
     MMIO32(HW_ABIF_RX_TABLE_CTRL) = (b << 1) | (((old & ~1u) | a) & ~0x7e);
 }
 
-void rfca_access_sector_other_rf(u32 a)
+void rfca_clear_sector_row_other_rf(u32 a)
 {
     if (rf_modules.count < 2)
         return;
@@ -208,7 +197,7 @@ void rfca_access_sector_other_rf(u32 a)
     u8 r13 = rfca_get_rf_mask_uc();
     u8 r0 = (u8)(r13 & ~rf_modules.mask);
     rfca_select_rf_uc((u8)r0, 0);
-    sector_mem_addr_of(a);
+    rfc_clear_sector_row(a);
     rfca_select_rf_uc((u8)r13, 0);
 }
 
@@ -247,7 +236,7 @@ void rfca_select_rf_uc(u32 a, u32 b)
     MMIO32(HW_ABIF_DVS_RF_CTRL) = r15;
 }
 
-void gp0_arm_usec_b(u32 usec)
+void gp0_timer_arm_usec(u32 usec)
 {
     u32 m = usec * 0xa5;
     uc_mac_cmd(0x52000000);
@@ -275,11 +264,11 @@ void gp_timer_arm(u32 a, u32 b, u32 c, u32 d)
 void handle_bf_triggers(u32 cid, u32 set)
 {
     /* 6.2 asm 0x928750: триггеры = *(u8*)(0x857e49+cid*20);
-     * если (triggers & 0xbf) != 0 → лог + bf_trigger_for_mid(cid). */
+     * если (triggers & 0xbf) != 0 → лог + bf_trigger_for_sta(cid). */
     u32 triggers = VOL(link_stat[cid].bf_reasons);
     if ((triggers & 0xbf) != 0) {          /* bic -0xc0 = & 0xbf */
         uc_log_emit3(0x20, 0x1000d94, cid, set, triggers);
-        bf_trigger_for_mid(cid);
+        bf_trigger_for_sta(cid);
     }
 }
 
@@ -294,14 +283,14 @@ void handle_pmc_triggers(u32 trigger, u32 param)
             MMIO32(HW_MAC_MAC_RGF_PMC_GENERAL_0) |= (1u << 16);
             pmc_trig.recording = 1;
             pmc_trig.event_cnt = 0;
-            uc_evt_send_2c_tsf(0, 0, pmc_trig.tag);
+            uc_evt_send_pmc(0, 0, pmc_trig.tag);
         }
     } else {
         if (trigger == pmc_trig.stop_trigger && param == pmc_trig.stop_param) {
             pmc_stop_recording();
             uc_log_emit2(0x20, 0x10016e0, trigger, param);
             pmc_trig.armed = 0;
-            uc_evt_send_2c_tsf(1, pmc_trig.event_cnt, pmc_trig.tag);
+            uc_evt_send_pmc(1, pmc_trig.event_cnt, pmc_trig.tag);
         }
     }
     pmc_trig.event_cnt += 1;
@@ -316,7 +305,7 @@ void pm_event_mask_save_all_on(void)
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~(1u << 1));
     uc_mac_cmd(mac_chain_mask | (1u << 27));   /* [gp,-0xd4] */
-    mac_rf_switch_cmd1f(1);
+    mac_rf_switch_wait_idle(1);
     arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
 }
 
@@ -328,7 +317,7 @@ void pm_event_mask_restore(void)
         arc_flag(saved & ~(1u << 1));
         u32 r0 = (mac_chain_mask & rx_nav.ev_mask) | (1u << 27);
         uc_mac_cmd(r0);
-        mac_rf_switch_cmd1f(1);
+        mac_rf_switch_wait_idle(1);
         arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
     }
     rx_nav.ev_mask_saved = ~0u;
@@ -381,23 +370,6 @@ void sched_cfg_merge_update(const struct lmac_cmd_write_qh *sr)   /* тело LM
     if (flags & 0x8)
         memcpy_uc(q->win[3], sr->desc + 0x30, 0x10);
     q->flags |= flags;
-}
-
-/* Опубликовать текущую запись кольца (sync = 1) и сдвинуться (6.2 asm 0x926984).
- * entry — запись с заголовком; vendor проверяет только != 0 (адрес в desc уже стоит). */
-void list_push_locked(struct uc_ring *r, u32 entry)
-{
-    if (entry == 0)
-        uc_assert((u32)__builtin_return_address(0), 0xca);
-    if (r->cur->sync != 0)
-        uc_assert((u32)__builtin_return_address(0), 0xcb);
-    u32 saved = arc_irq_disable();
-    r->cur->sync = 1;
-    struct mbox_ring_desc *next = r->cur + 1;
-    if (r->end < next)
-        uc_assert((u32)__builtin_return_address(0), 0xcc);
-    r->cur = (next != r->end) ? next : r->base;
-    arc_irq_restore(saved);
 }
 
 void evt_queue_take_locked(struct uc_mbox_ctx *a, u32 a1, u32 a2, u32 a3)
@@ -456,9 +428,10 @@ void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d)
         if (a != 5)
             r14 = c << 16;
         if ((txrx_state1 & 2u) && rs_state[b].active != 0)
-            r14 |= ((u32)mtp_queue_byte_by_index(b) << 8) | 3;
-        else if (d != 0xff)
-            r14 |= (d << 8) | 3;
+            r14 |= ((u32)rs_sta_mcs_try(b) << 8) | 3;
+        else
+            r14 |= d;                       /* d — биты скорости 0x17 ([12:8] MCS | 3) или 0 — MCS выбирает MAC;
+                                             * vendor: d — MCS, 0xff — «не задан» (сравнение на пути ответа) */
     }
     uc_mac_cmd(0x1b001111);
     uc_mac_cmd(r13 | 0x16000000);
@@ -466,14 +439,14 @@ void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d)
     arc_nops(3);
 }
 
-u32 grant_detect_step(u32 a, u32 b, u32 c) {
+u32 rx_nav_check_idle(u32 a, u32 b, u32 c) {
     /* 6.2 asm 0x92db88. */
-    return grant_detect_step_at(uc_read_tsf_lo() + a, b, c);
+    return rx_nav_check_idle_at(uc_read_tsf_lo() + a, b, c);
 }
 
-/* grant_detect_step по уже прочитанному TSF (t = TSF + смещение): путь ответа на RTS читает TSF один раз
+/* rx_nav_check_idle по уже прочитанному TSF (t = TSF + смещение): путь ответа на RTS читает TSF один раз
  * (rx_get_required_response) — второе чтение (команда MAC 0x4d + 3 nop + r55) стояло в сроке SIFS. */
-u32 grant_detect_step_at(u32 t, u32 b, u32 c) {
+u32 rx_nav_check_idle_at(u32 t, u32 b, u32 c) {
     u32 r14 = b, r15 = 0;
     u32 r0 = t;
     u32 r2 = rx_nav.flags;
@@ -494,7 +467,7 @@ done:
         u32 saved = arc_lr(ARC_STATUS32);
         arc_flag(saved & ~(1u << 1));
         uc_mac_cmd((mac_chain_mask & rx_nav.ev_mask) | (1u << 27));
-        mac_rf_switch_cmd1f(1);
+        mac_rf_switch_wait_idle(1);
         arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
     }
     if (r15 == 0)
@@ -503,75 +476,51 @@ done:
 }
 
 
-/* notify_aoa (0x92de8c): вынуть очередной установленный бит маски-указателя и
- * вернуть его индекс (31 для bit31, иначе 30-clz). Маска сдвинута на 1: бит N
- * кодирует индекс N-1, бит 0 не используется. */
-u32 notify_aoa(u32 a)
-{
-    u32 r2 = *(u32 *)a;
-    if (r2 == 0)
-        return (u32)-1;
-    u32 idx;
-    if (r2 & (1u << 31)) {
-        idx = 31;
-        r2 &= 0x7fffffffu;               /* bmsk 0x1e */
-    } else {
-        idx = (30 - arc_norm(r2));    /* norm + rsub 0x1e */
-        r2 &= ~(1u << (idx & 31));       /* bclr */
-    }
-    *(u32 *)a = r2;
-    return idx;
-}
 
-
-/* Третий вход блока notify_aoa (0x92df38): построить отчёт и разослать как
+/* Третий вход блока mask_pop_msb_index (0x92df38): построить отчёт и разослать как
  * bf_done (arg1 != 8) либо new_link (arg1 == 8). */
-void notify_aoa_build(u32 arg0, u32 arg1, u32 arg2)
+void bf_done_report_build_send(u32 arg0, u32 arg1, u32 arg2)
 {
-    /* 0x92df38: отчёт 0x44 Б (vendor sp+0x34..0x77) → bf_done / new_link (arg1 == 8). */
-    union {
-        u32 w[17];
-        struct lmac_evt_bf_done e;
-    } r;
-    memset0_words_uc(r.w, 0x44);
-    r.e.status = arg2;                                            /* sp+0x60 */
+    /* 0x92df38: отчёт 0x44 Б → bf_done / new_link (arg1 == 8). Собирается прямо в записи кольца событий (vendor — на
+     * стеке, затем 17 аргументами и копией в запись: обратный вызов стоил 563 такта, стенд 2026-10-29). Вызывается из
+     * фоновой задачи (L1 запрещены) — между взятием записи и постановкой другой отправитель её не займёт. */
+    struct lmac_evt_bf_done *e = (struct lmac_evt_bf_done *)uc_evt_write_slot(&uc_mbox);
+    memset0_words_uc(e, sizeof(*e));
+    e->status = arg2;                                            /* sp+0x60 */
     u32 st = VOL(link_stat[arg1].bf_reasons);
     bf_res.fail_reasons = st;                                        /* [0x802110+0x18] */
-    r.e.fail_reasons = st;                                        /* sp+0x70 */
-    r.e.cid = (u8)arg1;                                           /* sp+0x38 */
+    e->fail_reasons = st;                                        /* sp+0x70 */
+    e->cid = (u8)arg1;                                           /* sp+0x38 */
     u32 r0 = bf_res.diag_last;
-    r.e.diag_lo = r0 & 0xf;                                       /* sp+0x6e */
-    r.e.diag_hi = (r0 & 0x3f0) >> 4;                              /* bic -0x3f1; lsr 4 */
+    e->diag_lo = r0 & 0xf;                                       /* sp+0x6e */
+    e->diag_hi = (r0 & 0x3f0) >> 4;                              /* bic -0x3f1; lsr 4 */
     if (arg0 != 0) {
         if (maint_sta_mask & (1u << arg1)) {
-            r.e.snr = brp_rf.snr;
-            r.e.type = 1;
+            e->snr = brp_rf.snr;
+            e->type = 1;
         } else {
-            r.e.snr = (u32)bf_rep.link_snr;
-            r.e.type = 0;
+            e->snr = (u32)bf_rep.link_snr;
+            e->type = 0;
         }
-        r.e.peer_snr = (u8)bf_rep.peer_snr;                       /* sp+0x40 (ldb.x → stb) */
-        r.e.sect_seen[0][0] = bf_rep.sect_seen[0][0];             /* sp+0x48 */
-        r.e.own_snr = (s32)bf_rep.own_snr;                        /* sp+0x44, ldb.x */
-        r.e.rf_sector = (rf_chain_word >> 8) & 0x7fff;            /* sp+0x3e */
-        r.e.sect_seen[1][0] = bf_rep.sect_seen[1][0];             /* sp+0x50 */
-        r.e.ssw_rx_cnt = bf_rep.ssw_rx_cnt;                       /* sp+0x3d */
-        r.e.sect_seen[0][1] = bf_rep.sect_seen[0][1];             /* sp+0x4c */
-        r.e.sect_seen[1][1] = bf_rep.sect_seen[1][1];             /* sp+0x54 */
-        r.e.brp_selected = brp_pick.selected;                     /* sp+0x5c */
-        r.e.brp_snr = brp_rf.snr;                                 /* sp+0x58 */
-        r.e.rx_sector = bf_res.rx_sector;                         /* sp+0x39 */
-        r.e.peer_mac[0] = sls.peer_mac[0];                        /* sp+0x68 */
-        r.e.peer_mac[1] = sls.peer_mac[1];                        /* sp+0x6a */
-        r.e.peer_mac[2] = sls.peer_mac[2];                        /* sp+0x6c */
+        e->peer_snr = (u8)bf_rep.peer_snr;                       /* sp+0x40 (ldb.x → stb) */
+        e->sect_seen[0][0] = bf_rep.sect_seen[0][0];             /* sp+0x48 */
+        e->own_snr = (s32)bf_rep.own_snr;                        /* sp+0x44, ldb.x */
+        e->rf_sector = (rf_chain_word >> 8) & 0x7fff;            /* sp+0x3e */
+        e->sect_seen[1][0] = bf_rep.sect_seen[1][0];             /* sp+0x50 */
+        e->ssw_rx_cnt = bf_rep.ssw_rx_cnt;                       /* sp+0x3d */
+        e->sect_seen[0][1] = bf_rep.sect_seen[0][1];             /* sp+0x4c */
+        e->sect_seen[1][1] = bf_rep.sect_seen[1][1];             /* sp+0x54 */
+        e->brp_selected = brp_pick.selected;                     /* sp+0x5c */
+        e->brp_snr = brp_rf.snr;                                 /* sp+0x58 */
+        e->rx_sector = bf_res.rx_sector;                         /* sp+0x39 */
+        e->peer_mac[0] = sls.peer_mac[0];                        /* sp+0x68 */
+        e->peer_mac[1] = sls.peer_mac[1];                        /* sp+0x6a */
+        e->peer_mac[2] = sls.peer_mac[2];                        /* sp+0x6c */
     }
-    r.e.tx_sector_b1 = fwsh_sls_rank_b1[arg1][0];                 /* sp+0x3a */
-    r.e.tx_sector = fwsh_sls_rank[arg1][0];                       /* sp+0x3c */
-    r.e.tsf = uc_read_tsf_lo();                                   /* sp+0x74 */
-    if (arg1 == 8)
-        uc_send_evt_new_link(EVT17(r.w));
-    else
-        uc_send_evt_bf_done(EVT17(r.w));
+    e->tx_sector_b1 = fwsh_sls_rank_b1[arg1][0];                 /* sp+0x3a */
+    e->tx_sector = fwsh_sls_rank[arg1][0];                       /* sp+0x3c */
+    e->tsf = uc_read_tsf_lo();                                   /* sp+0x74 */
+    uc_evt_enqueue((u32)e, arg1 == 8 ? UC_EVT_NEW_LINK : UC_EVT_BF_DONE, sizeof(*e), 0);
 }
 
 void phy_stats_accumulate_to_shared(struct rx_meas_ctx *m, u32 b)
@@ -580,10 +529,10 @@ void phy_stats_accumulate_to_shared(struct rx_meas_ctx *m, u32 b)
     u32 buf[30];
     volatile struct phy_rx_stats *vst = &fwsh_phy.st;
     u32 r14 = rate_search_current_mcs(b);
-    phy_stats_clear_counters_88395c();
-    hwd_phy_uses_rgf_883800_929b94(buf);
-    hwd_phy_uses_rgf_883800_929af4(buf + 0xe);
-    phy_stats_clear_counters_883960();
+    phy_rx_stats_lock();
+    phy_rx_stats_read_counters(buf);
+    phy_rx_stats_read_accs(buf + 0xe);
+    phy_rx_stats_clear();
 
     for (u32 i = 0; i < 14; i++)
         vst->cnt[i] += buf[i];
@@ -618,10 +567,10 @@ u32 queue_sel_get_qset4(u32 a)
     return MAC_QSET4_VALID_OF(mac_queue_sel());
 }
 
-void sends_pmc_mark_aaab20(u32 a)
+void fsched_bf_req_trigger(u32 a)
 {
     uc_mac_cmd(0x80aaab20);
-    fsched_slot_clear_f4(&fsched_peers);
+    fsched_slot_clear_miss_cnt(&fsched_peers);
     if (bf_ctrl.triggers & (1u << 2)) {
         u8 b = VOL(link_stat[a].bf_reasons);
         VOL(link_stat[a].bf_reasons) = b | (1u << 2);
@@ -629,7 +578,7 @@ void sends_pmc_mark_aaab20(u32 a)
     handle_bf_triggers(a, 3);
 }
 
-void buf_fill_ff(struct rx_meas_ctx *m)
+void rx_meas_ctx_reset(struct rx_meas_ctx *m)
 {
     m->kind = 0;                                /* st.ab r14,[r0,36]: запись по dst, затем r0 += 36 */
     memset_uc(&m->filt, 0xff, sizeof(m->filt));
@@ -644,7 +593,7 @@ void buf_fill_ff(struct rx_meas_ctx *m)
     m->report_cb = 0;
 }
 
-u32 rf_utils_auto_fill_uc(const struct rf_fill_info *f, u32 b)
+u32 rfc_auto_fill_apply(const struct rf_fill_info *f, u32 b)
 {
     u32 r18 = b;
     if (f == 0 || (u8)f->bank >= 2) {
@@ -657,7 +606,9 @@ u32 rf_utils_auto_fill_uc(const struct rf_fill_info *f, u32 b)
     u32 r7 = (f->sec_first | r11) | (f->val_mask << 16);
     u32 r3 = f->vals;
     u32 r15 = 0;
-    u32 buf[0x40];
+    /* Не больше 6 значений + слово секторов/маски + запуск. Было buf[0x40] (vendor) — 256 Б на самой глубокой
+     * цепочке стека L1 (BRP-инициатор в фиксированном расписании; tools/arcemu/stack_budget.py). */
+    u32 buf[8];
     if (r3 != 0) {
         for (u32 i = 0; i < 6; i++)
             buf[i] = *(u32 *)(r3 + i * 4);
@@ -673,7 +624,7 @@ u32 rf_utils_auto_fill_uc(const struct rf_fill_info *f, u32 b)
     {
         u32 *r13 = buf;                         /* ld.ab r2,[r13,4] — с начала буфера */
         while (r15 >= 1) {
-            rf_utils_fill_step(r17, r14, *r13++, 0);
+            rfc_write_core_on_rf(r17, r14, *r13++, 0);
             r15 -= 1;
             r14 += 4;
         }
@@ -722,7 +673,7 @@ u32 rf_utils_auto_fill_uc(const struct rf_fill_info *f, u32 b)
     return 1;
 }
 
-void rf_utils_fill_step(u32 a0, u32 a1, u32 a2, u32 a3)
+void rfc_write_core_on_rf(u32 a0, u32 a1, u32 a2, u32 a3)
 {
     u8 buf = 0;
     rfca_select_rf_uc(a0, (u32)&buf);
@@ -731,7 +682,7 @@ void rf_utils_fill_step(u32 a0, u32 a1, u32 a2, u32 a3)
         rfca_select_rf_uc(buf, 0);
 }
 
-void hw_power_step(u32 a0)
+void rfc_clear_core_reg1_on_rf(u32 a0)
 {
     u8 buf = 0;
     rfca_select_rf_uc(a0, (u32)&buf);
@@ -740,58 +691,58 @@ void hw_power_step(u32 a0)
         rfca_select_rf_uc(buf, 0);
 }
 
-void hw_bring_up_phy_dma(u32 a0, u32 a1)
+void hw_power_sequence_phy_dma(u32 a0, u32 a1)
 {
     u32 *cfg = (u32 *)a1;
     u32 v = *cfg;
     if (a0 != 0) {
         if (v & 1u) {
-            hwd_phy_uses_rgf_881000_929730(4);
-            dma_mac_cfg_880c2c(1);
-            dma_mac_cfg_880c28(1);
-            hwd_phy_uses_rgf_881000_9296e0(1);
+            phy_pwr_mode_map_set(4);
+            sw_rst_ext1_set(1);
+            clk_gate_ext1_enable(1);
+            phy_pwr_ctl_set_mode_bits(1);
             hwd_phy_pwr(0);
             v = *cfg;
         }
         if (v & 2u) {
             u32 w = cfg[1];
             if (w & 1u) hwd_dma_set_mode_map(4);
-            if (w & 4u) hwd_phy_uses_rgf_881000_929730(4);
+            if (w & 4u) phy_pwr_mode_map_set(4);
             if (w & 8u) mac_fill_mode_nibbles(4);
-            if (w & 0x10u) mac_set_880bf0_mode(4);
+            if (w & 0x10u) mac_set_pwr_mode_map_bf0(4);
             v = *cfg;
         }
         if (v & 8u) {
             u32 w = cfg[2];
-            if (w & 1u) mac_set_880afc_bits(1);
-            if (w & 4u) dma_mac_cfg_880c28(1);
-            if (w & 8u) dma_mac_cfg_880c14(1);
-            if (w & 0x10u) clk_gate_880b00(1);
+            if (w & 1u) clk_gate_vec2_enable(1);
+            if (w & 4u) clk_gate_ext1_enable(1);
+            if (w & 8u) clk_gate_ext0_enable(1);
+            if (w & 0x10u) clk_gate_vec3_enable(1);
         }
     } else {
         if (v & 8u) {
             u32 w = cfg[2];
-            if (w & 1u) mac_set_880afc_bits(0);
-            if (w & 4u) dma_mac_cfg_880c28(0);
-            if (w & 8u) dma_mac_cfg_880c14(0);
-            if (w & 0x10u) clk_gate_880b00(0);
+            if (w & 1u) clk_gate_vec2_enable(0);
+            if (w & 4u) clk_gate_ext1_enable(0);
+            if (w & 8u) clk_gate_ext0_enable(0);
+            if (w & 0x10u) clk_gate_vec3_enable(0);
             v = *cfg;
         }
         if (v & 1u) {
             hwd_phy_pwr(1);
-            hwd_phy_uses_rgf_881000_9296e0(0);
-            dma_mac_cfg_880c28(0);
-            dma_mac_cfg_880c2c(0);
-            hwd_phy_uses_rgf_881000_929730(0);
-            hwd_phy_init_2();
+            phy_pwr_ctl_set_mode_bits(0);
+            clk_gate_ext1_enable(0);
+            sw_rst_ext1_set(0);
+            phy_pwr_mode_map_set(0);
+            phy_apply_patch_table();
             v = *cfg;
         }
         if (v & 2u) {
             u32 w = cfg[1];
             if (w & 1u) hwd_dma_set_mode_map(0);
-            if (w & 4u) hwd_phy_uses_rgf_881000_929730(0);
+            if (w & 4u) phy_pwr_mode_map_set(0);
             if (w & 8u) mac_fill_mode_nibbles(0);
-            if (w & 0x10u) mac_set_880bf0_mode(0);
+            if (w & 0x10u) mac_set_pwr_mode_map_bf0(0);
         }
     }
 }
@@ -800,27 +751,27 @@ void hw_power_sequence_rf(u32 a0, u32 a1)
 {
     u32 v = *(u32 *)a1;
     if (a0 != 0) {
-        if (v & 1) { hw_power_step(rf_modules.cur); v = *(u32 *)a1; }
+        if (v & 1) { rfc_clear_core_reg1_on_rf(rf_modules.cur); v = *(u32 *)a1; }
         if (v & 2) { hwd_rfc_powerdown_deep_all_rfs(); v = *(u32 *)a1; }
         if (v & 8) { rf_set_normal_mode(1); v = *(u32 *)a1; }
-        if (v & 0x20) hw_bring_up_phy_dma(1, a1 + 4);
+        if (v & 0x20) hw_power_sequence_phy_dma(1, a1 + 4);
     } else {
-        if (v & 0x20) { hw_bring_up_phy_dma(0, a1 + 4); v = *(u32 *)a1; }
+        if (v & 0x20) { hw_power_sequence_phy_dma(0, a1 + 4); v = *(u32 *)a1; }
         if (v & 8) { rf_set_normal_mode(0); v = *(u32 *)a1; }
         if (v & 2) hwd_rfc_powerup_deep_all_rfs();
     }
 }
 
-void boot_uc_init_more(struct rx_meas_ctx *m)
+void rx_meas_ctx_init(struct rx_meas_ctx *m)
 {
-    buf_fill_ff(m);
+    rx_meas_ctx_reset(m);
     memset0_words_uc(m->sample, sizeof(m->sample));
     memset0_words_uc(m->sample_88306c, sizeof(m->sample_88306c));
     m->n = 0;
     memset0_words_uc(&m->plcp, sizeof(m->plcp));
 }
 
-void mac_mem_addr_of_slot(u32 a, u32 b, u32 c)
+void macq_hw_enable_queue(u32 a, u32 b, u32 c)
 {
     macq_hw_set_ctrl_bit(a);
     u32 base = a * 7 * 128;   /* (a*8 - a) << 7 */
@@ -848,7 +799,7 @@ void mac_mem_addr_of_slot(u32 a, u32 b, u32 c)
     arc_sync();
 }
 
-void mac_program_886e0c_20b(u32 a)
+void mac_program_lmac0_timing(u32 a)
 {
     u8 *b = (u8 *)a;
     u32 mask = mac_build_qset_mask((const struct lmac_mac_regs *)a);
@@ -926,9 +877,9 @@ void mac_prepare_txrx_window(struct tx_ctx_s *a, u32 b)
         txrx_state2 &= ~(1u << 8);
 }
 
-/* mac_prog_cmd02_body (0x921460): пересчитать BI-дельту и запрограммировать
+/* mac_compute_bi_mon_timings (0x921460): пересчитать BI-дельту и запрограммировать
  * контекст по таблице в 0x801040. */
-void mac_prog_cmd02_body(void)
+void mac_compute_bi_mon_timings(void)
 {
     u32 r0 = (u32)bi_tsf_delta64(bi_win.aw_tsf[0], bi_win.aw_tsf[1]);   /* lo-слово дельты */
     bi_win.delta_lo = r0;                                        /* 0x802f04 */
@@ -964,7 +915,7 @@ void mac_mode_switch_sequence(u32 a)
     uc_mac_cmd(arc_lr(uc_timer[1].count) & 0xffffffu);   /* bmsk 0x17 */
     if (a != 0) {
         mac_mode_sw.halt_cnt += 1;                                       /* 0x8006a9 */
-        mac_program_13ab6680_b();
+        uc_timers_start_without_irq();
         rf_power_seq_and_save(1);
         uc_mac_cmd(1u << 24);
         uc_mac_cmd(0x20c0010);
@@ -977,7 +928,7 @@ void mac_mode_switch_sequence(u32 a)
         mac_mode_sw.halted = 1;                                        /* 0x8006a8 */
     } else {
         mac_mode_sw.resume_cnt += 1;                                       /* 0x8006aa */
-        mac_program_13ab6680();
+        uc_timers_start_with_irq();
         if (rx_on_state != 0)                         /* ldw_s [gp,0x94] */
             uc_mac_cmd(0x1ffffff);
         rf_power_seq_and_save(0);
@@ -995,10 +946,10 @@ void mac_mode_switch_sequence(u32 a)
     }
 }
 
-/* mac_mode_program_c (0x92c09c): цикл программирования MAC-режима 'c' —
+/* abft_rx_ssw_tx_feedback (0x92c09c): цикл программирования MAC-режима 'c' —
  * ожидание событий, заполнение конфигурации станции из 0x804010 и выдача
  * отчёта. */
-void mac_mode_program_c(struct sls_peer_rec *a)
+void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a)
 {
     u32 first = 0;                         /* r15 */
     const struct dmg_ssw_frame *cfg = (const struct dmg_ssw_frame *)rx_buf;   /* r13: кадр SSW */
@@ -1009,11 +960,11 @@ void mac_mode_program_c(struct sls_peer_rec *a)
         u32 evt = uc_wait_event1_or_event4(MAC_EVT1_RX_FRAME, MAC_EVT4_GP1_END, 0);
         if (mac_evt4() & MAC_EVT4_GP1_END) {
             /* L_92c230: выход по событию 4. */
-            /* СРОК: SSW-Feedback инициатора A-BFT (direct_tx_step) — через MBIFS (9 мкс, допуск
+            /* СРОК: SSW-Feedback инициатора A-BFT (direct_tx_ssw_feedback) — через MBIFS (9 мкс, допуск
              * −0/+0.49 мкс) после SSW ответчика (802.11-2020 10.42.5.2, 10.3.2.3.10). Vendor-
              * защита ниже: SIFS_CNT (r55 после 0x4d000000) ≥ 0x700 (7 мкс) — не отвечать; значит
              * от чтения r55 до старта передачи остаётся ≤ ~2 мкс (~330 тактов) минус задержка
-             * PHY. Путь чтение r55 → 0x19000001 (direct_tx_step: mac_program_rx_window(1),
+             * PHY. Путь чтение r55 → 0x19000001 (direct_tx_ssw_feedback: mac_program_rx_window(1),
              * 0x15/0x14, direct_tx_build_desc, cmd34, mac_program_tx_common, 0x2008000)
              * ~169 инструкций (vendor 0x92c25a.. ~191); запас: десятки инструкций при r55 у
              * порога. Срыв: Feedback вне окна aSSFBDuration — ответчик его не ждёт, A-BFT-
@@ -1033,7 +984,7 @@ void mac_mode_program_c(struct sls_peer_rec *a)
             u32 r2 = a->rx_sector;
             u32 r6 = r9 | 0x30u | (r2 << 8);
             sta_tab[a->sta].tx_sel = r6;       /* asl4+add2 = *80 */
-            direct_tx_step(a);
+            direct_tx_ssw_feedback(a);
             uc_mac_cmd(0x3c000004u);
             bcn_rx.abft_direct_rep += 1;
             uc_evt_build_and_post_report(a, 1);   /* vendor 0x92c2f0: (r14, 1) */
@@ -1056,7 +1007,9 @@ void mac_mode_program_c(struct sls_peer_rec *a)
         if (!(mac_evt1() & MAC_EVT1_RX_FRAME))
             continue;
         /* L_92c15c */
-        if (rx_arm_window_c() == 0)
+        UC_STAMP(STAMP_SSW_REP, mac_rx_rep1(), mac_rx_rep2());
+        UC_STAMP(STAMP_SSW_REP, mac_rx_rep3(), mac_rx_misc());
+        if (rx_ppdu_is_ssw() == 0)
             continue;
         /* L_92c166 */
         u32 cfg0 = mac_sel_shadow & ~MAC_SEL_FIELD;
@@ -1067,6 +1020,7 @@ void mac_mode_program_c(struct sls_peer_rec *a)
         u32 r0b = (r9 > 0x3ff) ? (r9 - 0x800) : r9;
         if (!(rx_buf_ssw & 1u))
             continue;
+        UC_STAMP(STAMP_ABFT_SSW_RX, rx_buf_ssw, r9);
         /* L_92c1c0 */
         if (first == 0) {
             /* L_92c370: первый проход — скопировать конфигурацию. */
@@ -1145,7 +1099,7 @@ void mac_q_tx_ppdu(struct tx_ctx_s *a, u32 b)
     a->flags &= ~7u;
 }
 
-void mac_q_tx_ppdu_3009(struct tx_ctx_s *a)
+void mac_q_tx_ppdu_txop_open(struct tx_ctx_s *a)
 {
     /* 6.2 asm 0x921760. */
     u32 r13 = a->qid;
@@ -1168,7 +1122,7 @@ void mac_q_tx_ppdu_3009(struct tx_ctx_s *a)
     uc_mac_cmd(0x460001f1);
 }
 
-void mac_q_tx_ppdu_cmd08(u32 a, u32 b) {
+void mac_q_tx_ppdu_vring_cfg(u32 a, u32 b) {
     /* 6.2 asm 0x93a6d8. */
     if (macq_cmd08_en == 0)
         return;
@@ -1588,9 +1542,10 @@ void vring_disconnect_flush(u32 a, u32 b, u32 c, u32 d)
     dump_mac_buffer_bases(a, r17);
 }
 
-void direct_tx_step(struct sls_peer_rec *a)
+void direct_tx_ssw_feedback(struct sls_peer_rec *a)
 {
     UC_PAD(PAD_SSWFB_ABFT);
+    UC_STAMP(STAMP_ABFT_FDBK_CMD, 0, 0);
     u32 r9 = rf_chain_cfg;
     u8 r10 = a->fb_sector;
     mac_program_rx_window(1, r9 | 0x30 | (r10 << 8), 0);
@@ -1599,7 +1554,7 @@ void direct_tx_step(struct sls_peer_rec *a)
 
     u32 buf[6];
     direct_tx_build_desc(a, buf);
-    direct_tx_program_cmd34(0x10, 0x18);
+    direct_tx_program_desc(0x10, 0x18);
     mac_program_tx_common();
     uc_mac_cmd(0x2008000);
 
@@ -1621,7 +1576,7 @@ void direct_tx_step(struct sls_peer_rec *a)
     uc_mac_cmd(0x33000443);
     uc_wait_direct_tx_ready();
     uc_fifo_frame_tail((u32)buf);              /* vendor: байты 0x10..0x17 в FIFO (r34/r33) */
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
     mac_evt_enable_bit_sync_b(6);
     mac_set_rf_chain_state_with_sta_sector();
     uc_spin_until_event(MAC_EVT1_TX_END);
@@ -1674,8 +1629,8 @@ void l1_fixed_sched_ap_sm(u32 a) {
                 break;
             }
             switch (*st) {
-            case 2: r14 = l1_fixed_sched_ap_ev4_state2(2); r13 = 0; break;
-            case 4: r14 = l1_fixed_sched_ap_ev4_state4(4); r13 = 0; break;
+            case 2: r14 = l1_fixed_sched_ap_start_slot(2); r13 = 0; break;
+            case 4: r14 = l1_fixed_sched_ap_run_slot(4); r13 = 0; break;
             case 0: r14 = fsched_arm_slot_from_cfg(); r13 = 0; break;
             case 1:
                 if (fsched_ctx.engaged != 0) {
@@ -1688,7 +1643,7 @@ void l1_fixed_sched_ap_sm(u32 a) {
                 break;
             case 6:
                 *st = 2;
-                r14 = l1_fixed_sched_ap_ev4_state2(2); r13 = 0;
+                r14 = l1_fixed_sched_ap_start_slot(2); r13 = 0;
                 break;
             case 7:
                 fsched_run_tx_slot_twice();
@@ -1769,8 +1724,8 @@ void l1_fixed_sched_sta_sm(u32 a) {
             r13 = 3;
             if (*st == 4) {
                 r15 = 0;
-                delay_800_iters();
-                r13 = 0;                                /* возврат delay_800_iters = 0 */
+                fixed_sched_sta_tx_delayed();
+                r13 = 0;                                /* возврат fixed_sched_sta_tx_delayed = 0 */
                 *st = 2;
             }
             break;
@@ -1778,7 +1733,7 @@ void l1_fixed_sched_sta_sm(u32 a) {
             r13 = 4;
             if (*st == 0) {
                 r15 = 0;
-                u32 v = get_mem_857744_x2();
+                u32 v = fsched_assoc_slot_us();
                 sxd_hal_write_qset_field(0, (v - 200) * 165);
                 *st = 1;
                 r13 = r15;
@@ -1809,11 +1764,11 @@ void l1_fixed_sched_sta_sm(u32 a) {
 }
 
 
-u32 l1_fixed_sched_ap_ev4_state2(u32 a) {
+u32 l1_fixed_sched_ap_start_slot(u32 a) {
     /* 6.2 asm 0x935e74. */
     (void)a;
     qh_write_while_dma_open_check(0);
-    fixed_sched_read_slot_id(&fsched_peers);
+    fixed_sched_complete_peer_off(&fsched_peers);
     u32 sp_buf[4];                            /* vendor: кадр 16 Б, буфер sp+4..sp+0xc */
     u32 r0 = fsched_pick_ready_queue((u32)&sp_buf[1]);
     if (r0 != 0) {
@@ -1831,25 +1786,25 @@ u32 l1_fixed_sched_ap_ev4_state2(u32 a) {
             return 0;
         }
         u8 r15 = fsched_get_cur_idx(&fsched_peers);
-        u32 sp0 = fsched_cur_entry_byte0(&fsched_peers);
-        fsched_cur_entry_byte1(&fsched_peers);
+        u32 sp0 = fsched_cur_entry_qid(&fsched_peers);
+        fsched_cur_entry_cfg_idx(&fsched_peers);
         u8 r13v = (u8)r15;
         fsched_log[fsched_log_idx].arg = r15;
-        if (fsched_test_mask2c_bit(&fsched_peers, r13v) != 0) {
-            sends_pmc_mark_aaab20(r15);
+        if (fsched_bf_req_mask_bit(&fsched_peers, r13v) != 0) {
+            fsched_bf_req_trigger(r15);
             fsched_bf_req_clear(&fsched_peers, r13v);
             fsched_arm_slot_timer(0xf);
             return 0;
         }
         u32 *r13 = &fsched_ctx.state;
         fsched_ctx.slot_cnt += 1;
-        rx_cfg_select_sta(r15);
-        fsched_slot_inc_f2(&fsched_peers);
-        u32 r18 = vring_is_empty_uc_quiet(sp0);
+        rx_cfg_set_sta_omni_sector(r15);
+        fsched_slot_inc_slot_cnt(&fsched_peers);
+        u32 r18 = vring_hw_is_empty(sp0);
         u32 r0b = fsched_ap_station_done(&fsched_peers);
         if (r18 != 0 || r0b != 0) {
             fsched_log[fsched_log_idx].step = 8;
-            fsched_slot_clear_f2(&fsched_peers);
+            fsched_slot_clear_slot_cnt(&fsched_peers);
             *r13 = 5;
             if (r18 != 0) {
                 u32 mask = 1u << r15;
@@ -1868,9 +1823,9 @@ u32 l1_fixed_sched_ap_ev4_state2(u32 a) {
         }
         u32 hw = macq_read_hw_queue_word(sp0);
         fsched_flush_stats.qword_start = hw;
-        fixed_sched_check_slot_flag(&fsched_peers);
+        fixed_sched_kick_slot_queue(&fsched_peers);
         fsched_ctx.slot_start_tsf = uc_read_tsf_lo();
-        sxd_hal_write_qset_field(0, fsched_slot_byte0(&fsched_peers) * 0xa5);
+        sxd_hal_write_qset_field(0, fsched_slot_time_before_tx_us(&fsched_peers) * 0xa5);
         *r13 = (r17 == 1) ? 7 : 4;                       /* cmp 1; mov 7; mov.ne 4 */
         return 0;
     }
@@ -1882,11 +1837,11 @@ u32 l1_fixed_sched_ap_ev4_state2(u32 a) {
     fsched_log[fsched_log_idx].step = 5;
     mac_set_sector_arg_and_select_all(0xbb8);
     fixed_sched_run_tx_slot();
-    return fsched_arm_slot_timer(get_mem_857744_x2_928308());   /* r0 = возврат get_mem */
+    return fsched_arm_slot_timer(fsched_virtual_slot_us());   /* r0 = возврат get_mem */
 }
 
 
-u32 l1_fixed_sched_ap_ev4_state4(u32 a) {
+u32 l1_fixed_sched_ap_run_slot(u32 a) {
     /* 6.2 asm 0x938880. */
     (void)a;
     u32 sp_buf[3];
@@ -1894,12 +1849,12 @@ u32 l1_fixed_sched_ap_ev4_state4(u32 a) {
     u8 r15 = fsched_get_cur_idx(&fsched_peers);
     fsched_ap_poll_station(&fsched_peers);
     fsched_log[fsched_log_idx].arg = r15;
-    u16 r16 = fsched_slot_half4(&fsched_peers);
+    u16 r16 = fsched_slot_flush_to_us(&fsched_peers);
     mac_set_sector_arg_and_select_all(r16);
-    fsched_ap_copy_slot_byte1(&fsched_peers);
+    fsched_ap_init_slot_rd_counter(&fsched_peers);
     fixed_sched_run_tx_slot();
     fsched_flush_stats.slots += 1;
-    u32 sp0 = fsched_cur_entry_byte0(&fsched_peers);
+    u32 sp0 = fsched_cur_entry_qid(&fsched_peers);
     if (fsched_peers.slot_kicked != 0)
         fixed_sched_slot_setup(&fsched_peers);
     u32 r17;
@@ -1923,7 +1878,7 @@ u32 l1_fixed_sched_ap_ev4_state4(u32 a) {
     u32 r16v = (u32)(u16)((u16)hw - fsched_flush_stats.qword_start);
     fsched_flush_stats.sum_sent += (u16)r16v;
     if (r17 != 0) {
-        u8 b0 = fsched_cur_entry_byte0(&fsched_peers);
+        u8 b0 = fsched_cur_entry_qid(&fsched_peers);
         qid_agg_mask |= 1u << b0;
         fsched_flush_stats.last_sent = (u16)r16v;           /* stw [0x800814,8] */
         fsched_log[fsched_log_idx].step = 0xb;
@@ -2020,7 +1975,7 @@ void tx_bcast_flow(u32 a) {
     r13v = (r13v + 3) | (1u << 24) | (1u << 26) | (1u << 28);
     uc_mac_cmd(r13v);
     uc_mac_cmd(0x14000007);
-    direct_tx_program_cmd34(0x10, 0x10);
+    direct_tx_program_desc(0x10, 0x10);
     mac_program_tx_with_rate(0);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
@@ -2036,7 +1991,7 @@ void tx_bcast_flow(u32 a) {
     mac_evt_enable_bit_sync_b(6);
     if (sta_tab[SPARRAW_PEER_UNKNOWN].key_valid != 0) {
         mac_load_tx_key((const u32 *)sta_tab[SPARRAW_PEER_UNKNOWN].tx_key);
-        tx_flow_arm_88606c_0x102();
+        tx_crypto_ctl_arm();
     }
     uc_spin_until_event(MAC_EVT1_TX_END);
     uc_wait_one_event(6);
@@ -2126,7 +2081,7 @@ void tx_bcast_flow(u32 a) {
 
 u32 cf_end_send_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d, u32 e) {
     /* 6.2 asm 0x938568. */
-    direct_tx_program_cmd34(0x10, 0x10);
+    direct_tx_program_desc(0x10, 0x10);
     mac_program_tx_with_rate(b);
     *(u32 *)e = b;
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
@@ -2148,7 +2103,7 @@ void tx_initiator_flow_fixed_scheduling(u32 a) {
     (void)a;
     struct tx_ctx_s *r13 = tx_ctx_alloc_next(1);
     u32 sp_buf[4];                            /* vendor: кадр 16 Б, буфер sp+4..sp+0xc */
-    u32 r1 = fsched_pick_queue_r41((u32)sp_buf);
+    u32 r1 = fsched_pick_any_ready_queue((u32)sp_buf);
     if (uc_role_ap == 0 && r1 == 0 && fsched_ctx.state == 4) {   /* ld_s [gp,0x124] — байты */
         u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = g | (1u << 12) | (1u << 13);
@@ -2195,7 +2150,7 @@ void tx_initiator_flow_fixed_scheduling(u32 a) {
             return;
         }
         u32 spc = 0;
-        u8 sv = sta_get_sweep_byte((u8)sp_buf[0], (u32)&spc);
+        u8 sv = qid_cfg_get_sta((u8)sp_buf[0], (u32)&spc);
         struct sta_entry *r0 = &sta_tab[sv];
         if (r0->key_valid != 0 && (r0->qid_mask_q6 & (1u << sp_buf[0])))   /* bbit0 → пропуск */
             r13->flags |= 1u << 11;
@@ -2240,7 +2195,7 @@ void tx_non_data_flow_fixed_scheduling(u32 a) {
     tx_sta_run_txop(r13);
     if (!(txrx_state2 & (1u << 9)))
         uc_mac_cmd(0x14000100);
-    mac_set_mode_0000();
+    mac_wait_mode_ack_if_idle();
     txrx_state1 = 0;
     txrx_state2 = 0;
     tx_ctx_pool.slot[0].flags = 0;
@@ -2248,7 +2203,7 @@ void tx_non_data_flow_fixed_scheduling(u32 a) {
 }
 
 
-u32 tx_flow_substep(struct tx_ctx_s *a) {
+u32 rate_search_per_check(struct tx_ctx_s *a) {
     /* 6.2 asm 0x92fbc0. */
     /* PER = fail_cnt / tx_cnt текущего MCS против порогов rs_cfg (в %). */
     u32 sta = *(u8 *)&a->sta;
@@ -2422,7 +2377,7 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
         } else {
             /* L_93a340 */
             txrx_state2 |= 1u << 2;
-            direct_tx_program_cmd34(0x10, 0x10);
+            direct_tx_program_desc(0x10, 0x10);
             sp_buf[1] = 0;                             /* st_s r15(=0),[sp,4]: mcs для txop_await */
             mac_program_tx_with_rate(0);
             while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
@@ -2441,7 +2396,7 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
         rts_txop_start:   /* L_93a39e */
         if (dti_qset_mode != 0 && (r13->flags & (1u << 11))) {
             mac_load_tx_key((const u32 *)sta_tab[r13->sta].tx_key);
-            tx_flow_arm_88606c_0x102();
+            tx_crypto_ctl_arm();
             r13->flags &= ~(1u << 11);
         }
         u32 f = (mtp_desc_lo & 2u) ? 1 : 0;      /* bic r,r,-3 == & 2 */
@@ -2511,7 +2466,7 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
     if (((u8)mac_mtp_perm() & (r13->ack_mask & 0x40)) == 0)   /* r0 = (… == 0) → bne L_93a420 */
         goto rts_txop_fail;
     r13->x20 = 1;
-    mac_q_tx_ppdu_3009(r13);
+    mac_q_tx_ppdu_txop_open(r13);
     mac_program_tx_with_qid(r13->qid);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
@@ -2522,21 +2477,21 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
         ;
     goto rts_txop_fail;
     rts_txop_fail:   /* L_93a420 */
-    bi_tx_check_idle_and_start_uc(2);
+    mac_backoff_settle_set_chain_modes(2);
     uc_stats.txop_rts_fail += 1;
     txrx_state2 |= 1u << 13;
     return 0;
 }
 
 
-void rx_funcs_send_direct_frame(u32 a) {
+void direct_tx_send_frame(u32 a) {
     /* 6.2 asm 0x93b2b8. */
     tx_fifo_write_bytes(a, 0xa);
     tx_fifo_free -= 6;
     uc_mac_cmd(0x33000443);
     uc_wait_direct_tx_ready();
     uc_fifo_frame_tail(a);
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
 }
 
 
@@ -2590,6 +2545,9 @@ static void bcon_tx_ack_cmds(void)
  * за BTI/слот, приёмник считает время до конца ISS неверно. */
 u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
 {
+#ifdef UC_STAMP_MASK
+    u32 r40_dbg = 0;
+#endif
     /* 6.2 asm 0x93b430. b — режим (1 — без ре-программы TX, 5 — с приёмом ответа),
      * c — план секторов, d — обратный вызов на каждый сектор, e — биты команды 0x2d,
      * f — 0: маяк, иначе обычный кадр. */
@@ -2640,6 +2598,9 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
         mac_select_all_sectors_and_wait();
         mac_cmd_29000001();
         u32 r40 = mac_status_sel();
+#ifdef UC_STAMP_MASK
+        r40_dbg = r40;                                  /* метка STAMP_BCN_GO — ниже, вне срокового участка */
+#endif
         if ((mac_evt1() & MAC_EVT1_BUSY2) || !(r40 & MAC_PHYSIG_CCA_PPDU_COMP)) {
             uc_mac_cmd(0x29000002);
             while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
@@ -2657,6 +2618,9 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
     }
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
+#ifdef UC_STAMP_MASK
+    UC_STAMP(STAMP_BCN_GO, uc_read_tsf_lo() - MMIO32(HW_MAC_BI_START_TSF_LO), r40_dbg | (f << 31));
+#endif
     sect = 0;
     for (;;) {                                  /* 0x93b74a */
         if (first) {
@@ -2681,7 +2645,8 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             uc_mac_cmd(0x83u << 25);
         }
         uc_spin_until_event(MAC_EVT1_TX_END);
-        h5c = (u32)ss_plan_cdown << 1;       /* ldb_s r2,[0x802e5c] — перечитывается */
+        UC_STAMP(STAMP_SWEEP_TX_EVT, ss_plan_cdown, (f << 16) | FWSH(fwsh_diag, bcn_psdu_len));
+        h5c = (u32)ss_plan_cdown << 1;       /* перечитывается */
         u32 r1 = e | 0x2d000000 | h5c | ((u32)ss_plan_sector << 10);
         u32 r0 = (u32)ss_plan_sector << 10;
         uc_mac_cmd(r1);
@@ -2698,6 +2663,7 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
             ((cb_t)d)(r0, r1, h5c, d);
         u32 r16 = ((u32)ss_plan_rf_sector << 8) | (rf_chain_cfg | 0x30);
         mac_evt_enable_bit_sync(5);
+        UC_STAMP(STAMP_SWEEP_TX_FREE, ss_plan_cdown, 0);
         if (sect != 0) {
             uc_mac_cmd(0x49010000);
             uc_spin_until_event4(MAC_EVT4_EXT_GP345_END);
@@ -2790,15 +2756,14 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
 #define SSWFB_RETRY_NEED_US  ((SSWFB_RETRY_NEED_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
 _Static_assert(SSWFB_GP1_CLK == 5092u && SSWFB_RETRY_NEED_CLK == 13345u && SSWFB_RETRY_NEED_US == 81u,
                "повтор SSW-Feedback: взвод GP1 и остаток выделения");
-#define USEC_TO_TBTT_MASK    0x3ffffffu                                     /* [25:0] */
 static __attribute__((noinline)) u32 sswfb_retry_fits(void)
 {
-    u32 rem = MMIO32(HW_MAC_USEC_TO_TBTT) & USEC_TO_TBTT_MASK;
-    u32 win = ese_dti_us_to_window_end();
-    if (win < rem)
-        rem = win;
-    return rem > SSWFB_RETRY_NEED_US;
+    return dti_alloc_left_us() > SSWFB_RETRY_NEED_US;
 }
+/* От чтения остатка до конца кадра Feedback: TXTIME 18,255 мкс + путь до эфира (< 1 мкс) + округление регистра
+ * (1 мкс) — вверх, в безопасную сторону (Duration занижается). */
+#define SSWFB_FRAME_US  ((DMG_TXTIME_SSW_FB_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US + 2u)
+_Static_assert(SSWFB_FRAME_US == 21u, "Feedback до конца кадра");
 void txss_init_send_fdbk_wait_ack(u32 a) {
     /* 6.2 asm 0x93b9c0. */
     txrx_state2 = 0x400000;
@@ -2984,7 +2949,10 @@ u32 txss_resp_wait_iss_end(u32 a, u32 rss) {
                 mac_mode_switch_core_and_rf(sta_mode_word[r13]);
             bti_cnt.last_ant = sls.best.antenna;
             bti_cnt.last_sector = sls.best.sector;
-            mac_program_4f_52(rss_wait_clk_x10, 4);
+            /* GP0 ожидания SSW-Feedback (txss_resp_wait_fdbk) взводится здесь, до своей RSS, — срок = длительность
+             * RSS по плану (txss_timing[sta].total, мкс; та же развёртка, что строит txss_program_tx_frame) + окно
+             * всех повторов Feedback (ifs.h). Одно окно истекало бы ещё во время RSS из 64 секторов. */
+            mac_program_gp_timer0(DMG_RESP_FDBK_WAIT_CLK + (u32)txss_timing[r13][0] * DMG_CLK_PER_US, 4);
             txss_program_tx_frame(r13, 1, 1, 0, 0);
             uc_mac_cmd(0x49000040);
             return 1;
@@ -3023,8 +2991,17 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = v;
     }
     /* Duration SSW-Feedback в DTI (9.3.1.16 a/b): TXTIME(SSW-Ack) + MBIFS, + ещё MBIFS при запросе BRP (L-RX
-     * ниже — у станции на поддержании); 0x15 вне BTI — буквально (abft.h): 28 / 37. */
+     * ниже — у станции на поддержании); 0x15 вне BTI — буквально (abft.h): 28 / 37. Без BRP — не дальше конца
+     * текущего выделения (9.3.1.16 b, «whichever comes earlier»): остаток (dti_alloc_left_us — TBTT и окно ESE)
+     * минус кадр Feedback и путь до эфира. Только первый Feedback (c = 0): повтор идёт лишь при остатке > 81 мкс
+     * (sswfb_retry_fits), там Duration 28 меньше остатка, а путь GP1 → повтор не удлиняется. */
     u32 r0 = (maint_sta_mask & (1u << b)) ? SSWFB_DUR_BRP_US : SSWFB_DUR_US;
+    if (c == 0 && r0 == SSWFB_DUR_US) {
+        u32 left = dti_alloc_left_us();
+        left = (left > SSWFB_FRAME_US) ? left - SSWFB_FRAME_US : 0;
+        if (left < r0)
+            r0 = left;
+    }
     r0 |= (1u << 24) | (1u << 26) | (1u << 28);
     uc_mac_cmd(r0);
     uc_mac_cmd(0x14000007);
@@ -3032,10 +3009,10 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
      * мусором стека — в отличие от кадров из шаблонов DCCM (ssw_tpl, brp_frame), где оно 0.
      * Перезаписывает ли его MAC, не установлено; здесь 0, как в остальных кадрах. */
     *(u32 *)buf = 0;
-    bf_set32((u32)buf, 0, 2, 0);
-    bf_set32((u32)buf, 2, 2, 1);
-    bf_set32((u32)buf, 4, 4, 6);
-    bf_set32((u32)buf, 8, 4, 9);
+    bf_set32_lo_hi((u32)buf, 0, 2, 0);
+    bf_set32_lo_hi((u32)buf, 2, 2, 1);
+    bf_set32_lo_hi((u32)buf, 4, 4, 6);
+    bf_set32_lo_hi((u32)buf, 8, 4, 9);
     buf[0x10] = sls.best.sector | (sls.best.antenna << 6);
     buf[0x11] = ssw_snr_report(sls.best.snr_db);
     buf[0x12] = 0;
@@ -3051,7 +3028,7 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
     fr->ra[0] = p->mac[0];
     fr->ra[1] = p->mac[1];
     fr->ra[2] = p->mac[2];
-    direct_tx_program_cmd34(0x10, 0x18);
+    direct_tx_program_desc(0x10, 0x18);
     mac_program_tx_common();
     uc_mac_cmd(0x2008000);
     if (txrx_state1 & 0x10) {
@@ -3063,15 +3040,18 @@ void txss_init_send_ssw_fdbk(u32 a, u32 b, u32 c) {
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd((txrx_state1 & 0x10) ? (0x18 << 24) : 0x18001000);
+    UC_STAMP(STAMP_FB_GO, c, 0);
     tx_fifo_write_bytes((u32)buf, 0xa);
     tx_fifo_free -= 6;
     uc_mac_cmd(0x33000443);
     uc_wait_direct_tx_ready();
     uc_fifo_frame_tail((u32)buf);
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
+    UC_STAMP(STAMP_FB_COMMIT, c, 0);
     mac_evt_enable_bit_sync_b(6);
     mac_set_rf_chain_state_with_sta_sector();
     uc_spin_until_event(MAC_EVT1_TX_END);
+    UC_STAMP(STAMP_FB_TX_EVT, c, 0);
 }
 
 
@@ -3090,12 +3070,12 @@ u32 qset1_mask_any_pending_uc(u32 a) {
 }
 
 
-u32 background_bi_step(void)
+u32 pm_idle_try_enter(void)
 {
     u32 r14 = 1;
     if (rx_listen_active == 0)
         return r14;
-    u32 st = bi_state_from_g800600();
+    u32 st = bi_phase_from_sm_state();
     if (st == 1 && pm_cfg_flag != 0 && pm_busy != 0) {
         uc_mac_cmd(0xf000001);
         u32 r0 = mac_sel_shadow & 0xfffff0ff;
@@ -3141,12 +3121,12 @@ u32 background_bi_step(void)
     return r14;
 }
 
-void sends_pmc_mark_aaab02(struct fsched_peer_ctx *p, u32 b) {
+void fsched_slot_resetup_if_time_left(struct fsched_peer_ctx *p, u32 b) {
     if (fsched_ctx.state != 4)
         return;
     if (p->slot_kicked == 0)
         return;
-    u32 r2 = fsched_slot_half4(p) - fixed_sched_slot_cfg_u16_2(p);
+    u32 r2 = fsched_slot_flush_to_us(p) - fixed_sched_slot_stop_vring_us(p);
     if (b >= r2)
         return;
     fixed_sched_slot_setup(p);
@@ -3233,10 +3213,21 @@ void update_sector_sweep_frames_number(u32 a, u32 b) {
 void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
     /* 6.2 asm 0x93e8c4. */
     uc_mac_cmd(0x2008000);
+#ifdef UC_STAMP_MASK
+    u32 sc19 = 0;
+    if (UC_STAMP_ON(STAMP_TXOP_CONT)) {         /* перед командой: команда позже на ~8 тактов */
+        uc_mac_cmd(0x4d000000);
+        arc_nops(3);
+        sc19 = mac_timer_sel();
+    }
+#endif
     uc_mac_cmd(0x19000001);
     u32 r13 = MAC_MTP_RESP_RD_SUPP_OF(mac_mtp_resp());
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
+#ifdef UC_STAMP_MASK
+    UC_STAMP(STAMP_TXOP_CONT, (sc19 & 0xffff) | mac_rx_rep1() << 16, mac_mtp_resp());
+#endif
     u32 perm = ((a->ack_mask & (u8)mac_mtp_perm()) == 0) ? 1 : 0;
     u32 proceed = 1;                 /* beq_s L_93e942 при perm == 0 */
     if (perm != 0) {
@@ -3252,7 +3243,7 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
             u32 v0 = rs_state[idx].active;
             u32 v1 = rs_state[idx].phase;
             if (!(v0 == 2 || v1 == 3 || v1 == 4 || v1 == 5)) {
-                mtp_service_dispatch(1, a->sta, a->resp_ctx8, b);   /* r1=[r14], r2=[r14,8], r3=r15 */
+                mtp_service_dispatch(1, a->sta, a->resp_ctx8, (b << 8) | 3);   /* r1=[r14], r2=[r14,8]; vendor r3=r15 — MCS */
                 while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
                     ;
                 u32 r51 = mac_mtp_desc();
@@ -3277,13 +3268,13 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
         }
         /* bbit0 → L_93e9f6: дальше общий хвост (команда 0x18000000) */
     } else if (a->flags & (1u << 12)) {   /* L_93e9e6 */
-        tx_flow_arm_88606c_0x102();
+        tx_crypto_ctl_arm();
         a->flags &= ~(1u << 11);
     }
     /* L_93e9f6 */
     if (txrx_state1 & (1u << 1)) {
         if (dti_qset_mode != 0) {
-            u32 f3 = fsched_slot_f3_positive(&fsched_peers);
+            u32 f3 = fsched_slot_rd_counter_nonzero(&fsched_peers);
             r13 &= f3;
             if (f3 != 0)
                 fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
@@ -3304,7 +3295,7 @@ u32 mtp_queue_release_mgmt(struct tx_ctx_s *a, u32 b, u32 c, u32 d) {
         r15 |= 1u << 2;
         r1 = a->sta;
         if (rs_state[r1].active != 0)
-            r13 = (mtp_queue_byte_by_index(r1) << 8) | 0x3;
+            r13 = (rs_sta_mcs_try(r1) << 8) | 0x3;
     } else {
         r15 = a->qid << 16;
         u32 r2 = a->resp_ctx8;
@@ -3320,7 +3311,7 @@ u32 mtp_queue_release_mgmt(struct tx_ctx_s *a, u32 b, u32 c, u32 d) {
         if (txrx_state1 & (1u << 1)) {
             u32 r1v = a->sta;
             if (rs_state[r1v].active != 0)
-                r13 |= (mtp_queue_byte_by_index(r1v) << 8) | 0x3;
+                r13 |= (rs_sta_mcs_try(r1v) << 8) | 0x3;
         }
     }
     uc_mac_cmd(0x1b001111);
@@ -3431,7 +3422,7 @@ u32 rate_search_reset_stats(struct tx_ctx_s *a, u32 b)
     __asm__ volatile("norm %0, %1" : "=r"(n) : "r"(rs_cfg_mcs_en(cfg)));
     u32 r2 = 30 - n;
     if (rs->mcs_try != r2)
-        rs->mcs_try = (u8)sched_bitmap_next_set_bit(r14, 0);
+        rs->mcs_try = (u8)rs_next_enabled_mcs(r14, 0);
     u32 r2b = rs->mcs_best;
     __asm__ volatile("norm %0, %1" : "=r"(n) : "r"(rs_cfg_mcs_en(cfg)));
     u32 r1 = 30 - n;
@@ -3440,12 +3431,12 @@ u32 rate_search_reset_stats(struct tx_ctx_s *a, u32 b)
 
 u32 rate_search_pick_tx_params(struct tx_ctx_s *a, u32 b)
 {
-    /* 6.2 asm 0x9301fc. rate=*(u8*)a; b — флаг вставки для bitstream_push. */
+    /* 6.2 asm 0x9301fc. rate=*(u8*)a; b — флаг вставки для bit_hist_push. */
     u8 r14 = *(u8 *)&a->sta;
     struct rs_sta_stats *rs = &rs_stats[r14];
     const struct rs_sta_cfg *cfg = &rs_cfg[r14];
     u32 value = ((u32)cfg->back_failure_mask[1] << 16) | cfg->back_failure_mask[0];
-    u32 r0 = bitstream_push((u32)rs->back_fail, cfg->max_back_failure_th, b, value);
+    u32 r0 = bit_hist_push((u32)rs->back_fail, cfg->max_back_failure_th, b, value);
     u32 *phase = &rs_state[r14].phase;
     if (r0 != 1)
         return *phase;
@@ -3507,7 +3498,7 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
         if (*wake != 0) {
             *wake = 0;
             memset0_words_uc(&sp.e29, sizeof(sp.e29));
-            uc_evt_send_29_sync((u32)&sp.e29);
+            uc_evt_send_sp_slots_reload((u32)&sp.e29);
         }
         sp.ev.type = 6;
         uc_send_evt_ps_awake_peer((u32)&sp.ev);
@@ -3518,7 +3509,7 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
          * иначе аппаратный массив SP остался бы без следующих записей */
         *wake = 0;
         memset0_words_uc(&sp.e29, sizeof(sp.e29));
-        uc_evt_send_29_sync((u32)&sp.e29);
+        uc_evt_send_sp_slots_reload((u32)&sp.e29);
     }
     u32 r14 = MMIO32(HW_MAC_SCHED_SLOT_STATUS); /* ld [0x887000,-0x74] — без .as, смещение в байтах */
     sp.e29.h = (u16)r14;
@@ -3556,7 +3547,7 @@ u32 ss_plan_next_sector(u32 a, u32 b) {
     /* 6.2 asm 0x935878. */
     if (b != 0)
         *(u32 *)b = 0;
-    u8 r13 = ss_plan_cdown;
+    u32 r13 = ss_plan_cdown;
     u8 r2 = ss_plan_idx;
     if (r13 != 0 && r2 != 0x40 && ss_order_cur[r2] != 0xff) {
         u8 r3 = ss_order_cur[r2];
@@ -3570,7 +3561,7 @@ u32 ss_plan_next_sector(u32 a, u32 b) {
             return 0;
         ss_plan_passes_left = (u8)(r3 - 1);
         if (b != 0) {
-            ss_plan_cdown = (u8)(r13 - 1);
+            ss_plan_cdown = (u16)(r13 - 1);
             *(u32 *)b = 1;
             /* LBIFS — одна передача в CDOWN и frame + gap в Duration (ifs.h, P11) */
             ss_plan_tx_dur -= ((const struct ss_timing *)a)->frame + ((const struct ss_timing *)a)->gap;
@@ -3582,7 +3573,7 @@ u32 ss_plan_next_sector(u32 a, u32 b) {
         ss_plan_idx = (u8)(r1 + 1);
         r13 = ss_plan_cdown;
     }
-    ss_plan_cdown = (u8)(r13 - 1);
+    ss_plan_cdown = (u16)(r13 - 1);
     ss_plan_tx_dur -= ((const struct ss_timing *)a)->frame + ((const struct ss_timing *)a)->gap;
     return 1;
 }

@@ -134,12 +134,12 @@ void fw_main(void)
         boot_force_production_mode();
     }
     fw_log_emit0(0x20, 0x10009a4);                    /* MAIN() Initializing the LFSR */
-    mac_enable_880bc0_b0();
+    mac_rng_ctl_enable();
     MMIO32(BL_SHUTDOWN_HS) = 0;                       /* BL_SHUTDOWN_HS */
     MMIO32(BL_ASSERT_CODE) = 0;                       /* BL_ASSERT_CODE */
     MMIO32(BL_ASSERT_BLINK) = 0;                      /* BL_ASSERT_BLINK */
     fw_log_emit0(0x20, 0x10009c4);                    /* MAIN() Enabling DMA error interrupts */
-    hwd_dma_init();
+    hwd_dma_enable_error_irqs();
     fw_log_emit0(0x20, 0x1000a1c);                    /* MAIN() Masking user interrupts */
     arc_core_wr(32, 0);                               /* vendor mov_s r32,r13 (r13 = 0) */
     fw_log_emit0(0x20, 0x1000a3c);                    /* MAIN() Activating ARC action point protection for ICCM */

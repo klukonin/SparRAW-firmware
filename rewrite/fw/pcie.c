@@ -148,7 +148,7 @@ static void hwd_pcie_l1_entry_cfg(u32 on)
 /* Шаги pcie_serdes__program_all (0x8d1720). */
 
 /* (0x8d173c): RGF 0x880c00. */
-void hwd_pcie_uses_rgf_880c00(void)
+void hwd_pcie_serdes_cfg_program(void)
 {
     MMIO32(HW_PCIE_SERDES_CFG_C40) &= ~1u;
     MMIO32(HW_PCIE_SERDES_CFG_C54) |= (1u << 31);
@@ -174,7 +174,7 @@ void pcie_l1ss_enable(void)
 }
 
 /* (0x8d1764). */
-void hwd_pcie_clear_88b000_bits(void)
+void hwd_pcie_clear_misc_ctl_bits(void)
 {
     MMIO32(HW_PCIE_RGF_EXT_2C) &= ~8u;
     MMIO32(HW_PCIE_RGF_EXT_B0) &= ~4u;
@@ -186,7 +186,7 @@ void hwd_pcie_clear_88b000_bits(void)
 
 /* (0x8d196c): [0x882f88] снять бит 29, затем бит 30 (два RMW). Прежде здесь стояла
  * запись [0x882fd0] = [0x882fd4] — не та функция. */
-static void hwd_pcie_clear_882f88_b29_b30(void)
+static void hwd_pcie_pm_ctl_clear_b29_b30(void)
 {
     MMIO32(HW_PCIE_PM_CTL_88) &= ~(1u << 29);
     MMIO32(HW_PCIE_PM_CTL_88) &= ~(1u << 30);
@@ -207,10 +207,10 @@ void pcie_mirror_link_bit(void)
 
 void pcie_serdes_program_all(void)
 {
-    hwd_pcie_uses_rgf_880c00();
+    hwd_pcie_serdes_cfg_program();
     pcie_l1ss_enable();
-    hwd_pcie_clear_88b000_bits();
-    hwd_pcie_clear_882f88_b29_b30();
+    hwd_pcie_clear_misc_ctl_bits();
+    hwd_pcie_pm_ctl_clear_b29_b30();
     pcie_mirror_link_bit();
 }
 
@@ -279,20 +279,20 @@ void pcie_serdes_init_seq(void)
  * по битам [0x8825c0]: [3:2] оба 0 → 0x880afc биты 9..11; бит 0 СБРОШЕН → 0x8d19a4;
  * бит 1 СБРОШЕН → 0x8d1a34 и 0x8d1250 (vendor bxor ..,0 — инверсия; прежде брались
  * сами биты). */
-void pcie_program_seq_fw_8825c0(u32 v)
+void pcie_program_clk_gating_seq(u32 v)
 {
     u32 r13 = MMIO32(HW_PCIE_MODE_FLAGS);
     if (hwd_pcie_is_ep_under_serdes() != 0) {
-        mac_set_bits_880af4_f8_fc(v);
-        mac_set_880af8_afc_b25_b5(v);
-        mac_set_880afc_bits9_11(v);
+        mac_sw_clk_vec_set_b8_19_4(v);
+        mac_sw_clk_vec_set_b25_b5(v);
+        mac_sw_clk_vec2_set_bits9_11(v);
     } else {
         u32 r0 = ((r13 & (1u << 2)) || (r13 & (1u << 3))) ? 0 : 1;
-        mac_set_880afc_bits9_11(r0 & v);
-        mac_set_bits_880af4_f8_fc(((r13 ^ 1u) & 1u) & v);
+        mac_sw_clk_vec2_set_bits9_11(r0 & v);
+        mac_sw_clk_vec_set_b8_19_4(((r13 ^ 1u) & 1u) & v);
         u32 b = (((r13 >> 1) ^ 1u) & 1u) & v;
-        mac_set_880af8_afc_b25_b5(b);
-        mac_set_880af8_afc_b30_b6(b);
+        mac_sw_clk_vec_set_b25_b5(b);
+        mac_sw_clk_vec_set_b30_b6(b);
     }
 }
 
@@ -390,7 +390,7 @@ void pcie_serdes_init(void)
         hwd_pcie_port1_serdes_reset(1);
     }
     fw_log_emit0(0x2f, 0x1003178);              /* "Clock gate PCIE uneeded clocks!" */
-    pcie_program_seq_fw_8825c0(1);
+    pcie_program_clk_gating_seq(1);
     pcie_hp_ctrl_write_bit(0xd, 0);
     pcie_hp_ctrl_write_bit(0xe, 0);
     pcie_hp_ctrl_write_bit(0xa, 1);
@@ -432,12 +432,12 @@ void pcie_bits_set32_s2_w4(u32 *p, u32 a, u32 b)
 }
 
 /* Состояние канала PCIe (LTSSM, 0x88b0c0) и линия 0x882b80. */
-u32 hwd_pcie_get_88b0c0_state4(void)
+u32 hwd_pcie_get_l1ss_state(void)
 {
     return (MMIO32(HW_PCIE_LINK_STATE) >> 2) & 0xf;
 }
 
-u32 hwd_pcie_get_882b80(void)
+u32 hwd_pcie_get_perst_status(void)
 {
     return MMIO32(HW_PCIE_PERST_STATUS) & 1;
 }
@@ -513,7 +513,7 @@ void pcie_dbi_ack_done(void)
 /* Ожидание готовности DBI (0x8d11f8): ровно 0x5281 чтений [0x882644] (lp без выхода);
  * счётчик 0x5280 уменьшается на каждое чтение с битом 29; результат 1 при счётчике > 0
  * (знаково: sub.le). ХРУПКО: число чтений — это и есть таймаут; цикл не прерывать. */
-u32 pcie_wait_882644_ready(void)
+u32 pcie_dbi_wait_ready(void)
 {
     s32 r1 = 0xa5 << 7;   /* 0x5280 */
     for (u32 i = 0; i < 0x5281; i++) {
@@ -524,12 +524,12 @@ u32 pcie_wait_882644_ready(void)
 }
 
 /* (0x8e026c): готовность → квитирование → снова готовность. */
-u32 pcie_ack_8e026c(void)
+u32 pcie_dbi_wait_ready_and_ack(void)
 {
-    if (pcie_wait_882644_ready() == 0)
+    if (pcie_dbi_wait_ready() == 0)
         return 0;
     pcie_dbi_ack_done();
-    return pcie_wait_882644_ready() != 0 ? 1u : 0u;
+    return pcie_dbi_wait_ready() != 0 ? 1u : 0u;
 }
 
 /* Код размера доступа (общий для чтения/записи): sz 0 → 1, 1 → 2, 2 → 4, прочие — нет. */
@@ -560,7 +560,7 @@ u32 pcie_dbi_transfer(u32 addr, u32 data, u32 sz, u32 a3, u32 a4, u32 a5, u32 a6
            | ((a7 & 1) << 8) | ((a6 & 1) << 11) | ((a8 & 1) << 7);
     pcie_dbi_start_cmd(1, r1 & 0x9ff, 0xf);
     if (a6 == 1)
-        return pcie_ack_8e026c();
+        return pcie_dbi_wait_ready_and_ack();
     if (a6 != 0)
         return 0;
     pcie_dbi_ack_done();
@@ -596,7 +596,7 @@ u32 pcie_dbi_read(u32 addr, u32 sz, u32 a2, u32 a3, u32 a4, u32 a5, u32 *out)
     u32 r1 = (code & 7) | ((a2 & 1) << 3) | ((a3 & 1) << 4) | ((a4 & 3) << 5)
            | ((a5 & 1) << 11);
     pcie_dbi_start_cmd(0, r1 & 0x87f, 0);
-    if (pcie_ack_8e026c() == 0)
+    if (pcie_dbi_wait_ready_and_ack() == 0)
         return 0;
     *out = pcie_dbi_get_data();
     return 1;

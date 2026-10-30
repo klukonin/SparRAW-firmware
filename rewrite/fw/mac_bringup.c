@@ -47,19 +47,19 @@ __attribute__((section(".textlate"))) static u32 txq_cfg_enable(void)
     qdesc_txq_enable = v; /* st.as [gp,0x87] — слово */
     return v;
 }
-__attribute__((section(".textlate"))) static u32 txq_cfg_c70(void)
+__attribute__((section(".textlate"))) static u32 txq_cfg_mcs_param16_val(void)
 {
     u32 v = (qdesc_txq_cfg_custom == 0) ? 0xc8u : (u32)macq_reg_c70_val;
     macq_reg_c70_val = (u16)v; /* stw.as [gp,0x3c] — полуслово */
     return v;
 }
-__attribute__((section(".textlate"))) static u32 txq_cfg_c74(void)
+__attribute__((section(".textlate"))) static u32 txq_cfg_mcs_param8_val(void)
 {
     u32 v = (qdesc_txq_cfg_custom == 0) ? 0x40u : (u32)macq_reg_c74_val;
     macq_reg_c74_val = (u16)v; /* stw.as [gp,0x3d] */
     return v;
 }
-__attribute__((section(".textlate"))) static u32 txq_cfg_field_0e(void)
+__attribute__((section(".textlate"))) static u32 txq_cfg_desc_field0e_val(void)
 {
     u32 v = (qdesc_txq_cfg_custom == 0) ? 0u : (u32)macq_desc_field0e;
     macq_desc_field0e = (u16)v; /* stw.as [gp,0x40] */
@@ -404,12 +404,12 @@ __attribute__((section(".textlate"))) void tx_queue_config_by_mode(struct macq_m
                 u32 c70, c74;
                 w0 |= 1u << 30;
                 /* MMIO 0x886c70 / 0x886c74 (enable != 0) */
-                c70 = txq_cfg_c70();
+                c70 = txq_cfg_mcs_param16_val();
                 if (c70 & 0xffff0000u)
                     fw_sysassert_fatal(0, 0xac);
                 MMIO32(HW_MAC_TX_MCS_PARAM16) = c70 | (MMIO32(HW_MAC_TX_MCS_PARAM16) & 0xffff0000u);
 
-                c74 = txq_cfg_c74();
+                c74 = txq_cfg_mcs_param8_val();
                 if (c74 & 0xffffff00u)
                     fw_sysassert_fatal(0, 0xac);
                 MMIO32(HW_MAC_TX_MCS_PARAM8) = c74 | (MMIO32(HW_MAC_TX_MCS_PARAM8) & 0xffffff00u);
@@ -427,7 +427,7 @@ __attribute__((section(".textlate"))) void tx_queue_config_by_mode(struct macq_m
                 w1 |= 1u << 13;
             w1 = bf_insert_field(w1, cfg_w13_field() & 0x1fff, 0, 13);
             w1 = bf_insert_field(w1, cfg_w4_field() & 0xf, 17, 4);
-            d->field0e = (u16)txq_cfg_field_0e();
+            d->field0e = (u16)txq_cfg_desc_field0e_val();
             w1 = bf_insert_field(w1, cfg_w3_field_b() & 7, 14, 3);
         } else {
             /* Block 4: не-override */
@@ -523,13 +523,13 @@ __attribute__((section(".textlate"))) void mac_bringup_init_seq(void)
 /* === Простые шаги l2mgr__mac_bringup (0x8f6ab8) === */
 
 /* mac_bringup__set_886a80_ctl_bit0 (0x8f6c34): [0x886aa0] |= 1. */
-__attribute__((section(".textlate"))) void mac_bringup_set_886a80_ctl_bit0(void)
+__attribute__((section(".textlate"))) void mac_bringup_set_mac_ctl_bit0(void)
 {
     MMIO32(HW_MAC_CTL_886AA0) |= 1u;
 }
 
 /* mac__set_886838_b0 (0x8f811c): [0x886838] bit0 = val (val&1 → assert). */
-__attribute__((section(".textlate"))) void mac_set_886838_b0(u32 val)
+__attribute__((section(".textlate"))) void mac_prp_ctrl_set_bit0(u32 val)
 {
     if (val & ~1u)
         fw_sysassert_fatal(0, 0xac);
@@ -539,7 +539,7 @@ __attribute__((section(".textlate"))) void mac_set_886838_b0(u32 val)
 /* mac__set_txq_param (0x8ea3b8, 96 Б): значение v очереди q в [0x886b00 + q*4]
  * ((q*32 + 0x4435800) >> 3 & ~3); v должно быть в маске 0x1c1ddf (иначе ассерт 0x1023 —
  * bbit0 по номеру бита v). При flag: [0x886c74][7:0] = 0x30, [0x886c70][15:0] = 0x14. */
-static void mac_set_txq_param(u32 q, u32 v, u32 flag)
+static void mac_set_cid_mcs_tbl_entry(u32 q, u32 v, u32 flag)
 {
     if (!((0x1c1ddfu >> (v & 31)) & 1u))
         fw_sysassert_fatal(__builtin_return_address(0), 0x1023);
@@ -558,7 +558,7 @@ __attribute__((section(".textlate"))) void mac_bringup_init_tx_queues(void)
     u32 i;
     MMIO32(HW_CID_MCS_TBL) = 8;
     MMIO32(HW_MAC_TX_MCS_PARAM8) = 0x2e;
-    mac_set_txq_param(0, 8, 1);
+    mac_set_cid_mcs_tbl_entry(0, 8, 1);
     for (i = 1; i <= 8; i++) {
         u32 addr = (((i << 5) + 0x4435800) >> 3) & ~3u;
         MMIO32(addr) = 8;
@@ -575,7 +575,7 @@ __attribute__((section(".textlate"))) void hwd_mac_enable_multicast(void)
 /* === Остальные шаги l2mgr__mac_bringup (0x8f6ab8) === */
 
 /* mac_bringup__prog_881000 (0x8f3e5c, 124 Б): конфигурация MAC-дескрипторов. */
-__attribute__((section(".textlate"))) void mac_bringup_prog_881000(void)
+__attribute__((section(".textlate"))) void mac_bringup_program_dma_cfg(void)
 {
     MMIO32(HW_DMA_RING_SEL_102C) = 3; arc_sync();
     MMIO32(HW_DMA_CFG_1144) = 1; arc_sync();
@@ -593,7 +593,7 @@ __attribute__((section(".textlate"))) void mac_bringup_prog_881000(void)
 }
 
 /* mac_bringup__prog_881b00 (0x8f6c4c, 100 Б): broadcast-ring конфигурация. */
-__attribute__((section(".textlate"))) void mac_bringup_prog_881b00(void)
+__attribute__((section(".textlate"))) void mac_bringup_program_l2_offload(void)
 {
     MMIO32(HW_L2_OFFLOAD_CFG_B20) = 8;
     MMIO32(HW_L2_OFFLOAD_CFG_B18) = 0x3aaaa;
@@ -607,7 +607,7 @@ __attribute__((section(".textlate"))) void mac_bringup_prog_881b00(void)
 }
 
 /* vring__reg_write_locked_0c (0x8d04d8, 48 Б): запись в [0x881c0c] под IRQ-lock. */
-__attribute__((section(".textlate"))) void vring_reg_write_locked_0c(u32 val, u32 do_sync)
+__attribute__((section(".textlate"))) void vring_dma_icr_write_locked(u32 val, u32 do_sync)
 {
     u32 saved = arc_irq_disable();
     MMIO32(HW_DMA_FW_ICR_C08_ICR) = val;
@@ -640,13 +640,13 @@ __attribute__((section(".textlate"))) void l2mgr_bringup_pair(u32 val)
 
 
 /* mac_parser__set_886260 (0x8dfbbc): [0x886260 + idx*4] = val. */
-__attribute__((section(".textlate"))) void mac_parser_set_886260(u32 idx, u32 val)
+__attribute__((section(".textlate"))) void mac_parser_set_rule_ctl(u32 idx, u32 val)
 {
     MMIO32(HW_PRS_RULE_CTL + idx * 4) = val;
 }
 
 /* mac_parser__set_886200 (0x8dfba0): упаковать поля в [0x886258]/[0x88625c]. */
-__attribute__((section(".textlate"))) void mac_parser_set_886200(u32 a0, u32 a1, u32 a2, u32 a3)
+__attribute__((section(".textlate"))) void mac_parser_set_prs_cfg(u32 a0, u32 a1, u32 a2, u32 a3)
 {
     u32 v = (a0 << 16) | a1 | (a2 << 24) | (a3 << 8);
     MMIO32(HW_PRS_CFG_886258) = v;
@@ -665,9 +665,9 @@ __attribute__((section(".textlate"))) void mac_parser_configure(u32 r0, u32 mode
     mac_parser_init(r0);                 /* vendor: r0 вызывающего (0), не r13 */
     mac_filter_write_entries(1, 0, 7);
     mac_filter_write_entries(2, 0, 0x3f);
-    mac_parser_set_886260(1, 0x4102);
-    mac_parser_set_886260(3, 258);
-    mac_parser_set_886200(r13, mode, mode, mode);
+    mac_parser_set_rule_ctl(1, 0x4102);
+    mac_parser_set_rule_ctl(3, 258);
+    mac_parser_set_prs_cfg(r13, mode, mode, mode);
 }
 
 /* mac_parser__set_default_ctrl (0x8dfbc8, 16 Б): [0x886288] = 0xf0c3f0f0. */
@@ -680,7 +680,7 @@ __attribute__((section(".textlate"))) void mac_parser_set_default_ctrl(void)
 
 
 /* mac_parser__rule_a (0x8dfb3c, 44 Б): 0x40 правил со значением i. */
-__attribute__((section(".textlate"))) void mac_parser_rule_a(void)
+__attribute__((section(".textlate"))) void mac_parser_clear_rule_tbl_b(void)
 {
     struct prs_rule buf;
     u32 i;
@@ -690,7 +690,7 @@ __attribute__((section(".textlate"))) void mac_parser_rule_a(void)
 }
 
 /* mac_parser__rule_b (0x8dfde4, 48 Б): одно правило по шаблону. */
-__attribute__((section(".textlate"))) void mac_parser_rule_b(u32 v)
+__attribute__((section(".textlate"))) void mac_parser_install_rule0(u32 v)
 {
     struct prs_rule rule;                            /* правило (2 слова, include/mac_parser.h) */
     volatile u16 *h = rule.h;                       /* volatile: два sth, как у vendor */

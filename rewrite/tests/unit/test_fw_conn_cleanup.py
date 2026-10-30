@@ -181,7 +181,7 @@ def _sta_path(elf, name):
     fw.advance(QUIESCE_US, between=F.settle)
     after = F.idle_state(fw)
     evts = [e.id for e in fw.wmi_evts]
-    scan_connected = fw.call('mid_list_any_in_state2')
+    scan_connected = fw.call('mid_list_any_bss_active')
     wild = list(fw.wild)
     uc = (F.uc_station(fw.boot_lmac_cmds, CID), F.uc_station(fw.boot_lmac_cmds + fw.lmac_cmds, CID))
     recon = _connect_record(w)
@@ -189,7 +189,8 @@ def _sta_path(elf, name):
 
 
 def _param(name):
-    return pytest.param(name, id=name)
+    """Тесты одного пути делят кэш _sta_path — одна группа xdist на путь (--dist loadgroup)."""
+    return pytest.param(name, id=name, marks=pytest.mark.xdist_group('cc_sta:' + name))
 
 
 @pytest.mark.parametrize('path', [_param(n) for n, _, _ in STA_PATHS])
@@ -197,7 +198,7 @@ def test_sta_teardown_returns_to_idle(fw_elf, path):
     boot, after, evts, scan_connected, wild, _, _ = _sta_path(fw_elf, path)
     assert evts.count(F.EV_DISCONNECT) == 1, 'WMI_DISCONNECT_EVENT хосту: %d раз (%s)' % (
         evts.count(F.EV_DISCONNECT), [hex(e) for e in evts])
-    assert scan_connected == 0, 'mid_list_any_in_state2: следующий START_SCAN пойдёт как «скан при соединении»'
+    assert scan_connected == 0, 'mid_list_any_bss_active: следующий START_SCAN пойдёт как «скан при соединении»'
     diff = F.state_diff(boot, after, IGNORE_TX_STATE + RANK)
     assert not diff, 'после разрыва (%s) не сброшено: %s' % (path, diff)
     assert not wild, 'обращения вне карты памяти: %s' % wild[:4]

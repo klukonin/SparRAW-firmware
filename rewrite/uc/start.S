@@ -84,7 +84,7 @@ _uc_reset:                  /* 0x920160 */
     mov r1, 0
     mov r0, 0
     jl  uc_init             /* vendor: jl 0x1e2c0 — до установки sp */
-    mov sp, __stack_top     /* 0x803a48 (uc/uc.ld) */
+    mov sp, __stack_top     /* 0x804000 (uc/uc.ld) */
     lsr sp, sp, 2
     asl sp, sp, 2
     mov r25, mac_cmd_log    /* указатель кольца MAC-команд (uc/uc.ld) */
@@ -92,6 +92,13 @@ _uc_reset:                  /* 0x920160 */
     asl r25, r25, 2
     mov gp, __gp            /* 0x800528 (uc/uc.ld) */
     mov fp, 0
+    /* Закраска стека: вся область __stack_bottom..__stack_top — узором UC_STACK_PAINT (стек ещё пуст). Высшая отметка
+     * заполнения — первое слово снизу, отличное от узора (tools/hwdbg/stack_hwm.py по blob_uc_data); испорченный узор
+     * выше отметки — запись чужого кода в стековую область. ~620 записей при загрузке, горячие пути не затронуты. */
+    mov r0, __stack_bottom
+    mov r2, 0x57ac57ac      /* UC_STACK_PAINT */
+3:  st.ab r2, [r0, 4]
+    brlo r0, sp, 3b
     jl  uc_main
     b   2f
 1:  flag 1
@@ -110,7 +117,7 @@ _uc_reset:                  /* 0x920160 */
  * l1_task_entry/l2_task_entry от прерывания (аппаратный: от этих событий отсчитываются окна
  * BTI/A-BFT/DTI). Путь ~21 инструкция до bl.d (сохранение 17 регистров), выход ~27; vendor
  * 0x9207c0 — дословно то же; запас задаёт не пролог, а l1_task_entry (l1.c) и самые длинные секции
- * с запрещёнными прерываниями (ucode_cmd_0x01_handler: ожидание в mac_rf_switch_cmd1f).
+ * с запрещёнными прерываниями (ucode_cmd_0x01_handler: ожидание в mac_rf_switch_wait_idle).
  * Удлинение пролога сдвигает все L1-сроки. */
 /* ISR: сохранить контекст, вызвать fn(arg), восстановить, j.f [ret]. */
 .macro UC_ISR name, fn, arg, ret

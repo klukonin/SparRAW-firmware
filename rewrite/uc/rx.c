@@ -30,7 +30,7 @@ static inline __attribute__((always_inline)) u32 rx_sta_tx_sel(u32 i)
                      : "=&r"(r) : "r"(i), "i"((u32)&sta_tab[0].tx_sel) : "memory");
     return r;
 }
-/* rs_stats[i].mcs_try (шаг 0x2c) — тело mtp_queue_byte_by_index (rate_search.c) без вызова. */
+/* rs_stats[i].mcs_try (шаг 0x2c) — тело rs_sta_mcs_try (rate_search.c) без вызова. */
 static inline __attribute__((always_inline)) u32 rx_rs_mcs_try(u32 i)
 {
     u32 r;
@@ -69,7 +69,7 @@ void rx_nav_arm_flag_if_enabled(void)
         rx_nav.flags = 2;
 }
 
-void rx_nav_set_flag_b1_if_enabled(u32 a)
+void rx_nav_reset_flags_arm(u32 a)
 {
     if (rx_nav.enable == 0) {
         rx_nav.flags = 0;
@@ -85,7 +85,7 @@ u32 rx_is_brp_frame(void)
     return 0;
 }
 
-void rx_flow_latch_phy_8014e8__930da4(void)
+void rx_latch_cur_gain_db(void)
 {
     /* 0x930da4: stb всегда, затем 0, если > 0x3f (знаковое ble). */
     s32 v = (s32)phy_read_signal_gain_adc_db_sfd_locked();
@@ -94,7 +94,7 @@ void rx_flow_latch_phy_8014e8__930da4(void)
         sel_nbr.cur_gain_db = 0;
 }
 
-void rx_cfg_select_sta(u32 a)
+void rx_cfg_set_sta_omni_sector(u32 a)
 {
     rf_chain_word = sta_tab[a].omni_rx_sel;
 }
@@ -147,7 +147,7 @@ u32 rx_flow_run_and_check_bf_abort(u32 a)
 {
     /* 6.2 asm 0x926310. */
     (void)a;
-    u32 r14 = rx_funcs_rx_flow();
+    u32 r14 = rx_flow_main();
     if (r14 != 1)
         return r14;
     if (bf_abort_unexpected(VOL(rxf.sta), 0xa) != 0) {
@@ -172,7 +172,7 @@ u32 rx_ppdu_is_ack(void)
 }
 
 
-u32 rx_ppdu_is_cts_b(void)
+u32 rx_ppdu_is_cts(void)
 {
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
@@ -190,21 +190,8 @@ u32 rx_ppdu_is_cts_b(void)
 /* uc_wait_event_busy — в stubs.c. */
 /* mac_switch_rx_to_tx — в mac.c. */
 
-void rx_arm_window_b(void)
-{
-    /* 0x923280: как rx_arm_window_c, но без возврата r37. */
-    uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
-    }
-    ppdu_evt_cnt += 1;
-    uc_stats.rx_arm += 1;
-    uc_mac_cmd(0x2011000);
-}
-
 /* 0x92c568: возврат r37 & (1 << 24). */
-u32 rx_arm_window_c(void)
+u32 rx_ppdu_is_ssw(void)
 {
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
     if (rx_buf_toggle_dis == 0) {
@@ -224,7 +211,7 @@ void rx_mac_prepare(void)
     uc_mac_cmd(0x83u << 25);
 }
 
-u32 rx_check_g8005f8_bit24(void)
+u32 rx_flow_decode_result(void)
 {
     /* 6.2 asm 0x932de8. */
     u32 v = txrx_state2;
@@ -249,7 +236,7 @@ void rx_check_mode_2(struct rx_meas_ctx *m, u32 b)
         return;
     if (rx_capture_match_filter(m) == 0) {
         if (v == RX_MEAS_PHYSTAT)
-            phy_stats_clear_counters_883960();
+            phy_rx_stats_clear();
     } else {
         if (v == RX_MEAS_PHYSTAT)
             phy_stats_accumulate_to_shared(m, b);
@@ -260,9 +247,9 @@ void rx_check_mode_2(struct rx_meas_ctx *m, u32 b)
 void rx_enter_listen_mode(void)
 {
     /* 6.2 asm 0x93c818. */
-    mac_set_mode_0000();
+    mac_wait_mode_ack_if_idle();
     rx_mode_configure(3, 0xff);
-    grant_detect_step(0, 1, 1);
+    rx_nav_check_idle(0, 1, 1);
     rx_listen_set_flag_and_stamp_tsf();
     rx_listen_enter_cnt += 1;
     uc_wait_two_events(5, 5, 0xa);
@@ -301,7 +288,7 @@ void rx_cf_end_nav_reset(u32 dur)
  * замерен, по аналогии с ACK/BA — единицы–десятки. Кадр (fc через r33 и 0x33…) пишется уже после
  * 0x37000020: заполнение должно успеть до того, как MAC начнёт передавать MPDU (аппаратный, не
  * установлен). Срыв — поздняя команда (MAC_HW_ICR б4/б5, assert 0x26, см. rx_frame_tx_resp_seq). */
-u32 rx_flow_send_imm_response(void)
+u32 rx_send_cf_end_response(void)
 {
     /* 6.2 asm 0x93626c. */
     /* 9.3.1.6: Duration CF-End DMG — остаток последовательности усечения (i − 1)·(TXTIME(CF-End) + SIFS), т. е.
@@ -312,7 +299,7 @@ u32 rx_flow_send_imm_response(void)
     tx_fifo_free -= 0x10;
     uc_mac_cmd(0x33000063);
     uc_wait_direct_tx_ready();
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
     txr.imm_resp += 1;
     return d;
 }
@@ -323,9 +310,9 @@ u32 rx_flow_send_imm_response(void)
  * (Reserved + BF Control, 9.3.1.18); вызывается на принятый Grant (MAC_RX_REP2_GRANT, случай 9).
  * СРОК: Grant Ack — через SIFS 3 мкс после Grant (802.11-2020 10.39.4, 10.3.2.3.3). Медленный путь
  * через switch rx_flow_handle_frame; здесь до 0x37000020 — расчёт длительности,
- * direct_tx_init_rx_desc (~15) и tx_send_imm_response (~60); тело (7 Б) пишется после 0x37000020.
+ * direct_tx_init_grant_ack (~15) и tx_send_imm_response (~60); тело (7 Б) пишется после 0x37000020.
  * Как у vendor 0x936320; запас не замерен (единицы–десятки). Срыв — поздняя команда, assert 0x26. */
-void rx_send_dmg_cts(void)
+void rx_send_grant_ack(void)
 {
     /* 6.2 asm 0x936320. */
     struct dtx_ctrl_frame sp;
@@ -334,13 +321,13 @@ void rx_send_dmg_cts(void)
     u32 d = rx_buf_duration;
     u32 r1 = d > DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) ? d - DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) : 0u;
     tx_send_imm_response(ctrl_frame_mcs, r1, 0x17);  /* [gp,-0xec] = [0x80043c] */
-    direct_tx_init_rx_desc(&sp, 1, 1);
+    direct_tx_init_grant_ack(&sp, 1, 1);
     arc_core_wr(33, sp.fc);
     tx_fifo_free -= 0x10;
     uc_mac_cmd(0x33000063);
     uc_wait_direct_tx_ready();
     tx_fifo_write_bytes((u32)&sp.alloc, 7);
-    direct_tx_issue_cmd_33();
+    direct_tx_commit();
     uc_stats.dmg_cts_tx += 1;
 }
 
@@ -387,7 +374,7 @@ void rx_update_nav_from_frame(u32 a)
 }
 
 UC_HOT
-u32 rx_flow_substep_uc(struct tx_ctx_s *a)
+u32 rx_flow_ctrl_qid_empty(struct tx_ctx_s *a)
 {
     /* 6.2 asm 0x93daf0. */
     u32 r2 = a->qid;
@@ -433,7 +420,7 @@ u32 rx_flow_substep_uc(struct tx_ctx_s *a)
 /* В копии из rx_flow_step (-Os) — вставки без mul64 и вызова; в копиях rx_flow_run /
  * rx_flow_handle_frame (O2) gcc и так строит add1 + ld.as — там код прежний. */
 #define RX_TXOP_RS_ACTIVE(i) (from_step ? rx_rs_active(i) : rs_state[i].active)
-#define RX_TXOP_MCS_TRY(i)   (from_step ? rx_rs_mcs_try(i) : (u32)mtp_queue_byte_by_index(i))
+#define RX_TXOP_MCS_TRY(i)   (from_step ? rx_rs_mcs_try(i) : (u32)rs_sta_mcs_try(i))
 static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx_s *ctx, int from_step)
 {
     u32 a, b;
@@ -457,12 +444,14 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
             b |= (RX_TXOP_MCS_TRY(ctx->sta) << 8) | 3;
     }
     UC_PAD(PAD_TXOP);   /* стресс запаса: uc/dbg.h (прежде UC_DBG_TXOP_PAD) */
+    UC_STAMP_T0(STAMP_MTP_LAT, mtp_t0);
     uc_mac_cmd(0x1b001111);
     uc_mac_cmd(a | 0x16000000);
     uc_mac_cmd(b | 0x17000000);
     uc_nop3();
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
+    UC_STAMP(STAMP_MTP_LAT, 1u << 16 | (arc_lr(0x100) - mtp_t0), 0);
     u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
     mtp_desc_hi = r51 >> 4;
@@ -560,7 +549,7 @@ u32 rx_flow_run(void)
         ppdu_evt_cnt = r13;
         uc_mac_cmd(0x20d2000);
         if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP)) {
-            mac_wait_event_r42_or_r40(MAC_EVT1_PPDU_REPORT, MAC_PHYSIG_CCA_PPDU_COMP);
+            mac_wait_evt1_or_status(MAC_EVT1_PPDU_REPORT, MAC_PHYSIG_CCA_PPDU_COMP);
             ppdu_evt_cnt += 1;
         }
         rx_flow_noevt_cnt += 1;
@@ -616,7 +605,7 @@ u32 rx_flow_run(void)
                              "\tmov\t%0,r49\n\tbbit0\t%0,13,1b\n2:" : "=&r"(t) :: "memory");
         }
         (void)mac_evt_eng2();                  /* delay-слот vendor: mov r3,r49 */
-        rx_flow_latch_phy_8014e8__930da4();
+        rx_latch_cur_gain_db();
         u32 lo = MAC_PHYSIG_PPDU_EVT_CNT_OF(mac_status_sel());
         u32 hi = MAC_PHYSIG_CCA_EVT_CNT_OF(mac_status_sel());
         if (((hi - lo) & 0x3f) >= 2)
@@ -696,11 +685,15 @@ noframe:                                        /* 0x931244 */
     {
         u32 f = txrx_state1;
         if (f & 0x7e0) {
-            rx_funcs_handle_ppdu_report();
+            rx_handle_ppdu_report();
         } else if (f & 2) {
             uc_mac_sel(MAC_SEL_REM_TIME);
             uc_nop3();
             txop_sent = rx_flow_step(ctx, mac_status_sel() & MAC_REM_TIME);
+            UC_STAMP(STAMP_RESP_WAIT, (rx_flow_r55_snap & 0xffff) | mac_rx_rep1() << 16,
+                     (txrx_state2 & 0xffff) | txop_sent << 31);
+            UC_STAMP(STAMP_RESP_WAIT, mac_rx_rep2(), mac_rx_rep3());
+            UC_STAMP(STAMP_RESP_WAIT, mac_rx_misc(), mac_bap_if());
         } else {
             txop_sent = rx_flow_handle_frame(ctx);
             if (!txop_sent && (txrx_state2 & 0x3001000)) {
@@ -750,17 +743,19 @@ done:
  * всё равно ждёт r45). Эмулятор (80 сидов): до 0x37000020 на 17..25 инструкций (медиана
  * 20) меньше vendor, до 0x19000001 — на 20..28; железо: гибрид 3 из 3 nolost (iperf 240 с),
  * прежняя -Os версия — ошибка в каждой загрузке. Не добавлять код между входом
- * rx_flow_handle_frame и командой 0x19000001 без замера (tools/arcemu/resp_lat.py).
+ * rx_flow_handle_frame и командой 0x19000001 без замера (tools/arcemu/resp_lat.py). Стенд 2026-10-30 (nop в
+ * PAD_RESP_CMD, iperf): 32 nop — без ошибок, 48 — ошибка MAC уже при ассоциации: запас 32–48 тактов; с битами
+ * скорости, посчитанными до пути (rx_resp_rate), — 40 nop без ошибок, 48 — ошибка: 40–48 тактов (docs/MAC-STAND.md).
  * Стандарт: Ack (802.11-2020 10.3.2.11), BlockAck на A-MPDU/BAR (10.25.3, 10.25.6), DMG CTS на RTS
  * (10.3.2.9) — через SIFS; aSIFSTime 3 мкс (Table 20-30), допуск DMG −0 %/+10 %×(aSlotTime −
  * aAirPropagationTime) ≈ +0,49 мкс (10.3.2.3.3). Момент запуска ответа, по гипотезе
  * docs/LMAC-PROTOCOL.md, держит сам MAC (0x886d10, см. rx_flow_step); от uc нужно, чтобы команды
  * успели раньше этого момента — опоздание MAC отмечает битами MAC_HW_ICR (см. выше). */
 static inline __attribute__((always_inline)) void
-rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast)
+rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast, u32 rate)
 {
     UC_PAD(PAD_RESP_CMD);
-    mtp_service_dispatch(kind, sta, ctx->resp_ctx8, 0xff);
+    mtp_service_dispatch(kind, sta, ctx->resp_ctx8, rate);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     u32 r51 = mac_mtp_desc();
@@ -777,6 +772,13 @@ rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast
     MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
+#ifdef UC_STAMP_MASK
+    if ((UC_STAMP_MASK) & (1u << STAMP_RESP_SIFS_CNT)) {   /* после срока: SIFS_CNT = от конца приёма до сюда */
+        uc_mac_cmd(0x4d000000);
+        arc_nops(3);
+        UC_STAMP(STAMP_RESP_SIFS_CNT, mac_timer_sel(), kind);
+    }
+#endif
     if (fast) {
         /* Отложено сюда из участка до запроса/команды 0x37000020: никто между ними эти
          * слова не читает (mtp_service_dispatch читает только 0x8005f4, rs_state[].active,
@@ -794,10 +796,24 @@ rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast
     uc_mac_cmd(0x18000000);
 }
 
+/* Биты скорости ответа через SIFS для команды MTP 0x17 ([12:8] MCS, [1:0] = 3; 0 — MCS выбирает MAC).
+ * исправлено (vendor): MCS Ack/BlockAck не задавался — MAC слал BlockAck на кадр MCS 8 на MCS 1 (стенд 2026-10-30,
+ * наш uc и vendor-AP: r38 received_mcs 1 у принятого BlockAck). 802.11-2020 10.6.7.2: на кадр SC — MCS из
+ * обязательных SC (1–4) не быстрее запроса и с кратчайшей передачей = min(MCS, 4); на кадр control PHY — control.
+ * Без явного MCS MAC отвечает на кадр control PHY на control, на кадр SC — на MCS 1: для запросов MCS 0/1 это и есть
+ * 10.6.7.2, поэтому явный MCS — только при MCS ≥ 2. RTS всегда на control PHY (10.6.7.1) — у DMG CTS биты 0.
+ * СРОК: считать до пути ответа (rx_flow_handle_frame — сразу после чтения r38). Стенд, PAD_RESP_CMD 32 nop: выбор
+ * MCS внутри rx_frame_tx_resp_seq — ошибка MAC 3 из 3 при ассоциации; явный MCS только при MCS ≥ 2 там же — ошибка
+ * под данными 2 из 2; вычисленный, но не переданный — 2 из 2 без ошибок. */
+static inline __attribute__((always_inline)) u32 rx_resp_rate(u32 mcs)
+{
+    return mcs >= 2 ? ((mcs < 4 ? mcs : 4) << 8) | 3 : 0;
+}
+
 /* Медленный путь (через switch в конце rx_flow_handle_frame) — без переноса записей. */
 static __attribute__((noinline)) void rx_frame_tx_resp(u32 kind, struct tx_ctx_s *ctx)
 {
-    rx_frame_tx_resp_seq(kind, ctx, ctx->sta, 0, 0);
+    rx_frame_tx_resp_seq(kind, ctx, ctx->sta, 0, 0, rx_resp_rate(rx_last_mcs));
 }
 
 /* O2 точечно: путь до ответа MTP критичен по времени (ХРУПКО, см. rx_frame_tx_resp_seq);
@@ -816,8 +832,10 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
     u32 r16 = 0, r18 = 0;
 
     UC_PAD(PAD_RESP_ENTRY);
+    UC_STAMP_T0(STAMP_CTS_PATH, t_in);
     if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
         uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
+    UC_STAMP_T0(STAMP_CTS_PATH, t_rep);
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
         rx_buf_toggle_cnt += 1;
@@ -829,7 +847,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
         if (m->kind != 0 && m->kind <= 6 && rx_capture_match_filter(m) != 0) {
             switch (m->kind) {
             case RX_MEAS_ENERGY: rx_meas_append_sample(m, 0); break;
-            case RX_MEAS_PLCP: rx_meas_finish_with_8830ec(m); break;
+            case RX_MEAS_PLCP: rx_meas_finish_plcp(m); break;
             case RX_MEAS_PKT: rx_meas_capture_frame(m, 0); break;
             case 5:
                 uc_mac_sel(MAC_SEL_TSF_LOW);
@@ -839,7 +857,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
                 uc_nop3();
                 m->snap_sel6 = mac_status_sel();
                 m->state = 1;
-                bf_pending_set_bit(0);
+                bg_task_set_pending_bit(0);
                 break;
             default: break;
             }
@@ -850,6 +868,8 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
     if (mac_rx_rep1() & MAC_RX_REP1_BEACON) {
         /* 0x932098: маяк/SSW от сети */
         bti_cnt.net_bcn_rx += 1;
+        UC_STAMP(STAMP_BCN_TSF, uc_read_tsf_lo() - MMIO32(HW_MAC_BI_START_TSF_LO),
+                 (1u << 31) | ((mac_rx_rep3() & MAC_RX_REP3_MY_BSS_BEACON) << 30) | ((rx_buf_bcn_ssw >> 1) & 0x1ffu));
         uc_mac_cmd(0x49000100);
         u32 r2 = mac_rx_rep3() & MAC_RX_REP3_MY_BSS_BEACON;
         ss->my_bss = (u8)r2;
@@ -982,6 +1002,7 @@ chk:                                            /* 0x93215c */
     if (((mac_rx_rep2() & MAC_RX_REP2_CF_END) && rx_buf_duration != 0) ||
         (mac_rx_rep2() & MAC_RX_REP2_RTS) || (mac_status_sel() & MAC_PLCP_SIFS_RESP))
         rx_end_switch_to_tx();
+    UC_STAMP_T0(STAMP_CTS_PATH, t_sw);
     if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) {
         *sta = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
     } else if (mac_rx_rep1() & MAC_RX_REP1_BEACON) {
@@ -1033,6 +1054,7 @@ chk:                                            /* 0x93215c */
             }
         }
         rx_last_mcs = MAC_RX_REP3_RX_MCS_OF(mac_rx_rep3());
+        u32 rate = rx_resp_rate(rx_last_mcs);   /* до ожидания BAP и rx_get_required_response — вне срока */
         ctx->mtp_state = rx_get_required_response(ctx, &local);
         u8 lvl = (u8)rx_last_mcs;
         u8 sta0 = *(u8 *)ctx;
@@ -1071,7 +1093,7 @@ chk:                                            /* 0x93215c */
             r15 = 0;
         if (ctx->mtp_state == 0)
             r15 = 0;
-        if (rx_flow_substep_uc(ctx) == 0) {
+        if (rx_flow_ctrl_qid_empty(ctx) == 0) {
             r16 = local;
             if ((r15 & rx_qset4_hit) && *sta == rxf.key_sta)
                 r16 |= 1;
@@ -1102,7 +1124,11 @@ chk:                                            /* 0x93215c */
                 u32 kind = r5 == 1 ? 0 : r5 == 2 ? 1 : 5;
                 if (r5 == 3)
                     uc_mac_cmd(0x20000400);
-                rx_frame_tx_resp_seq(kind, ctx, s1, r5, 1);
+                UC_STAMP_T0(STAMP_CTS_PATH, t_mtp);
+                rx_frame_tx_resp_seq(kind, ctx, s1, r5, 1, rate);
+                if (r5 == 3)
+                    UC_STAMP(STAMP_CTS_PATH, (t_rep - t_in) | (t_sw - t_in) << 16,
+                             (t_mtp - t_in) | (arc_lr(0x100) - t_in) << 16);
                 rx_resp_finish_restore_rx((u32)ctx, kind, r5 == 1 ? r18 : 0);
                 if (r5 == 3)
                     mac_mon_report.tx_cts += 1;
@@ -1163,8 +1189,8 @@ chk:                                            /* 0x93215c */
         /* СРОК: медленный путь ответа — тот же срок SIFS 3 мкс (802.11-2020 10.3.2.3.3), но без
          * переноса записей. Случаи 1..3 уходят быстрым путём выше (при r16 ≠ 0 — в продолжение
          * TXOP), сюда по коду не доходят; 8 (CF-End), 9 (Grant Ack) — всегда здесь.
-         * Путь длиннее быстрого на ~10 инструкций до switch + вызов; запас не замерен. См. rx_flow_send_imm_response /
-         * rx_send_dmg_cts. */
+         * Путь длиннее быстрого на ~10 инструкций до switch + вызов; запас не замерен. См. rx_send_cf_end_response /
+         * rx_send_grant_ack. */
         switch (r5) {
         case 0:
             break;
@@ -1183,11 +1209,11 @@ chk:                                            /* 0x93215c */
             mac_mon_report.tx_cts += 1;
             break;
         case 8:
-            rx_cf_end_nav_reset(rx_flow_send_imm_response());   /* NAV — после ответа, вне срока SIFS */
+            rx_cf_end_nav_reset(rx_send_cf_end_response());   /* NAV — после ответа, вне срока SIFS */
             rx_resp_finish_restore_rx((u32)ctx, 3, 0);
             break;
         case 9:
-            rx_send_dmg_cts();
+            rx_send_grant_ack();
             rx_resp_finish_restore_rx((u32)ctx, 0xa, 0);
             break;
         default:
@@ -1203,7 +1229,7 @@ chk:                                            /* 0x93215c */
     return 0;
 }
 
-u32 rx_funcs_rx_flow(void)
+u32 rx_flow_main(void)
 {
     /* 6.2 asm 0x933928. */
     volatile u32 *st = &txrx_state2;
@@ -1232,7 +1258,7 @@ u32 rx_funcs_rx_flow(void)
     rxf.flags = 0;
     rx_flow_run();
     if (*st & 0x3001000) {
-        u32 r = rx_check_g8005f8_bit24();
+        u32 r = rx_flow_decode_result();
         *f4 = 0;
         *st = 0;
         return r;
@@ -1267,6 +1293,10 @@ u32 rx_funcs_rx_flow(void)
             }
             if (v & 0x11600)
                 break;
+#ifdef UC_STAMP_MASK
+            if (UC_STAMP_ON(STAMP_BUSY_LOST) && (mac_evt1() & MAC_EVT1_BUSY))
+                UC_STAMP(STAMP_BUSY_LOST, 1, mac_evt1());
+#endif
             uc_mac_cmd(0x2080002);
             struct tx_ctx_s *ctx = *pctx;
             u32 prev = ctx->qid;
@@ -1341,7 +1371,7 @@ u32 rx_funcs_rx_flow(void)
         }
         /* 0x933ca8 */
         if (*st & (1u << 12))
-            ret = rx_check_g8005f8_bit24();
+            ret = rx_flow_decode_result();
         u32 t0 = tx_busy_start_tsf;
         if (t0 != 0) {
             mac_mon_report.rx_listen_time += tsf - t0;
@@ -1374,7 +1404,7 @@ u32 rx_funcs_rx_flow(void)
                 uc_mac_cmd(0x83u << 25);
                 uc_nop3();
                 uc_mac_cmd(0x3800033f);
-                mac_set_mode_0000();
+                mac_wait_mode_ack_if_idle();
                 u16 v = ifs.sifs;
                 if (mac_ifs_shadow != v) {
                     mac_ifs_shadow = v;
@@ -1419,7 +1449,7 @@ u32 rx_funcs_rx_flow(void)
         rx_check_mode_2(&rx_meas, s0);
     }
     u32 t1 = uc_read_tsf_lo();
-    mac_set_mode_0000();
+    mac_wait_mode_ack_if_idle();
     uc_mac_sel(0);
     uc_nop3();
     u32 is2 = (mac_status_sel() & MAC_BIFS_IDLE_DETECT) == 2;
@@ -1452,12 +1482,12 @@ u32 rx_funcs_rx_flow(void)
 /* СРОК (ХРУПКО): путь держателя TXOP от принятого Ack/BlockAck (или ответа RD) до продолжения TXOP —
  * следующий кадр через SIFS 3 мкс (802.11-2020 10.23.2.8, 10.29.3, 10.3.2.3.3). Путь P0.2: конец
  * кадра (r49 в rx_flow_run) → rx_flow_step → rx_end_switch_to_tx/mac_switch_rx_to_tx →
- * rx_dispatch_by_g_8005f8 → 0x4d/r55/0x886d10 → 0x14/0x37/0x3f → rx_txop_continue (отсюда, без
+ * rx_match_expected_response → 0x4d/r55/0x886d10 → 0x14/0x37/0x3f → rx_txop_continue (отсюда, без
  * возврата в rx_flow_run) → 0x1b001111. Железо 2026-10-21 (до переделки): +20 nop перед 0x1b001111 —
  * FWERR при ассоциации, +16 — норма, т. е. запас 16–19 инструкций. Эмулятор (P0.2,
  * медиана/макс): vendor 409/417, было 418/423, стало 351/358 (−67) — записи флагов, метка 0xeeee0b,
- * busy_acct отложены за 0x1b001111; mac_switch_rx_to_tx и rx_dispatch_by_g_8005f8 без пролога; без
- * mul64 и вызова mtp_queue_byte_by_index. Не добавлять код до 0x1b001111 без замера. */
+ * busy_acct отложены за 0x1b001111; mac_switch_rx_to_tx и rx_match_expected_response без пролога; без
+ * mul64 и вызова rs_sta_mcs_try. Не добавлять код до 0x1b001111 без замера. */
 u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
 {
     /* 6.2 asm 0x931acc. */
@@ -1471,7 +1501,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
     u32 r14 = 0;
 
     if (dti_qset_mode == 1)
-        sends_pmc_mark_aaab02(&fsched_peers, b);
+        fsched_slot_resetup_if_time_left(&fsched_peers, b);
 
     /* Метка 0xeeee0b (MAC: NOP 0x00, только журнал) — у vendor здесь; у нас на выходе (в
      * продолжении TXOP — после 0x37000020, иначе — перед возвратом): до 0x1b001111 не нужна. */
@@ -1482,7 +1512,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
             r13 = 1;
     }
     r13 = (u32)(u8)(u8)r13;
-    if (rx_flow_substep_uc(r15) != 1)
+    if (rx_flow_ctrl_qid_empty(r15) != 1)
         r17 = r13;
 
     if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
@@ -1497,7 +1527,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
                 if (r10v == 0)
                     rx_meas_append_sample(&rx_meas, 0);
                 else if (r10v == 1)
-                    rx_meas_finish_with_8830ec(&rx_meas);
+                    rx_meas_finish_plcp(&rx_meas);
                 else if (r10v == 2)
                     rx_meas_capture_frame(&rx_meas, 0);
                 else if (r10v == 4) {
@@ -1512,7 +1542,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
                     arc_nops_nop(2);
                     rx_meas.snap_sel6 = mac_status_sel();
                     rx_meas.state = 1;
-                    bf_pending_set_bit(0);
+                    bg_task_set_pending_bit(0);
                 }
             }
         }
@@ -1545,7 +1575,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
         }
     }
 
-    u32 disp = rx_dispatch_by_g_8005f8();
+    u32 disp = rx_match_expected_response();
     r13 = disp & r17;
     if (r13 == 1) {
         if ((mac_rx_rep1() & (MAC_RX_REP1_QOS_DATA | MAC_RX_REP1_MGMT)) != 0 && (mac_rx_rep3() & MAC_RX_REP3_ACK_POLICY) == 0) {
@@ -1633,13 +1663,15 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
  * 3 мкс (802.11-2020 10.3.2.3.3): QoS Data/BAR → Ack/BlockAck (10.3.2.11, 10.25.3), RTS → DMG CTS /
  * DMG DTS (10.3.2.9, 10.39.6.6.2), CF-End (10.39.8.1), Grant → Grant Ack (10.39.4). Размер 1220 Б
  * против 1468 Б у vendor 0x932e40; ветка RTS — одно чтение TSF (~9 инструкций с командой 0x4d
- * и nop; проверка NAV — grant_detect_step_at по нему же); ветка данных — ожидание MAC_BAP_RX_UPDATE без ограничения (ниже).
+ * и nop; проверка NAV — rx_nav_check_idle_at по нему же); ветка данных — ожидание MAC_BAP_RX_UPDATE без ограничения (ниже).
  * Запас общий с rx_frame_tx_resp_seq: единицы. Логи uc_log_emit* — только на ветках без ответа. */
 UC_HOT
 u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out)
 {
     /* 6.2 asm 0x932e40. */
     u32 r14 = 0, r16 = 0, r17 = 0;
+    UC_STAMP(STAMP_RESP_REP, mac_rx_rep1(), mac_rx_rep2());
+    UC_STAMP(STAMP_RESP_REP, mac_rx_rep3(), mac_rx_misc());
 
     if (dti_qset_mode == 2 && maint_sta_mask != 0)
         mac_read_tsf64_uc(fsched_peers.rx_tsf);
@@ -1697,6 +1729,7 @@ bap_rx_check:   /* L_932fd0 */
         while (!(mac_bap_if() & MAC_BAP_RX_UPDATE))
             ;
         VOL(uc_wait_marker) = 0;
+        UC_STAMP(STAMP_BAP_RX, mac_bap_if(), mac_rx_rep1());
         rx_bap_rx_up = (mac_bap_if() & MAC_BAP_RX_UP_STATUS) ? 1 : 0;
         uc_mac_cmd(0x1c000008);
         goto bap_rx_done;
@@ -1758,7 +1791,7 @@ ack_cts:   /* L_9331d0 */
         /* NAV занят. 10.3.2.9: если NAV поставил кадр самого отправителя RTS — отвечать (DMG CTS); иначе не
          * отвечать. исправлено (vendor): отвечал DMG DTS — по 10.39.6.6 он только для назначения SP (в open SP
          * нет), а поле NAV-SA заполнял MAC собственным адресом (заголовок 0x10 = FC, Duration, RA, TA). */
-        if (__builtin_expect(grant_detect_step_at(tsf + ((u8 *)&ifs.sifs)[1], 0, 0) == 0, 0) &&
+        if (__builtin_expect(rx_nav_check_idle_at(tsf + ((u8 *)&ifs.sifs)[1], 0, 0) == 0, 0) &&
             !(rx_nav.nav_ta[0] == rx_buf_ta[0] && rx_nav.nav_ta[1] == rx_buf_ta[1] && rx_nav.nav_ta[2] == rx_buf_ta[2])) {
             txr.rts_nav_busy += 1;
             return 0;
@@ -1804,7 +1837,7 @@ not_grant:   /* L_93339c */
     }
     if (mac_rx_rep2() & MAC_RX_REP2_CFG1) {
         struct tx_ctx_s *r0 = tx_ctx_pool.cur;
-        brp_split_id(r0->rf_word);
+        rf_set_cur_sector_word(r0->rf_word);
         uc_stats.cfg1_rx += 1;
     }
     return 0;
@@ -1818,7 +1851,7 @@ not_grant:   /* L_93339c */
  *    инструкций при сроке ~1485 тактов; запас оценочно десятки–сотни;
  *  - фаза 0x800000: SSW-Feedback → SSW-Ack через MBIFS (10.42.2.5) — rx_end_switch_to_tx и
  *    sta_set_tx_sector. Срыв — инициатор не получает FB/ACK, повтор SLS. */
-void rx_funcs_handle_ppdu_report(void)
+void rx_handle_ppdu_report(void)
 {
     /* 6.2 asm 0x9316cc. */
     u32 sec[2];                                 /* [sp,0], [sp,4] */
@@ -1875,7 +1908,7 @@ void rx_funcs_handle_ppdu_report(void)
             goto out;
         rx_parse_ssw_field((u32)&sec[0], (u32)&sec[1], (u32)&lvl[0]);
         rx_end_switch_to_tx();
-        rx_funcs_record_level_8020f8_8020fc((u32)(s32)lvl[0]);
+        bf_rep_record_snr_level((u32)(s32)lvl[0]);
         sta_set_tx_sector(*sta, sec[0], sec[1], 1);
         *flags |= (1u << 2);
         struct bf_sta_s *e = &bf_sta[*sta];
@@ -1929,7 +1962,7 @@ void rx_funcs_handle_ppdu_report(void)
         if (!(mac_rx_rep2() & MAC_RX_REP2_SSW_ACK))
             goto out;
         rx_parse_ssw_field((u32)&sec[0], (u32)&sec[1], (u32)&lvl[0]);
-        rx_funcs_record_level_8020f8_8020fc((u32)(s32)lvl[0]);
+        bf_rep_record_snr_level((u32)(s32)lvl[0]);
         *flags |= (1u << 3);
         struct bf_sta_s *e = &bf_sta[*sta];
         e->peer_l_rx = rx_buf_ssw_fb0 & 0x1f;
@@ -1979,7 +2012,7 @@ out:
  * листовая функция; запас общий с rx_txop_continue (см. rx_flow_step). */
 /* Ожидание BAP r53.bap_tx_update_ind (таймаут — GP 0x23010003, assert 0x3b) и квитанция 0x1c000001
  * (vendor 0x933436…/0x9334f8…, одинаковые блоки режимов 1/2). Встроено в обе ветки; uc_assert —
- * UC_ASSERT_LEAF (адрес возврата rx_dispatch_by_g_8005f8 = blink: до блока вызовов нет). */
+ * UC_ASSERT_LEAF (адрес возврата rx_match_expected_response = blink: до блока вызовов нет). */
 static inline __attribute__((always_inline)) void rx_dispatch_bap_sync(void)
 {
     if (!(mac_bap_if() & MAC_BAP_TX_UPDATE)) {
@@ -2035,7 +2068,7 @@ static __attribute__((noinline)) u32 rx_dispatch_mode2(u32 r14)
     return 1;
 }
 
-u32 rx_dispatch_by_g_8005f8(void)
+u32 rx_match_expected_response(void)
 {
     /* 6.2 asm 0x9333fc. Ветки — цепочкой сравнений (самая частая на пути P0.2 — режим 1, Ack)
      * вместо таблицы switch; режим 2 — rx_dispatch_mode2. Порядок чтений r36/r38/r53 и команд
@@ -2233,7 +2266,7 @@ u32 rx_program_mac_and_wait(struct tx_ctx_s *a)
         r15 = (r14->qid << 16) | 1;
         u32 sta = r14->sta;
         if ((txrx_state1 & (1u << 1)) && rs_state[sta].active != 0)
-            r13 = (mtp_queue_byte_by_index(sta) << 8) | 3;
+            r13 = (rs_sta_mcs_try(sta) << 8) | 3;
         else
             r13 = 0;
         uc_mac_cmd(0x1b001111);
@@ -2338,7 +2371,7 @@ void rx_handle_status_flags(struct tx_ctx_s *a)
             if (r0 & (1u << 7)) {
                 u32 r0b = txrx_cfg_flags;
                 u8 r1 = (r0b & (1u << 9)) ? bf_ctrl.ctrl_code_rx_alt : bf_ctrl.ctrl_code_rx;
-                if (bitstream_push((u32)sp, r1, 1, bf_ctrl.stat_bit) == 1) {
+                if (bit_hist_push((u32)sp, r1, 1, bf_ctrl.stat_bit) == 1) {
                     if (bf_ctrl.triggers & (1u << 3))
                         VOL(link_stat[(r13->sta)].bf_reasons) |= (1u << 3);
                     tx_cca_check_and_send(r13, 1, 1, 0);
@@ -2349,7 +2382,7 @@ void rx_handle_status_flags(struct tx_ctx_s *a)
             } else {
                 rx_program_mac_and_wait(tx_ctx_pool.cur);
                 if (r15 != 0) {
-                    bitstream_push((u32)sp, bf_ctrl.ctrl_code_rx, 0, bf_ctrl.stat_bit);
+                    bit_hist_push((u32)sp, bf_ctrl.ctrl_code_rx, 0, bf_ctrl.stat_bit);
                     tx_resp_sent = 1;
                 }
             }
@@ -2423,7 +2456,7 @@ void rx_nav_set_from_duration(u32 a, u32 b, u32 c, u32 d)
             r13 = ((s32)delta < (s32)r13) ? delta : r13;   /* min — знаковый */
         rx_nav.end_tsf = r1v;
         rx_nav.flags = r4 | 1;
-        u32 st = bi_state_from_g800600();
+        u32 st = bi_phase_from_sm_state();
         if ((u8)st != 2) {
             rx_nav.ev_mask = 0xfffff0ff;
             uc_mac_cmd((mac_chain_mask & 0xfffff0ff) | (1u << 27));
@@ -2441,7 +2474,7 @@ void rx_nav_set_from_duration(u32 a, u32 b, u32 c, u32 d)
     u32 sp8 = 0xff;
     if (nav_read_hw_duration_flag(&sp8) != 0) {
         u32 spc = 0;
-        u8 sv = sta_get_sweep_byte(sp8, (u32)&spc);
+        u8 sv = qid_cfg_get_sta(sp8, (u32)&spc);
         FWSH_AT(ll_ctx, act_140, sv) += r13;
     }
     mac_mon_report.nav_accum = mac_mon_report.nav_accum + r13;
@@ -2475,7 +2508,7 @@ static inline __attribute__((always_inline)) void rx_meas_snap_done(struct rx_me
     arc_nops(3);
     m->snap_sel6 = mac_status_sel();
     m->state = 1;
-    bf_pending_set_bit(0);
+    bg_task_set_pending_bit(0);
 }
 
 void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp)
@@ -2524,6 +2557,7 @@ void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp)
 __attribute__((optimize("O2")))
 void rx_flow_measure_snr_select_best(void)
 {
+    UC_STAMP_T0(STAMP_SNR_SEL, t_snr);
     /* 6.2 asm 0x92d688. */
     u32 r16 = *(volatile u32 *)HW_PHY_RX_AGC_ROW;
     *(volatile u32 *)HW_PHY_RX_AGC_ROW = agc_cfg.agc_start;
@@ -2543,6 +2577,7 @@ void rx_flow_measure_snr_select_best(void)
         r9 += 8;
         r11 += 1;
     }
+    UC_STAMP(STAMP_SNR_SEL, r11 | (mac_evt1() & MAC_EVT1_BUSY2) << 2, arc_lr(0x100) - t_snr);
     u32 r6 = (*(volatile u32 *)HW_PHY_RX_SNR_883AEC >> 9) & 0x1ff;
     u32 r0 = (r6 > 0xff) ? (r6 - 0x200) : r6;
     /* ХРУПКО: запись именно через u32 — при записи как s32 GCC перекладывает функцию, и в
@@ -2577,7 +2612,7 @@ void rx_meas_append_sample(struct rx_meas_ctx *m, u32 mp)
         rx_meas_snap_done(m);
 }
 
-void rx_meas_finish_with_8830ec(struct rx_meas_ctx *m)
+void rx_meas_finish_plcp(struct rx_meas_ctx *m)
 {
     /* 6.2 asm 0x92893c. */
     m->plcp = *(volatile u32 *)HW_PHY_RX_MEAS_8830EC;

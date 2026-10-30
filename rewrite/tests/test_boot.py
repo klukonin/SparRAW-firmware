@@ -50,6 +50,16 @@ def test_dut_driver(sta_booted, check):
         check.is_true(probe and probe[-1] == want, 'probe драйвера на dut: %r, ожидается %s' % (probe[-1:] or None, want))
 
 
+def test_board(sta_booted, check):
+    """Оба узла — на заданной плате (md5 /lib/firmware/wil6210.brd из [test] brd_md5): от платы зависят мощность
+    TX, уровень сигнала и MCS — замеры на другой плате несравнимы. На стенде узел терял плату после сброса."""
+    want = sta_booted.t.get('brd_md5')
+    if not want:
+        pytest.skip('brd_md5 не задан в stand.toml')
+    for n in (sta_booted.dut, sta_booted.peer):
+        check.equal(node_md5(n, '/lib/firmware/wil6210.brd'), want, 'md5 wil6210.brd на %s' % n.name)
+
+
 def test_peer_firmware(sta_booted, check):
     """В роли станции peer — точка на своей (эталонной) прошивке fw_backup."""
     p, c = sta_booted.peer, sta_booted.cfg['peer']

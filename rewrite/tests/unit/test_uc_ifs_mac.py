@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""IFS, которые uc программирует в MAC (LMAC 0x00 → ucode_cmd_0x00_handler → txrx_api_step_b_uc), против
+"""IFS, которые uc программирует в MAC (LMAC 0x00 → ucode_cmd_0x00_handler → txrx_api_program_ifs_timing), против
 802.11-2020: Table 20-30 (aSIFSTime 3 мкс, aSlotTime 5 мкс, aSBIFSTime 1 мкс, aRIFSTime 1 мкс, aRxPHYStartDelay),
 10.3.2.3.4 PIFS = aSIFSTime + aSlotTime, 10.3.2.3.10 MBIFS = 3×aSIFSTime, 10.3.2.11/10.3.2.9 AckTimeout/CTSTimeout
 = aSIFSTime + aSlotTime + aRxPHYStartDelay.

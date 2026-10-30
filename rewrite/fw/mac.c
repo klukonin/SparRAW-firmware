@@ -5,22 +5,22 @@
 
 
 /* Взвести бит 0 регистра 0x880bc0 (значение 0/1). */
-void mac_set_880bc0_b0(u32 v)
+void mac_rng_ctl_set_bit0(u32 v)
 {
     if (v & ~1u)
         fw_sysassert_fatal((void *)0, 0xac);
     MMIO32(HW_RNG_CTL) = v | (MMIO32(HW_RNG_CTL) & ~1u);
 }
 
-void mac_enable_880bc0_b0(void)
+void mac_rng_ctl_enable(void)
 {
-    mac_set_880bc0_b0(1);
+    mac_rng_ctl_set_bit0(1);
 }
 
 /* Установка битов 0x880af4/0x880af8/0x880afc (0x8d19a4). vendor пишет v << n без
  * маски (bclr только у старого значения) — при v & ~1 != 0 (после вернувшегося
  * сисассерта 0xac) лишние биты v тоже попадают в регистр; так и здесь. */
-void mac_set_bits_880af4_f8_fc(u32 v)
+void mac_sw_clk_vec_set_b8_19_4(u32 v)
 {
     if (v & ~1u)
         fw_sysassert_fatal((void *)0, 0xac);
@@ -34,7 +34,7 @@ void mac_set_bits_880af4_f8_fc(u32 v)
 }
 
 /* (0x8d1a34): 0x880af8 бит 25, 0x880afc бит 5 (v << n без маски, как vendor). */
-void mac_set_880af8_afc_b25_b5(u32 v)
+void mac_sw_clk_vec_set_b25_b5(u32 v)
 {
     if (v & ~1u)
         fw_sysassert_fatal((void *)0, 0xac);
@@ -45,7 +45,7 @@ void mac_set_880af8_afc_b25_b5(u32 v)
 }
 
 /* (0x8d1250): 0x880af8 бит 30, 0x880afc бит 6 (v << n без маски, как vendor). */
-void mac_set_880af8_afc_b30_b6(u32 v)
+void mac_sw_clk_vec_set_b30_b6(u32 v)
 {
     if (v & ~1u)
         fw_sysassert_fatal((void *)0, 0xac);
@@ -56,7 +56,7 @@ void mac_set_880af8_afc_b30_b6(u32 v)
 }
 
 /* (0x8d1ac0): три отдельных RMW 0x880afc — биты 9, 10, 11 по одному (как vendor). */
-void mac_set_880afc_bits9_11(u32 on)
+void mac_sw_clk_vec2_set_bits9_11(u32 on)
 {
     if (on != 0) {
         MMIO32(HW_CLKS_CTL_SW_CLK_VEC_2) |= 1u << 9;
@@ -112,7 +112,7 @@ u32 mac_read_tsf_hi(u32 a)
 }
 
 /* Переключить бит 1 регистра 0x880288 (0x8c7044). */
-void mac_toggle_880288_b1(void)
+void mac_rf_kill_pin_toggle(void)
 {
     for (;;) {
         u32 cur = MMIO32(HW_RF_KILL_PIN);
@@ -129,7 +129,7 @@ void mac_toggle_880288_b1(void)
 }
 
 /* Чтение 4 регистров 0x880a2c..0x880a38 (0x8f3570). */
-void mac_read_880a2c_38(u32 *a, u32 *b, u32 *c, u32 *d)
+void mac_read_fw_version(u32 *a, u32 *b, u32 *c, u32 *d)
 {
     if (d) *d = MMIO32(HW_FW_VERSION_BUILD);
     if (c) *c = MMIO32(HW_FW_VERSION_SUBMINOR);

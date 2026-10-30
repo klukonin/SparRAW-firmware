@@ -13,7 +13,7 @@ enum {
     RF_MGMT_EV_ENABLE_SELF = 3,
 };
 
-/* Описатель (ид [0x10] пишет ctor_sm_802338_id) и таблица переходов — fw/rf_kill.c. */
+/* Описатель (ид [0x10] пишет ctor_rf_mgmt_sm_id) и таблица переходов — fw/rf_kill.c. */
 extern struct sm_desc rf_mgmt_sm_desc;                        /* 0x802338 */
 extern const struct sm_trans rf_mgmt_sm_table[4][3];          /* 0x80234c */
 /* Объект автомата (0x804c34, 8 Б; в образе нули) — fw/l2mgr.c. */

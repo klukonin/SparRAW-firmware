@@ -68,7 +68,7 @@
 | адрес | место | слово |
 |---|---|---|
 | 0x926676 | `uc_sysassert`+0x5e | 0x80eeeeee |
-| 0x93691c | `txrx_api_step_c`+0x44 | 0xc0adc0ad |
+| 0x93691c | `txrx_api_program_edca_ac`+0x44 | 0xc0adc0ad |
 | 0x92eba0 | — | 0x80aaab20 |
 | 0x93cc7e | сразу после `handle_pmc_triggers(-1, 0)` | 0x80aaab02 |
 
@@ -219,7 +219,7 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
 |---|---|---|
 | 0x52+idx | `sxd_hal__mac_select_indexed` (`add r0,0x52; asl r0,r0,0x18`), `sxd_hal__mac_write_indexed` (`add1 r3,r14,0x29; asl r3,r3,0x18` = r14+0x52, ARC `add1` = rb + rc<<1) | регистры GP0..GP2; парная `mov r7,0x49000000; bset r2,r7,r6` с битом idx+6 |
 | 0x4f+idx | — | GP-таймеры 0..2 |
-| 0x9+idx | `mac__program_qset_slots`, `tx__pick_slot_for_peer` (0x924e0e), `txrx_api_step_c` (0x931a20) | маска слотов (§7.6) |
+| 0x9+idx | `mac__program_qset_slots`, `tx__pick_slot_for_peer` (0x924e0e), `txrx_api_program_edca_ac` (0x931a20) | маска слотов (§7.6) |
 | 0x1+idx | `nav_db__update`, `tx_rate_select_and_program` | — |
 
 ## 6. Сводная таблица кодов
@@ -233,29 +233,29 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
 | код | набл. | мест | частые параметры | назначение | обоснование | главные отправители |
 |---|---|---|---|---|---|---|
 | 0x00 | 3664 | 25 | 0xcb0000, 0x000002, 0xeeee09 | NOP / метка трассировки, параметр = id точки (§7.1) | железо | `l1_task__entry`, `rx_flow__run`, `tx_initiator_flow` |
-| 0x01 | 32 | 6 | 0xffffff, 0x000010, 0x000000 | смена режима MAC | слабо | `mac_mode__switch_sequence`, `mac_mode__enter_idle_seq`, `bi_mode_init_substep` |
+| 0x01 | 32 | 6 | 0xffffff, 0x000010, 0x000000 | смена режима MAC | слабо | `mac_mode__switch_sequence`, `mac_mode__enter_idle_seq`, `bi_mode_init_event_timers` |
 | 0x02 | 5255 | 100 | 0x011000, 0x004000, 0x008000 | маска ожидаемых событий (§7.2) | профиль | `rx_funcs__rx_flow`, `rx_flow__run`, `mac_mode_program_a` |
 | 0x03 | 1 | 1 | 0x000030 | инициализация BI | место | `bi_mode_init_sequence` |
 | 0x04 | 0 | 2 | — | BRP, только при установлении связи | профиль | `brp__program_and_measure`, `brp__program_mac_sequence` |
 | 0x05 | 0 | 2 | — | BRP, только при установлении связи | профиль | те же |
 | 0x06 | 886 | 15 | 0x000210, 0x000101, 0x000103 | селектор режима MAC; 0x103 — маячный (§7.4) | железо | `mac_mode_program_a`, `mac_mode__switch_after_ppdu`, `abft_responder__tx_ssw` |
-| 0x07 | 4 | 1 | 0x100100, 0x300300, 0x700700 | txrx-интерфейс; место «вероятно» | слабо | `txrx_api_step_c` |
+| 0x07 | 4 | 1 | 0x100100, 0x300300, 0x700700 | txrx-интерфейс; место «вероятно» | слабо | `txrx_api_program_edca_ac` |
 | 0x08 | 291 | 11 | 0x924f00, 0x924f20, 0x924000 | маска слотов + два поля (§7.8) | слабо | `rx_funcs__rx_flow`, `tx__pick_slot_for_peer`, `mac__program_qset_slots` |
 | 0x09 | 1 | 1 | 0x00000f | код = 9+индекс, параметр = маска 2^N−1 | код | `mac__program_qset_slots` |
 | 0x0a | 1 | 0 | 0x00000f | то же | код | `mac__program_qset_slots` (вычисляется в цикле) |
-| 0x0b | 16 | 0 | 0x00000f, 0x00001f | то же; под нагрузкой — из `tx__pick_slot_for_peer` | код | `tx__pick_slot_for_peer`, `txrx_api_step_c` |
+| 0x0b | 16 | 0 | 0x00000f, 0x00001f | то же; под нагрузкой — из `tx__pick_slot_for_peer` | код | `tx__pick_slot_for_peer`, `txrx_api_program_edca_ac` |
 | 0x0c | 1 | 0 | 0x00000f | то же | код | `mac__program_qset_slots` |
-| 0x0d | 20 | 1 | 0x0a1053, 0x0a1e53 | запись `BI_TSF_CONTROL`: бит 1 — ход таймера TSF, бит 2 — загрузка TSF из защёлки 0x886dc0/0x886dc4 (§7.12) | железо | `txrx_api_cmd_step`; fw `mac_reload_tsf64` (0x0d000006, 0x0d0a1e53) |
+| 0x0d | 20 | 1 | 0x0a1053, 0x0a1e53 | запись `BI_TSF_CONTROL`: бит 1 — ход таймера TSF, бит 2 — загрузка TSF из защёлки 0x886dc0/0x886dc4 (§7.12) | железо | `txrx_api_program_bi_tsf_control`; fw `mac_reload_tsf64` (0x0d000006, 0x0d0a1e53) |
 | 0x0f | 194 | 5 | 0x000001 | запуск поиска набора очередей (далее 0x1d + чтение r41) | код | `queue_sel__get_qset4`, `bi__decide_beacon_kind`, `tx_initiator__build_tx_vector` |
 | 0x10 | 2 | 1 | 0xf000f0 | сброс движков событий | место | `mac__reset_event_engines` |
 | 0x12 | 60 | 1 | 0x000000 | приёмный тракт; место «вероятно» | слабо | `rx_funcs__rx_flow` |
 | 0x13 | 39 | 1 | 0x002002, 0x002001 | сборка вектора передачи (§7.9) | слабо | `tx_initiator__build_tx_vector` (0x933f6a) |
 | 0x14 | 726 | 29 | 0x000000, 0x000100, 0x000007 | маячный/передающий тракт | слабо | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bcon_txss_sweep_step`, `cf_end__tx_flow` |
-| 0x15 | 170 | 13 | 0x000000, 0x000022, 0x00ffff | 0xffff у маяка, малые значения при данных | слабо | `bcon_txss_sweep_step`, `cf_end__tx_flow`, `direct_tx_step` |
+| 0x15 | 170 | 13 | 0x000000, 0x000022, 0x00ffff | 0xffff у маяка, малые значения при данных | слабо | `bcon_txss_sweep_step`, `cf_end__tx_flow`, `direct_tx_ssw_feedback` |
 | 0x16 | 495 | 12 | 0x1e0001, 0x1f0040, 0x1f0122 | передающий тракт: скорость | профиль | `tx_rate_select_and_program`, `mac__program_tx_beacon`, `mac__program_tx_with_rate` |
 | 0x17 | 500 | 12 | 0x000003, 0x000000, 0x020000 | передающий тракт | профиль | те же |
-| 0x18 | 470 | 27 | 0x000000, 0x001000, 0x004800 | передающий тракт | профиль | `cf_end_mtp_step`, `direct_tx_step`, `abft_responder__tx_ssw` |
-| 0x19 | 463 | 23 | 0x800870, 0x000001, 0x000b00 | передающий тракт | профиль | `direct_tx_step`, `tx_rate_select_and_program`, `internal_tx_step` |
+| 0x18 | 470 | 27 | 0x000000, 0x001000, 0x004800 | передающий тракт | профиль | `cf_end_mtp_step`, `direct_tx_ssw_feedback`, `abft_responder__tx_ssw` |
+| 0x19 | 463 | 23 | 0x800870, 0x000001, 0x000b00 | передающий тракт | профиль | `direct_tx_ssw_feedback`, `tx_rate_select_and_program`, `internal_tx_step` |
 | 0x1a | 2 | 1 | 0x000002 | сброс движков событий | место | `mac__reset_event_engines` |
 | 0x1b | 490 | 14 | 0x001111, 0x010000 | передающий тракт | профиль | `rx_flow__run`, `rx_funcs__rx_flow`, `tx_rate_select_and_program` |
 | 0x1c | 17 | 12 | 0x000001, 0x000008, 0x000006 | конфигурация BI | слабо | `ucode_cmd__bi_config`, `mac_counter__program_3009`, `rx_flow__handle_frame` |
@@ -263,9 +263,9 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
 | 0x1e | 0 | 2 | 0x010004, 0x010001 | регистр не опознан; не тайминги IFS (§7.10) | код | блок 0x93160c (`bi_mode__program_ifs_timing`) |
 | 0x1f | 919 | 21 | 0x003000, 0x006000, 0x000601 | режим РЧ-тракта | слабо | `mac__program_rf_mode`, `mac_mode__switch_after_ppdu`, `mac_mode_program_a` |
 | 0x20 | 151 | 19 | 0x000000, 0x000400 | программирование режима MAC | слабо | `mac_mode_program_a`, `mac_mode_program_b`, `rx_funcs__rx_flow` |
-| 0x21 | 20 | 3 | 0x000002 | задача L2 / засыпание | слабо | `l2_task__entry`, `bi_mode_init_substep`, `uc_sleep_until_event` |
+| 0x21 | 20 | 3 | 0x000002 | задача L2 / засыпание | слабо | `l2_task__entry`, `bi_mode_init_event_timers`, `uc_sleep_until_event` |
 | 0x23 | 72 | 6 | 0x01000a, 0x010004 | решение о немедленном ACK | слабо | `rx_flow__handle_frame`, `rx_flow__decide_imm_ack`, `rx_flow__check_status` |
-| 0x27 | 1579 | 17 | 0x00730c, 0x00400c, 0x00200c | маска движка событий (см. [LMAC-PROTOCOL](LMAC-PROTOCOL.md)) | слабо | `cf_end__tx_flow`, `rx_flow__run`, `mac__prepare_txrx_window`, `bi_mode_init_substep` |
+| 0x27 | 1579 | 17 | 0x00730c, 0x00400c, 0x00200c | маска движка событий (см. [LMAC-PROTOCOL](LMAC-PROTOCOL.md)) | слабо | `cf_end__tx_flow`, `rx_flow__run`, `mac__prepare_txrx_window`, `bi_mode_init_event_timers` |
 | 0x28 | 1 | 1 | 0x0000e1 | инициализация BI | место | `bi_mode_init_sequence` |
 | 0x29 | 27 | 10 | 0x000001 | передача кадра сектора | слабо | `txss__tx_sector_frame`, `tx_mtp__open_window`, `mac__cmd_29000001` |
 | 0x2a | 10 | 1 | 0x107c80, 0x11fc80, 0x117c80 | маяк, слово 1: из конфигурации 0x80142c и `[gp,0x80]` (§7.5) | код | `bi_ctrl__program_mac_bcon` (0x9332ac) |
@@ -273,7 +273,7 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
 | 0x2d | 243 | 2 | 0x00fc00, 0x00f802, 0x00f404 | поле SSW 802.11ad при развёртке маяка (§7.5) | код | `bcon_txss_sweep_step` (0x935d06) |
 | 0x30 | 0 | 1 | — | задержка маяка, [10,198]; включается bi_mode=2 (§7.7) | железо | `bti_worker__bti_transmitter_beacon_sweep_flow` (0x923ea8) |
 | 0x31 | 33 | 3 | 0x000000, 0x000210, 0x000010 | три места | слабо | `mac__prepare_txrx_window`, `rx_funcs__rx_flow`, `mac__program_tx_rate` |
-| 0x32 | 1636 | 11 | 0x000001, 0x000000 | приёмный тракт; двоичный флаг | слабо | `mac_mode__wait_ppdu_and_kick`, `mac_mode__wait_ppdu_and_kick_c`, `bti_worker_bi2_step` |
+| 0x32 | 1636 | 11 | 0x000001, 0x000000 | приёмный тракт; двоичный флаг | слабо | `mac_mode__wait_ppdu_and_kick`, `mac_mode__wait_ppdu_and_kick_c`, `bti_beacon_rx_match_bss` |
 | 0x33 | 305 | 14 | 0x000002, 0x000001, 0x000063 | прямая передача: этап | слабо | `mac_mode__send_direct_frame`, `direct_tx_substep`, `direct_tx__issue_cmd_33` |
 | 0x34 | 98 | 1 | 0x100010, 0x160018 | прямая передача: программирование | слабо | `direct_tx__program_cmd34` (0x924ede) |
 | 0x35 | 1 | 1 | 0x000066 | регистр 0x886e0c; место «вероятно» | слабо | `mac__program_886e0c_20b` |
@@ -283,7 +283,7 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
 | 0x39 | 1 | 1 | 0x000000 | регистр 0x886e0c; место «вероятно» | слабо | `mac__program_886e0c_20b` |
 | 0x3a | 262 | 1 | 0x00000f | цепь РЧ | слабо | `mac__set_rf_chain_state` |
 | 0x3b | 530 | 2 | 0x000001, 0x000006 | цепь РЧ | слабо | `mac__set_rf_chain_state` |
-| 0x3c | 494 | 6 | 0x000300, 0x000200, 0x000004 | покой/нагрузка | слабо | `bti_worker__bti_transmitter_beacon_sweep_flow`, `mac_mode_program_c`, `mac__program_886e0c_20b` |
+| 0x3c | 494 | 6 | 0x000300, 0x000200, 0x000004 | покой/нагрузка | слабо | `bti_worker__bti_transmitter_beacon_sweep_flow`, `abft_rx_ssw_tx_feedback`, `mac__program_886e0c_20b` |
 | 0x3d | 329 | 19 | 0x000004, 0x000400, 0x000001 | A-BFT и BRP | слабо | `abft_responder_worker`, `brp__program_and_measure`, `hw_modes_mac__switch_core` |
 | 0x3e | 445 | 17 | 0x000000, 0x000010, 0x000080 | передающий тракт | профиль | `mac_mode_program_a`, `mac_mode_program_b`, `uc_sysassert__emit_mac_trace` |
 | 0x3f | 439 | 14 | 0x000a30, 0x000830, 0x003f30 | TX/RX-вектор, биты 8..15 = Sector ID (§7.5) | код | `mac_mode_program_a`, `mac_mode_program_b`, `mac_mode__switch_core_and_rf` |
@@ -294,17 +294,17 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
 | 0x44 | 1 | 3 | 0x280800 | конфигурация BI: связь и рестарт | профиль | `ucode_cmd__bi_config`, `tx_rate_select_and_program` |
 | 0x45 | 1 | 8 | 0x000001 | конфигурация BI: связь и рестарт | профиль | `ucode_cmd__bi_config`, `mac_counter__program_3009`, `tx_rate_select_and_program` |
 | 0x46 | 2 | 15 | 0x000008, 0x0001f1 | конфигурация BI: связь и рестарт | профиль | те же |
-| 0x48 | 0 | 1 | — | инициализация BI | место | `bi_mode_init_substep` |
+| 0x48 | 0 | 1 | — | инициализация BI | место | `bi_mode_init_event_timers` |
 | 0x49 | 649 | 35 | 0x008000, 0x000100, 0x000040 | квитирование битов событий r54 (§7.6) | код | `sxd_hal__select_qset_group`, `bti_worker__bti_transmitter_beacon_sweep_flow`, `brp__program_and_measure` |
 | 0x4a | 0 | 1 | — | загрузка таблицы | место | `bi_mode__load_qset_table` |
-| 0x4d | 26146 | 9 | 0x000005, 0x000000 | чтение группы R55 в r55 (§7.3) | железо | `rx_flow__run`, `rx__switch_to_rx_mode`, `mac_mode_program_c`, `uc_read_tsf_lo` |
+| 0x4d | 26146 | 9 | 0x000005, 0x000000 | чтение группы R55 в r55 (§7.3) | железо | `rx_flow__run`, `rx__switch_to_rx_mode`, `abft_rx_ssw_tx_feedback`, `uc_read_tsf_lo` |
 | 0x4e | 1 | 1 | 0x00000d | регистр 0x886e0c | место | `mac__program_886e0c_20b` |
-| 0x4f | 54 | 4 | 0x0352c8, 0x000b9a, 0x01775f | GP-таймер 0 | слабо | `bti_transmitter_bi2_flow`, `bti_worker__bti_transmitter_beacon_sweep_flow`, `mac__program_4f_52` |
+| 0x4f | 54 | 4 | 0x0352c8, 0x000b9a, 0x01775f | GP-таймер 0 | слабо | `bti_sta_beacon_abft_flow`, `bti_worker__bti_transmitter_beacon_sweep_flow`, `mac__program_4f_52` |
 | 0x50 | 7 | 3 | 0x00a400 | GP-таймер 1 | слабо | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bti_tx__program_bi2_regs`, `bf_gpc__program_mac_by_mode` |
-| 0x51 | 75 | 5 | 0x000284, 0x017b39, 0x000339 | GP-таймер 2 | слабо | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bi_manager_step_b`, `bi_build_schedule_tables` |
-| 0x52 | 294 | 18 | 0x000000, 0x00000e, 0x00090c | регистр GP0 (0x52+idx) | код | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bti_transmitter_bi2_flow`, `mac__set_duration_us` |
+| 0x51 | 75 | 5 | 0x000284, 0x017b39, 0x000339 | GP-таймер 2 | слабо | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bi_bti_end_reset_timers`, `bi_build_schedule_tables` |
+| 0x52 | 294 | 18 | 0x000000, 0x00000e, 0x00090c | регистр GP0 (0x52+idx) | код | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bti_sta_beacon_abft_flow`, `mac__set_duration_us` |
 | 0x53 | 68 | 6 | 0x000000, 0x00090c | регистр GP1 | код | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bf_substate__dispatch_by_state`, `bti_tx__program_bi2_regs` |
-| 0x54 | 239 | 11 | 0x000000, 0x000508, 0x00070e | регистр GP2 | код | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bi_manager_step_b`, `bi_build_schedule_tables` |
+| 0x54 | 239 | 11 | 0x000000, 0x000508, 0x00070e | регистр GP2 | код | `bti_worker__bti_transmitter_beacon_sweep_flow`, `bi_bti_end_reset_timers`, `bi_build_schedule_tables` |
 | 0x56 | 1 | 1 | 0x3f0020 | режим PHY; место «вероятно» | слабо | `mac__set_phy_mode` |
 | 0x57 | 1 | 1 | 0x000002 | режим PHY | место | `mac__set_phy_mode` |
 | 0x58 | 0 | 2 | — | BRP, только при установлении связи | профиль | `brp__program_and_measure`, `brp__program_mac_sequence` |
@@ -392,7 +392,7 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
   в простое, 0x6000 — при передаче данных, 0x3000 — везде. Имя блока `mac__program_rf_mode`; режим РЧ /
   подготовка RX (`rx__switch_to_rx_mode`).
 * **0x14** — значения 0x7, 0x100, 0, 2, 0x400; по ролям не разделяется.
-* **0x01** — `mac_mode__switch_sequence`, `bi_mode_init_substep`.
+* **0x01** — `mac_mode__switch_sequence`, `bi_mode_init_event_timers`.
 
 ### 7.5. Маячные коды: 0x2a/0x2b, 0x2d, 0x3f
 
@@ -469,7 +469,7 @@ TSF = 204800 мкс (§7.12); исполнилось ли оно с хоста, 
 
 Таблица 0x800ac8 в образе нулевая, живьём (host 0x940ac8) — 4, 4, 4, 4 → маска 0xf. Параметр 0x1f (5 слотов)
 у 0x0b идёт из `tx__pick_slot_for_peer` (0x924e0e: `add r0,r14,0x9; asl 0x18; or маска`); то же в
-`txrx_api_step_c` (0x931a20). 0x0b виден только под нагрузкой (0.3 и 2.6 на 1000 на обеих сторонах).
+`txrx_api_program_edca_ac` (0x931a20). 0x0b виден только под нагрузкой (0.3 и 2.6 на 1000 на обеих сторонах).
 
 **0x0f** — в `queue_sel__get_qset4` строгая тройка: 0x0f000001, затем 0x1d с селектором 1, через три такта чтение
 r41 = `QUEUE_SEL_FOUND_SET1_4_R41`. Стоит в стоковом микрокоде `0x9311fe mov_s r3,0xf000001` внутри
@@ -517,7 +517,7 @@ r41 = `QUEUE_SEL_FOUND_SET1_4_R41`. Стоит в стоковом микрок�
 шла из перехваченного места; отсутствие 0x30 при этом объясняется вторым условием `ld r10,[r17]` **[гипотеза]**.
 Цепочка вызовов: `bi_ap_mon__bti_event` @0x931154 → `bi_manager__kind_switch` @0x9289e4 (вызов 0x9289e4 →
 `bi__decide_beacon_kind` @0x9311a4) → @0x93125c `bti_worker__bti_transmitter_beacon_sweep_flow` @0x923de0 или
-@0x931250 `bti_transmitter_bi2_flow` @0x923c74. `ctx->kind` — аргумент события: из l1_task передаётся 0, и на
+@0x931250 `bti_sta_beacon_abft_flow` @0x923c74. `ctx->kind` — аргумент события: из l1_task передаётся 0, и на
 0x93124c `brne r0,0x1` уводит в `beacon_sweep_flow`. Условие в перехвате (дизассемблер объектника):
 `mov r0,r41; btst_s r0,0x1e` (бит 30 = событие маяка); `ld_s r0,[r13,0]; breq r0,0x1` → обход подмены.
 
@@ -572,7 +572,7 @@ r41 = `QUEUE_SEL_FOUND_SET1_4_R41`. Стоит в стоковом микрок�
 
 Прошивка шлёт 0x0d в `mac_reload_tsf64` (6.2 fw): защёлка 0x886dc0/0x886dc4 = 64-битный TSF, затем
 `0x0d000006` и `0x0d0a1e53`; вызывается в `hwm_power_33kHz_clk_detector` при инициализации (TSF = 0) и в `mac_set_usec_clk_div` (прочитать TSF,
-сменить делитель такта, загрузить прочитанное обратно). ucode шлёт 0x0d0a1053 / 0x0a1e53 из `txrx_api_cmd_step`.
+сменить делитель такта, загрузить прочитанное обратно). ucode шлёт 0x0d0a1053 / 0x0a1e53 из `txrx_api_program_bi_tsf_control`.
 
 Опыт 2026-10-21 (стенд .12, STA с ассоциацией; отладочная сборка нашей fw, слова пишет fw по AHB в
 0x886dc8 при запрещённых прерываниях, TSF читается 0x886eb8/0x886ebc в той же последовательности):
@@ -743,7 +743,7 @@ r41 = `QUEUE_SEL_FOUND_SET1_4_R41`. Стоит в стоковом микрок�
   с одним ни двумя полями из трёх): регистровые файлы записи и чтения независимы.
 * 0x886dc0 — не регистр периода, а защёлка аргумента 0x0d.
 * 0x49 квитирует события r54, а не выбирает наборы очередей; 0x67/0x68/0x52..0x54 — GP-таймеры.
-* Имена `sends_pmc_mark_aaab20` / `sends_pmc_mark_aaab02` (6.2) неверны: команды 0x80 нет, это 0x00 с меткой PMC.
+* Имена `fsched_bf_req_trigger` / `fsched_slot_resetup_if_time_left` (6.2) неверны: команды 0x80 нет, это 0x00 с меткой PMC.
 * Для 0x36/0x38/0x3c источники расходятся: по параметрам 0x200 только у маячащей AP, 0x300 у станции (в т.ч.
   передающей); карта `MAC-CMD-MAP.txt` пишет «различает покой/нагрузку, а не роль».
 * Уровни обоснования в разных срезах: железо 5 / код 19–20 / место 9–16 / блок 2 / профиль 13–17 / слабо 22–31;
@@ -848,7 +848,7 @@ r41 = `QUEUE_SEL_FOUND_SET1_4_R41`. Стоит в стоковом микрок�
 | 0x92b9a4 | 40000020 | 0x3b000006 | 45/47 | `mac__set_rf_chain_state` |
 
 Вероятные (опора из нескольких мест): 0x9234cc и 0x92f430 = 12000000 (`brp_flow_step`, `rx_funcs__rx_flow`, после
-0x02000080, 41/51); 0x929544 = 19800870 (`direct_tx_step`, после 0x02008000, 214/219); 0x9296a6 и 0x92c92e = 1d23d120
+0x02000080, 41/51); 0x929544 = 19800870 (`direct_tx_ssw_feedback`, после 0x02008000, 214/219); 0x9296a6 и 0x92c92e = 1d23d120
 (`mac_mode__wait_ppdu_and_kick_e`, `abft_responder_substep`, после 0x02011000, 1394/1440); девять мест 0x3f000b30 (§7.5)
 после 0x37000002 (12/14; блоки `mac_mode_program_a`, `mac_mode_program_b`, `mac_mode__switch_core_and_rf`,
 `mac__build_tx_common_params`, `rx_funcs__handle_ppdu_report`, `rx_flow_step`, `rx_flow__handle_frame`,
@@ -909,8 +909,8 @@ BTI и DTI → `bi_ap_mon__bti_event`; AW → `bi_ap_mon__aw_on_dti_to_bti`; ABF
 +0x22 по beacon_type, +0x24 по relaxation, +0x26 принято. Раскладка 0x801e68: +0x00..0x03 (пишет
 `rx_flow__handle_frame`, читают `abft_responder_worker`/`abft_responder__tx_ssw`), +0x04..0x07 (`rx_flow__handle_frame`,
 `bti__bi2_event_step`), +0x08/+0x09 (`abft_responder__tx_ssw`), +0x0c (`bti_worker__collect_bf_metric`), +0x10..0x15
-(данные BF, `bti_worker_bi2_step`, `abft_responder_worker`/`_substep`), +0x1a (`bi_dti__kick_worker`), +0x1b флаг
-«отвечать в этом A-BFT», +0x28/+0x2a (`mac_mode_program_c`).
+(данные BF, `bti_beacon_rx_match_bss`, `abft_responder_worker`/`_substep`), +0x1a (`bi_dti__kick_worker`), +0x1b флаг
+«отвечать в этом A-BFT», +0x28/+0x2a (`abft_rx_ssw_tx_feedback`).
 
 Стенд: AP (mode 2, beacon_type 1 от `pcp_start`) — 0 отправлено, 19735 отказов по beacon_type; STA (0, 2 от
 `lmac_ready`) — 1 отправлен, 1431 отказ по mode. Запись 0x942090=2, 0x942094=2, 0x942098=0 даёт у станции 22 ответа

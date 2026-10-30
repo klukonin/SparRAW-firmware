@@ -140,7 +140,7 @@ void hwm_calib_set_loopback_mode(u32 flag)
 
 
 /* Программирование группы регистров 0x889 (0x8d31dc). */
-void hwd_program_889_group(u32 v)
+void hwd_rf_clocks_enable(u32 v)
 {
     if (v == 1) {
         MMIO32(HW_ABIF_FS_CTRL) &= ~(1u << 3);
@@ -167,7 +167,7 @@ void hwd_program_889_group(u32 v)
  * задержка 0x3a980×2 nop, установить bit4. В vendor вызывается только из
  * UT-хэндлера, НО RFC-SPI у нас стартует в reset (bit4=0, bit25=1) — включаем
  * явно до core-fw boot (mode1 в rf_configure_chain). */
-void hwd_rfc_uses_rgf_889100(void)
+void hwd_rfc_spi_enable(void)
 {
     MMIO32(HW_RFC_RESET_CTRL) &= ~(1u << 4);
     arc_zol_nops2(0x3a980);             /* vendor 0x8d37bc: lp 0x3a980 × 2 nop_s */
@@ -181,7 +181,7 @@ void init_rf_hw(struct rf_obj *this)
      * Убраны для побайтового совпадения. */
     hwd_abif_fs_off((u32)this);
     hwd_abif_fs_on(1);
-    hwd_abif_uses_rgf_889480(0);
+    hwd_abif_dvs_rf_ctrl_bit27_write(0);
     hwd_abif_dvs_if_splitter_enable(0xff);
     hwd_abif_dvs_lo_splitter_enable(0xff);
     hwd_abif_dvs_rf_activate(0xff);
@@ -192,7 +192,7 @@ void init_rf_hw(struct rf_obj *this)
 
     hwm_calib_set_loopback_mode(1);
     hwm_calib_set_loopback_mode(0);
-    hwd_program_889_group(1);
+    hwd_rf_clocks_enable(1);
     rf_connected_mask = (u8)xpm_accumulate_bits();
 
     if (marlon_r_if_class_init_board_file_interface(this) == 0)
@@ -212,7 +212,7 @@ void init_rf_hw(struct rf_obj *this)
         }
     }
 
-    ut_hw_modes_chain_3(0xff);
+    hw_modes_enable_rf_chain(0xff);
     rf_configure_chain(0, 0);
 
     u8 flag = this->rf_mask;
@@ -220,12 +220,12 @@ void init_rf_hw(struct rf_obj *this)
     rf_active_mask = lowest;
     fw_log_emit3(0x20, 0x1005d00, rf_connected_mask, flag, lowest);
 
-    ut_hw_modes_chain_3(flag);
+    hw_modes_enable_rf_chain(flag);
     hwd_abif_dvs_rfca_cmd_enable(rf_active_mask, 0);
 }
 
 /* Цепочка hw-мод: IF/LO/RF + RFCA command (0x8d7500). */
-void ut_hw_modes_chain_3(u32 obj)
+void hw_modes_enable_rf_chain(u32 obj)
 {
     hwd_abif_dvs_if_splitter_enable(obj);
     hwd_abif_dvs_lo_splitter_enable(obj);
@@ -301,7 +301,7 @@ void rfc_field_write(u32 p, u32 field, u32 val, u32 mask)
 }
 
 /* hwd_rfc_write_core_fw(a, 1, 0, 0) (0x8d33ec). */
-void hwd_rfc_write_core_fw_mode1(u32 a)
+void hwd_rfc_apply_gain_tables(u32 a)
 {
     hwd_rfc_write_core_fw(a, 1, 0, 0);
 }
@@ -338,8 +338,8 @@ u32 rf_configure_chain(u32 a, u32 b)
     if (b != 0)
         fw_sysassert_fatal((void *)0, 0x1462);
     rfc_write_packed_fields(a, 1, 2, 7, 7, (u8)((b != 0 ? 1u : 0u) + 0xa), 1, 1);
-    hwd_abif_uses_rgf_889380(0x47974700, 0x17);
-    hwd_rfc_write_core_fw_mode1(0);
+    hwd_abif_rgf_config_write(0x47974700, 0x17);
+    hwd_rfc_apply_gain_tables(0);
     return 1;
 }
 
@@ -397,7 +397,7 @@ u32 rf_configure_role_power(struct rf_obj *this)
 }
 
 /* rf__identify_type (0x8f4d3c). this — RF-объект (rf_obj): vendor `bl.d 0x8cae70;
- * mov_s r14,r0` — r14 = this из слота задержки, а результат rfc_read_or_dead
+ * mov_s r14,r0` — r14 = this из слота задержки, а результат rfc_pulse_probe_bit
  * не используется. Прежний порт писал байт статуса по адресу, равному прочитанному
  * значению RFC-регистра 0x3e0 (в т.ч. 0xdeadbeef). Счётчик RFC (0x428), прочитанный
  * дважды, вырос на 1 и 0x8004c0 != 0 — Sparrow-R (тип 2, rf_idx = 0); иначе тип 0,
@@ -406,7 +406,7 @@ void rf_identify_type(struct rf_obj *this)
 {
     u32 r13 = 0, r15, r16;
 
-    (void)rfc_read_or_dead();
+    (void)rfc_pulse_probe_bit();
     r15 = hwd_rfc_read_rgf(0, 0x428);
     r16 = hwd_rfc_read_rgf(0, 0x428);
     fw_log_emit3(0x20, 0x10051a4, 0, r15, r16);
@@ -430,7 +430,7 @@ void rf_identify_type(struct rf_obj *this)
 }
 
 /* Установить нижний ниббл 0x889494 (0x8d3...). */
-void rf_set_889494_low_nibble(u32 on)
+void rf_set_regd_ctrl(u32 on)
 {
     if (on != 0) {
         MMIO32(RF_REGD_CTRL) |= 3u;
@@ -518,13 +518,13 @@ u32 rf_get_connected_mask(struct rf_obj *a)
 }
 
 /* Получить RF-маску по смещению 0x45e (0x8ccb3c). */
-u32 rf_cfg_get_rf_mask_45e(struct rf_obj *p)
+u32 rf_obj_get_rf_mask(struct rf_obj *p)
 {
     return p->rf_mask;
 }
 
 /* Запись RFC-полей 0x1e4/0x1e8/0x1ec (0x8d3...). */
-void rfc_write_field_484(u32 a0, u32 *in)
+void rfc_write_lo_power_fields(u32 a0, u32 *in)
 {
     u8 v = (u8)a0;
     rfc_field_write(v, 0x1e4, in[0], 0);
@@ -578,7 +578,7 @@ static u32 rf_kth_set_bit(u32 m, u32 k)
 
 /* rf_utils_auto_fill_set_pattern (0x8e3268): 6 слов шаблона buf->pat — в
  * RF-регистры 0x524 + block*0x20 подряд (vendor: ((block<<8) + (1316<<3)) >> 3 & ~3,
- * add3 со сдвигом непосредственного операнда), через hwd_args_to_regs(маска RF = rf_mask). */
+ * add3 со сдвигом непосредственного операнда), через hwd_rfc_write_core_fw_mask(маска RF = rf_mask). */
 void rf_utils_auto_fill_set_pattern(const struct rf_auto_fill *buf)
 {
     const u32 *pat;
@@ -592,7 +592,7 @@ void rf_utils_auto_fill_set_pattern(const struct rf_auto_fill *buf)
     rf = buf->rf_mask;
     addr = ((((u32)buf->block << 8) + (1316u << 3)) >> 3) & ~3u;
     for (n = 6; n >= 1; n--) {
-        hwd_args_to_regs(rf, addr, *pat++, 0);
+        hwd_rfc_write_core_fw_mask(rf, addr, *pat++, 0);
         addr += 4;
     }
 }
@@ -628,7 +628,7 @@ u32 rf_utils_auto_fill(const struct rf_auto_fill *buf, u32 mode)
 
     rf = buf->rf_mask;
     for (i = 0; n >= 1; n--, i++) {
-        hwd_args_to_regs(rf, addr, words[i], 0);
+        hwd_rfc_write_core_fw_mask(rf, addr, words[i], 0);
         addr += 4;
     }
 
@@ -727,7 +727,7 @@ FWDATA(8021c8) struct rf_auto_fill rf_auto_fill_brp_tpl = {
 
 /* rf_utils__auto_fill_8021c8 (0x8e33ac): дескриптор-шаблон rf_auto_fill_brp_tpl (0x8021c8),
  * маска RF = rf. */
-u32 rf_utils_auto_fill_8021c8(u32 rf, u32 mode)
+u32 rf_utils_auto_fill_brp(u32 rf, u32 mode)
 {
     struct rf_auto_fill d;
     memcpy_fw(&d, &rf_auto_fill_brp_tpl, 0x10);
@@ -788,7 +788,7 @@ u32 marlon_r_if_read_step(struct rf_obj *this, u32 mode)
     u32 r;
 
     (void)this;
-    r = rf_utils_auto_fill_8021c8(rf_connected_mask, mode);
+    r = rf_utils_auto_fill_brp(rf_connected_mask, mode);
     if (mode == 0 && r == 0)
         return 0;
     marlon_r_if_class_config_brp_sectors(rf_connected_mask);
@@ -963,7 +963,7 @@ u32 marlon_r_if_class_config_channel(struct rf_obj *this, u32 ch, u32 mode)
 /* RFC-регистр 0x3e0: импульс бита 15 с верификацией (0x8cae70). Возврат vendor —
  * r0 последнего вызова: 0xdeadbeef, если чтение не удалось, иначе результат второй
  * hwd_rfc_write_verify (1/0). */
-u32 rfc_read_or_dead(void)
+u32 rfc_pulse_probe_bit(void)
 {
     u32 r = hwd_rfc_read_rgf(0, 0x3e0);
     if (r == 0xdeadbeefu)
@@ -1050,8 +1050,8 @@ __attribute__((section(".textlate"))) u32 rfc_read_calib_block(u32 n)
 
 /* === Мелкие helper'ы hwd_rfc_read_calibrate === */
 
-/* hwd_rfc_read_get_result (0x8f41ac): bb_rdac_val + 6. */
-u8 hwd_rfc_read_get_result(void)
+/* hwd_rfc_get_rdac_result (0x8f41ac): bb_rdac_val + 6. */
+u8 hwd_rfc_get_rdac_result(void)
 {
     return rf_rdac_val + 6;
 }
@@ -1156,7 +1156,7 @@ void hwd_rfc_read_calibrate(u32 count)
     }
 
     {
-        u8 r13 = rf_cfg_get_rf_mask_45e(&rf_obj);
+        u8 r13 = rf_obj_get_rf_mask(&rf_obj);
         u32 bitmap = r13;
 
         while (bit_iter_has_more(&bitmap) != 0) {
@@ -1165,7 +1165,7 @@ void hwd_rfc_read_calibrate(u32 count)
 
             MMIO32(HW_RFC_RFCA_CFG) = r22;
             MMIO32(RFC_READ_HYST) = r17;
-            rfc_read_or_dead();
+            rfc_pulse_probe_bit();
             MMIO32(RFC_READ_HYST) = (MMIO32(RFC_READ_HYST) & ~6u) | 2u;  /* vendor bset r0,r0,0x1 = бит 1 (0x2), не бит 0 */
 
             {
@@ -1225,7 +1225,7 @@ void hwd_rfc_read_calibrate(u32 count)
 
 /* === silent_rssi RF-фирма сателлиты (round 193) === */
 /* rfc__write_core_reg6 (0x8d32a4): hwd_rfc_write_core_fw(a, 6, b & 0x7fff, 0) (bmsk 14). */
-__attribute__((section(".textlate"))) void rfc_write_core_reg6(u32 a, u32 b)
+__attribute__((section(".textlate"))) void rfc_core_set_powerdown(u32 a, u32 b)
 {
     hwd_rfc_write_core_fw(a, 6, b & 0x7fffu, 0);
 }
@@ -1236,13 +1236,13 @@ __attribute__((section(".textlate"))) void rfc_write_field_1136(u32 a)
     rfc_field_write((u8)a, 0x470, 0x10, 0);
 }
 
-/* hwd__setup_pair (0x8d33f8): rfc_write_core_reg6(0,1) + hwd_rfc_write_core_fw(a,8,0,0), затем
+/* hwd__setup_pair (0x8d33f8): rfc_core_set_powerdown(0,1) + hwd_rfc_write_core_fw(a,8,0,0), затем
  * журнал «hwd_RFC_POWERDOWN_DEEP_ENTRY» (0x8d3412: fw_log_emit0(0x21, 0x101e304); прежний
  * порт его терял). */
-__attribute__((section(".textlate"))) void hwd_setup_pair(u32 a, u32 b)
+__attribute__((section(".textlate"))) void hwd_rfc_powerdown_deep(u32 a, u32 b)
 {
     (void)b;
-    rfc_write_core_reg6(0, 1);
+    rfc_core_set_powerdown(0, 1);
     hwd_rfc_write_core_fw(a, 8, 0, 0);
     fw_log_emit0(0x21, 0x101e304);
 }
@@ -1271,6 +1271,6 @@ __attribute__((section(".textlate"))) void rfc_restore_txrx_sets_fw(void)
     MMIO32(HW_RFC_RESET_CTRL) |= (1u << 4);
     MMIO32(HW_ABIF_DVS_RF_CTRL) = s1;
     MMIO32(HW_RFC_RFCA_CFG) = s2;
-    rfc_write_core_reg6(0, 0);
+    rfc_core_set_powerdown(0, 0);
     rfc_write_field_1136(0);
 }

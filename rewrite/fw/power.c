@@ -10,16 +10,16 @@
 #include "../include/calib_engine.h"
 
 
-/* radio_mgr_init_list (0x8d91a0), obj_vt803210_ctor (0x8d8c1c) — в radio_mgr.c. */
+/* radio_mgr_init_list (0x8d91a0), rm_main_sm_init (0x8d8c1c) — в radio_mgr.c. */
 
 /* Детектор 33kHz тактового генератора (0x8d777c). */
 
 /* 0x8d03f4: два отдельных RMW 0x880c50 (бит 1, затем бит 2) и 10 nop_s выдержки.
  * СРОК: выдержка после переключения 0x880c50 (такт/33 кГц, аппаратный срок не известен) задана
  * только числом инструкций: 10 nop_s + возврат до следующей записи вызывающего (проба
- * 0x63001e04 / pcie_clear_880c50_b2). Путь = vendor (10 nop_s); запас: единицы — неизвестно,
- * сколько на самом деле нужно; nop не сокращать, RMW не сливать (как и в pcie_clear_880c50_b2). */
-void pcie_set_880c50_b12(u32 a)
+ * 0x63001e04 / sparrow_m4_clear_b2). Путь = vendor (10 nop_s); запас: единицы — неизвестно,
+ * сколько на самом деле нужно; nop не сокращать, RMW не сливать (как и в sparrow_m4_clear_b2). */
+void sparrow_m4_set_b1_b2(u32 a)
 {
     (void)a;
     MMIO32(HW_RGF_USER_SPARROW_M_4) |= (1u << 1);
@@ -28,7 +28,7 @@ void pcie_set_880c50_b12(u32 a)
 }
 
 /* 0x8d0444: снять бит 2 0x880c50 и 10 nop_s выдержки. */
-void pcie_clear_880c50_b2(u32 a)
+void sparrow_m4_clear_b2(u32 a)
 {
     (void)a;
     MMIO32(HW_RGF_USER_SPARROW_M_4) &= ~(1u << 2);
@@ -66,8 +66,8 @@ u32 hwm_probe_33khz_clk(void)
 __attribute__((section(".textlate")))
 void power_start_two_timers(void)
 {
-    timer_start(1, 0, 0x1f78a40, 2);
-    timer_start(0, 0, 0xce4, 1);
+    arc_timer_start(1, 0, 0x1f78a40, 2);
+    arc_timer_start(0, 0, 0xce4, 1);
 }
 
 __attribute__((section(".textlate")))
@@ -79,9 +79,9 @@ u32 hwm_power_33kHz_clk_detector(void)
     }
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~6u);
-    pcie_set_880c50_b12(saved & ~7u);
+    sparrow_m4_set_b1_b2(saved & ~7u);
     u32 r13 = hwm_probe_33khz_clk();
-    pcie_clear_880c50_b2(r13);
+    sparrow_m4_clear_b2(r13);
     hwm_start_33khz_measure(0);
     mac_reload_tsf64(0, 0);
     arc_flag((saved & 6u) | arc_lr(ARC_STATUS32));
@@ -180,15 +180,15 @@ void power_mngr_check_mode(u32 a)
         r13 = regd_is_unset_or_jp();
         r14 = regd_is_country_us();
     }
-    phy_load_88416c_table(1);
-    rf_set_889494_low_nibble(r13);
+    phy_load_tx_fir_coef_table(1);
+    rf_set_regd_ctrl(r13);
     hwd_rfc_tx_power_cfg(r14);
 }
 
-/* field_set_0x08_8d8eb4 (0x8d8eb4) — в radio_mgr.c. */
+/* rm_ch_switch_sm_init (0x8d8eb4) — в radio_mgr.c. */
 
 /* Снять флаг таймера задачи u_schd (0x8caf4c; include/sched.h). */
-struct u_schd_task *field_set_0x19_8caf4c(struct u_schd_task *t)
+struct u_schd_task *u_schd_task_clear_armed(struct u_schd_task *t)
 {
     t->armed = 0;
     return t;
@@ -293,7 +293,7 @@ u32 bitmap_alloc_bit(u32 *p)
     return r0;
 }
 
-void field_set_0x00_8e5dfc(u32 *a, u32 b)
+void bit_iter_init(u32 *a, u32 b)
 {
     *a = b;
 }
@@ -333,12 +333,12 @@ void fw2uc_signal_wake_and_wait_ack(void)
 __attribute__((section(".textlate")))
 void lo_power_restore_rfc_field(void)
 {
-    rfc_write_field_484(0, (u32 *)calib_lo_power_fields);
+    rfc_write_lo_power_fields(0, (u32 *)calib_lo_power_fields);
 }
 
 /* Сброс calib-объекта 4 (0x8cbb90): rf_idx = 0 (0x3f при режиме RF 3); возвращает объект
  * silent RSSI (vendor оставляет его в r0 — им пользуются if_gain/silent_rssi). */
-struct calib_silent_rssi *calib_obj4_reset_d4(void)
+struct calib_silent_rssi *calib_silent_rssi_reset(void)
 {
     struct calib_silent_rssi *obj =
         (struct calib_silent_rssi *)calib_engine_get_by_index(CALIB_ENG_SILENT_RSSI);
@@ -427,7 +427,7 @@ void basic_sm_handle_event(void *obj, u32 ev, u32 a0, u32 a1, u32 a2)
         struct sm_defer_node *entry = &sm_defer_nodes[sm->deferred];
         sm->deferred = 0xff;
         basic_sm_do_transition(obj, entry->event, entry->a0, entry->a1, entry->a2);
-        stream_mgr_check_vring(&sm_defer_pool, entry);
+        mem_pool_free_checked(&sm_defer_pool, entry);
     }
 }
 
@@ -490,10 +490,10 @@ void power_halt_seq(u32 a, struct ps_ctx *b)
     if (a == 0) {
         /* --- WAKE branch --- */
         if (flags & (1u << 7))
-            ut_hw_modes_cmd_0x304_fw(0, ps_halt_dma_b27);
+            hw_modes_set_pll_bypass(0, ps_halt_dma_b27);
 
         if (flags & (1u << 5))
-            ut_hw_modes_cmd_0x308(0, &r13->hw.flags);
+            hw_modes_apply_power_state(0, &r13->hw.flags);
 
         if (flags & (1u << 6))
             hw_pll_mode_switch(0, (flags >> 10) & 1u);
@@ -511,10 +511,10 @@ void power_halt_seq(u32 a, struct ps_ctx *b)
             hwd_rfc_powerup_deep_all_rfs_fw();
     } else {
         /* --- HALT branch --- */
-        ps_halt_dma_b27 = hwd_dma_get_881bf0_bit27();
+        ps_halt_dma_b27 = hwd_dma_get_ep_misc_icr_b27();
 
         if (flags & 1u)
-            hwd_args_to_regs_default(rf_cfg_get_rf_mask_45e(&rf_obj));
+            hwd_rfc_apply_gain_tables_for_mask(rf_obj_get_rf_mask(&rf_obj));
 
         if (flags & (1u << 1))
             hwd_rfc_powerdown_deep_all_rfs_fw();
@@ -529,13 +529,13 @@ void power_halt_seq(u32 a, struct ps_ctx *b)
             hw_modes_program_rf_clocks(1);
 
         if (flags & (1u << 5))
-            ut_hw_modes_cmd_0x308(1, &r13->hw.flags);
+            hw_modes_apply_power_state(1, &r13->hw.flags);
 
         if (flags & (1u << 6))
             hw_pll_mode_switch(1, (flags >> 10) & 1u);
 
         if (flags & (1u << 7))
-            ut_hw_modes_cmd_0x304_fw(1, ps_halt_dma_b27);
+            hw_modes_set_pll_bypass(1, ps_halt_dma_b27);
     }
 }
 

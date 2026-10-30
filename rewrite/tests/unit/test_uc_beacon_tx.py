@@ -4,12 +4,12 @@
 (10.42.5.1, 9.3.4.2) и сетка A-BFT AP (10.42.5.2: aSSSlotTime, Table 11-22).
 
 Сценарий — как в работе: LMAC 0x0b (ucode_cmd_0x0b_handler: bi_cfg, план секторов, длительности слота) → развёртка BTI
-(bti_worker_bti_transmitter_beacon_sweep_flow целиком: bi_ctrl_program_mac_bcon, txss_set_sweep_param,
+(bti_ap_beacon_sweep_tx целиком: bi_ctrl_program_mac_bcon, txss_set_sweep_param,
 bcon_txss_sweep_step, bi_cfg_tick_counters, программирование сетки A-BFT). Ожидания MAC и передача в эфир — заглушки.
 
 Факты о MAC (не о стандарте), на которые опираются разборы команд:
   * 0x2a / 0x2b — поле BI Control маяка: 0x2a [19:0] → B0..B19, [23:20] → B44..B47; 0x2b [23:0] → B20..B43 (uc/bi.c,
-    bi_cfg_pack_words_78_7c: «w1 б23 = B43», «w0 б20 → в эфире B44»);
+    bi_cfg_pack_bcon_cfg: «w1 б23 = B43», «w0 б20 → в эфире B44»);
   * 0x2d — поле SSW кадра развёртки в раскладке рис. 9-846 (б0 Direction, б1..9 CDOWN, б10..15 Sector ID);
   * 0x15 — Duration: в буквальном режиме маяка (0x14000007) Duration = значение 0x15 − d, d = ⌈TXTIME/1 мкс⌉
     (uc/abft.h, H-DUR/H-LIT2); у SSW вне BTI — значение 0x15 буквально.
@@ -64,7 +64,7 @@ def ssw_field(v):
 
 
 # ---------------- DCCM / LMAC ----------------
-CMD = 0x803c00                       # тело LMAC 0x0b (struct lmac_cmd_bcn_sweep, 0x70 Б) — свободная DCCM
+CMD = 0x807c00                       # тело LMAC 0x0b (struct lmac_cmd_bcn_sweep, 0x70 Б) — свободная DCCM
 BCN_BI = 0x80229c                    # bcn_bi: +0 abft_bi_left, +1 abft_idx, +2 x2, +3 next_beacon, +5 x5_cdown
 BI_CFG = 0x8022a8
 BTI_SW = 0x802a14                    # ssw_slot_a (aSSDuration), ssw_slot_b (aSSSlotTime), abft_dur, bcn_ss
@@ -72,17 +72,17 @@ FWSH0, FWSH1 = 0x857000, 0x857964    # общий блок fw (обнуляет 
 FWSH_N_SETS = 0x85773c               # fwsh_sets.n_sec[1][0]
 FWSH_SET_RANGES = 0x8577b0           # указатель на диапазоны наборов
 FWSH_BCN_PSDU_LEN = 0x857008         # fwsh_diag.bcn_psdu_len
-RANGES = 0x803d00
+RANGES = 0x807d00
 HW_MAC_IFS_RIFS_SBIFS = 0x886d0c     # [31:24] SBIFS, мкс
 MAINT_STA_MASK = 0x802194
-TX_CTX = 0x803e00
-BI_CTX = 0x803f00
+TX_CTX = 0x807e00
+BI_CTX = 0x807f00
 
 SWEEP_WAITS = ['bi_remaining_time_us', 'rx_nav_arm_flag_if_enabled', 'mac_program_tx_beacon', 'uc_wait_event_busy',
                'mac_select_all_sectors_and_wait', 'mac_cmd_29000001', 'mac_program_rx_window', 'mac_evt_enable_bit_sync_b',
                'bcon_tx_ack_cmds', 'uc_spin_until_event', 'mac_evt_enable_bit_sync', 'mac_set_rf_chain_state_with_sta_sector',
                'mac_evt_select_timer_group', 'uc_assert', 'uc_wait_two_events', 'uc_read_tsf_lo', 'uc_spin_until_event4',
-               'bcon_txss_program_sector', 'rf_store_last_module_index', 'ucode_cmd_rf_program', 'macq_probe_empty']
+               'bcon_txss_program_sector', 'rf_store_last_set_index', 'bcn_queue_mtp_request', 'macq_probe_empty']
 
 
 MAC_CMD_LOG = 0x800000                # кольцо журнала MAC-команд: uc_mac_cmd пишет по r25 (uc/start.S, dccm.h mac_cmd_log)
@@ -188,7 +188,7 @@ def bti_sweep(uc, psdu_len=34):
     uc.w32(0x8005f4, 0)                        # txrx_state1
     clean_shadows(uc)
     zero(uc, BI_CTX, 0x40)
-    uc.call('bti_worker_bti_transmitter_beacon_sweep_flow', BI_CTX,
+    uc.call('bti_ap_beacon_sweep_tx', BI_CTX,
             stub=stubs(uc, SWEEP_WAITS, tx_ctx_alloc_next=TX_CTX))
     asserts = [a for n, a in uc.calls if n == 'uc_assert']
     assert not asserts, 'uc_assert: %s' % [hex(a[1]) for a in asserts]

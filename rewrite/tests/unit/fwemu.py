@@ -347,11 +347,11 @@ class FW:
             r = [cpu.regs[i] & M32 for i in range(8)]
             ln = r[4] + (8 if r[2] == 0 else 0)
             self.wmi_evts.append(WmiEvt(r[3], r[4], r[5], self.rbytes(r[1], min(ln, 0x600))))
-            # хост прочитал событие: буфер с флагом 1 (кадр RX) — wmi_evt_alloc_and_fill, с флагом 2 (кадр TX) —
+            # хост прочитал событие: буфер с флагом 1 (кадр RX) — wmi_evt_free_buf, с флагом 2 (кадр TX) —
             # tx_api_free_memory (колбэки кольца событий, mbox_init_descriptor); без флагов — буфер ящика (у теста
             # из своей области). Выполняется после возврата из текущего вызова (call не реентерабелен).
             if r[6]:
-                self._host_free.append(('wmi_evt_alloc_and_fill', r[1]))
+                self._host_free.append(('wmi_evt_free_buf', r[1]))
             elif r[7]:
                 self._host_free.append(('tx_api_free_memory', r[1]))
             return 0

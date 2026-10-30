@@ -52,7 +52,7 @@ __attribute__((section(".textlate"))) void l2mgr_send_vring_cfg_done(u32 vring, 
     evt->ringid = (u8)vring;
     evt->status = (u8)status;
     fw_log_emit1(0x2b, 0x100d954, devid);
-    low_sme_send_evt2sw(evt, 0x1821, 8, devid, 0, 0, 0);
+    host_if_send_event(evt, 0x1821, 8, devid, 0, 0, 0);
 }
 
 
@@ -112,22 +112,22 @@ __attribute__((section(".textlate"))) void wmi_vring_cfg(void *cmd_p, u32 mid)
         if (vc->schd_params.timeslot_us == 0) {    /* vendor: ассерт 0x12b2 в vring_schd_fill_vring_cfg */
             wmi_reject_param(0x821, 0, 4 + 0x14 + 2);
             l2mgr_send_vring_cfg_done(ringid, 0, 1, mid);
-            wmi_vring_cfg_with_847b34(ctx);         /* вернуть ctx */
+            vring_ctx_free(ctx);         /* вернуть ctx */
             return;
         }
         if (vc->agg_max_wsize == 0 && mpdu > 0x1f28) {
             fw_log_emit2(0x1b, 0x100dadc, mpdu, 0x1f28);
             l2mgr_send_vring_cfg_done(ringid, 0, 1, mid);
-            wmi_vring_cfg_with_847b34(ctx);         /* вернуть ctx */
+            vring_ctx_free(ctx);         /* вернуть ctx */
             return;
         }
         struct vring_tbl_entry *entry = vring_tbl_entry_addr(ringid);
         entry->max_mpdu = (u16)mpdu;
         vring_configure_tx(ctx, ringid, conn, (u8)tid, 0, vc->encap_trans_type, to_res & 0x3f,
                            mac_ctrl & 1, 0, 0, 0, 0);
-        if (STREAM_MGR_ADD(ctx, vc, mpdu) != 0) {
+        if (stream_mgr_add(ctx, vc, mpdu) != 0) {
             fw_log_emit0(0x1b, 0x100db2c);
-            wmi_vring_cfg_with_847b34(ctx);
+            vring_ctx_free(ctx);
         }
         return;
     }

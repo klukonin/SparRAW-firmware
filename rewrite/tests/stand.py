@@ -58,6 +58,7 @@ class Node:
         self.on_recover = None     # колбэк стенда: узел перезагружен — роль потеряна
         self.recoveries = 0
         self.dmesg_mark = 0        # время ядра (dmesg) начала роли: ошибки FW считаются после него
+        self.iperf_cpu = None      # маска CPU для iperf3 (taskset), [test] iperf_cpu
 
     def _ssh(self, cmd, timeout, input=None):
         """ssh с самовосстановлением: узел не отвечает (ssh 255 или зависание) — power-cycle через розетку и повтор."""
@@ -85,6 +86,8 @@ class Node:
             self.on_recover(self)
 
     def run(self, cmd, timeout=60, check=True, input=None):
+        if self.iperf_cpu:   # iperf3 (сервер и клиент) — на своём ядре: на ядре прерываний wil6210 или RPS — до −25 %
+            cmd = re.sub(r'(?<!killall )\biperf3 ', 'taskset %s iperf3 ' % self.iperf_cpu, cmd)
         r = self._ssh(cmd, timeout, input)
         if check and r.returncode != 0:
             raise StandError('%s: «%s» → %d: %s' % (self.name, cmd[:80], r.returncode,
@@ -210,6 +213,18 @@ class Stand:
         self.peer_dirty = False
         for n in (self.dut, self.peer):
             n.on_recover = self._node_recovered
+            n.iperf_cpu = self.t.get('iperf_cpu')
+
+    def tune_cpu(self):
+        """Прерывания wil6210 (tx/rx/misc, с ними NAPI) обоих узлов — на ядро [test] irq_cpu (маска). Без этого GIC
+        доставляет их на cpu0. Стенд 2026-10-30 (iperf, вверх/вниз): cpu0 987/1009, cpu1 989/1013, ядро iperf 741/760,
+        CPU3 830/840 — на CPU3 OpenWrt уже ведёт RPS интерфейса wifi (rps_cpus 8)."""
+        m = self.t.get('irq_cpu')
+        if not m:
+            return
+        for n in (self.dut, self.peer):
+            n.run('for i in $(grep wil6210 /proc/interrupts | cut -d: -f1); do echo %s > /proc/irq/$i/smp_affinity; done'
+                  % m, check=False)
 
     def _node_recovered(self, node):
         """Узел перезагружен по питанию — роль стенда потеряна (следующая фикстура роли загрузит её заново).
@@ -283,6 +298,7 @@ class Stand:
         if self.connected:
             d.run('ip addr add %s/24 dev %s 2>/dev/null; sysctl -qw net.ipv4.conf.all.arp_ignore=1 '
                   'net.ipv4.conf.all.arp_announce=2' % (self.cfg['dut']['ip'], d.iface()), check=False)
+            self.tune_cpu()
         return self.connected
 
     def boot_ap(self, timeout=120):
@@ -291,7 +307,10 @@ class Stand:
         # peer — станция на тестируемом образе
         p.put(self.peer_fw, '/lib/firmware/wil6210.fw')
         self.peer_dirty = True
-        p.run('killall iperf3 2>/dev/null; wifi down; sleep 2; uci set wireless.default_radio0.mode=sta; '
+        # станция на проверяемом образе — FW error не восстанавливать с самого подключения: состояние fw на момент
+        # сбоя остаётся для артефактов (редкий сбой станции после Disassociation посреди подключения)
+        p.run('killall iperf3 2>/dev/null; wifi down; echo Y > /sys/module/wil6210/parameters/no_fw_recovery; '
+              'sleep 2; uci set wireless.default_radio0.mode=sta; '
               'uci delete wireless.default_radio0.network; uci set wireless.default_radio0.ssid=%s; '
               'ip addr del %s/24 dev br-lan; wifi up radio0' % (ap_ssid, self.cfg['peer']['ip']), check=False, timeout=60)
         self._dut_boot()
@@ -311,6 +330,7 @@ class Stand:
             p.run('sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; ip addr add %s/24 dev %s 2>/dev/null; '
                   'nft insert rule inet fw4 input iifname %s accept; ip neigh flush dev %s'
                   % (self.cfg['peer']['ip'], pi, pi, pi), check=False)
+            self.tune_cpu()
         return self.connected
 
     def linked(self):

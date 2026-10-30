@@ -112,13 +112,6 @@ void *mem_pool_alloc_locked(struct fw_mailbox *mbox)
     return body;
 }
 
-void mem_pool_free_locked(struct mem_pool *p, void *data)
-{
-    u32 saved = arc_irq_disable();
-    mem_pool_free(p, data);
-    arc_irq_restore(saved);
-}
-
 /* mem_pool__init (0x8c7cf8): count блоков по elem_size байт с base. */
 void mem_pool_init(struct mem_pool *p, void *base, u32 elem_size, u32 count)
 {
@@ -150,11 +143,11 @@ void ring_init_desc(struct mbox_ring *r, struct mbox_entry *base, u32 len, struc
     r->free_cb2 = 0;
     r->pooled = pooled;
     if (pooled == 1)
-        ba_sm_prepare_ba_td(r, alloc);
+        mbox_ring_init_entries(r, alloc);
 }
 
 /* Флаг «снятие остановлено» RX-кольца (+0x14; mem_pool__put_block). */
-u32 mem_pool_get_field14(const struct rx_dma_ring *r)
+u32 rx_dma_ring_is_pended(const struct rx_dma_ring *r)
 {
     return r->pended;
 }
@@ -175,18 +168,18 @@ void l2mgr_init_frame_pool(void)
 }
 
 /* Установить поле + запустить аппаратный таймер (0x8d8db8). */
-void field_set_0x00_8d8db8(u32 *a, u32 b)
+void u_schd_hw_timer_set_and_start(u32 *a, u32 b)
 {
     *a = b;
     u_schd_hw_timer_load_start(b);
 }
 
 /* Освободить задачу планировщика в пул u_schd.task_pool (mem_pool__free_locked 0x8cb028;
- * vendor зовёт проверяющий mem_pool__free 0x8caed0 — у нас stream_mgr_check_vring). */
+ * vendor зовёт проверяющий mem_pool__free 0x8caed0 — у нас mem_pool_free_checked). */
 
 void mem_pool_free_locked_evt(struct u_schd_task *evt)
 {
-    struct u_schd_task *data = field_set_0x19_8caf4c(evt);
+    struct u_schd_task *data = u_schd_task_clear_armed(evt);
     u32 saved = arc_irq_disable();
     mem_pool_free(&u_schd.task_pool, data);
     arc_irq_restore(saved);
@@ -194,7 +187,7 @@ void mem_pool_free_locked_evt(struct u_schd_task *evt)
 
 /* Подготовка записей кольца ящика (0x8e0d6c; имя по историческим причинам): каждая запись
  * свободна (sync = 0), буфер — элемент пула (alloc == 1) или 0. */
-void ba_sm_prepare_ba_td(struct mbox_ring *r, u32 alloc)
+void mbox_ring_init_entries(struct mbox_ring *r, u32 alloc)
 {
     struct mbox_entry *e = r->base;
     u32 cnt = 0;
@@ -213,7 +206,7 @@ void ba_sm_prepare_ba_td(struct mbox_ring *r, u32 alloc)
 
 /* mem_pool__free с проверками (0x8caed0; имя у нас историческое): блок b — из пула p
  * (кратен elem_size от base, внутри пула), затем в голову списка свободных. */
-void stream_mgr_check_vring(struct mem_pool *p, void *blk)
+void mem_pool_free_checked(struct mem_pool *p, void *blk)
 {
     u32 b = (u32)blk;   /* проверки — арифметика адресов */
     if (p->used == 0)
@@ -248,19 +241,9 @@ void tx_api_free_memory(u32 tx)
         fw_sysassert_fatal((void *)0, 0x11e9);
     struct tx_pkt *pkt = TX_PKT_OF(tx);
     if (pkt->status != 0xfd)
-        stream_mgr_check_vring(&tx_pkt_pool, pkt);
+        mem_pool_free_checked(&tx_pkt_pool, pkt);
     else
         fw_log_emit0(0x27, 0x10181d8);
-}
-
-/* Запись в кольцо событий (0x8e0b2c). */
-void evt_ring_push_1c(u32 type, u32 code, u32 data)
-{
-    (void)code;
-    u32 idx = evt_ring.idx;
-    evt_ring.data[idx] = data;
-    evt_ring.type[idx] = (u8)type;
-    evt_ring.idx = (idx + 1) & (EVT_RING_N - 1);
 }
 
 /* Знаковое деление (0x8c02dc). */

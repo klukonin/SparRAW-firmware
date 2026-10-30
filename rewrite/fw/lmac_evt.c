@@ -27,15 +27,15 @@ struct mem_pool;
 /* Объект, конструкторы, методы и действия автоматов — radio_mgr.c (include/radio_mgr.h). */
 
 /* rm_main_sm (0x8cc148): mid текущего канала (cur_mid). */
-static u32 rm_main_sm_get_byte_90(const struct rm_main_sm *sm)
+static u32 rm_main_sm_cur_mid(const struct rm_main_sm *sm)
 {
     return sm->cur_mid;
 }
 
-/* (0x8cc150) метод radio_mgr cur_mid: rm_main_sm_get_byte_90(&this->sm). */
+/* (0x8cc150) метод radio_mgr cur_mid: rm_main_sm_cur_mid(&this->sm). */
 u32 radio_mgr_vt_cur_mid(struct radio_mgr *self)
 {
-    return rm_main_sm_get_byte_90(&self->sm);
+    return rm_main_sm_cur_mid(&self->sm);
 }
 
 /* rm_main_sm__handle_lock_evt (0x8cd294): событие ucode → событие вложенного
@@ -69,9 +69,9 @@ void rm_main_sm_inject_lock_evt(u32 evt)
     rm->vt->inject_lock_evt(rm, evt);
 }
 
-/* new_link_evt (0x8cc158): radio_mgr->cur_mid() — mid текущего канала rm_main_sm; его
+/* radio_mgr_get_cur_mid (0x8cc158): radio_mgr->cur_mid() — mid текущего канала rm_main_sm; его
  * dispatch передаёт вторым аргументом обработчикам 0x05/0x16. */
-u32 new_link_evt(void)
+u32 radio_mgr_get_cur_mid(void)
 {
     struct radio_mgr *rm = radio_mgr_obj;
     return rm->vt->cur_mid(rm);
@@ -88,13 +88,13 @@ struct rm_req *radio_mgr_request(rm_req_cb cb, u32 arg, u32 param, u32 ch, u32 m
 /* ======================= 0x02 EVENT_ECHO ======================= */
 
 /* lmac_if__echo_pair (0x8c32e8): буфер из пула debug-ящика. */
-static u32 *lmac_if_echo_pair(void)
+static u32 *lmac_if_echo_alloc_buf(void)
 {
     return (u32 *)mem_pool_alloc_locked(&debug_mbox_get_or_init()->mb);
 }
 
 /* lmac_if__echo_evt_body (0x8e557c): событие хосту через debug-ящик. */
-static void lmac_if_echo_evt_body(void *buf, u32 id, u32 len, u32 a3)
+static void lmac_if_echo_post_evt(void *buf, u32 id, u32 len, u32 a3)
 {
     wmi_evt_post(debug_mbox_get_or_init(), buf, 0, id, len, a3, 0, 0);
 }
@@ -103,10 +103,10 @@ static void lmac_if_echo_evt_body(void *buf, u32 id, u32 len, u32 a3)
  * хосту WMI_ECHO_RSP (0x1803) через debug-ящик (не operational). */
 void lmac_if_echo_evt_handler(const struct lmac_cmd_echo *e)
 {
-    u32 *buf = lmac_if_echo_pair();
+    u32 *buf = lmac_if_echo_alloc_buf();
     buf[0] = e->value;
     fw_log_emit1(0x20, 0x1003b8c, e->value);
-    lmac_if_echo_evt_body(buf, 0x1803, 4, 0);
+    lmac_if_echo_post_evt(buf, 0x1803, 4, 0);
 }
 
 /* ======================= 0x04 EVENT_FLUSH_Q_DONE ======================= */
@@ -121,7 +121,7 @@ void vring_schd_flush_response(u32 ring)
         struct vring_rec *e = p->bound;
         if (e == 0 || e->vr != ring)
             continue;
-        vring_reg_write_locked_3c(1u << (i + 8), 1);
+        vring_hw_unmask_dma_irq(1u << (i + 8), 1);
         return;
     }
 }
@@ -135,7 +135,7 @@ void event_flush_q_done(const struct lmac_evt_u32 *e)
 /* ======================= 0x08 QUEUE_DELETED_EVT ======================= */
 
 /* stream_mgr__check_count_a (0x8c8774): счётчик vring соединения--, на нуле — 0x8e8354. */
-static void stream_mgr_check_count_a(struct conn *obj)
+static void stream_mgr_dec_vring_count(struct conn *obj)
 {
     if (obj->n_vrings < 1)
         fw_sysassert_fatal((void *)__builtin_return_address(0), 0x47 << 6);
@@ -156,7 +156,7 @@ static void stream_mgr_remove(struct stream_ctx *s)
     if (s->configured != 0) {
         s->vt->remove(s);
         if (bcast == 0)
-            stream_mgr_check_count_a(s->conn);
+            stream_mgr_dec_vring_count(s->conn);
     }
     stream_by_vr[s->vr] = 0;
     if (s->vr < STREAM_CTX_N)
@@ -259,7 +259,7 @@ void lmac_if_abft_notify_evt(struct lmac_evt_bf_done *e)
     struct conn *conn = conn_mgr_by_cid(e->cid);
     lmac_if_bf_done_evt(e);
     if (conn != 0) {
-        conn_snapshot_step(&conn->lm, e);         /* add3 r0,r14,0xe */
+        conn_store_bf_snap(&conn->lm, e);         /* add3 r0,r14,0xe */
         if (e->status == 1) {
             connection_on_bf_result(conn, e->type, e->snr);
             conn_arm_retry_timer(conn, 1);
@@ -272,17 +272,8 @@ void lmac_if_abft_notify_evt(struct lmac_evt_bf_done *e)
     dashboard_bf_results(e, conn);
 }
 
-/* find_main_sm__bcon_args (0x8da8fc): поиск записи маяка; 0 — не найдено. */
-struct conn *find_main_sm_bcon_args(struct mid *mid, const void *mac, const void *snap, u32 a3, u32 a4)
-{
-    struct conn *out = 0;
-    if (find_main_sm_bcon_lookup(mid, mac, snap, 0, &out, a3, 0, a4) == 0)
-        return 0;
-    return out;
-}
-
 /* l2_mgr::lmac_new_link_evt_handler (0x8f603c): новая связь после BF. st — байт
- * состояния rm_main_sm (new_link_evt) = id MID; mid+0x234 — его scan-контекст. */
+ * состояния rm_main_sm (radio_mgr_get_cur_mid) = id MID; mid+0x234 — его scan-контекст. */
 void l2_mgr_lmac_new_link_evt_handler(const struct lmac_evt_bf_done *e, u32 st)
 {
     fw_log_emit3(0x2b, 0x100f530, e->peer_mac[0], e->peer_mac[1], e->peer_mac[2]);
@@ -308,16 +299,16 @@ void l2_mgr_lmac_new_link_evt_handler(const struct lmac_evt_bf_done *e, u32 st)
     fw_log_emit0(0x2b, 0x100f588);
     if (sc->find.sm.hdr.state == 4) {
         fw_log_emit0(0x2b, 0x100f5bc);
-        find_main_sm_bcon_args(mid, e->peer_mac, e, 0, 0xffff);
+        mid_link_acquisition(mid, e->peer_mac, e, 0, 0xffff);
         return;
     }
     if (sc->scan->active != 0 && e->type == 2) {
         scan_mngr_handle_abft_bf_result_in_scan(scan, e);
         return;
     }
-    if (mid_state_is_2_or_3(mid->id) != 0) {
+    if (mid_is_pcp_or_ap(mid->id) != 0) {
         fw_log_emit0(0x2b, 0x100f610);
-        struct conn *r = find_main_sm_bcon_args(mid, e->peer_mac, e, 0, e->rf_sector);
+        struct conn *r = mid_link_acquisition(mid, e->peer_mac, e, 0, e->rf_sector);
         if (r == 0) {
             fw_log_emit0(0x2b, 0x100f6d4);
             return;
@@ -331,13 +322,13 @@ void l2_mgr_lmac_new_link_evt_handler(const struct lmac_evt_bf_done *e, u32 st)
         return;
     }
     fw_log_emit0(0x2b, 0x100f650);
-    struct dband_info *f = find_main_sm_bcon_step(&scan->scanned, (const u8 *)e->peer_mac);
+    struct dband_info *f = dband_info_find_by_bssid(&scan->scanned, (const u8 *)e->peer_mac);
     if (f == 0) {
         fw_log_emit0(0x2b, 0x100f710);
         return;
     }
     fw_log_emit0(0x2b, 0x100f68c);
-    struct conn *r = find_main_sm_bcon_args(mid, e->peer_mac, e, 0, 0xffff);
+    struct conn *r = mid_link_acquisition(mid, e->peer_mac, e, 0, 0xffff);
     f->conn = r;
     if (r == 0)
         fw_log_emit0(0x2b, 0x100f6d4);
@@ -387,18 +378,18 @@ void lmac_if_link_lost_evt_handler(const struct lmac_evt_link_lost *e)
     l2_mgr_lmac_high_false_alarm_evt_handler();
 }
 
-/* ======================= 0x11 return_field_type ======================= */
+/* ======================= 0x11 lmac_if_sta_field_rsp_evt ======================= */
 
-/* 0x801f2c: таблица переходов switch vendor return_field_type (0x8dc14c;
+/* 0x801f2c: таблица переходов switch vendor lmac_if_sta_field_rsp_evt (0x8dc14c;
  * ldb, цель = 0x8dc196 + 2·запись). Наш код её не читает (switch в C) — байты как у vendor. */
 FWDATA(801f2c) const u8 return_field_type_jt[17] = {
     0x06, 0x0a, 0x29, 0x29, 0x15, 0x29, 0x29, 0x29, 0x1e, 0x29, 0x29, 0x29,
     0x29, 0x29, 0x29, 0x29, 0x25,
 };
 
-/* return_field_type (0x8dc14c): ucode вернул поле ключа: cid, тип
+/* lmac_if_sta_field_rsp_evt (0x8dc14c): ucode вернул поле ключа: cid, тип
  * (4/8/0x10 — без станции). */
-void return_field_type(const struct lmac_evt_field_rsp *e)
+void lmac_if_sta_field_rsp_evt(const struct lmac_evt_field_rsp *e)
 {
     fw_log_emit2(0x20, 0x10040ac, e->type, e->cid);
     struct conn *conn = 0;
@@ -410,7 +401,7 @@ void return_field_type(const struct lmac_evt_field_rsp *e)
     }
     switch (e->type) {                   /* таблица 0x801f2c (17) */
     case 0x00:
-        install_key_handle(conn);
+        conn_on_key_installed(conn);
         break;
     case 0x01:
         fw_log_emit1(0x20, 0x10040cc, e->cid);
@@ -450,7 +441,7 @@ static void lmac_if_rs_done_noop_hook(struct lmac_rs_result *r, struct conn *con
 }
 
 /* basic_sm__handle_event__r1_2_r3_0 (0x8dffe4): событие 2 maintain_sm записи l с аргументом a. */
-static void basic_sm_evt2(struct lm_sm *l, u32 a)
+static void lm_sm_inject_rs_results(struct lm_sm *l, u32 a)
 {
     maintain_sm_event(&l->msm, 2, a, 0, 0);
 }
@@ -467,7 +458,7 @@ static void lmac_if_rs_done_params(struct lm_if *ctx, const struct lmac_evt_rs_d
         return;
     memcpy_fw(ctx->mcs_total, b + 0x10, 0x1f);             /* add3 r0,r14,0xa */
     if (ctx->lm_sm != 0)
-        basic_sm_evt2(ctx->lm_sm, (u32)b);
+        lm_sm_inject_rs_results(ctx->lm_sm, (u32)b);
 }
 
 /* lmac_if__rs_done_evt (0x8dbbe4): «RS DONE: CID=%d MCS:%d». Итог — копия res
@@ -498,13 +489,13 @@ void lmac_if_rs_done_evt(const struct lmac_evt_rs_done *e)
 
 /* lmac_if__forward_evt_to_obj (0x8c3f08): [gp+0xc9] = no_tx (маска пиров без передачи по
  * опросу ATI). Vendor ещё уведомлял текущий PS-менеджер — вырезан вместе с PS. */
-static void lmac_if_forward_evt_to_obj(struct lmac_evt_ps_peer *e)
+static void lmac_if_store_ps_no_tx_mask(struct lmac_evt_ps_peer *e)
 {
     ps_lmac_evt_cid_mask = e->no_tx;     /* читает link_loss; уведомление PS-объекта — PS вырезан */
 }
 
 /* mid__lookup_step (0x8f5f5c): только для MID в состоянии 2/3. */
-static void mid_lookup_step(u32 id)
+static void mid_pcp_shift_ext_sched(u32 id)
 {
     struct mid *mid = mid_list_by_mid_fw(id);
     u32 s = mid->bss.mode;
@@ -512,15 +503,15 @@ static void mid_lookup_step(u32 id)
         return;
     struct sched_scheme *p = mid->sched;               /* ld.as r0,[r13,164] (слот bl.d) */
     if (p->built != 0)                                 /* mid__get_field_0c (0x8cc360) */
-        mid_lookup_at_48(mid);
+        mid_shift_bcn_ext_sched(mid);
 }
 
 /* lmac_if__ucode_evt_check_8 (0x8db240): маска no_tx; при type == 5 — mid. */
-void lmac_if_ucode_evt_check_8(struct lmac_evt_ps_peer *e, u32 st)
+void lmac_if_ps_awake_peer_evt(struct lmac_evt_ps_peer *e, u32 st)
 {
-    lmac_if_forward_evt_to_obj(e);
+    lmac_if_store_ps_no_tx_mask(e);
     if (e->type == 5)
-        mid_lookup_step(st);
+        mid_pcp_shift_ext_sched(st);
 }
 
 /* ======================= 0x17 статистика ======================= */
@@ -635,6 +626,6 @@ void evt_fixed_scheduling_enabled(const struct lmac_evt_typed *e)
     struct conn *conn = conn_mgr_by_cid(0);
     if (e->val != 0 || conn == 0)
         return;
-    if (mid_state_is_2_or_3(0) == 0)
+    if (mid_is_pcp_or_ap(0) == 0)
         maintain_sm_set_rs_params(conn->lm.lm_sm, 1, 0);   /* 0x8c6cbc */
 }

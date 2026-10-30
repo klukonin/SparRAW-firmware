@@ -29,7 +29,7 @@ __attribute__((section(".textlate"))) void mac_parser_write_rule(const struct pr
 {
     u16 cmd = 0;
     bits_set16h_s0_w2(&cmd, 1);
-    mac_filter_bits_set16h_s4_w2(&cmd, field & 3u);
+    mac_filter_cmd_set_table(&cmd, field & 3u);
     MMIO32(HW_PRS_TBL_B_CMD) = ((u32)cmd << 16) | 0x80000000u;
     MMIO32(HW_PRS_TBL_B_ADDR) = val;
     MMIO32(HW_PRS_TBL_B_DATA0) = buf->w[0];
@@ -41,11 +41,11 @@ __attribute__((section(".textlate"))) void mac_parser_write_rule(const struct pr
 }
 
 /* mac_parser__pack_rule_halfword(buf, val): 0x886278/0x88627c/0x886280/0x886284. */
-__attribute__((section(".textlate"))) void mac_parser_pack_rule_halfword(const struct prs_rule *buf, u32 val)
+__attribute__((section(".textlate"))) void mac_parser_write_rule_tbl_a(const struct prs_rule *buf, u32 val)
 {
     u16 cmd = 0;
     bits_set16h_s0_w2(&cmd, 1);
-    mac_filter_bits_set16h_s4_w2(&cmd, 1);
+    mac_filter_cmd_set_table(&cmd, 1);
     MMIO32(HW_PRS_TBL_A_CMD) = ((u32)cmd << 16) | 0x80000000u;
     MMIO32(HW_PRS_TBL_A_ADDR) = val;
     MMIO32(HW_PRS_TBL_A_DATA0) = buf->w[0];
@@ -70,21 +70,21 @@ __attribute__((section(".textlate"))) void mac_parser_build_wildcard_rule(u32 a0
     buf.h[3] = 0;
     bits_set16h_s4_w5(&buf.h[3], 0x1f);
     buf.h[3] = (u16)(buf.h[3] & ~1u);
-    mac_parser_pack_rule_halfword(&buf, a0);
+    mac_parser_write_rule_tbl_a(&buf, a0);
 }
 
 /* 0x803966: 9 байт — обращений в vendor-коде не найдено (по виду — байтовая таблица переходов
  * без кода). Держит образ. */
 FWDATA(803966) __attribute__((aligned(1))) const u8 vendor_unref_803966[9] = { 0x09, 0x09, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x06 };
 
-/* 0x803970: 4 правила mac_parser_step_a (слова; копируются на стек). */
+/* 0x803970: 4 правила mac_parser_install_rules_a (слова; копируются на стек). */
 FWDATA(803970) const u32 mac_parser_step_a_rules[4] = { 0x400, 0x400, 0x400, 0x0 };
 
-/* mac_parser_step_a (0x8dfee4): 4 правила по таблице 0x803970 (4 СЛОВА: add2 r0,sp,r14;
+/* mac_parser_install_rules_a (0x8dfee4): 4 правила по таблице 0x803970 (4 СЛОВА: add2 r0,sp,r14;
  * ld_s r0,[r0,8] — {0x400, 0x400, 0x400, 0}; прежний порт брал байты tab[i]).
  * Флаги в 0x8dff50/0x8dff60: Z от asr.f (hi == 0), btst.ne r14,0 — только при hi != 0,
  * т. е. условие «hi && lo» (прежний порт: «lo» для 8 и «!hi && !lo» для 0x1a). */
-__attribute__((section(".textlate"))) void mac_parser_step_a(u32 obj)
+__attribute__((section(".textlate"))) void mac_parser_install_rules_a(u32 obj)
 {
     u32 tab[4];
     u32 i;
@@ -164,7 +164,7 @@ __attribute__((section(".textlate"))) static u32 mac_parser_rule_z(u32 v, u32 ob
  * v = r13 + 0x2e (0x35 → 0x10); X = (r13 << 6) | 0x419; Y — общий фрагмент плюс
  * бит 8 при r13 >= 8 (cmp_s r13,8; sub.c — 0 при r13 < 8). Прежний порт делал 10 правил
  * (до 11) и брал в Y младшие 16 бит слова Z. */
-__attribute__((section(".textlate"))) void mac_parser_step_b(u32 obj)
+__attribute__((section(".textlate"))) void mac_parser_install_rules_b(u32 obj)
 {
     u32 i;
     for (i = 2; i < 0xb; i++) {
@@ -285,7 +285,7 @@ __attribute__((section(".textlate"))) void mac_filter_write_entries(u32 a, u32 b
     u32 n;
 
     bits_set16h_s0_w2(&cmd, 1);
-    mac_filter_bits_set16h_s4_w2(&cmd, a & 3u);
+    mac_filter_cmd_set_table(&cmd, a & 3u);
     memset0_words(fr, 8);
     bits_set16h_s4_w5((u8 *)fr + 6, 0x1f);
     bits_set_s8_w5(&w3, 0x1f);
@@ -323,11 +323,11 @@ __attribute__((section(".textlate"))) void mac_filter_write_entries(u32 a, u32 b
 /* mac_parser__init (0x8df778). */
 __attribute__((section(".textlate"))) void mac_parser_init(u32 obj)
 {
-    mac_parser_rule_a();
+    mac_parser_clear_rule_tbl_b();
     mac_parser_set_default_ctrl();
-    mac_parser_step_a(obj);
-    mac_parser_rule_b(obj);
-    mac_parser_step_b(obj);
+    mac_parser_install_rules_a(obj);
+    mac_parser_install_rule0(obj);
+    mac_parser_install_rules_b(obj);
     mac_parser_install_default_rules(obj);
     hwd_mac_parser_set_rx_filter(obj, 0);
 }

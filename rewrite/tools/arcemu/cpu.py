@@ -172,20 +172,32 @@ def imm(tok):
         return None
 
 
+_MEM_CACHE = {}
+
+
 def mem(tok):
-    """Разобрать `[...]`: вернуть список внутренних токенов, либо None."""
+    """Разобрать `[...]`: вернуть кортеж внутренних токенов, либо None (кэш по тексту — вызывается на каждом шаге)."""
+    try:
+        return _MEM_CACHE[tok]
+    except KeyError:
+        pass
     t = tok.strip()
-    if t.startswith('[') and t.endswith(']'):
-        return split_ops(t[1:-1])
-    return None
+    r = tuple(split_ops(t[1:-1])) if t.startswith('[') and t.endswith(']') else None
+    _MEM_CACHE[tok] = r
+    return r
+
+
+_OP_CACHE = {}       # текст операнда -> разобранный операнд (Cpu._op)
+_ADDR_PLAN = {}      # (адресный операнд, мнемоника, .wb) -> план адреса (Cpu._addr_of)
 
 
 class Instr:
     """Декодированная инструкция (текст из objdump + разобранные поля)."""
     __slots__ = ('addr', 'size', 'text', 'mn', 'base', 'sfx', 'ops', 'target',
-                 'cc', 'delay', 'setf', 'wb', 'x')
+                 'cc', 'delay', 'setf', 'wb', 'x', 'h')
 
     def __init__(self, addr, size, mn, args, target):
+        self.h = None                 # обработчик исполнения (Cpu._resolve) — разбор мнемоники один раз
         self.addr, self.size, self.target = addr, size, target
         self.text = (mn + ' ' + args).strip()
         self.mn = mn
@@ -334,6 +346,8 @@ class CPU:
         self.trace = []          # события (kind, dir, addr, size, value)
         self.breakpoints = set()
         self._instr = {}         # addr -> Instr (кэш декодирования)
+        self._fcache = {}        # PC (до алиасов) -> Instr: быстрый путь fetch
+        self.last_ld = 0         # адрес последней загрузки ld*/pop (модель стоимости)
         self._code_regions = []  # [(lo, hi, code_bytes)]
         self._cur = None
         self.exhausted = False
@@ -347,16 +361,24 @@ class CPU:
         self.func_range = None
         # алиасы адресов ICCM: список (lo, hi, base) — [lo,hi) → base+offset
         self.alias = []
-        # прерывания (минимальная модель)
-        self.irq_pending = set()  # ожидающие номера векторов прерываний (0..31)
+        # прерывания ARC600 (PRM «Interrupts»): векторы 0..31, уровень вектора — бит AUX_IRQ_LEV (0x200): 0 — L1,
+        # 1 — L2. L1 — при STATUS32.E1 и без активного L1/L2; L2 — при E2 и без активного L2, вытесняет L1.
+        # Вход: ilink1/ilink2 = PC, STATUS32_L1/_L2 = STATUS32, сброс E1 (L1) или E1|E2 (L2), AUX_IRQ_LV12 (0x43)
+        # б0/б1 — уровень активен; выход j.f [ilink1/2] восстанавливает STATUS32 и снимает бит уровня.
+        self.irq_pending = set()  # запросы-импульсы (снимаются доставкой)
+        self.irq_lines = set()    # линии-уровни: держит источник (таймер, MAC), снимает он же — модель железа
+        self.irq_auto = True      # доставка в начале step(); модель с часами доставляет сама (deliver_irq)
+        self.sleeping = False     # sleep: ядро стоит до доставки прерывания
         self.vector_base = 0      # база таблицы векторов (32 слота × 8 байт)
         self.irq_hook = None      # callable(v) — срабатывает при записи в 0x202
+        self.aux_hooks = {}       # aux → (read(cpu) | None, write(cpu, v) | None): таймеры модели железа
         # build-регистры конфигурации (детект опциональных блоков ядра)
         self.aux[0x7b] = 0x1     # multiply_build (MUL64 есть)
         self.aux[0x7d] = 0x1     # norm_build
         self.aux[0x7e] = 0x1     # minmax_build
         self.aux[0x7f] = 0x1     # barrel_build
         self.aux[0x200] = 0      # aux_irq_lev (уровень прерываний)
+        self.aux[0x43] = 0       # aux_irq_lv12 (активные уровни)
         self.aux[0x202] = 0      # aux_inter_core_interrupt (межъядерное)
 
     # --- конфигурация памяти --------------------------------------------- #
@@ -498,6 +520,17 @@ class CPU:
             self.trace.append(('mmio', 'r', addr, size, v & M32))
             return v & M32
         # RAM: инициализированные байты из памяти, неинициализированные — детерм.
+        if not self.diff_world:                  # быстрый путь: все байты есть (горячий путь ld)
+            m = self.mem
+            try:
+                if size == 4:
+                    return m[addr] | (m[addr + 1] << 8) | (m[addr + 2] << 16) | (m[addr + 3] << 24)
+                if size == 1:
+                    return m[addr]
+                if size == 2:
+                    return m[addr] | (m[addr + 1] << 8)
+            except KeyError:
+                pass
         if self.diff_world:
             for i in range(size):
                 if (addr + i) not in self.mem:
@@ -539,6 +572,9 @@ class CPU:
     # --- aux -------------------------------------------------------------- #
     def read_aux(self, addr):
         addr &= M32
+        h = self.aux_hooks.get(addr)
+        if h and h[0] is not None:
+            return h[0](self) & M32
         if addr in self.aux:
             return self.aux[addr] & M32
         return self._det(0xAA000000 + addr, 4)
@@ -546,6 +582,10 @@ class CPU:
     def write_aux(self, addr, v):
         addr &= M32
         v &= M32
+        h = self.aux_hooks.get(addr)
+        if h and h[1] is not None:
+            h[1](self, v)
+            return
         if addr == 0x0a:
             self.aux[addr] = v & 0x0f07   # Z/N/C/V/E1/E2/H (биты 11:8, 2:0)
         elif addr == 0x12:                 # mulhi — зеркало mhi
@@ -567,6 +607,10 @@ class CPU:
             return self._instr[addr]
         for lo, hi, code in self._code_regions:
             if lo <= addr < hi:
+                done = self._instr.setdefault(('regions',), set())
+                if lo in done:
+                    return None
+                done.add(lo)
                 for a, size, mn, args, tgt in disasm(code, lo):
                     if mn.startswith('.'):
                         ext = _decode_ext(code[a - lo:a - lo + 8], a)
@@ -578,6 +622,10 @@ class CPU:
         return None
 
     def fetch(self, addr):
+        ins = self._fcache.get(addr)
+        if ins is not None:
+            return ins
+        raw_pc = addr
         addr = self._alias_addr(addr & M32)
         ins = self._decode(addr)
         if ins is None:
@@ -592,21 +640,30 @@ class CPU:
             ins = self._instr.get(addr)
         if ins is None:
             raise EmuError('не удалось декодировать инструкцию по 0x%08x' % addr)
+        self._fcache[raw_pc] = ins
         return ins
 
     # --- операнды --------------------------------------------------------- #
     def _op(self, tok):
-        """Токен операнда -> ('reg', n) | ('imm', v) | ('mem', [tokens])."""
-        r = regnum(tok)
+        """Токен операнда -> ('reg', n) | ('imm', v) | ('mem', (tokens…)). Разбор — чистая функция текста токена:
+        кэш на процесс (_OP_CACHE) снимает разбор строк с каждого шага."""
+        r = _OP_CACHE.get(tok)
         if r is not None:
-            return ('reg', r)
-        m = mem(tok)
-        if m is not None:
-            return ('mem', m)
-        v = imm(tok)
-        if v is not None:
-            return ('imm', v)
-        raise EmuError('непонятный операнд %r в %r' % (tok, self._cur.text if self._cur else '?'))
+            return r
+        n = regnum(tok)
+        if n is not None:
+            r = ('reg', n)
+        else:
+            m = mem(tok)
+            if m is not None:
+                r = ('mem', m)
+            else:
+                v = imm(tok)
+                if v is None:
+                    raise EmuError('непонятный операнд %r в %r' % (tok, self._cur.text if self._cur else '?'))
+                r = ('imm', v)
+        _OP_CACHE[tok] = r
+        return r
 
     def _val(self, tok):
         kind = self._op(tok)
@@ -621,10 +678,28 @@ class CPU:
         Масштабирование .as — на log2(размер данных) (и индекс, и смещение);
         .ab/.aw возвращают wb_reg/wb_delta (writeback выполняется в _ldst).
         """
+        cur = self._cur
+        key = (mtok, cur.base, cur.wb)
+        plan = _ADDR_PLAN.get(key)
+        if plan is None:
+            plan = _ADDR_PLAN[key] = self._addr_plan(mtok, cur)
+        base_reg, base_abs, index, off, scale, wb, wb_reg = plan
+        b = base_abs if base_abs is not None else self.read_reg(base_reg)
+        src2 = self.read_reg(index) if index is not None else off
+        if wb == 'ab':
+            addr = b                          # .ab: адрес = база без offset
+        elif index is not None:
+            addr = (b + (self.read_reg(index) << scale)) & M32
+        else:
+            addr = (b + (off << scale)) & M32
+        return addr, wb_reg, src2
+
+    def _addr_plan(self, mtok, cur):
+        """Статическая часть адресного операнда (зависит только от текста, размера и .wb) — кэш _ADDR_PLAN."""
         parts = [self._op(t) for t in mtok]
-        size = self._ldst_size(self._cur.base)
+        size = self._ldst_size(cur.base)
         sb = {1: 0, 2: 1, 4: 2}[size]              # log2 размера данных
-        scale = sb if self._cur.wb == 'as' else 0
+        scale = sb if cur.wb == 'as' else 0
 
         base_reg = None   # регистр-база ([reg, ...])
         base_abs = None   # абсолютная база ([imm, ...])
@@ -644,46 +719,56 @@ class CPU:
                     base_abs = v      # [imm, ...] — абсолютный адрес
                 else:
                     off = v           # [reg, imm] — смещение
-
-        if base_abs is not None:
-            b = base_abs
-        else:
-            b = self.read_reg(base_reg)
-
-        src2 = self.read_reg(index) if index is not None else off
-        if self._cur.wb == 'ab':
-            addr = b                          # .ab: адрес = база без offset
-        elif index is not None:
-            addr = (b + (self.read_reg(index) << scale)) & M32
-        else:
-            addr = (b + (off << scale)) & M32
-
-        wb_reg = base_reg if (base_reg is not None and self._cur.wb in ('ab', 'aw')) else None
-        return addr, wb_reg, src2
+        wb_reg = base_reg if (base_reg is not None and cur.wb in ('ab', 'aw')) else None
+        return base_reg, base_abs, index, off, scale, cur.wb, wb_reg
 
     # --- прерывания -------------------------------------------------------- #
     def request_irq(self, n):
         """Запросить прерывание по вектору n (0..31)."""
         self.irq_pending.add(n & 31)
 
-    def _irq_enabled(self):
-        s = self.aux.get(0x0a, 0)
-        return bool(s & 0x6)        # STATUS32 E1 (бит 1) или E2 (бит 2)
+    def irq_level(self, n):
+        return 2 if (self.aux.get(0x200, 0) >> n) & 1 else 1
 
-    def _deliver_irq(self):
-        """Доставить старшее ожидающее прерывание (если разрешено).
+    def irq_ready(self):
+        """Вектор, который будет доставлен сейчас (L2 раньше L1, внутри уровня — меньший номер), или None."""
+        req = self.irq_pending | self.irq_lines
+        if not req:
+            return None
+        s, lv = self.aux.get(0x0a, 0), self.aux.get(0x43, 0)
+        l2 = [n for n in req if self.irq_level(n) == 2]
+        if l2 and s & 4 and not lv & 2:
+            return min(l2)
+        l1 = [n for n in req if self.irq_level(n) == 1]
+        if l1 and s & 2 and not lv & 3:
+            return min(l1)
+        return None
 
-        Сохраняет PC→ilink1, STATUS32→status32_l1, запрещает вложенные
-        прерывания и прыгает к слоту вектора (там `j <обработчик>`).
-        """
-        if not self.irq_pending or not self._irq_enabled():
-            return
-        n = min(self.irq_pending)
+    def deliver_irq(self):
+        """Доставить прерывание, если есть готовое: вход уровня и переход к слоту вектора (там `j <обработчик>`).
+        Возвращает номер вектора или None."""
+        n = self.irq_ready()
+        if n is None:
+            return None
         self.irq_pending.discard(n)
-        self.regs[29] = self.pc & M32              # ilink1 = адрес возврата
-        self.aux[0x0b] = self.aux.get(0x0a, 0)     # status32_l1 = status32
-        self.aux[0x0a] = self.aux.get(0x0a, 0) & ~0x6   # очистить E1/E2
+        s = self.aux.get(0x0a, 0)
+        lvl = self.irq_level(n)
+        if lvl == 2:
+            self.regs[30] = self.pc & M32          # ilink2 = адрес возврата
+            self.aux[0x0c] = s                     # status32_l2
+            self.aux[0x0a] = s & ~0x6              # E1, E2 сняты
+        else:
+            self.regs[29] = self.pc & M32          # ilink1
+            self.aux[0x0b] = s                     # status32_l1
+            self.aux[0x0a] = s & ~0x2              # E1 снят
+        self.aux[0x43] = self.aux.get(0x43, 0) | lvl
+        if self.sleeping:
+            self.sleeping = self.halted = False
+        self.trace.append(('irq', n, lvl))
         self.pc = (self.vector_base + n * 8) & M32
+        return n
+
+    _deliver_irq = deliver_irq                     # прежнее имя
 
     # --- главный цикл ----------------------------------------------------- #
     def step(self):
@@ -704,8 +789,10 @@ class CPU:
         Переход на LP_END из середины цикла — выход без декремента.
         """
         if self.halted:
-            return
-        self._deliver_irq()
+            if not (self.sleeping and self.irq_auto and self.deliver_irq() is not None):
+                return
+        elif self.irq_auto and (self.irq_pending or self.irq_lines):
+            self.deliver_irq()
         ins = self.fetch(self.pc)
         self._cur = ins
         lp_end = self.aux.get(0x03, 0)
@@ -755,7 +842,8 @@ class CPU:
             self.insns += 1
             sequential = True
         if sequential:
-            self._loop_end_check()
+            if lp_end and self.pc == lp_end:     # _loop_end_check без вызова (горячий путь)
+                self._loop_end_check()
         elif at_end and not (isinstance(tgt, tuple) and tgt[0] == 'call_d') and not (tgt is not None and not isinstance(tgt, tuple) and ins.delay):
             self._lp_decrement()                 # взятый переход на последнем месте: только декремент
         self._cur = None
@@ -787,7 +875,8 @@ class CPU:
             self.pc = start & M32
         limit = max_steps or self._max_steps
         for _ in range(limit):
-            if self.halted:
+            # спящее ядро ждёт прерывания: внешняя модель времени (irq_auto = False) доставит его на следующем шаге
+            if self.halted and not (self.sleeping and (not self.irq_auto or self.irq_ready() is not None)):
                 break
             if stop is not None and self.pc == (stop & M32):
                 break
@@ -827,7 +916,16 @@ class CPU:
 
     # --- семантика -------------------------------------------------------- #
     def _execute(self, ins):
-        """Выполнить ins. Вернуть адрес перехода, либо None (последовательно)."""
+        """Выполнить ins. Вернуть адрес перехода, либо None (последовательно). Разбор мнемоники — один раз на
+        инструкцию (_resolve, кэш в ins.h); обработчики вызывают методы через экземпляр (переопределения подклассов
+        действуют)."""
+        h = ins.h
+        if h is None:
+            h = ins.h = self._resolve(ins)
+        return h(self, ins)
+
+    def _resolve(self, ins):
+        """Обработчик f(cpu, ins) по мнемонике — та же цепочка решений, что раньше выполнялась на каждом шаге."""
         name = ins.base
         if name.endswith('_s'):
             name = name[:-2]        # короткие 16-битные формы — та же семантика
@@ -836,61 +934,85 @@ class CPU:
         if name[:1] in ('b', 'j', 'l') and name != 'ld' and name != 'lr':
             op, cc = self._split_branch(name)
             if op == 'b' or op == 'bl':
-                return self._b(ins, link=(op == 'bl'), cc=cc)
+                link = op == 'bl'
+                return lambda c, i: c._b(i, link=link, cc=cc)
             if op == 'br':
-                return self._br(ins, cc)
+                return lambda c, i: c._br(i, cc)
             if op == 'bbit0' or op == 'bbit1':
-                return self._bbit(ins, want=(op == 'bbit1'))
+                want = op == 'bbit1'
+                return lambda c, i: c._bbit(i, want=want)
             if op == 'j' or op == 'jl':
-                return self._j(ins, link=(op == 'jl'), cc=cc)
+                link = op == 'jl'
+                return lambda c, i: c._j(i, link=link, cc=cc)
             if op == 'lp':
-                return self._lp(ins, cc)
+                return lambda c, i: c._lp(i, cc)
 
         # загрузка/сохранение ------------------------------------------
         if name in ('ld', 'ldb', 'ldh', 'ldw', 'st', 'stb', 'sth', 'stw'):
-            self._ldst(ins, store=name.startswith('st'))
-            return None
+            store = name.startswith('st')
+
+            def ldst(c, i):
+                c._ldst(i, store=store)
+            return ldst
         if name in ('push', 'pop'):
-            self._pushpop(ins, pop=(name == 'pop'))
-            return None
+            pop = name == 'pop'
+
+            def pushpop(c, i):
+                c._pushpop(i, pop=pop)
+            return pushpop
 
         # aux -----------------------------------------------------------
         if name == 'lr':
-            self._lr(ins)
-            return None
+            def lr(c, i):
+                c._lr(i)
+            return lr
         if name == 'sr':
-            self._sr(ins)
-            return None
+            def sr(c, i):
+                c._sr(i)
+            return sr
 
         # прочие --------------------------------------------------------
         if name == 'mov':
-            self._mov(ins)
-            return None
+            def mov(c, i):
+                c._mov(i)
+            return mov
         if name == 'flag':
-            self._flag(ins)
-            return None
+            def flag(c, i):
+                c._flag(i)
+            return flag
         if name == 'nop':
-            return None
+            return lambda c, i: None
         if name == 'sleep':
-            self.trace.append(('sleep',))
-            self.halted = True
-            return None
+            def sleep(c, i):
+                c.trace.append(('sleep',))
+                c.halted = c.sleeping = True
+            return sleep
         if name in ('swi', 'brk', 'trap', 'unimp'):
-            raise EmuError('исключение/ловушка %r по 0x%08x' % (name, ins.addr))
+            def trap(c, i):
+                raise EmuError('исключение/ловушка %r по 0x%08x' % (name, i.addr))
+            return trap
         if ins.mn.startswith('.'):
-            # данные (таблицы) в потоке кода — исполнять нельзя
-            raise EmuError('данные %r по 0x%08x (исполнение таблицы?)' % (ins.mn, ins.addr))
+            def data(c, i):
+                # данные (таблицы) в потоке кода — исполнять нельзя
+                raise EmuError('данные %r по 0x%08x (исполнение таблицы?)' % (i.mn, i.addr))
+            return data
         if name == 'sync':
-            self.trace.append(('sync',))
-            return None
+            def sync(c, i):
+                c.trace.append(('sync',))
+            return sync
         if name == 'rtie':
-            raise EmuError('rtie не поддерживается (в Sparrow не используется)')
+            def rtie(c, i):
+                raise EmuError('rtie не поддерживается (в Sparrow не используется)')
+            return rtie
 
-        h = self._alu.get(name)
-        if h is not None:
-            h(self, ins)
-            return None
-        raise EmuError('неизвестная инструкция %r по 0x%08x' % (ins.mn, ins.addr))
+        if name in self._alu:
+            def alu(c, i):
+                c._alu[name](c, i)
+            return alu
+
+        def unknown(c, i):
+            raise EmuError('неизвестная инструкция %r по 0x%08x' % (i.mn, i.addr))
+        return unknown
 
     # --- ветвления --------------------------------------------------------- #
     def _link_addr(self, ins):
@@ -979,8 +1101,12 @@ class CPU:
                 self.trace.append(('call', tgt, d[1] if len(d) > 1 else None))
                 return ('tail_stub', d[1], d[2] if len(d) > 2 else None)
         if ins.setf:
-            # j.f [ilink] — возврат из прерывания: восстановить STATUS32
-            self.aux[0x0a] = self.aux.get(0x0b, 0) & 0x0f07
+            # j.f [ilink1/2] — возврат из прерывания: STATUS32 из STATUS32_L1/_L2, уровень снят
+            r = (m[0] if m is not None else op).strip('[]')
+            lvl = 2 if r in ('ilink2', 'r30') else 1
+            self.aux[0x0a] = self.aux.get(0x0b if lvl == 1 else 0x0c, 0) & 0x0f07
+            self.aux[0x43] = self.aux.get(0x43, 0) & ~lvl
+            self.trace.append(('rti', lvl))
         return tgt
 
     def _lp(self, ins, cc):
@@ -1007,6 +1133,7 @@ class CPU:
             if wb_reg is not None:
                 self.write_reg(wb_reg, (old_base + wb_delta) & M32)
         else:
+            self.last_ld = addr      # адрес загрузки — для модели стоимости (tests/unit/costmodel.py)
             v = self.read(addr, size)
             if ins.x and size < 4:
                 v = sext(v, size * 8)
@@ -1022,6 +1149,7 @@ class CPU:
         if rn is None:
             raise EmuError('push/pop без регистра: %r' % ins.text)
         if pop:
+            self.last_ld = self.regs[sp]
             v = self.read(self.regs[sp], 4)
             self.write_reg(rn, v)
             self.regs[sp] = (self.regs[sp] + 4) & M32
@@ -1082,6 +1210,8 @@ class CPU:
 
     # --- арифметика -------------------------------------------------------- #
     def _cond_ok(self, ins):
+        if not ins.cc:                       # без условия — словарь флагов не нужен (горячий путь)
+            return True
         return ins.cond(self.flags)
 
     def _3op(self, ins):
@@ -1101,7 +1231,7 @@ class CPU:
         if not self._cond_ok(ins):
             return
         dn, b, c = self._3op(ins)
-        res, fl = fn(b, c, self.flags['C'])
+        res, fl = fn(b, c, 1 if self.aux.get(0x0a, 0) & _C else 0)
         if dn is not None:
             self.write_reg(dn, res)
         if ins.setf:
@@ -1717,6 +1847,64 @@ def _irq_selftest():
     return ok
 
 
+def _irq_levels_selftest():
+    """Уровни ARC600: L1 по E1, L2 по E2 вытесняет L1, возврат j.f [ilink1/2] со своим STATUS32, AUX_IRQ_LV12,
+    пробуждение sleep. Линии-уровни держит и снимает «железо» (здесь — тест)."""
+    code = _assemble(
+        'j _reset\n'
+        '.org 24\n'              # вектор 3 — L1
+        'j _l1\n'
+        '.org 56\n'              # вектор 7 — L2
+        'j _l2\n'
+        '_reset:\n'
+        'mov r0,0x80\n'
+        'sr r0,[0x200]\n'        # вектор 7 — уровень 2
+        'flag 6\n'               # E1 | E2
+        'main: add r5,r5,1\n'
+        'sleep\n'
+        'after: add r6,r6,1\n'
+        '1: b 1b\n'
+        '_l1: add r1,r1,1\n'
+        'l1spin: brlt r1,100,_l1\n'
+        'j.f [ilink1]\n'
+        '_l2: add r2,r2,1\n'
+        'j.f [ilink2]\n')
+    c = CPU(seed=1)
+    c.load(0, code, is_code=True)
+    for r in (1, 2, 5, 6):
+        c.regs[r] = 0
+    ok = True
+    c.pc = 0
+    for _ in range(6):                         # до sleep: E1|E2, уровень 7 = L2
+        c.step()
+    ok = ok and c.sleeping and c.halted and c.read_aux(0x200) == 0x80
+    c.step()
+    ok = ok and c.halted                       # без прерывания спит
+    c.irq_lines.add(3)                         # L1: будит
+    c.step()
+    ok = ok and not c.sleeping and c.read_aux(0x43) == 1 and c.read_aux(0x0a) & 6 == 4
+    for _ in range(5):
+        c.step()
+    c.irq_lines.add(7)                         # L2 во время L1 — вытесняет
+    c.step()
+    ok = ok and c.read_aux(0x43) == 3 and c.read_aux(0x0a) & 6 == 0 and c.regs[2] == 0
+    c.irq_lines.discard(7)
+    c.step()                                   # j _l2 → add r2
+    c.step()
+    c.step()                                   # j.f [ilink2]
+    ok = ok and c.regs[2] == 1 and c.read_aux(0x43) == 1 and c.read_aux(0x0a) & 6 == 4
+    c.irq_lines.discard(3)
+    for _ in range(400):
+        c.step()
+        if c.read_aux(0x43) == 0:
+            break
+    ok = ok and c.read_aux(0x43) == 0 and c.read_aux(0x0a) & 6 == 6 and c.regs[1] == 100
+    c.step()
+    ok = ok and c.regs[6] == 1                 # продолжение после sleep
+    print('irq levels: LV12/E1/E2/вытеснение/sleep', 'OK' if ok else 'FAILED')
+    return ok
+
+
 def _harness_selftest():
     """Интерфейс для пофункциональной сверки: перехват вызовов, алиас ICCM,
     детерминизм по номеру чтения, полнота трассы."""
@@ -1761,7 +1949,7 @@ if __name__ == '__main__':
     print('selftest:', 'OK' if ok else 'FAILED')
     ok2 = _system_selftest()
     print('system selftest:', 'OK' if ok2 else 'FAILED')
-    ok3 = _irq_selftest()
+    ok3 = _irq_selftest() and _irq_levels_selftest()
     print('irq selftest:', 'OK' if ok3 else 'FAILED')
     ok4 = _harness_selftest()
     print('harness selftest:', 'OK' if ok4 else 'FAILED')

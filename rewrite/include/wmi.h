@@ -446,7 +446,7 @@ struct wmi_rf_pwr_on_delay_cmd {
 WMI_SIZE(struct wmi_rf_pwr_on_delay_cmd, 4);
 
 /* WMI_SET_HIGH_POWER_TABLE_PARAMS_CMDID (0x85e): vendor копирует его кусками полей
- * (rf_cfg_load_800d04). */
+ * (rf_cfg_load_high_power_table). */
 struct wmi_set_high_power_table_params_cmd {
     u8  tx_dtype_temp[3];                      /* 0x00 */
     u8  reserved0;                             /* 0x03 */
@@ -861,6 +861,18 @@ struct wmi_cfg_rx_chain_done_event {
     u32 status;                                /* 0x04: 1 — SUCCESS */
 };
 WMI_SIZE(struct wmi_cfg_rx_chain_done_event, 8);
+
+/* WMI_SPARRAW_TEMP_ALERT_EVENTID (0x1f13, SparRAW): уровень температуры сменился (fw/temp_service.c
+ * temp_monitor; пороги с гистерезисом — там же). Драйвер: журнал, при CRITICAL — останов интерфейса. */
+#define WMI_SPARRAW_TEMP_ALERT_EVENTID 0x1f13u
+enum { TEMP_LEVEL_NORMAL = 0, TEMP_LEVEL_HIGH = 1, TEMP_LEVEL_CRITICAL = 2 };
+struct wmi_sparraw_temp_alert_event {
+    u8  level;                                 /* 0x00: TEMP_LEVEL_* */
+    u8  reserved[3];                           /* 0x01 */
+    u32 bb_t1000;                              /* 0x04: BB, м°C */
+    u32 rf_t1000;                              /* 0x08: активный RF, м°C (0xffffffff — нет) */
+};
+WMI_SIZE(struct wmi_sparraw_temp_alert_event, 0xc);
 
 /* WMI_TEMP_SENSE_DONE_EVENTID (0x180e). 6.2: 36 Б — BB и 8 RF (в драйвере одно RF). */
 struct wmi_temp_sense_done_event {

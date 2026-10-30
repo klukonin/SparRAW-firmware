@@ -131,7 +131,7 @@ void fw_init_link_defaults(void)
 /* 9. boot__load_from_flash */
 /* boot_load_from_flash — в flash.c (портирована). */
 /* hwd_spi_read, hwd_spi_poll_done, hwd_spi_release_lock — в spi.c (портированы). */
-/* boot_save_mac_address, hwd_abif_uses_rgf_88af80 — в flash.c (портированы). */
+/* boot_save_mac_address, hwd_abif_set_ppm — в flash.c (портированы). */
 /* flash_cfg_set_* — в flash.c (портированы). */
 /* *all_rows — в car.c (портированы). */
 /* hwd_abif_rx_table_config_vga_bias — в car.c. */
@@ -147,8 +147,8 @@ void fw_init_link_defaults(void)
 /* pcie_dbi_set_addr — в pcie.c. */
 /* pcie_dbi_set_data — в pcie.c. */
 /* pcie_dbi_start_cmd — в pcie.c. */
-/* pcie_ack_8e026c — в pcie.c. */
-/* pcie_wait_882644_ready — в pcie.c. */
+/* pcie_dbi_wait_ready_and_ack — в pcie.c. */
+/* pcie_dbi_wait_ready — в pcie.c. */
 /* pcie_dbi_ack_done — в pcie.c. */
 /* pcie_pm_host_config — в pcie.c. */
 /* hwd_pcie_is_l1_state, config_lnkctl, l1_pm_sub_ctl_get, lnkctl_set — в pcie.c. */
@@ -191,11 +191,11 @@ void led_scheme_init(u32 a)
 /* u_schd_arm_timer — в sched.c. */
 /* u_schd_insert_timer — в sched.c. */
 /* u_schd_alloc_task — в sched.c. */
-/* u_schd_fill_task_b — в sched.c. */
+/* u_schd_fill_task — в sched.c. */
 /* u_schd_timer_set_fields — в sched.c. */
-/* list_find_entry — в sched.c. */
-/* list_find_entry_c — в sched.c. */
-/* list_find_entry_b — в sched.c. */
+/* u_schd_tq_insert_sorted — в sched.c. */
+/* llist_prepend — в sched.c. */
+/* llist_insert_after — в sched.c. */
 /* u_schd_schedule — в sched.c (портирована). */
 
 /* 16. hwd_phy_init — в phy.c (портирована). */
@@ -210,9 +210,9 @@ void led_scheme_init(u32 a)
    hwd_mac_sxd_rx_mode_entry, sxd_mode_neutral — в mac.c (портированы). */
 /* xpm_accumulate_bits — в rf.c. */
 /* marlon_r_if_class_init_board_file_interface — в brd_if.c. */
-/* ut_hw_modes_chain_3, rf_configure_chain — в rf.c; dvs_rfca_cmd_enable — в car.c. */
+/* hw_modes_enable_rf_chain, rf_configure_chain — в rf.c; dvs_rfca_cmd_enable — в car.c. */
 /* rfc_write_field_434_2ec33 — в rf.c. */
-/* rfc_write_packed_fields, rfc_field_write, rfc_write_chain_field, hwd_rfc_write_core_fw_mode1 — в rf.c. */
+/* rfc_write_packed_fields, rfc_field_write, rfc_write_chain_field, hwd_rfc_apply_gain_tables — в rf.c. */
 /* rf_identify_type, rf_configure_role_power — в rf.c (портированы). */
 /* rf_power_off (0x8e2fa8): журнал + SDP-порт 4 (пин 12, питание/сброс RF) = 0 через
  * sdp_drive_pin_timed. Вызывающие vendor кладут в r0 объект RF (0x8042c8), но функция его
@@ -269,7 +269,7 @@ void fw_boot_log_versions(void)
 
 /* --- цели тонких обёрток (реализуются по мере портирования) --- */
 /* l2mgr_init_frame_pool — в pool.c. */
-/* ba_sm_prepare_ba_td — в pool.c. */
+/* mbox_ring_init_entries — в pool.c. */
 /* operational_if__mbox_init (0x8d9f00): инициализация operational_mbox (include/mbox.h),
  * описатели колец — RGF 0x8802bc/0x8802cc (mbox_ctl драйвера). */
 struct operational_mbox *operational_if_mbox_init(mbox_evt_send_fn handler)
@@ -324,17 +324,17 @@ void hw_ch_enable_once(u32 ch, u32 on, u32 period)
     /* period == 0: пустая 0x8da78c(ch, 0) */
 }
 /* mem_pool_free_locked_evt — в pool.c. */
-/* field_set_0x19_8caf4c — в power.c. */
-/* field_set_0x00_8d8db8, mem_pool_get_field14 — в pool.c. */
+/* u_schd_task_clear_armed — в power.c. */
+/* u_schd_hw_timer_set_and_start, rx_dma_ring_is_pended — в pool.c. */
 /* u_schd_hw_timer_load_start — в sched.c. */
 /* power_start_two_timers — в power.c. */
-/* timer_start — в sched.c. */
+/* arc_timer_start — в sched.c. */
 /* irq_set_level — в irq.c. */
 /* u_schd_hw_timer_a_start, u_schd_timer_irq_pending — в sched.c (портированы). */
-/* user_icr_timer_bit — в sched.c. */
+/* user_icr_timer_irq_pending — в sched.c. */
 /* gpio_reset_config, hw_personality_detect, hw_personality_read_strap — в hw_init.c (портированы). */
-/* sdp_gpio_personality_step, SDP_hwd_sdp_is_defined_sdp — в hw_init.c. */
-/* SDP_sdp_init_2 — в hw_init.c. */
+/* sdp_port_personality_enabled, sdp_check_pin_index — в hw_init.c. */
+/* sdp_port_init — в hw_init.c. */
 /* gpio_set_pin_func_and_dump — в hw_init.c. */
 /* sdp_set_defined_bit — в hw_init.c. */
 /* hwd_sdp_drive_value — в hw_init.c. */
@@ -344,39 +344,39 @@ void hw_ch_enable_once(u32 ch, u32 on, u32 period)
 /* regd_is_country_not_jp — в power.c. */
 /* regd_is_unset_or_jp — в power.c. */
 /* regd_is_country_us — в power.c. */
-/* phy_load_88416c_table — в phy.c. */
-/* rf_set_889494_low_nibble — в rf.c. */
+/* phy_load_tx_fir_coef_table — в phy.c. */
+/* rf_set_regd_ctrl — в rf.c. */
 /* hwd_rfc_tx_power_cfg — в rf.c. */
 /* u_schd_timer_irq_pending — в sched.c. */
-/* u_schd_expire_timers_thunk — в sched.c; isr_step_22f70_80044c — в isr.c. */
-/* u_schd_expire_timers, u_schd_pop_expired, time_cmp, u_schd_deadline_less — в sched.c. */
+/* u_schd_expire_timers_thunk — в sched.c; rf_kill_mask_irq_and_defer_task — в isr.c. */
+/* u_schd_expire_timers, u_schd_pop_expired, time_cmp, u_schd_head_deadline — в sched.c. */
 /* rf_kill_mask_irq — в isr.c. */
 /* rf_kill_irq_task — в isr.c. */
 /* basic_sm_handle_event — в power.c. */
 /* basic_sm_do_transition — в power.c. */
-/* mac_toggle_880288_b1 — в mac.c. */
+/* mac_rf_kill_pin_toggle — в mac.c. */
 /* rf_kill_ack_irq — в isr.c. */
 /* rf_kill_unmask_irq — в isr.c. */
-/* gpio_pulse_880b60_18/19 — в hw_init.c. */
+/* operational_mbox_mask_irq_and_defer_drain/19 — в hw_init.c. */
 /* uc_evt_mask_irq_and_defer_drain — в isr.c. */
-/* isr_step_22f70_80044c — в isr.c. */
+/* rf_kill_mask_irq_and_defer_task — в isr.c. */
 /* host_irq_mask_awake_tsf — в isr.c. */
 /* mac_read_tsf64 — в mac.c (портирована). */
 /* hwd_dma_read_status/get_881c80/op/ack_881c44/bad_cause — в dma.c (портированы). */
 /* tx_list_remove, vring_list_find, vring_schd_move_to_ready — в vring.c (портированы). */
 /* iter_init, list_has_items, iter_next — в vring.c. */
-/* rm_ch_switch_sm_notify_ch_switch_done — в vring.c. */
+/* vring_schd_pring_by_type — в vring.c. */
 /* vring_schd_bind_if_free — в vring.c. */
 /* sm_pring_bind_vring — в vring.c (структура). */
-/* sm_pring_notify_step — в vring.c. */
+/* sm_pring_accum_time — в vring.c. */
 /* vring_schd_stop_vring — в vring.c. */
-/* sm_pring_state_step — в vring.c. */
-/* vring_reg_write_locked_28 — в vring.c. */
-/* vring_reg_write_locked_3c — в vring.c. */
+/* sm_pring_begin_stop — в vring.c. */
+/* vring_hw_clear_dma_irq — в vring.c. */
+/* vring_hw_unmask_dma_irq — в vring.c. */
 /* macq_hw_disable_queue_fw — в vring.c. */
-/* vring_schd_is_vring_ready, vring_hw_set_ready_bit — в vring.c. */
-/* list_find_entry_d — в sched.c. */
-/* rfc_read_or_dead — в rf.c. */
+/* vring_schd_is_pring_blocked, vring_hw_set_ready_bit — в vring.c. */
+/* llist_append — в sched.c. */
+/* rfc_pulse_probe_bit — в rf.c. */
 /* hwd_rfc_write_verify — в rf.c. */
 /* check_rf_boardfile — в rf.c. */
 /* rf_boardfile_read_platform_info — в rf.c. */
@@ -386,7 +386,7 @@ void hw_ch_enable_once(u32 ch, u32 on, u32 period)
 /* boot__init_named_object (0x8f2044): имя с позиции off строки name — длина n до нуля,
  * n + 1 байт (с нулём) в dst (0x8f2070 → memcpy 0x8c0380); возврат n (extw). obj не
  * используется (r0 только сохраняется). */
-u32 boot_init_named_object(void *obj, void *name, u32 off, void *dst)
+u32 boot_copy_name_str(void *obj, void *name, u32 off, void *dst)
 {
     (void)obj;
     const u8 *src = (const u8 *)name + off;
@@ -399,42 +399,42 @@ u32 boot_init_named_object(void *obj, void *name, u32 off, void *dst)
 /* abif_power_up_analog — в car.c (портирована). */
 /* sdp_drive_pin_timed — в hw_init.c. */
 /* bootloader_version_log — в log.c. */
-/* mac_read_880a2c_38 — в mac.c. */
+/* mac_read_fw_version — в mac.c. */
 /* fw_version_log, fw_version_log_date, fw_image_info_set_flavor — в log.c. */
-/* radio_mgr_init_list, obj_vt803210_ctor — в radio_mgr.c. */
-/* field_set_0x08_8d8eb4 — в radio_mgr.c. */
+/* radio_mgr_init_list, rm_main_sm_init — в radio_mgr.c. */
+/* rm_ch_switch_sm_init — в radio_mgr.c. */
 /* arc_action_point_arm — в hw_init.c. */
 /* tx_api_free_memory — в pool.c. */
-/* stream_mgr_check_vring — в pool.c. */
+/* mem_pool_free_checked — в pool.c. */
 /* fw_divmod_unsigned — в pool.c. */
-/* tx_api_mask_from_queue — в dma.c. */
-/* hwd_dma_uses_rgf_881c00_8d0b14 — в dma.c. */
-/* mem_pool_get_field14 — в pool.c. */
+/* rx_dma_ring_retrigger_irq — в dma.c. */
+/* hwd_dma_trigger_ring_irq — в dma.c. */
+/* rx_dma_ring_is_pended — в pool.c. */
 
 /* power_halt_seq — в power.c. */
 /* hwd_abif_caf_pwdn_mode — в car.c. */
 /* rf_get_connected_mask — в rf.c. */
-/* ut_hw_modes_chain_3 — в rf.c. */
+/* hw_modes_enable_rf_chain — в rf.c. */
 /* rf_configure_chain — в rf.c. */
-/* rf_cfg_get_rf_mask_45e — в rf.c. */
+/* rf_obj_get_rf_mask — в rf.c. */
 /* rf_configure_role_power — в rf.c (0x8e2e88). */
 /* marlon_r_if_class_config_channel — в rf.c. */
-/* field_set_0x00_8e5dfc — в power.c. */
+/* bit_iter_init — в power.c. */
 /* bitmap_alloc_bit — в power.c. */
 /* bit_iter_has_more — в power.c. */
 /* lo_power_restore_rfc_field — в power.c. */
-/* rfc_write_field_484 — в rf.c. */
+/* rfc_write_lo_power_fields — в rf.c. */
 /* fw2uc_signal_wake_and_wait_ack — в power.c. */
-/* evt_ring_push_1c — в pool.c. */
-/* calib_obj4_reset_d4 — в power.c. */
+/* evt_ring_push — в pool.c. */
+/* calib_silent_rssi_reset — в power.c. */
 /* calib_engine_get_by_index — в power.c. */
 /* rfca_touch_rf_module — в car.c. */
 
 /* hwd_pcie_set_low_power — в pcie.c. */
 /* pcie_lp_set_byte_field — в pcie.c. */
 /* pcie_mask_l1_enter_irq — в pcie.c. */
-/* hwd_pcie_get_88b0c0_state4 — в pcie.c. */
-/* hwd_pcie_get_882b80 — в pcie.c. */
+/* hwd_pcie_get_l1ss_state — в pcie.c. */
+/* hwd_pcie_get_perst_status — в pcie.c. */
 /* fw2uc_signal_halt_and_wait_ack — в power.c. */
 /* hwd_pcie_ltssm_is_l1_idle — в pcie.c. */
 /* hwd_pcie_get_ltssm_state — в pcie.c (0x8d13fc). */
@@ -478,17 +478,17 @@ __attribute__((section(".textlate"))) void rf_restore_if_needed(u32 a)
     hwd_abif_caf_pwdn_mode(0);
     arc_zol_nops2(0x27100);                 /* vendor 0x8e2b00: lp 160000 × 2 nop_s */
 
-    ut_hw_modes_chain_3(rf_get_connected_mask(&rf_obj));
+    hw_modes_enable_rf_chain(rf_get_connected_mask(&rf_obj));
     rf_configure_chain(0, 0);
-    ut_hw_modes_chain_3(rf_cfg_get_rf_mask_45e(&rf_obj));
+    hw_modes_enable_rf_chain(rf_obj_get_rf_mask(&rf_obj));
     rf_configure_role_power(&rf_obj);
     marlon_r_if_class_config_channel(&rf_obj, radio_get_channel(&rf_obj), 1);
 
-    field_set_0x00_8e5dfc(&it, rf_cfg_get_rf_mask_45e(&rf_obj));
+    bit_iter_init(&it, rf_obj_get_rf_mask(&rf_obj));
     while (bit_iter_has_more(&it)) {
         u32 bit = bitmap_alloc_bit(&it);
         if (bit < 8) {
-            calib_obj4_reset_d4();
+            calib_silent_rssi_reset();
             rfca_touch_rf_module(0, bit, 1);
         }
     }
@@ -551,7 +551,7 @@ u32 rf_get_active_index(void)
     while (!(lo & 0x40000000u)) { lo <<= 1; norm++; }
     return (u8)(0x1e - norm);
 }
-__attribute__((section(".textlate"))) void hwd_args_to_regs(u32 a, u32 b, u32 c, u32 d)
+__attribute__((section(".textlate"))) void hwd_rfc_write_core_fw_mask(u32 a, u32 b, u32 c, u32 d)
 {
     u8 buf = 0;
     hwd_abif_dvs_rfca_cmd_enable(a, &buf);
@@ -594,7 +594,6 @@ __attribute__((section(".textlate"))) u32 temp_get_active_rf(u32 a)
 }
 /* calib__log_if_nonzero (0x8d6b20) — в calib.c. */
 
-s64 fw_ashr64(s64 v, u32 n) { return v >> n; }
 /* schedule_scheme_builder__build_allocations (0x8c68a0): лог + remove_app_ie +
  * add_bcon + reset_alloc_list + [a+0xc]=0. */
 __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocations(struct sched_scheme *a)
@@ -680,7 +679,7 @@ __attribute__((section(".textlate"))) void add_bcon(struct mid *obj)
         r18 = &bcon_info_static;          /* статическая память */
     }
 
-    bcon_bits_set16_s7_w3(r13->bi_ctrl, r13->abft_len & 7);
+    bcon_bi_ctrl_set_abft_len(r13->bi_ctrl, r13->abft_len & 7);
     r13->bi_ctrl[0] &= ~(1u << 1);
     memcpy_fw(r18->bi_ctrl, r13->bi_ctrl, 6);
     /* PCP Association Ready (флаг готовности шаблона, байт 5 б4–5 → B43 в эфире): 9.3.4.2 — «reserved when transmitted
@@ -694,8 +693,8 @@ __attribute__((section(".textlate"))) void add_bcon(struct mid *obj)
 
     /* vendor передаёт колбэки числом в младшем отображении ICCM (0x36fec = pcp_bcon_wb,
      * 0x470c = L_8c470c); у нас там чужой код — только полные адреса наших портов
-     * (было: PCP_START → исключение в fwq_tx_queue_step, ilink2 0x471c, стенд 2026-10-19). */
-    if (TX_API_send_dband_bcon(payload, (u16)len, pcp_bcon_wb, bcon_post_send_cb, r18, 0) == 0)
+     * (было: PCP_START → исключение в fwq_tx_send_pending, ilink2 0x471c, стенд 2026-10-19). */
+    if (tx_api_send_dband_bcon(payload, (u16)len, pcp_bcon_wb, bcon_post_send_cb, r18, 0) == 0)
         fw_log_emit0(0x1c, 0x101717c);   /* "send_dband_bcon() failure" */
 }
 
@@ -726,12 +725,12 @@ __attribute__((section(".textlate"))) void bcon_post_send_cb(struct bcon_post_in
 
 /* Побайтовая вставка bit-поля: байт (bf__set_field_byte_fw) и LE-полуслово
  * (bf__set_field_u16_le). Адрес может быть нечётным — работаем побайтово. */
-static inline void bf8(u8 *p, u32 start, u32 width, u32 v)
+static inline void bits_set8(u8 *p, u32 start, u32 width, u32 v)
 {
     u32 m = ((1u << width) - 1) << start;
     *p = (u8)((*p & ~m) | ((v << start) & m));
 }
-static inline void bf16le(u8 *p, u32 start, u32 width, u32 v)
+static inline void bits_set16_le(u8 *p, u32 start, u32 width, u32 v)
 {
     u32 w = (u32)p[0] | ((u32)p[1] << 8);
     u32 m = ((1u << width) - 1) << start;
@@ -758,13 +757,13 @@ __attribute__((section(".textlate"))) void add_discovery_bcon(struct mid *mid_e,
     if (payload == 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1537);
     bi[0] |= 1u << 1;
-    bf8(&bi[5], 4, 2, 0);
-    bcon_bits_set16_s7_w3(bi, 1);
-    bf8(&bi[3], 5, 3, 1);
-    bf16le(&bi[1], 7, 6, 0);
+    bits_set8(&bi[5], 4, 2, 0);
+    bcon_bi_ctrl_set_abft_len(bi, 1);
+    bits_set8(&bi[3], 5, 3, 1);
+    bits_set16_le(&bi[1], 7, 6, 0);
     if (scan_type == 3) {
         bi[0] |= 1u;
-        bcon_bits_set16_s7_w3(bi, 3);
+        bcon_bi_ctrl_set_abft_len(bi, 3);
         bi_mode = 3;
         mac = mid_e->disc.scan->direct_mac;
     }
@@ -785,7 +784,7 @@ __attribute__((section(".textlate"))) void add_discovery_bcon(struct mid *mid_e,
     info->mac = mac;
     info->cfg = 0;
     info->bi_mode = bi_mode;
-    if (TX_API_send_dband_bcon(payload, (u16)len, 0, bcon_post_send_cb, info, 1) == 0)
+    if (tx_api_send_dband_bcon(payload, (u16)len, 0, bcon_post_send_cb, info, 1) == 0)
         fw_log_emit0(0x1c, 0x10171d8);   /* "send_dband_bcon() failure" */
 }
 
@@ -795,7 +794,7 @@ __attribute__((section(".textlate"))) void add_discovery_bcon(struct mid *mid_e,
 __attribute__((section(".textlate"))) void bss_bi_ctrl_pcp_ready_set(struct mid_bss *mid, u32 security_en)
 {
     fw_log_emit2(0x2b, 0x100c3dc, security_en, dashboard.pcp_security_en);
-    bf8(&mid->bi_ctrl[5], 4, 2, (security_en == 1) ? 1u : 0u);
+    bits_set8(&mid->bi_ctrl[5], 4, 2, (security_en == 1) ? 1u : 0u);
 }
 
 /* bcon_tx_build_step (0x8c4c20, 142 Б): собрать frame-control/PCP-поля бикона
@@ -810,8 +809,8 @@ __attribute__((section(".textlate"))) void bcon_tx_build_step(struct mid_bss *mi
     /* байт obj+0x10b: bits_set8_s2_w4(0) + bits_set8_s0_w2(0) → очистить [0..5] */
     m[4] &= ~0x3fu;
 
-    /* u16@obj+0x107: bcon_bits_set16_s7_w3(1) → бит 7 = 1 (биты 8..9 = 0) */
-    bcon_bits_set16_s7_w3(m, 1);
+    /* u16@obj+0x107: bcon_bi_ctrl_set_abft_len(1) → бит 7 = 1 (биты 8..9 = 0) */
+    bcon_bi_ctrl_set_abft_len(m, 1);
 
     /* байт obj+0x107: очистить биты 6 и 0 */
     b = m[0];
@@ -842,26 +841,26 @@ __attribute__((section(".textlate"))) void bcon_tx_build_step(struct mid_bss *mi
     m[1] |= (1u << 6);
 
     /* u16@obj+0x10b: bits_set16_s6_w6(0) → очистить биты [6..11] */
-    bf16le(m + 4, 6, 6, 0);
+    bits_set16_le(m + 4, 6, 6, 0);
 
     /* байт obj+0x10a, биты [5..7] → bi_cfg.n_bi_abft (bcn_tx_init_bi_cfg: s[3] >> 5) → поле N BIs A-BFT
      * (include/abft_cfg.h: период A-BFT) */
-    bf8(m + 3, 5, 3, ABFT_N_BI_ABFT);
+    bits_set8(m + 3, 5, 3, ABFT_N_BI_ABFT);
 
     /* u16@obj+0x108: bcon_bits_set16_s7_w6(0) → очистить биты [7..12] */
-    bf16le(m + 1, 7, 6, 0);
+    bits_set16_le(m + 1, 7, 6, 0);
 
     /* байт obj+0x107: bits_set8_s2_w4(0) → очистить биты [2..5] */
-    bf8(m, 2, 4, 0);
+    bits_set8(m, 2, 4, 0);
 
     if (a1 != 0)
         bss_bi_ctrl_pcp_ready_set(mid, 1);
 
     /* u16@obj+0x109: bcon_bits_set16_s6_w7(1) → бит 6 = 1, биты [7..12] = 0 */
-    bf16le(m + 2, 6, 7, 1);
+    bits_set16_le(m + 2, 6, 7, 1);
 }
 
-/* tx_mgmt_srvs__build_dmg_beacon (0x8e9ccc, 124 Б): тело DMG-бикона (tx_mgmt_build_step
+/* tx_mgmt_srvs__build_dmg_beacon (0x8e9ccc, 124 Б): тело DMG-бикона (tx_mgmt_build_dmg_bcon_fixed
  * 0x8d7df4 — ниже) + IE хоста для бикона. */
 __attribute__((section(".textlate"))) void tx_mgmt_srvs_build_dmg_beacon(u32 payload, u32 *out_len,
                                                                          struct mid *obj, u32 a3)
@@ -870,10 +869,10 @@ __attribute__((section(".textlate"))) void tx_mgmt_srvs_build_dmg_beacon(u32 pay
     struct app_ies *block;
     (void)a3;
 
-    len = tx_mgmt_build_step(payload, obj);
+    len = tx_mgmt_build_dmg_bcon_fixed(payload, obj);
     fw_log_emit1(0x2d, 0x1013da0, len);              /* "Before IE push - len %d" */
 
-    block = mid_get_bcon_additional_ies(&obj->bss, 8);
+    block = mid_get_app_ies_by_subtype(&obj->bss, 8);
     if (block == 0 || ies_block_is_empty(block) != 0) {
         fw_log_emit1(0x2d, 0x1013e18, len);          /* "No App IE added ... - len %d" */
     } else {
@@ -886,8 +885,8 @@ __attribute__((section(".textlate"))) void tx_mgmt_srvs_build_dmg_beacon(u32 pay
     hexdump_words((void *)payload, len);
     *out_len = len;
 }
-/* tx_mgmt_build_step (0x8d7df4, 109 Б): собрать mgmt-кадр (frame-ctrl + addr + IE). */
-__attribute__((section(".textlate"))) u32 tx_mgmt_build_step(u32 payload, struct mid *obj)
+/* tx_mgmt_build_dmg_bcon_fixed (0x8d7df4, 109 Б): собрать mgmt-кадр (frame-ctrl + addr + IE). */
+__attribute__((section(".textlate"))) u32 tx_mgmt_build_dmg_bcon_fixed(u32 payload, struct mid *obj)
 {
     struct ieee80211_dmg_beacon *b = (struct ieee80211_dmg_beacon *)payload;
     u32 r13 = mgmt_tx_set_frame_control(payload, obj);
@@ -895,10 +894,10 @@ __attribute__((section(".textlate"))) u32 tx_mgmt_build_step(u32 payload, struct
     b->bcn_int[0] = pcp_bcon_interval;
     b->bcn_int[1] = pcp_bcon_interval >> 8;
     r13 += 0xd;
-    r13 += mgmt_tx_copy_addr_from_mid(b->bi_ctrl, obj);
+    r13 += mgmt_tx_copy_bi_ctrl(b->bi_ctrl, obj);
     r13 += builder_push_dmg_parameters(&b->dmg_params, obj);
     if (b->bi_ctrl[0] & 1)
-        r13 += mgmt_tx_copy_addr_from_conn((u8 *)(payload + r13), obj);
+        r13 += mgmt_tx_put_clustering_ctrl((u8 *)(payload + r13), obj);
     /* Awake Window (IE 0x9d) vendor добавлял при разрешённом PS (ps_allowed) — энергосбережение
      * вырезано сознательно (см. fw/action.c psc_req_reject), элемента нет. */
     return r13;
@@ -918,7 +917,7 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_set_frame_control(u32 dst, con
 }
 /* mgmt_tx__copy_addr_from_mid (0x8c0678): Beacon Interval Control бикона записи (mid+0x14f),
  * 6 байт. */
-__attribute__((section(".textlate"))) u32 mgmt_tx_copy_addr_from_mid(u8 *dst, const struct mid *obj)
+__attribute__((section(".textlate"))) u32 mgmt_tx_copy_bi_ctrl(u8 *dst, const struct mid *obj)
 {
     memcpy_fw(dst, obj->bss.bi_ctrl, 6);
     return 6;
@@ -934,37 +933,37 @@ __attribute__((section(".textlate"))) u32 builder_push_dmg_parameters(u8 *dst, c
 {
     *(u8 *)dst = (*(u8 *)dst & ~3u) | (obj->bss.mode & 3);
     u32 r15 = 1;
-    if (fixed_sched.enabled != 0 || mid_get_field_0c(obj->sched) != 0)
+    if (fixed_sched.enabled != 0 || sched_scheme_is_built(obj->sched) != 0)
         r15 = 0;
     u8 b = *(u8 *)dst;
     b = (b & ~0xcu) | ((r15 & 1) << 2);
     b = (b & ~0x30u) | ((obj->sec.privacy != 0) ? 0x10u : 0u);
-    b &= ~0xc0u;   /* bits_set8_s6_w2 = 0 */
+    b &= ~0xc0u;   /* tx_pkt_set_chan_type = 0 */
     *(u8 *)dst = b;
     fw_log_emit2(0x2d, 0x100fa74, b & 3, (b >> 4) & 1);
     return 1;
 }
 /* mid__get_field_0c (0x8cc360, 16 Б): схема расписания собрана (built). */
-__attribute__((section(".textlate"))) u32 mid_get_field_0c(const struct sched_scheme *obj)
+__attribute__((section(".textlate"))) u32 sched_scheme_is_built(const struct sched_scheme *obj)
 {
     return obj->built;
 }
 /* mgmt_tx__copy_addr_from_conn (0x8c0664): копия direct_scan_mac scan_mngr записи, 6 байт. */
-__attribute__((section(".textlate"))) u32 mgmt_tx_copy_addr_from_conn(u8 *dst, const struct mid *obj)
+__attribute__((section(".textlate"))) u32 mgmt_tx_put_clustering_ctrl(u8 *dst, const struct mid *obj)
 {
     memcpy_fw(dst, obj->disc.scan->direct_mac, 6);
     return 8;
 }
 /* bcon__bits_set16_s7_w3 (0x8ed1f0): установить 3 бита [7..9] LE-полуслова.
  * Побайтовый read-modify-write (адрес может быть нечётным). */
-__attribute__((section(".textlate"))) void bcon_bits_set16_s7_w3(u8 *p, u32 v)
+__attribute__((section(".textlate"))) void bcon_bi_ctrl_set_abft_len(u8 *p, u32 v)
 {
     p[0] = (u8)((p[0] & ~(1u << 7)) | ((v & 1u) << 7));   /* бит 7 */
     p[1] = (u8)((p[1] & ~3u) | ((v >> 1) & 3u));         /* биты 8..9 */
 }
 /* TX_API__send_dband_bcon (0x8e5284, 136 Б): заполнить TX-дескриптор
  * (payload-0x24) и поставить пакет в очередь 0x8421e4. Возврат 0 = ok. */
-__attribute__((section(".textlate"))) u32 TX_API_send_dband_bcon(u32 payload, u16 len, tx_done_fn wb, tx_sent_fn cb,
+__attribute__((section(".textlate"))) u32 tx_api_send_dband_bcon(u32 payload, u16 len, tx_done_fn wb, tx_sent_fn cb,
                                                                 struct bcon_post_info *info, u32 channel)
 {
     struct tx_pkt *pkt;

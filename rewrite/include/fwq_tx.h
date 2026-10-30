@@ -225,7 +225,7 @@ extern struct tx_desc tx_ring_mem_2[2];        /* 0x843000: кольцо DMA 3 (
 extern struct tx_pkt tx_pkt_mem[TX_PKT_N];     /* 0x848020: память tx_pkt_pool */
 extern struct tx_pkt tx_err_buf;               /* 0x805ac0 (DCCM): буфер ошибки, статус 0xfd */
 /* Режим TX-очереди DMA по MACQ (0x8031c8, 32 × 2 Б, только чтение; в образе mode 2 у
- * 0x18, 0x1b..0x1f, у остальных 0). dma_mgr_queue_state_is_0/1, tx_macq_setup (флаги). */
+ * 0x18, 0x1b..0x1f, у остальных 0). dma_mgr_txq_null_status/1, tx_macq_setup (флаги). */
 struct txq_dma_mode {
     u8 q;                                      /* 0x00: номер MACQ (= индекс) */
     u8 mode;                                   /* 0x01 */

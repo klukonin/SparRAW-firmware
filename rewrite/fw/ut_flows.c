@@ -121,7 +121,7 @@ void ut_hw_flows_operational_cmd_handler(struct wmi_mbox *mbox, const struct ut_
     case 0xa03:                                        /* 0x8fad4a */
         fw_log_emit0(0x21, 0x101c4a8);
         memset0_words((void *)&buf->status, 0xec);
-        st = hwf_calib_lo_power_flow((u32)c->arg8[0], (u32)c->arg8[4], c->arg[2], c->arg[3], c->arg[4], (u32)c->arg8[20],
+        st = hwf_calib_lo_power_apply((u32)c->arg8[0], (u32)c->arg8[4], c->arg[2], c->arg[3], c->arg[4], (u32)c->arg8[20],
                                      *(volatile u8 *)&rf_obj.rf_idx);
         break;
     case 0x98a: {                                      /* 0x8faa6e: чтение байта XPM */
@@ -221,7 +221,7 @@ void ut_hw_flows_operational_cmd_handler(struct wmi_mbox *mbox, const struct ut_
         u32 rf = c->arg[0], mode = c->arg[1];
 
         fw_log_emit2(0x21, 0x101c408, rf, mode);
-        if (xpm_enter_cfg_step(rf, mode, 0) == 1)
+        if (xpm_enter_cfg_check_inputs(rf, mode, 0) == 1)
             st = hwf_rf_xpm_enter_cfg_mode(rf, mode);
         else
             fw_log_emit0(1, 0x101c460);

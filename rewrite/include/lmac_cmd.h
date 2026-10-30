@@ -28,7 +28,7 @@ struct ss_cfg_s {
 _Static_assert(sizeof(struct ss_cfg_s) == 0x4c, "ss_cfg");
 LMAC_OFF(struct ss_cfg_s, n_frames, 0x48);
 
-/* Параметры MAC из LMAC 0x00 (+0, 0x30 Б): копия в mac_cfg (0x802588) → mac_program_886e0c_20b. */
+/* Параметры MAC из LMAC 0x00 (+0, 0x30 Б): копия в mac_cfg (0x802588) → mac_program_lmac0_timing. */
 struct lmac_mac_regs {
     union {
         u8   b[0x14];                   /* 0x00 байты → MAC 0x886e08..0x886e18 (перестановка) */
@@ -45,10 +45,10 @@ struct lmac_mac_regs {
 LMAC_OFF(struct lmac_mac_regs, qset_mode, 0x2c);
 _Static_assert(sizeof(struct lmac_mac_regs) == 0x30, "lmac_mac_regs");
 
-/* LMAC 0x00 — конфигурация MAC (lmac_if_send_cmd_0x00 → ucode_cmd_0x00_handler), 0x44 Б. */
+/* LMAC 0x00 — конфигурация MAC (lmac_if_send_mac_cfg → ucode_cmd_0x00_handler), 0x44 Б. */
 struct lmac_cmd_mac_cfg {
     struct lmac_mac_regs regs;          /* 0x00 → mac_cfg (ucode_cmd_apply_mac_cfg) */
-    u16  ifs_us[6];                     /* 0x30 → ifs_cfg_us (txrx_api_step_b_uc): SIFS, …, slot, … */
+    u16  ifs_us[6];                     /* 0x30 → ifs_cfg_us (txrx_api_program_ifs_timing): SIFS, …, slot, … */
     u16  x3c;                           /* 0x3c fw: 4; ucode не читает */
     u16  x3e;                           /* 0x3e fw: 2; ucode не читает */
     u32  rf_chain;                      /* 0x40 байт rf_obj.rf_idx → rf_chain_cfg */
@@ -57,8 +57,8 @@ LMAC_OFF(struct lmac_cmd_mac_cfg, ifs_us, 0x30);
 LMAC_OFF(struct lmac_cmd_mac_cfg, rf_chain, 0x40);
 _Static_assert(sizeof(struct lmac_cmd_mac_cfg) == 0x44, "lmac_cmd_mac_cfg");
 
-/* Источник конфигурации MAC для LMAC 0x00 (lmac_if_send_init_cfg, 0x24 Б на стеке fw →
- * lmac_if_send_cmd_0x00): байты 0..0xb, слова 0xc/0x10 → regs.w0c/w10, w[0..3] → regs.w14[2..5]. */
+/* Источник конфигурации MAC для LMAC 0x00 (lmac_if_send_mac_init_cfg, 0x24 Б на стеке fw →
+ * lmac_if_send_mac_cfg): байты 0..0xb, слова 0xc/0x10 → regs.w0c/w10, w[0..3] → regs.w14[2..5]. */
 struct lmac_mac_cfg_src {
     union {
         u8   head[0x14];                /* 0x00 */
@@ -73,7 +73,7 @@ struct lmac_mac_cfg_src {
 _Static_assert(sizeof(struct lmac_mac_cfg_src) == 0x24, "lmac_mac_cfg_src");
 
 /* LMAC 0x01 — включить RX на канале (lmac_if_build_rx_on_cmd → ucode_cmd_0x01_handler,
- * txrx_api_cmd_step), 0x28 Б. */
+ * txrx_api_program_bi_tsf_control), 0x28 Б. */
 struct lmac_cmd_rx_on {
     u32  start_lo;                      /* 0x00 TSF64 начала BI (млад.) */
     u32  start_hi;                      /* 0x04 (стар.) */
@@ -94,7 +94,7 @@ LMAC_OFF(struct lmac_cmd_rx_on, rx_mode, 0x20);
 LMAC_OFF(struct lmac_cmd_rx_on, rf_sets_mask, 0x26);
 _Static_assert(sizeof(struct lmac_cmd_rx_on) == 0x28, "lmac_cmd_rx_on");
 
-/* LMAC 0x05 — конфигурация станции (lmac_if_send_sta_cfg_05 → ucode_cmd_0x05_handler), 0x28 Б.
+/* LMAC 0x05 — конфигурация станции (lmac_if_send_sta_cfg → ucode_cmd_0x05_handler), 0x28 Б.
  * Сектор/цепь: байт — RF-модуль (rf_obj.rf_idx), полуслово — сектор. */
 struct lmac_cmd_sta_cfg {
     u8   tx_rf;                         /* 0x00 → sta_entry.tx_sel [0,4) */
@@ -142,7 +142,7 @@ struct lmac_cmd_qset_ranges {
 LMAC_OFF(struct lmac_cmd_qset_ranges, sub, 0x0c);
 _Static_assert(sizeof(struct lmac_cmd_qset_ranges) == 0x10, "lmac_cmd_qset_ranges");
 
-/* LMAC 0x08 — конфигурация vring/очереди (lmac_if_send_cmd_0x08 → ucode_cmd_0x08_handler), 0x14 Б. */
+/* LMAC 0x08 — конфигурация vring/очереди (lmac_if_send_vring_cfg → ucode_cmd_0x08_handler), 0x14 Б. */
 struct lmac_cmd_vring_cfg {
     u8   qid;                           /* 0x00 vring (qid MAC) */
     u8   cid;                           /* 0x01 станция (pring) */
@@ -169,7 +169,7 @@ _Static_assert(sizeof(struct lmac_cmd_trigger_bf) == 0xc, "lmac_cmd_trigger_bf")
 
 /* Параметры BI маяка (+0x50 тела LMAC 0x0b, 0x20 Б) → копия ucode bi_cfg (0x8022a8, struct
  * fui_bi_cfg_params в uc/dccm.h — там те же смещения). Пишут bcn_tx_init_bi_cfg и
- * lmac_if_send_bcon_mgt (fw/pcp_ext.c), tx_bcon_del_bcon (fw/discovery.c). */
+ * lmac_if_send_bcon_mgt (fw/pcp_ext.c), tx_bcon_del (fw/discovery.c). */
 struct lmac_bi_params {
     u32  bi_mode;                       /* 0x00 a1 lmac_if_send_bcon_mgt; 0 — снять маяк */
     u8   n_bi_abft;                     /* 0x04 s[3] >> 5 */
@@ -191,7 +191,7 @@ _Static_assert(sizeof(struct lmac_bi_params) == 0x20, "lmac_bi_params");
 /* LMAC 0x0b — развёртка маяка и BI (ucode_cmd_0x0b_handler), 0x70 Б. */
 struct lmac_cmd_bcn_sweep {
     u32  op;                            /* 0x00 0/1/2 */
-    struct ss_cfg_s ss;                 /* 0x04 → bti_sw.bcn_ss (ucode_cmd_0b_apply) */
+    struct ss_cfg_s ss;                 /* 0x04 → bti_sw.bcn_ss (ss_cfg_apply) */
     struct lmac_bi_params bi;           /* 0x50 → bi_cfg (0x20 Б) */
 };
 LMAC_OFF(struct lmac_cmd_bcn_sweep, ss, 0x04);
@@ -202,7 +202,7 @@ _Static_assert(sizeof(struct lmac_cmd_bcn_sweep) == 0x70, "lmac_cmd_bcn_sweep");
 struct lmac_cmd_sta_sweep {
     u8   sta;                           /* 0x00 индекс txss_ss (< 9) */
     u8   rsv01[3];
-    struct ss_cfg_s ss;                 /* 0x04 → txss_ss[sta] (ucode_cmd_0b_apply) */
+    struct ss_cfg_s ss;                 /* 0x04 → txss_ss[sta] (ss_cfg_apply) */
 };
 LMAC_OFF(struct lmac_cmd_sta_sweep, ss, 0x04);
 _Static_assert(sizeof(struct lmac_cmd_sta_sweep) == 0x50, "lmac_cmd_sta_sweep");
@@ -239,7 +239,7 @@ struct lmac_cmd_sta_field {
 LMAC_OFF(struct lmac_cmd_sta_field, data, 0x10);
 _Static_assert(sizeof(struct lmac_cmd_sta_field) == 0x20, "lmac_cmd_sta_field");
 
-/* LMAC 0x19 — RF-цепь хоста (hw_sysapi_rx_alloc_and_store → ucode_cmd_0x19_handler), 4 Б. */
+/* LMAC 0x19 — RF-цепь хоста (lmac_if_send_rf_chain → ucode_cmd_0x19_handler), 4 Б. */
 struct lmac_cmd_rf_chain {
     u8   rf;                            /* 0x00 */
     u8   rsv01;
@@ -270,13 +270,13 @@ struct lmac_cmd_echo {
 };
 _Static_assert(sizeof(struct lmac_cmd_echo) == 4, "lmac_cmd_echo");
 
-/* LMAC 0x03 — выключить RX (radio_mgr lmac_if_send_cmd_0x03 → ucode_cmd_0x03_handler), 4 Б. */
+/* LMAC 0x03 — выключить RX (radio_mgr lmac_if_send_rx_off → ucode_cmd_0x03_handler), 4 Б. */
 struct lmac_cmd_rx_off {
     u32  mode;                          /* 0x00 0 — mac_rx_off_seq, 1 — uc_pm_enter_idle (fw: 1) */
 };
 _Static_assert(sizeof(struct lmac_cmd_rx_off) == 4, "lmac_cmd_rx_off");
 
-/* Запись AC в LMAC 0x04 (0xc Б; txrx_api_step_c). */
+/* Запись AC в LMAC 0x04 (0xc Б; txrx_api_program_edca_ac). */
 struct lmac_edca_ac {
     u32  ac;                            /* 0x00 индекс AC (< 4) */
     u16  ecw_min;                       /* 0x04 CW = (1 << v) − 1 */
@@ -286,13 +286,13 @@ struct lmac_edca_ac {
 };
 _Static_assert(sizeof(struct lmac_edca_ac) == 0xc, "lmac_edca_ac");
 
-/* LMAC 0x04 — таблица EDCA (lmac_if_send_cmd_0x04 → ucode_cmd_0x04_handler_uc), 0x30 Б. */
+/* LMAC 0x04 — таблица EDCA (lmac_if_send_edca_cfg → ucode_cmd_0x04_handler_uc), 0x30 Б. */
 struct lmac_cmd_edca {
     struct lmac_edca_ac ac[4];          /* 0x00 */
 };
 _Static_assert(sizeof(struct lmac_cmd_edca) == 0x30, "lmac_cmd_edca");
 
-/* LMAC 0x0f — станция на поддержании (lmac_if_send_cmd_0x0f → ucode_cmd_0x0f_handler), 8 Б. */
+/* LMAC 0x0f — станция на поддержании (lmac_if_send_maint_sta → ucode_cmd_0x0f_handler), 8 Б. */
 struct lmac_cmd_maint_sta {
     u32  cid;                           /* 0x00 бит в maint_sta_mask */
     u16  on;                            /* 0x04 ≠ 0 — поставить, 0 — снять */
@@ -312,13 +312,13 @@ struct lmac_cmd_agc_tables {
 LMAC_OFF(struct lmac_cmd_agc_tables, param4, 0x10);
 _Static_assert(sizeof(struct lmac_cmd_agc_tables) == 0x20, "lmac_cmd_agc_tables");
 
-/* LMAC 0x12 — перезапуск RS станции (field_set_0x00_8dbc94 → ucode_cmd_0x12_handler_uc), 1 Б.
+/* LMAC 0x12 — перезапуск RS станции (lmac_if_send_restart_rs → ucode_cmd_0x12_handler_uc), 1 Б.
  * LMAC 0x49 (wmi_set_grant_mcs → ctrl_frame_mcs) — тоже один байт. */
 struct lmac_cmd_u8 {
     u8   val;                           /* 0x00 */
 };
 
-/* LMAC 0x13 — параметры RS станции (lmac_if_send_cmd_0x13 → ucode_cmd_0x13_handler), 0x28 Б. */
+/* LMAC 0x13 — параметры RS станции (lmac_if_send_rs_cfg → ucode_cmd_0x13_handler), 0x28 Б. */
 struct lmac_cmd_rs_cfg {
     u8   cid;                           /* 0x00 */
     u8   enable;                        /* 0x01 ≠ 0 — включить RS (копия cfg → rs_cfg[cid]) */
@@ -327,27 +327,27 @@ struct lmac_cmd_rs_cfg {
 LMAC_OFF(struct lmac_cmd_rs_cfg, cfg, 0x02);
 _Static_assert(sizeof(struct lmac_cmd_rs_cfg) == 0x28, "lmac_cmd_rs_cfg");
 
-/* LMAC 0x14 — триггеры BF (lmac_if_send_cmd_0x14, wmi_bf_control → bf_ctrl.triggers), 4 Б. */
+/* LMAC 0x14 — триггеры BF (lmac_if_send_bf_triggers, wmi_bf_control → bf_ctrl.triggers), 4 Б. */
 struct lmac_cmd_bf_triggers {
     u32  triggers;                      /* 0x00 биты 0..5 */
 };
 _Static_assert(sizeof(struct lmac_cmd_bf_triggers) == 4, "lmac_cmd_bf_triggers");
 
-/* LMAC 0x15 — параметры RS/BF (lmac_if_send_cmd_0x15 → lmac_personality, bf_failure_policy), 8 Б. */
+/* LMAC 0x15 — параметры RS/BF (lmac_if_send_rs_params → lmac_personality, bf_failure_policy), 8 Б. */
 struct lmac_cmd_rs_params {
     u32  personality;                   /* 0x00 */
     u32  failure_policy;                /* 0x04 */
 };
 _Static_assert(sizeof(struct lmac_cmd_rs_params) == 8, "lmac_cmd_rs_params");
 
-/* LMAC 0x16 — калибровка (lmac_if_send_cmd_0x16_calib_b4 → calib_gain_ofs, 4 Б копии). */
+/* LMAC 0x16 — калибровка (lmac_if_send_calib_gain → calib_gain_ofs, 4 Б копии). */
 struct lmac_cmd_calib_gain {
     u8   target;                        /* 0x00 calib_silent_rssi.target */
     u8   rsv01[3];
 };
 _Static_assert(sizeof(struct lmac_cmd_calib_gain) == 4, "lmac_cmd_calib_gain");
 
-/* LMAC 0x1b — роль (conn_alloc_and_link → ucode_cmd_0x1b_handler), 3 Б. */
+/* LMAC 0x1b — роль (lmac_if_send_role → ucode_cmd_0x1b_handler), 3 Б. */
 struct lmac_cmd_role {
     u8   mode;                          /* 0x00 bss.mode записи mid (2/3 — AP/PCP) → uc_role */
     u8   pm_cfg;                        /* 0x01 → pm_cfg_flag */
@@ -384,8 +384,8 @@ struct lmac_cmd_txop_limits {
 _Static_assert(sizeof(struct lmac_cmd_txop_limits) == 8, "lmac_cmd_txop_limits");
 
 
-/* LMAC 0x23 — параметры A-BFT-ответчика (lmac_if_send_cmd_0x23 →
- * ucode_cmd_load_table_803124_803128 → abft_cfg 0x803124), 0xc Б. */
+/* LMAC 0x23 — параметры A-BFT-ответчика (lmac_if_send_abft_cfg →
+ * abft_cfg_load_from_cmd → abft_cfg 0x803124), 0xc Б. */
 struct lmac_cmd_bi_tbl {
     u32  responder_mode;                /* 0x00 → abft_cfg.responder_mode; OOB: 2, иначе (a ≠ 0) << 1 */
     u32  beacon_type;                   /* 0x04 → abft_cfg.beacon_type; OOB: 2, иначе 1 + (a == 0) */
@@ -407,8 +407,8 @@ _Static_assert(sizeof(struct lmac_cmd_discovery) == 8, "lmac_cmd_discovery");
 
 
 
-/* LMAC 0x30 — фиксированный MCS станции для RS (lmac_if_send_cmd_0x30 → ucode_cmd_0x30_handler_uc),
- * 3 Б. LMAC 0x32 (wmi_brp_alloc_and_store → ucode_cmd_0x32_handler: brp_rf_cfg.sta_sel) — тот же
+/* LMAC 0x30 — фиксированный MCS станции для RS (lmac_if_send_sta_rs_mcs → ucode_cmd_0x30_handler_uc),
+ * 3 Б. LMAC 0x32 (wmi_brp_send_ant_limit → ucode_cmd_0x32_handler: brp_rf_cfg.sta_sel) — тот же
  * вид {станция, режим, значение}. */
 struct lmac_cmd_sta_byte2 {
     u8   cid;                           /* 0x00 */
@@ -437,8 +437,8 @@ struct lmac_cmd_ss_number {
     u8   set;                           /* 0x02 индекс txss_ss (< 9) */
 };
 
-/* LMAC 0x42 — триггеры PMC (sched_alloc_entry → txrx_umac_if_config_pmc_triggers_handler) и
- * команды измерений RX (channel_est_stack_args, 0x28/0x2a/…: фильтр + число отсчётов),
+/* LMAC 0x42 — триггеры PMC (lmac_if_send_pmc_triggers_cfg → txrx_umac_if_config_pmc_triggers_handler) и
+ * команды измерений RX (lmac_if_send_meas_filter, 0x28/0x2a/…: фильтр + число отсчётов),
  * 0xc Б. Байты 5..7 fw не пишет. */
 struct lmac_cmd_meas_filter {
     u8   cid;                           /* 0x00 */
@@ -452,7 +452,7 @@ struct lmac_cmd_meas_filter {
 LMAC_OFF(struct lmac_cmd_meas_filter, count, 0x08);
 _Static_assert(sizeof(struct lmac_cmd_meas_filter) == 0xc, "lmac_cmd_meas_filter");
 
-/* LMAC 0x45 — запись QH станции (conn_alloc_and_fill → fwif_write_qh), 0x74 Б. */
+/* LMAC 0x45 — запись QH станции (lmac_if_send_write_qh → fwif_write_qh), 0x74 Б. */
 struct lmac_cmd_write_qh {
     u8   q;                             /* 0x00 */
     u8   flags;                         /* 0x01 */
@@ -462,13 +462,13 @@ struct lmac_cmd_write_qh {
 LMAC_OFF(struct lmac_cmd_write_qh, desc, 0x04);
 _Static_assert(sizeof(struct lmac_cmd_write_qh) == 0x74, "lmac_cmd_write_qh");
 
-/* LMAC 0x47 — бит станции в fsched_peers (lmac_if_send_cmd_0x47 → ucode_cmd_0x47_handler), 2 Б. */
+/* LMAC 0x47 — бит станции в fsched_peers (lmac_if_send_fsched_peer → ucode_cmd_0x47_handler), 2 Б. */
 struct lmac_cmd_fsched_peer {
     u8   vr;                            /* 0x00 */
     u8   on;                            /* 0x01 */
 };
 
-/* Однословные команды: 0x3b (brp_snr_cfg_enable), 0x4a (l1_time_thresh >> 4), field_set_0x00_8dbe88
+/* Однословные команды: 0x3b (brp_snr_cfg_enable), 0x4a (l1_time_thresh >> 4), lmac_if_send_cmd_u32
  * (тип задаёт вызывающий); 0x3e, 0x41, 0x48 — тело ucode не читает. */
 struct lmac_cmd_u32 {
     u32  val;                           /* 0x00 */
@@ -477,8 +477,8 @@ _Static_assert(sizeof(struct lmac_cmd_u32) == 4, "lmac_cmd_u32");
 
 /* ---- События uc → fw ---- */
 
-/* Отчёт BF: события bf_done / new_link (uc_send_evt_bf_done/new_link, 17 слов по значению —
- * uc/evt17.h; строят notify_aoa_build, uc_evt_build_and_post_report; разбирают
+/* Отчёт BF: события bf_done / new_link (UC_EVT_BF_DONE / UC_EVT_NEW_LINK; строят прямо в записи кольца событий
+ * bf_done_report_build_send, uc_evt_build_and_post_report; разбирают
  * lmac_if_bf_done_evt / lmac_if_abft_notify_evt), 0x44 Б. */
 struct lmac_evt_bf_done {
     u32  snr;                           /* 0x00 SNR связи (bf_rep.link_snr / brp_rf.snr) */
@@ -542,7 +542,7 @@ struct lmac_evt_queue_deleted {
 };
 _Static_assert(sizeof(struct lmac_evt_queue_deleted) == 0xc, "lmac_evt_queue_deleted");
 
-/* LMAC 0x11 — ответ на запись поля sta_tab (uc_send_evt_sta_update_field_rsp → return_field_type), 8 Б. */
+/* LMAC 0x11 — ответ на запись поля sta_tab (uc_send_evt_sta_update_field_rsp → lmac_if_sta_field_rsp_evt), 8 Б. */
 struct lmac_evt_field_rsp {
     u32  cid;                           /* 0x00 */
     u32  type;                          /* 0x04 режим команды 0x18 (0/1/4/8/0x10) */
@@ -584,7 +584,7 @@ struct lmac_evt_ps_peer {
     u8   no_tx;                         /* 0x03 → ps_lmac_evt_cid_mask */
     u8   doze_info;                     /* 0x04 всегда 0 (upm_vector / in_doze — PS вырезан) */
     u8   rsv05[3];
-    u32  type;                          /* 0x08 5 — mid_lookup_step */
+    u32  type;                          /* 0x08 5 — mid_pcp_shift_ext_sched */
 };
 LMAC_OFF(struct lmac_evt_ps_peer, type, 0x08);
 _Static_assert(sizeof(struct lmac_evt_ps_peer) == 0xc, "lmac_evt_ps_peer");
@@ -592,12 +592,12 @@ _Static_assert(sizeof(struct lmac_evt_ps_peer) == 0xc, "lmac_evt_ps_peer");
 /* LMAC 0x30 EVT_FIXED_SCHEDULING_ENABLED — {TSF/слово, значение}, 8 Б (у vendor так же 0x18
  * PS_TRAFFIC_DEFERRAL_CFG — отсрочка трафика вырезана). */
 struct lmac_evt_typed {
-    u32  w0;                            /* 0x00 TSF (мл.) у uc_send_evt_typed */
+    u32  w0;                            /* 0x00 TSF (мл.) у uc_send_evt_tsf_val */
     u32  val;                           /* 0x04 */
 };
 _Static_assert(sizeof(struct lmac_evt_typed) == 8, "lmac_evt_typed");
 
-/* LMAC 0x21 — {байт, 0x20 Б} (uc_evt_send_21), 0x24 Б. LMAC 0x23 (uc_evt_send_23, 0x24 Б) —
+/* LMAC 0x21 — {байт, 0x20 Б} (uc_evt_send_plcp_header_ready), 0x24 Б. LMAC 0x23 (uc_evt_send_rx_pkt_data, 0x24 Б) —
  * id запроса в байте +0x23. */
 struct lmac_evt_sysapi {
     u8   id;                            /* 0x00 (0x21) */
@@ -610,7 +610,7 @@ _Static_assert(sizeof(struct lmac_evt_sysapi) == 0x24, "lmac_evt_sysapi");
 
 
 
-/* LMAC 0x2e — таймаут BA (uc_evt_send_2e → ba_on_uc_timeout_evt), 4 Б. */
+/* LMAC 0x2e — таймаут BA (uc_evt_send_vring_ssn → ba_on_uc_timeout_evt), 4 Б. */
 struct lmac_evt_ba_timeout {
     u8   vr;                            /* 0x00 */
     u8   kind;                          /* 0x01 0 — обновить SSN */

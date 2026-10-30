@@ -17,21 +17,11 @@ W — худший путь в тактах по модели, B — срок (�
 время ответа MAC сверх одного опроса в W не входит (где оно известно — вычтено из B, см. источник).
 Путь, не прошедший правило, — xfail(strict=True) с B, W, требуемым и фактическим запасом в reason: найденный риск.
 
-Модель стоимости (ARCompact PRM / ARC600, arc600-docs; где документа нет — явное допущение, с запасом вверх):
-  * 1 такт на инструкцию (5-стадийный конвейер, CPI 1 для АЛУ; эмулятор считает и delay-слот);
-  * +1 такт на 8-байтную инструкцию (limm): выборка 32 бита за такт (tools/arcemu/seg_lat.py BYTES);
-  * взятый переход/вызов/возврат: +2 без delay-слота, +1 с .d (условие и цель — на 2-й стадии, PRM гл. 8 «condition
-    code test for these jumps is carried out one stage earlier»; seg_lat: «~+1..2 такта»; берём верхнюю оценку);
-    возврат на LP_START в zero-overhead loop — 0 (PRM «ARC 600 Loop Operation»);
-  * загрузка из памяти (ld*/pop): +1 (PRM: «loads take a minimum of one cycle to complete», зависимая следующая
-    инструкция ждёт; считаем, что ждёт всегда);
-  * чтение порта MAC r33..r63: +1; команда MAC (запись r32): +2 (допущение: рукопожатие интерфейса расширения;
-    не измерено);
-  * чтение MMIO 0x880000..0x8bffff (AHB): +8, запись MMIO: +2 (допущение: AHB-чтение не измерено; запись —
-    буферизована).
-Калибровка по стенду (test_cost_model_calibration_abft_sta): A-BFT станции, событие слота → 0x19 — модель 505 / стенд
-531 тактов (fp2, стенд); SIFS_CNT → 0x19 — модель 449 / стенд 431–436 (uc/ifs.h:108); ≈ 1,64 такта на
-инструкцию. Модель в пределах ±5 % от стенда на пути, где стенд включает и ожидания MAC.
+Модель стоимости — tests/unit/costmodel.py (одна с моделью MAC machw.py; цены — микротесты стенда uc/bench.c).
+Калибровка по стенду (test_cost_model_calibration_abft_sta): A-BFT станции, событие слота → 0x19 — модель 437 / стенд
+531 тактов (fp2, стенд, код того времени); SIFS_CNT → 0x19 — модель 384 / стенд 431–436 (uc/ifs.h:108); ≈ 1,41 такта
+на инструкцию. Разница — ожидания MAC (MTP, подтверждения), которые эмулятор проходит за один опрос, и старый код;
+сама модель стоимости сверена с железом микротестами (test_cost_model.py) и путём отправки события (costmodel.py).
 """
 import pytest
 
@@ -57,18 +47,12 @@ def passes(w, budget):
 
 
 # ---- модель стоимости ----
-COST = dict(insn=1, limm=1, taken=2, taken_d=1, load=1, ext_rd=1, mac_cmd=2, mmio_rd=8, mmio_wr=2)
-MMIO_LO, MMIO_HI = 0x880000, 0x8c0000
-_LOADS = ('ld', 'ldb', 'ldh', 'ldw', 'pop')
-
-
-def _is_load(ins):
-    b = ins.base[:-2] if ins.base.endswith('_s') else ins.base
-    return b in _LOADS
+from costmodel import Cost               # одна модель стоимости с моделью MAC (machw.py)
+from machw import MTP_LAT_CLK, MTP_PERM_LAT_CLK                     # noqa: E402
 
 
 class Meter:
-    """Пошаговая стоимость исполнения: для каждого события трассы (cpu.trace) — накопленные такты по COST и число
+    """Пошаговая стоимость исполнения: для каждого события трассы (cpu.trace) — накопленные такты (costmodel) и число
     инструкций к концу шага, в котором оно возникло. Ставится на экземпляр CPU (ucemu не меняется)."""
 
     def __init__(self, uc, stop=None):
@@ -80,8 +64,16 @@ class Meter:
         self.ev = {}                       # индекс события трассы → (clk, ins) к концу шага
         self.pc = {}                       # индекс события трассы → pc инструкции
         self.steps = []                    # (pc, такты шага, накопленные такты)
-        self.parts = dict.fromkeys(COST, 0)
+        self.costm = Cost()
+        self.parts = self.costm.parts
         orig = c.step
+        # ответ и разрешение MTP (r43/r45 б31) — через задержку стенда после запроса 0x1b001111 (machw H-MTP); до
+        # первого запроса — готовы (как задали тесты)
+        self.mtp_at = None
+        for port, lat in ((43, MTP_LAT_CLK), (45, MTP_PERM_LAT_CLK)):
+            base = uc.ext.get(port, 1 << 31)
+            uc.ext[port] = (lambda lat, base: lambda n, k: base if self.mtp_at is None or
+                            self.clk >= self.mtp_at + lat else base & ~(1 << 31))(lat, base)
 
         def step():
             pc0 = c.pc & 0xffffffff
@@ -91,34 +83,7 @@ class Meter:
             ins = c.fetch(pc0)
             orig()
             n = c.insns - i0
-            seq = (pc0 + ins.size) & 0xffffffff
-            add = dict(insn=n)
-            dins = None
-            if n == 2 and ins.delay:
-                dins = c.fetch(seq)
-                seq = (seq + dins.size) & 0xffffffff
-            for i in (ins, dins):
-                if i is None:
-                    continue
-                if i.size == 8:
-                    add['limm'] = add.get('limm', 0) + 1
-                if _is_load(i):
-                    add['load'] = add.get('load', 0) + 1
-            npc = c.pc & 0xffffffff
-            if npc != seq and not (lp_end and seq == lp_end and npc == lp_start):
-                add['taken_d' if ins.delay else 'taken'] = 1
-            for e in c.trace[k:]:
-                if e[0] == 'extreg':
-                    if e[1] == 'w' and e[2] == 32:
-                        add['mac_cmd'] = add.get('mac_cmd', 0) + 1
-                    elif e[1] == 'r' and e[2] != 32:
-                        add['ext_rd'] = add.get('ext_rd', 0) + 1
-                elif e[0] == 'mmio' and MMIO_LO <= e[2] < MMIO_HI:
-                    add['mmio_rd' if e[1] == 'r' else 'mmio_wr'] = add.get('mmio_rd' if e[1] == 'r' else 'mmio_wr', 0) + 1
-            cost = 0
-            for key, v in add.items():
-                cost += COST[key] * v
-                self.parts[key] += v
+            cost = self.costm.step(c, pc0, ins, n, c.trace[k:], (lp_start, lp_end), self.clk)
             self.clk += cost
             self.steps.append((pc0, cost, self.clk))
             self.ins += n
@@ -126,6 +91,8 @@ class Meter:
                 self.ev[j] = (self.clk, self.ins)
                 self.pc[j] = pc0
                 e = c.trace[j]
+                if e[:3] == ('extreg', 'w', 32) and e[4] == 0x1b001111:
+                    self.mtp_at = self.clk
                 if stop is not None and e[:3] == ('extreg', 'w', 32) and stop(e[4]):
                     c.halted = True
 
@@ -217,6 +184,18 @@ def risk(path, w, budget, src):
                              (path, over, src, budget - w, req))
 
 
+# «Передатчик свободен»: mac_evt_enable_bit_sync(5) — 0x27 с маской 0x20, затем 0x2004000 и ожидание r42.14 (busy2).
+# Метки стенда (UC_STAMP 7, маяки, 2026-10-28): за 129–135 тактов до конца кадра в эфире (machw H-TXEND); tx_end_event
+# (r42.15) — у начала кадра (H-TXEVT). Следующий кадр развёртки — через SBIFS после конца: от «свободен» до 0x19
+# следующего — TX_FREE_LEAD + SBIFS.
+TX_FREE_LEAD = 135
+
+
+def tx_free_trigger(m, before, after):
+    c5 = [j for j in m.all_cmds(lambda c: c >> 24 == 0x27 and (c >> 8) & 0x7f == 0x20, after=after) if j < before][-1]
+    return m.trigger(42, 1 << 14, before, after=c5)
+
+
 def last_cmd(uc, pred):
     """Последняя выданная команда MAC с pred (для ответа порта по текущему выбору/состоянию MAC)."""
     for e in reversed(uc.cpu.trace):
@@ -261,7 +240,7 @@ def abft_sta_run(uc, fss=15):
     uc.ext.update({54: r54, 55: r55, 43: 1 << 31, 45: 1 << 31, 47: 1, 42: (1 << 15) | (1 << 14) | (1 << 12)})
     m = Meter(uc)
     uc.call('abft_responder_fast', REC, 1, 0,
-            stub={'tx_ctx_alloc_next': 0x803f80, 'l1_task_dispatch': 0, 'abft_resp_parse_fdbk': 1,
+            stub={'tx_ctx_alloc_next': 0x807f80, 'l1_task_dispatch': 0, 'abft_resp_parse_fdbk': 1,
                   'uc_evt_build_and_post_report': 0, 'uc_assert': 0})
     txs = m.all_cmds(IS_TX)
     assert len(txs) == fss + 1, 'пачка: %d SSW вместо %d' % (len(txs), fss + 1)
@@ -291,19 +270,21 @@ def test_abft_sta_sifs_guard_to_first_ssw(sta):
     check('abft_sta_guard_to_ssw', w, n, 435, 'P в выводе порога SIFS_CNT_ABFT_SSW_LATE, uc/ifs.h:108')
 
 
-@risk('abft_ssw_burst: r42.15 tx_end → 0x19 следующего SSW', 387, 165,
-      'SBIFS 10.3.2.3.8, uc/bti.c:726; стенд: зазор 1,01 мкс держит MAC — срок от tx_end не установлен')
+@risk('abft_ssw_burst: «передатчик свободен» → 0x19 следующего SSW', 285, TX_FREE_LEAD + SBIFS,
+      'опережение 135 + SBIFS 165, 10.3.2.3.8; стенд: период 0x19 = TXTIME + SBIFS, зазор 1,01 мкс')
 def test_abft_sta_ssw_to_ssw_sbifs(sta):
-    """tx_end SSW (r42.15) → 0x19 следующего SSW пачки: SBIFS 1 мкс ± 0,03 (10.3.2.3.8, 10.42.2.3.2). Худший промежуток
-    пачки FSS 15. B = SBIFS = 165 тактов от tx_end (uc/bti.c:726 «SBIFS программно не выдерживается»)."""
+    """«Передатчик свободен» (mac_evt_enable_bit_sync(5)) → 0x19 следующего SSW пачки: SBIFS 1 мкс ± 0,03 (10.3.2.3.8,
+    10.42.2.3.2) после конца кадра. Худший промежуток пачки FSS 15. B = TX_FREE_LEAD + SBIFS (r42.15 — у начала кадра,
+    подготовка следующего SSW до «свободен» в срок не входит)."""
     m, txs = abft_sta_run(sta)
     worst = None
     for a, b in zip(txs, txs[1:]):
-        t = m.trigger(42, 1 << 15, b, after=a)
+        t = tx_free_trigger(m, b, a)
         w, n = m.span(t, b)
         if worst is None or w > worst[0]:
             worst = (w, n)
-    check('abft_sta_ssw_gap', worst[0], worst[1], SBIFS, 'SBIFS от tx_end, 10.3.2.3.8; uc/bti.c:726')
+    check('abft_sta_ssw_gap', worst[0], worst[1], TX_FREE_LEAD + SBIFS,
+          'опережение «свободен» 135 + SBIFS, 10.3.2.3.8; uc/bti.c:726')
 
 
 # =====================================================================================================================
@@ -313,11 +294,16 @@ def test_abft_sta_ssw_to_ssw_sbifs(sta):
 # PHY у DMG не определены (Table 20-30: «implementation dependent»), а стенд показывает, что абсолютная оценка по
 # SIFS_CNT не работает (SIFS_CNT перед запросом в MTP 3,9–6,1 мкс без сбоев, docs/UC-REGISTERS.md §2.16). Поэтому B
 # восстановлен по стенду: vendor-путь Ack (конец кадра → 0x37000020) — 409 инструкций (путь P0.1,
-# эмулятор) проходит, а +12..18 тактов перед ним дают assert 0x26 (поздняя команда, uc/rx.c:682). Такты
-# vendor-пути — по CPI модели на нашем пути (W/n): B = 409·W/n + 12.
-VENDOR_ACK_INSNS = 409
+# эмулятор) проходит, а +12..18 тактов перед ним дают assert 0x26 (поздняя команда, uc/rx.c:682). Такты vendor-пути —
+# в модели costmodel.py: vendor − наш по парам одной ветки (lat.py с моделью стоимости, P0.1, 20 сидов, 10 пар) —
+# Ack +42 (40–44), BlockAck +40 (38–42) при нашем пути Ack 602 такта от r42.14 (модель 2026-10-29, ответ MTP через
+# 38 тактов после запроса — machw H-MTP; 2026-10-29) ⇒ vendor 644 (без времени MTP было 629, по прежней модели 611:
+# у vendor больше brcc назад и выходов через pop_s blink; j_s [blink]). Срок железа один для всех ответов через SIFS:
+# B = 644 + 12. (До модели по микротестам стенда — 409·W/n: CPI нашего пути
+# переносился на vendor-путь, а у vendor больше взятых переходов, CPI другой — оценка запаса была завышена на ~30.)
+VENDOR_ACK_CLK = 644
 HW_PAD_FAIL_CLK = 12
-SIFS_SRC = 'стенд: vendor-путь 409 инстр. + 12 тактов → assert 0x26 (uc/rx.c:682; путь P0.1)'
+SIFS_SRC = 'стенд: vendor-путь Ack (644 такта модели) + 12 → assert 0x26 (uc/rx.c:682; путь P0.1)'
 STA_IDX = 7                                                 # худший индекс станции (r38[10:8])
 TX_CTX_POOL = 0x802978
 
@@ -326,16 +312,22 @@ TX_CTX_POOL = 0x802978
 # аппаратного ответа отсчитывается иначе, чем у Ack — бюджет Ack к нему неприменим. B — vendor-путь CTS (эмулятор,
 # lat.py: конец кадра r49 → 0x37000020, 20 сидов, медиана 546 инстр.), на стенде работает (RTS/CTS без сбоев); точка
 # отказа сверх него не измерена — B только нижняя граница срока, без надбавки.
-# Ответный CF-End (медленный путь rx_flow_send_imm_response, тоже через rx_end_switch_to_tx) — так же по vendor-пути:
-# 436 инстр. (lat.py, r37 б16, Duration 1000).
+# Такты vendor-пути CTS — прямой счёт в модели (lat.py r37 = 1, Duration 1000, link_stat.bf_reasons = 0, NAV снят;
+# модель 2026-10-29, ответ MTP через 38 тактов): vendor 808 (806–809), наш 749 от r49; от r42.14 у нас 770 (сдвиг точки
+# отсчёта 21, как у Ack 19) ⇒ vendor 829. Прежняя оценка по CPI нашего пути (546·W/n = 873) завышала срок на ~60 тактов: у vendor на пути
+# больше взятых переходов (68 против 49).
+# Ответный CF-End (медленный путь rx_send_cf_end_response, тоже через rx_end_switch_to_tx) — так же по vendor-пути:
+# 436 инстр. (lat.py, r37 б16, Duration 1000); в тактах модели vendor − наш = −1 (−3..+3, 20 пар) при нашем пути 665 ⇒
+# vendor 664 (модель 2026-10-29): у нас на 14 инструкций меньше, но дороже обращения.
 VENDOR_PATH_INSNS = {'cts': 546, 'cfend': 436}
+VENDOR_PATH_CLK = {'cts': 829, 'cfend': 664}
 VENDOR_PATH_SRC = 'vendor-путь %s %d инстр. (эмулятор, lat.py r49 → 0x37000020), работает на стенде; точка отказа не мерена'
 
 
 def sifs_budget(w, n, kind='ack'):
-    if kind in VENDOR_PATH_INSNS:
-        return int(VENDOR_PATH_INSNS[kind] * w / n)
-    return int(VENDOR_ACK_INSNS * w / n) + HW_PAD_FAIL_CLK
+    if kind in VENDOR_PATH_CLK:
+        return VENDOR_PATH_CLK[kind]
+    return VENDOR_ACK_CLK + HW_PAD_FAIL_CLK
 
 
 def r42_rx(uc, extra=0):
@@ -398,18 +390,18 @@ def sifs_run(uc, kind, act=lambda c: c == 0x37000020, prep=None):
     return m, t, a, w, n
 
 
-_SIFS_HW = 'B = 409·W/n + 12: стенд vendor Ack + 12 тактов → assert 0x26, uc/rx.c:682'
+_SIFS_HW = 'B = vendor Ack 644 + 12: стенд vendor Ack + 12 тактов → assert 0x26, uc/rx.c:682'
 
 
 @pytest.mark.parametrize('kind', [
-    pytest.param('ack', marks=risk('rx_flow_run → rx_frame_tx_resp_seq: r42.14 → 0x37000020 (Ack)', 603, 682, _SIFS_HW)),
-    pytest.param('ba', marks=risk('то же, BlockAck на A-MPDU', 560, 681, _SIFS_HW)),
-    pytest.param('bar', marks=risk('то же, BlockAck на BAR', 562, 678, _SIFS_HW)),
-    pytest.param('cts', marks=risk('то же, DMG CTS на RTS (rx_end_switch_to_tx + mac_switch_rx_to_tx на пути; у нас на 69 '
-                                   'инстр. короче vendor)', 790, 904, VENDOR_PATH_SRC % ('DMG CTS', 546))),
-    pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_flow_send_imm_response; на 6 инстр. короче '
-                                     'vendor)', 696, 705, VENDOR_PATH_SRC % ('CF-End', 436))),
-    'grant_ack'])
+    pytest.param('ack', marks=risk('rx_flow_run → rx_frame_tx_resp_seq: r42.14 → 0x37000020 (Ack)', 602, 656, _SIFS_HW)),
+    pytest.param('ba', marks=risk('то же, BlockAck на A-MPDU', 558, 656, _SIFS_HW)),
+    pytest.param('bar', marks=risk('то же, BlockAck на BAR', 559, 656, _SIFS_HW)),
+    pytest.param('cts', marks=risk('то же, DMG CTS на RTS (rx_end_switch_to_tx + mac_switch_rx_to_tx на пути; у нас на 59 '
+                                   'инстр. и 59 тактов короче vendor)', 770, 829, VENDOR_PATH_SRC % ('DMG CTS', 546))),
+    pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_send_cf_end_response; на 9 инстр. короче '
+                                     'vendor, но на 1 такт длиннее)', 665, 664, VENDOR_PATH_SRC % ('CF-End', 436))),
+    'grant_ack'])                                           # медленный путь без запроса MTP: запас 143
 def test_sifs_response_command(uc, kind):
     """Принят кадр с немедленным ответом (Ack 10.3.2.11, BlockAck 10.25.3/10.25.6, DMG CTS 10.3.2.9, CF-End 10.39.8.1,
     Grant Ack 10.39.4) — от конца кадра (r42.14 в цикле ХРУПКО rx_flow_run) до 0x37000020: команды, которую MAC при
@@ -422,7 +414,7 @@ def test_sifs_response_command(uc, kind):
 
 def test_txop_continue_after_ack(uc):
     """Держатель TXOP принял Ack (режим 1 txrx_state2) → следующий кадр TXOP через SIFS (10.23.2.8, 10.29.3): от конца
-    кадра (r42.14) до запроса в MTP 0x1b001111 в rx_txop_continue (путь rx_flow_step → rx_dispatch_by_g_8005f8;
+    кадра (r42.14) до запроса в MTP 0x1b001111 в rx_txop_continue (путь rx_flow_step → rx_match_expected_response;
     P0.2: vendor 409/417). Стенд: +20 nop на этом пути — отказ fw (uc/rx.c:386, запас 16–19 инструкций)."""
     def prep(uc):
         uc.w32(0x8005f4, 2)                                 # txrx_state1: TXOP
@@ -430,6 +422,8 @@ def test_txop_continue_after_ack(uc):
         uc.ext.update({36: 1 << 8, 38: 0x800 | (STA_IDX << 8), 41: 1})
     m, t, a, w, n = sifs_run(uc, 'ack', act=lambda c: c == 0x1b001111, prep=prep)
     print(m.profile(t, a))
+    # ВНИМАНИЕ: бюджет по CPI нашего пути (417·W/n), прямой счёт vendor-пути в модели не сделан: lat.py с моделью даёт
+    # vendor 578 / наш 491 такт (медианы, пар одной ветки нет) — расходится со стендовым «+20 nop — отказ»; не сведено.
     check('txop_continue', w, n, int(417 * w / n) + HW_PAD_FAIL_CLK,
           'стенд: vendor-путь 417 инстр. (P0.2) + 12 тактов; uc/rx.c:386')
 
@@ -464,17 +458,17 @@ def test_rf_back_to_rx_after_response(uc, kind):
 # GP-таймеры A-BFT
 # =====================================================================================================================
 def test_abft_sta_gp0_armed_before_gp2_end(sta):
-    """Станция, первый маяк BTI (bti_bi2_event_step): GP0 (конец BTI) взводится, пока идёт GP2 = 0x284 (3,903 мкс) от
+    """Станция, первый маяк BTI (bti_beacon_rx_step): GP0 (конец BTI) взводится, пока идёт GP2 = 0x284 (3,903 мкс) от
     конца приёма маяка (H-GP5) минус TRIM 0,25 мкс, иначе A-BFT этого BI пропущен (uc/bti.c:945, uc/abft.h). Путь —
-    от отчёта о приёме (r42.16 в bti_worker_bi2_step; ~0,3 мкс после конца кадра, uc/abft.h) до 0x5200090c.
+    от отчёта о приёме (r42.16 в bti_beacon_rx_match_bss; ~0,3 мкс после конца кадра, uc/abft.h) до 0x5200090c.
     B = 3,903 − 0,25 − 0,3 мкс = 552 такта."""
     from test_uc_beacon_rx import dmg_beacon, bic_encode, RX_BUF
     sta.wbytes(RX_BUF, dmg_beacon(bic_encode(), bssid=AP, cdown=63, duration=1300))
     sta.wbytes(BCN_RX + 0x14, AP)
-    zero(sta, 0x803f00, 0x40)
+    zero(sta, 0x807f00, 0x40)
     sta.ext.update({42: lambda n, k: (1 << 12) | ((1 << 16) if k >= 3 else 0), 36: 1 << 7, 38: 1, 55: 0x100})
     m = Meter(sta, stop=lambda c: c == 0x5200090c)
-    sta.call('bti_bi2_event_step', 0x803f00,
+    sta.call('bti_beacon_rx_step', 0x807f00,
              stub={'uc_read_tsf_lo': 0, 'uc_log_emit_snapshot': 0, 'uc_assert': 0, 'uc_bi_counter_in_window': 1,
                    'uc_read_bi_sync': 1})
     a = m.cmd_idx(lambda c: c == 0x5200090c)
@@ -483,7 +477,7 @@ def test_abft_sta_gp0_armed_before_gp2_end(sta):
     check('abft_sta_gp0_arm', w, n, 0x284 - 41 - 50, 'GP2 0x284 − TRIM 41 − r42.16 50, uc/bti.c:945, uc/abft.h H-GP5')
 
 
-@risk('bti_arm_period_gp0 (поздняя ветка): r55 GP_CLK2 → 0x50 GP1', 86, 17,
+@risk('bti_sta_arm_abft_slot_period (поздняя ветка): r55 GP_CLK2 → 0x50 GP1', 86, 17,
       'aAirPropagationTime 0,1 мкс — допуск совпадения сеток станции и AP, uc/bti.c:1336; задержка не вычитается')
 def test_abft_sta_late_gp1_phase(sta):
     """Станция пропустила первую границу слота (r54.7 уже стоит): остаток до следующей границы считается по GP_CLK2 (r55)
@@ -493,7 +487,7 @@ def test_abft_sta_late_gp1_phase(sta):
     sta.wbytes(BCN_RX + 2, ((7 << 7) | (15 << 10)).to_bytes(6, 'little'))
     sta.ext.update({54: 0x80, 55: 1})                       # GP_CLK2 почти кончился — прошло больше всего слотов
     m = Meter(sta)
-    sta.call('bti_arm_period_gp0')
+    sta.call('bti_sta_arm_abft_slot_period')
     g = [j for j, e in m.events() if e[:3] == ('extreg', 'r', 55)][0]
     a = m.cmd_idx(lambda c: c >> 24 == 0x50)
     w, n = m.span(g, a)
@@ -517,17 +511,15 @@ def test_abft_ap_grid_armed_before_trigger(uc):
 
 
 # =====================================================================================================================
-# SSW-Feedback AP в A-BFT (mac_mode_program_c → direct_tx_step)
+# SSW-Feedback AP в A-BFT (abft_rx_ssw_tx_feedback → direct_tx_ssw_feedback)
 # =====================================================================================================================
-@risk('mac_mode_program_c → direct_tx_step: r55 SIFS_CNT → 0x19 SSW-Feedback', 269, 330,
-      'uc/tail.c:1006: ≤ ~2 мкс от чтения r55 до старта передачи')
 def test_abft_ap_feedback_after_guard(uc):
     """AP принял SSW станции в A-BFT; по событию GP1 (r54.7) — сторож SIFS_CNT (r55 после 0x4d000000, порог 6,81 мкс) и
-    SSW-Feedback (direct_tx_step → 0x19000001), 10.42.5.2. После сторожа до 0x19 остаётся ≤ ~2 мкс = 330 тактов минус
+    SSW-Feedback (direct_tx_ssw_feedback → 0x19000001), 10.42.5.2. После сторожа до 0x19 остаётся ≤ ~2 мкс = 330 тактов минус
     задержка PHY (uc/tail.c:1006: «от чтения r55 до старта передачи остаётся ≤ ~2 мкс (~330 тактов)»)."""
     uc.cpu.regs[25] = MAC_CMD_LOG
     clean_shadows(uc)
-    rec = 0x803e80
+    rec = 0x807e80
     zero(uc, rec, 0x18)
     from test_uc_beacon_rx import RX_BUF
     ssw = bytearray(32)
@@ -542,7 +534,7 @@ def test_abft_ap_feedback_after_guard(uc):
     uc.ext.update({42: (1 << 12) | (1 << 16) | (1 << 14) | (1 << 15), 54: r54, 55: 0x300, 38: r38, 37: 1 << 24,
                    36: 1 << 6, 40: (1 << 24) | 5, 43: 1 << 31, 45: 1 << 31, 47: 0xffff})
     m = Meter(uc, stop=IS_TX)
-    uc.call('mac_mode_program_c', rec, stub={'uc_assert': 0, 'uc_evt_build_and_post_report': 0}, max_steps=200000)
+    uc.call('abft_rx_ssw_tx_feedback', rec, stub={'uc_assert': 0, 'uc_evt_build_and_post_report': 0}, max_steps=200000)
     a = m.cmd_idx(IS_TX)
     assert a is not None, [hex(c) for c in uc.mac_cmds]
     g = [j for j, e in m.events() if e[:3] == ('extreg', 'r', 55) and j < a][-1]
@@ -590,7 +582,7 @@ def test_ssw_ack_after_feedback(uc, rf_modules):
 @pytest.mark.parametrize('peer_ant', [1])
 def test_rss_after_iss_end(uc, peer_ant):
     """Ответчик TXSS: конец ISS инициатора (r54.0 txss_end_ind в txss_resp_wait_iss_end) → первый SSW RSS через MBIFS
-    (10.42.2.2, uc/txss.c:467): mac_mode_switch_core_and_rf (RX→TX), mac_program_4f_52, txss_program_tx_frame с
+    (10.42.2.2, uc/txss.c:467): mac_mode_switch_core_and_rf (RX→TX), mac_program_gp_timer0, txss_program_tx_frame с
     подготовкой развёртки 64 секторов (txss_set_sweep_param, копия порядка 64 Б) до 0x19. Худшее: 64 сектора, пир с
     peer_ant DMG-антеннами."""
     uc.cpu.regs[25] = MAC_CMD_LOG
@@ -656,7 +648,7 @@ def test_brp_trn_metric_iteration(uc, mask):
             if e[:3] == ('extreg', 'w', 32) and e[4] == 0x49000002:
                 cnt['i'] += 1
     c.step = step
-    after = ['uc_assert', 'brp_program_mac_sequence_uc', 'brp_pick_sector_cfg', 'rf_select_sector_cmd41',
+    after = ['uc_assert', 'brp_program_mac_sequence_uc', 'brp_pick_sector_cfg', 'rf_select_sector',
              'sta_set_rx_sector']                           # после цикла — вне срока
     uc.call('brp_program_and_measure', 0, 0, 0, stub={k: 0 for k in after if k in uc.sym})
     acks = m.all_cmds(lambda c: c == 0x49000002)[1:]       # первая — пуск измерения
@@ -669,12 +661,11 @@ def test_brp_trn_metric_iteration(uc, mask):
 # =====================================================================================================================
 # Развёртка маяков AP: соседние маяки через SBIFS (bcon_txss_sweep_step)
 # =====================================================================================================================
-@risk('bcon_txss_sweep_step: r42.15 tx_end → 0x19 следующего маяка (64 маяка)', 276, 165,
-      'SBIFS 10.3.2.3.8, uc/tail.c:2567; стенд E4: зазор 1,000 мкс — срок от tx_end не установлен')
 def test_beacon_sweep_sbifs(uc, monkeypatch):
     """BTI AP, 64 маяка: следующий маяк — через SBIFS 1 мкс ± 0,03 (10.3.2.3.8) после конца предыдущего; интервал
     отмеряет MAC (0x886d0c), uc обязан перепрограммировать кадр раньше (uc/tail.c:2567). W — от tx_end (r42.15) до 0x19
-    следующего маяка, худший из 63 промежутков; ожидания MAC на пути (события 5/6 — mac_evt_enable_bit_sync*, MTP)
+    следующего маяка, худший из 63 промежутков (от «передатчик свободен», B = TX_FREE_LEAD + SBIFS — r42.15 у начала
+    кадра, H-TXEVT); ожидания MAC на пути (события 5/6 — mac_evt_enable_bit_sync*, MTP)
     исполняются, а не заглушены (r42 б14 — подтверждение после 0x2004000, иначе busy2 отменил бы BTI). B = SBIFS 165
     тактов от tx_end. Стенд E4: зазор маяков нашего AP 1,000 мкс — r42.15 опережает
     конец кадра в эфире или MAC держит кадр; фактический срок не установлен."""
@@ -699,12 +690,13 @@ def test_beacon_sweep_sbifs(uc, monkeypatch):
     assert len(txs) >= 64, [hex(c) for c in uc.mac_cmds][:80]
     worst = None
     for x, y in zip(txs, txs[1:64]):
-        t = m.trigger(42, 1 << 15, y, after=x)
+        t = tx_free_trigger(m, y, x)
         w, n = m.span(t, y)
         if worst is None or w > worst[0]:
             worst = (w, n, t, y)
     print(m.profile(worst[2], worst[3]))
-    check('beacon_sweep_gap', worst[0], worst[1], SBIFS, 'SBIFS от tx_end, 10.3.2.3.8; uc/tail.c:2567')
+    check('beacon_sweep_gap', worst[0], worst[1], TX_FREE_LEAD + SBIFS,
+          'опережение «свободен» 135 + SBIFS, 10.3.2.3.8; uc/tail.c:2567')
 
 
 # =====================================================================================================================
@@ -716,7 +708,7 @@ def test_cbap_slot_to_tx_start(uc):
     (10.23.2.2, 10.39.5, Table 20-30; uc/tx.c:286). B = aSlotTime = 825 тактов."""
     uc.cpu.regs[25] = MAC_CMD_LOG
     clean_shadows(uc)
-    ctx = 0x803e00
+    ctx = 0x807e00
     zero(uc, ctx, 0x3c)
     uc.w8(ctx, STA_IDX)
     uc.w32(0x8004f4, 0)                                     # dti_qset_mode

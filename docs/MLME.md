@@ -149,8 +149,8 @@ discovery-режима (`lmac_if_discovery_mode_cfg_handler`).
 ## 4. Ключи
 
 `set_gtk` 0x8e6704 / 4.1 0x8e1898 («New GTK / Fixed GTK») и `key__install_by_type` 0x8d6e68 / 4.1 0x8d4104 →
-`add_key` 0x8d0edc / 4.1 0x8ce17c; `set_tk` 0x8e7140 / 4.1 0x8e2134 («New TK is handled»);
-`wmi_add_key__pick_mid` 0x8cbb2c / 4.1 0x8c9ab8; `install_key_handle` 0x8f5a5c →
+`mac_rx_key_write` 0x8d0edc / 4.1 0x8ce17c; `set_tk` 0x8e7140 / 4.1 0x8e2134 («New TK is handled»);
+`wmi_add_key__pick_mid` 0x8cbb2c / 4.1 0x8c9ab8; `conn_on_key_installed` 0x8f5a5c →
 `vring__reinstall_keys_for_mid` 0x8ea7ac; `vring__enable_first_pending_gtk`
 0x8cd0a4 («GTK key_id»); `mac_filter__write_one` 0x8df704 — упаковка флагов
 ключа в битовые поля. `l2mgr__data_port_open_and_keys` 0x8f5a84 / 4.1 `l2mgr__data_port_open` 0x8ed5fc (552 Б) —

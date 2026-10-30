@@ -53,9 +53,9 @@ static u32 wlan_hdr_build_qos_data(u8 *buf, u32 subtype, const u8 *a2, const u8 
     }
     h->h.seq = 0;
     *qos = 0;
-    bits_set16h_s5_w2(qos, 0);
+    qos_ctrl_set_ack_policy(qos, 0);
     *qos = (u16)(*qos & ~((1u << 7) | (1u << 4) | (1u << 9)));
-    bits_set16h_s0_w4(qos, tid & 0xf);
+    qos_ctrl_set_tid(qos, tid & 0xf);
     return 0x1a;
 }
 

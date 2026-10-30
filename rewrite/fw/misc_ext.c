@@ -13,19 +13,19 @@
  *   0x8c32f8 u_schd__alloc_task     — sched.c u_schd_alloc_task;
  *   0x8c37ec fw_mailbox__has_pending — инлайн (fw_mailbox_is_empty(&mb->rx) == 0) в
  *                                     lmac.c lmac_mbox_drain_task, wmi_cmd.c mbox_drain_*;
- *   0x8c6414 mem_pool__put_block    — mbox.c mem_pool_put_block;
+ *   0x8c6414 mem_pool__put_block    — mbox.c rx_ring_resume_dma_irq;
  *   0x8c64d4 u_schd__invoke_callback — инлайн в rx.c u_schd_reschedule;
  *   0x8cc160/0x8cc168/0x8cc6b4 boot_diag__*_addr — инлайн-константы в stubs.c
  *                                     boot_install_diag_magic;
- *   0x8cc308/0x8cc31c/0x8cc330/0x8cc348 txq_cfg__*_or_default — static txq_cfg_c70/
+ *   0x8cc308/0x8cc31c/0x8cc330/0x8cc348 txq_cfg__*_or_default — static txq_cfg_mcs_param16_val/
  *                                     _enable/_c74/_field_0e в mac_bringup.c;
  *   0x8cdcd0 ies__iter_has_more     — инлайн в link_sm.c ies_scan_for_match;
- *   0x8d0188 car__get_pll3_status_bit3 — car.c car_get_pll3_status_bit3;
+ *   0x8d0188 car__get_pll3_status_bit3 — car.c car_get_pll3_lock_status;
  *   0x8d4768 sdp__init_pair         — инлайн в hw_init.c sdp_int_ack_unmask;
  *   0x8d478c hw__has_cause_880b54, 0x8da774 user_led__prepare_halt,
  *   0x8d7714 hw_modes__pll_engage, 0x8d772c hw_modes__enable_pll, 0x8d7748
- *   hw_modes__pll_bypass, 0x8d7864 ut_hw_modes_cmd_0x308, 0x8d7c04 ut_hw_modes_cmd_0x304_fw,
- *   0x8d7c84 hw__pll_mode_switch, 0x8d7cc4 ut_hw_modes_cmd_0x30b — power_halt.c (без
+ *   hw_modes__pll_bypass, 0x8d7864 hw_modes_apply_power_state, 0x8d7c04 hw_modes_set_pll_bypass,
+ *   0x8d7c84 hw__pll_mode_switch, 0x8d7cc4 hw_modes_set_adc_sar_vreg_b18 — power_halt.c (без
  *                                     адресов в комментариях; сверены, совпадают);
  *   0x8da00c user_icr__timer_bit, 0x8e91a4 u_schd__hw_timer_a_start, 0x8e94f8
  *   u_schd__timer_irq_pending, 0x8e9500 u_schd__program_hw_timer, 0x8e916c
@@ -41,13 +41,13 @@
  *                                     → размер заголовка 0, tag_block — no-op (ctors.c);
  *   0x8ed1a8..0x8ed574 bits__set*   — обёртки 0x8edc34/0x8edccc/0x8edcb8 (r10 — сдвиг,
  *   0x8edce0 bf__set_field_half_fw    r11 — ширина-1): у портированных вызывающих инлайн
- *                                     bf_insert_field/bf_set32 или локальные помощники;
+ *                                     bf_insert_field/bf_set32_lo_hi или локальные помощники;
  *   0x8f33ac/0x8f33b8/0x8f3414 fw_image_info__set_flavor / fw_version__log_date /
  *   fw_version__log                 — log.c (у log_date в комментарии ошибочный 0x8f4938);
  *   0x8f4424 hw_personality__read_strap, 0x8f4480 gpio__write_ctrl_b84 — hw_init.c.
  *
  * Здесь же — исправления двух прежних упрощённых портов (определения перенесены сюда):
- *   hwd_wait_pll_lock (0x8d041c; был в wmi.c) и ut_hw_drivers_cmd_0x203 (0x8d03d8; был в
+ *   clk_switch_to_ref (0x8d041c; был в wmi.c) и ut_hw_drivers_pll_bypass_step (0x8d03d8; был в
  *   power_halt.c) — см. комментарии у функций. */
 #include "../include/types.h"
 #include "../include/arc.h"
@@ -89,7 +89,7 @@ void ut_hw_drivers_reply_not_supported(struct wmi_mbox *mb, const struct ut_cmd 
  * idx·4, позиция (бит & 0x1f) = 0; маска = (1 << (pos+4)) | ((1 << (pos+4)) − (1 << pos)).
  * Нарушение — журнал / ассерт 0x1450 (idx, знаковое сравнение brge) или 0xac (v), после
  * ассерта vendor продолжает запись. */
-void ut_hw_drivers_check_index(u32 idx, u32 v)
+void rfc_tx_power_tbl_set_mcs_row(u32 idx, u32 v)
 {
     if ((s32)idx >= 0xd) {
         fw_log_emit3(0, 0x101f0ac, idx, 0xc, 0);
@@ -107,24 +107,24 @@ void ut_hw_drivers_check_index(u32 idx, u32 v)
     *w = (v << pos) | (old & ~mask);
 }
 
-/* ut_hw_drivers_cmd_0x203 (0x8d03d8, 18 Б): снять бит 1 [0x880c50], затем хвостом
+/* ut_hw_drivers_pll_bypass_step (0x8d03d8, 18 Б): снять бит 1 [0x880c50], затем хвостом
  * 0x8d029c(0) (b.d, mov_s r0,0 в слоте). Прежний порт (power_halt.c) вместо 0x8d029c звал
  * car_enable_pll3_and_wait(0) (0x8d0320 — переключение такта ARC XTAL↔PLL3): цель b.d
  * 0x8d03e4 — 0x8d029c (-328 от 0x8d03e4). Зовётся из hw_modes__pll_bypass (0x8d7748). */
-void ut_hw_drivers_cmd_0x203(void)
+void ut_hw_drivers_pll_bypass_step(void)
 {
     MMIO32(HW_RGF_USER_SPARROW_M_4) &= ~2u;
-    pcie_toggle_880c50_bit2(0);
+    clk_switch_sleep_or_ref(0);
 }
 
 /* hwd__wait_pll_lock (0x8d041c, 40 Б): бит 2 [0x880c50] стоит → 0x8d029c(1) (снять его с
  * ожиданием подтверждения); бит 1 [0x880abc] стоит → car_enable_pll3_and_wait(0). Аргумент
  * (вызывающие кладут 0x14) не используется. Прежний порт (wmi.c) вместо 0x8d029c(1) делал
  * [0x880c50] |= 4 — бит, и так стоявший, не снимался и подтверждение не ждалось. */
-void hwd_wait_pll_lock(void)
+void clk_switch_to_ref(void)
 {
     if (MMIO32(HW_RGF_USER_SPARROW_M_4) & 4u)
-        pcie_toggle_880c50_bit2(1);
+        clk_switch_sleep_or_ref(1);
     if (MMIO32(RGF_USER_CLKS_CTL_0) & 2u)
         car_enable_pll3_and_wait(0);
 }
@@ -132,17 +132,17 @@ void hwd_wait_pll_lock(void)
 /* ut_hw_drivers__pair_2568 (0x8d2a50, 26 Б): слово AGC = hwd_phy__uses_rgf_883100(base,
  * d1..d4) (0x8d2568, r0..r4 — транзитом), затем hwd_phy_rx_set_agc_start_val_and_gain_array
  * (base, слово) — base сохранён в r5 (0x8d2568 r5 не трогает); результат — слово. */
-u32 ut_hw_drivers_pair_2568(u32 base, u32 d1, u32 d2, u32 d3, u32 d4)
+u32 ut_hw_drivers_apply_agc_word(u32 base, u32 d1, u32 d2, u32 d3, u32 d4)
 {
-    u32 w = hwd_phy_uses_rgf_883100(base, d1, d2, d3, d4);
+    u32 w = hwd_phy_pack_agc_gain_arr(base, d1, d2, d3, d4);
     hwd_phy_rx_set_agc_start_val_and_gain_array(base, w);
     return w;
 }
 
-/* ut_hw_drivers_cmd_0x507 (0x8d3808, 72 Б): RFC core-fw команда 9 модуля rf: значение
+/* rfc_core_fw_commit_rx_sector (0x8d3808, 72 Б): RFC core-fw команда 9 модуля rf: значение
  * (val & 0xf) << 7 | (idx & 0x7f). idx > 0x7f (знаковое) — ассерт 0x1151, val >= 0x10 —
  * 0x1155; после ассертов vendor продолжает с замаскированными значениями. */
-void ut_hw_drivers_cmd_0x507(u32 rf, u32 idx, u32 val)
+void rfc_core_fw_commit_rx_sector(u32 rf, u32 idx, u32 val)
 {
     if ((s32)idx > 0x7f)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1151);
@@ -152,11 +152,11 @@ void ut_hw_drivers_cmd_0x507(u32 rf, u32 idx, u32 val)
     hwd_rfc_write_core_fw(rf, 9, (idx & 0x7f) | (val << 7), 0);
 }
 
-/* ut_hw_drivers_cmd_0x50f (0x8d3b90, 116 Б): 2-битное поле elem (0..31) сектора из RFC-
+/* hwd_rfc_sector_edge_phase_get (0x8d3b90, 116 Б): 2-битное поле elem (0..31) сектора из RFC-
  * таблицы: база записи — sector·192 бит (asl 6 + add1 = ·3), RX — +0x8000, TX — +0x10000 бит.
  * Читаются два слова: A — по биту база+0, B — по биту база+0x20 (адрес = (бит >> 3) & ~3).
  * elem < 16 — (B >> 2·elem) & 3, иначе (A >> (2·elem − 32)) & 3 (сдвиг — extb). */
-u32 ut_hw_drivers_cmd_0x50f(u32 rf, u32 sector, u32 rx, u32 elem)
+u32 hwd_rfc_sector_edge_phase_get(u32 rf, u32 sector, u32 rx, u32 elem)
 {
     u32 base = (sector << 6) * 3u;
     u32 a, b, sh;
@@ -177,9 +177,9 @@ u32 ut_hw_drivers_cmd_0x50f(u32 rf, u32 sector, u32 rx, u32 elem)
     return (a >> ((sh - 0x20) & 31u)) & 3u;
 }
 
-/* ut_hw_drivers_cmd_0x513 (0x8d3d64, 58 Б): бит 28 + (bit & 1) слова сектора (база sector·192
+/* hwd_rfc_sector_x16_state_get (0x8d3d64, 58 Б): бит 28 + (bit & 1) слова сектора (база sector·192
  * бит + 0x80; RX — +0x8000, TX — +0x10000), результат — байт 0/1. */
-u32 ut_hw_drivers_cmd_0x513(u32 rf, u32 sector, u32 rx, u32 bit)
+u32 hwd_rfc_sector_x16_state_get(u32 rf, u32 sector, u32 rx, u32 bit)
 {
     u32 a = (sector << 6) * 3u;
     u32 v, pos;
@@ -191,7 +191,7 @@ u32 ut_hw_drivers_cmd_0x513(u32 rf, u32 sector, u32 rx, u32 bit)
 }
 
 /* field_set_0x00__8db5bc (0x8db5bc, 26 Б): LMAC-команда 0x3b, тело — слово v (4 Б). */
-void field_set_0x00_8db5bc(u32 v)
+void lmac_if_send_brp_snr_cfg(u32 v)
 {
     struct lmac_cmd_u32 *body = lmac_cmd_pool_alloc();
     body->val = v;
@@ -200,17 +200,17 @@ void field_set_0x00_8db5bc(u32 v)
 
 /* field_set_0x00__8e6f2c (0x8e6f2c, 8 Б): байт [obj + 0x45e] = v (номер активного RF-модуля
  * в объекте RF-конфигурации; зовёт hwm_analog_select_active_rf_module 0x8d7584). */
-void field_set_0x00_8e6f2c(struct rf_obj *obj, u32 v)
+void rf_obj_set_active_rf_mask(struct rf_obj *obj, u32 v)
 {
     obj->rf_mask = (u8)v;
 }
 
 /* sdp__read_880b98_bit (0x8f4404, 32 Б): бит pin регистра 0x880b98 (pin — через проверку
- * SDP_hwd_sdp_is_defined_sdp 0x8f4354, ассерт 0x1312 при i >= 0x1c). Пара к
+ * sdp_check_pin_index 0x8f4354, ассерт 0x1312 при i >= 0x1c). Пара к
  * hw_personality__read_strap (0x8f4424, регистр 0x880b7c). */
-u32 sdp_read_880b98_bit(u32 i)
+u32 sdp_read_gpio_in_bit(u32 i)
 {
-    u32 pin = SDP_hwd_sdp_is_defined_sdp(i);
+    u32 pin = sdp_check_pin_index(i);
     u32 v = MMIO32(HW_SDP_GPIO_IN);
     return ((1u << pin) & v) >> pin;
 }
@@ -219,14 +219,14 @@ u32 sdp_read_880b98_bit(u32 i)
  * *out_b98 — sdp__read_880b98_bit(i + 5), бит i *out_strap — hw_personality__read_strap
  * (i + 5). Оба слова сначала обнуляются; цикл vendor — r13 = 0x17..1 (brhs.d r13,1), i в
  * слоте задержки. */
-void ut_hw_drivers_zero_result(u32 *out_b98, u32 *out_strap)
+void ut_hw_drivers_snapshot_sdp_pins(u32 *out_b98, u32 *out_strap)
 {
     u32 i, n;
 
     *out_b98 = 0;
     *out_strap = 0;
     for (i = 0, n = 0x17; ; i++) {
-        *out_b98 |= sdp_read_880b98_bit(i + 5) << i;
+        *out_b98 |= sdp_read_gpio_in_bit(i + 5) << i;
         *out_strap |= hw_personality_read_strap(i + 5) << i;
         n--;
         if (n < 1)
@@ -238,11 +238,11 @@ void ut_hw_drivers_zero_result(u32 *out_b98, u32 *out_strap)
  * gpio__write_ctrl_b84(1); для бита i: func_mask — функция GPIO 0 (0x8f4294); out_mask —
  * «defined»/выход (0x8f43d4) = 1 и уровень (val_mask & бит) != 0 (0x8f4258), иначе
  * «defined» = 0. */
-void ut_hw_drivers_step_8f4480(u32 func_mask, u32 out_mask, u32 val_mask)
+void ut_hw_drivers_config_sdp_pins(u32 func_mask, u32 out_mask, u32 val_mask)
 {
     s32 i;
 
-    gpio_write_ctrl_b84(1);
+    sdp_gpio_write_ctrl(1);
     for (i = 0; i < 0x17; i++) {
         u32 pin = (u32)i + 5;
         u32 m = 1u << i;
@@ -273,7 +273,7 @@ u32 bits_lowest_set_bit8(u32 v)
  * 0xddc8 (младшее отображение) — аргумент задачи шедулера (0x8fb254, mov_s r0,0xddc8;
  * задержка = u16 [payload+4] · 1000); при задержке 0 зовётся сразу (0x8fb248). vendor
  * передаёт в ассерт blink — уже указывающий внутрь функции (после bl журнала). */
-void ut_module_hw_flows_log_101aa08(u32 v, u32 a1)
+void ut_module_hw_flows_delayed_assert(u32 v, u32 a1)
 {
     (void)a1;
     fw_log_emit1(0x25, 0x101aa08, v);
@@ -287,26 +287,26 @@ void sdp_set_level_and_init(u32 i, u32 v)
 {
     volatile u32 *w = &sdp_port_cfg[i];
     *w = (*w & ~0x1fu) | (v & 0x1fu);
-    SDP_sdp_init_2(i);
+    sdp_port_init(i);
 }
 
 /* hw_cfg__set_8004fc_and_levels (0x8ce060, 38 Б): байт [0x8004fc] = a, пины SDP 7 и 8 —
  * (u8)(b + 5) и (u8)(c + 5) с переинициализацией (sdp__set_level_and_init). */
-void hw_cfg_set_8004fc_and_levels(u32 a, u32 b, u32 c)
+void hw_cfg_set_sdp_flags_and_levels(u32 a, u32 b, u32 c)
 {
     hw_cfg_sdp_flags = (u8)a;
     sdp_set_level_and_init(7, (u8)(b + 5));
     sdp_set_level_and_init(8, (u8)(c + 5));
 }
 
-/* ut_hw_modes_cmd_0x30c (0x8d7c70, 20 Б): on == 1 — 0x8d03f4 (биты 1 и 2 [0x880c50]),
+/* ut_hw_modes_set_sleep_clk (0x8d7c70, 20 Б): on == 1 — 0x8d03f4 (биты 1 и 2 [0x880c50]),
  * иначе 0x8d0444 (снять бит 2). */
-void ut_hw_modes_cmd_0x30c(u32 on)
+void ut_hw_modes_set_sleep_clk(u32 on)
 {
     if (on == 1)
-        pcie_set_880c50_b12(1);
+        sparrow_m4_set_b1_b2(1);
     else
-        pcie_clear_880c50_b2(on);
+        sparrow_m4_clear_b2(on);
 }
 
 /* ---------------------------------------------------------------------------------- */
@@ -315,7 +315,7 @@ void ut_hw_modes_cmd_0x30c(u32 on)
 
 /* field_set_0x00__8dbc94 (0x8dbc94, 26 Б): LMAC-команда 0x12, тело — байт v (1 Б).
  * Зовётся через thunk 0x8ce408 (UT_MODULE_HW_FLOWS_SYSAPI). */
-void field_set_0x00_8dbc94(u32 v)
+void lmac_if_send_restart_rs(u32 v)
 {
     struct lmac_cmd_u8 *body = lmac_cmd_pool_alloc();
     body->val = (u8)v;
@@ -324,20 +324,13 @@ void field_set_0x00_8dbc94(u32 v)
 
 /* field_set_0x00__8dbe88 (0x8dbe88, 30 Б): LMAC-команда типа (u16)type, тело — слово v
  * (4 Б). Зовут команды fw_sysapi_mgr (start_*_statistics, plcp, channel_estimation). */
-void field_set_0x00_8dbe88(u32 type, u32 v)
+void lmac_if_send_cmd_u32(u32 type, u32 v)
 {
     struct lmac_cmd_u32 *body = lmac_cmd_pool_alloc();
     body->val = v;
     lmac_if_post_cmd(body, type & 0xffffu, 4, 0);
 }
 
-/* radio_mgr__alloc_request (0x8e2724, 14 Б) — имя NAMES-EXTRA неверно: байт
- * [obj + 0x75 + idx·17] = 8 (mul64 r1,0x11 → mlo; поле записи списка STA PBSS по 17 Б).
- * Зовёт pbss_sta_list_update (0x8d88c4, 0x8d8af2). */
-void radio_mgr_alloc_request(struct mid_bss *obj, u32 idx)
-{
-    obj->pbss[(s32)idx].aid = 8;
-}
 
 /* link_stats__pack_conn_entry (0x8cdd7c, 76 Б): упаковка снимка отчёта BF соединения s
  * (lm_if.snap) в данные ответа d (зовёт hw_sysapi_get_beamforming_statistics 0x8cde44).
@@ -391,7 +384,7 @@ void fw_log_emit_str3(u32 hdr, u32 token, u32 s0, u32 s1, u32 s2)
 }
 
 /* link_lost_diag__rx_status (0x8f4680, 114 Б): диагностика приёма PHY при потере линка
- * (зовёт link_lost_diag_part2 0x8f2250): сброс статистики, выдержка, фиксация, снимок 14
+ * (зовёт link_lost_diag_rx_and_temperatures 0x8f2250): сброс статистики, выдержка, фиксация, снимок 14
  * счётчиков (0x8d25e8). Счётчик [10] (+0x28) != 0 — журнал 0x101b284 с ним; иначе журнал
  * 0x101b2b8, повторный снимок и журналы 0x101b2ec / 0x101b328 для счётчиков [7] / [8]
  * (+0x1c / +0x20), если они >= 3. Буфер 0x38 Б заполняется целиком (14 слов).

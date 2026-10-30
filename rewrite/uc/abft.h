@@ -32,7 +32,7 @@
  *            через IFS из 0x886d00 + ~0,55 мкс (UC_ABFT_MACLAT_CLK; включает неточность ctx 1,45 мкс)
  *            после последнего GP-события (начало отсчёта SIFS_CNT), если uc успел выдать команды; иначе —
  *            «поздняя команда» (MAC_HW_ICR б4/б5 → INT6 → assert 0x26). AP: 0x886d00 = MBIFS
- *            (mac_mode_kick) — Feedback = GP1 + 9,55 мкс (264,1 при GP1 254,56; 268,23 при 258,66);
+ *            (abft_initiator_feedback_loop) — Feedback = GP1 + 9,55 мкс (264,1 при GP1 254,56; 268,23 при 258,66);
  *            станция: 0x886d00 = SIFS — первый SSW = GP1 + 3,55 мкс (метки A-BFT: 0,94 + 2,69 + …).
  *            Сторожа SIFS_CNT ≥ 0x160 (станция) и ≥ 0x700 (AP) — срок выдачи команд относительно этого IFS
  *            (значения из 6.2, срок MAC не измерен). Ожидание uc до точки (прежний вариант: подготовка
@@ -97,10 +97,10 @@
  * станции. Прежние подгонки (+30 тактов «конец последнего маяка», −105 тактов «E − txop_event»; 64 × 34 Б)
  * лежат внутри этого интервала (−0,64 мкс) и больше не нужны. */
 #define ABFT_AP_FALLBACK_FRAC_CLK ABFT_CLK_PER_US
-/* Конец A-BFT у AP (GP0) — до границы следующего слота (иначе mac_mode_kick начал бы слот n) и после конца
+/* Конец A-BFT у AP (GP0) — до границы следующего слота (иначе abft_initiator_feedback_loop начал бы слот n) и после конца
  * последнего Feedback. По aSSSlotTime (10.42.5.2) Feedback слота кончается за MBIFS до границы следующего слота:
  * GP0 = граница − aSIFSTime — через MBIFS − SIFS = 6 мкс после Feedback, и у uc остаётся SIFS на выход из
- * mac_mode_kick до границы (прежде 2 мкс из 6.2, без обоснования). */
+ * abft_initiator_feedback_loop до границы (прежде 2 мкс из 6.2, без обоснования). */
 #define ABFT_AP_STD_END_GUARD_CLK ABFT_SIFS_CLK
 _Static_assert(ABFT_AP_STD_END_GUARD_CLK < ABFT_MBIFS_CLK, "конец A-BFT — после конца последнего Feedback");
 
@@ -111,7 +111,7 @@ _Static_assert(ABFT_AP_STD_END_GUARD_CLK < ABFT_MBIFS_CLK, "конец A-BFT —
  * короче на FSS тактов, слот — на FSS + 0,5 (при поле 15 — 0,1 мкс на слот); теперь границы слотов у нас на эту
  * величину позже, чем у vendor 6.2, по стандарту. Поле FSS < aSSFramesPerSlot (4) — нарушение 10.42.5.2:
  * станция в таком A-BFT не участвует (решение по маяку в rx.c/bti.c — как было), а пути, читающие поле позже
- * (bti_arm_period_gp0, bf_gpc_program_mac_by_mode_b, abft_ssw_go), вместо assert выходят; формула — для любого поля. */
+ * (bti_sta_arm_abft_slot_period, abft_sta_arm_abft_end_timer, abft_ssw_go), вместо assert выходят; формула — для любого поля. */
 #define ABFT_SS_FRAMES_PER_SLOT  4u      /* aSSFramesPerSlot (Table 11-22): минимум поля FSS */
 static inline __attribute__((always_inline)) u32 abft_ssdur_clk(u32 fss_field)
 {
@@ -124,14 +124,14 @@ static inline __attribute__((always_inline)) u32 abft_slot_clk(u32 fss_field)
 }
 _Static_assert(DMG_TXTIME_SSW_CLK == 2460u && ABFT_SSFB_CLK == DMG_TXTIME_SSW_ACK_CLK, "TXTIME SSW / SSW-Feedback");
 
-/* GP0 станции (abft_sta_arm_gp0): стартует по концу GP2 = конец приёма маяка + ABFT_STA_GP2_RXEND_CLK − TRIM (H-GP5,
+/* GP0 станции (abft_sta_arm_bti_end_timer): стартует по концу GP2 = конец приёма маяка + ABFT_STA_GP2_RXEND_CLK − TRIM (H-GP5,
  * H-GP9), должен кончиться в конце BTI = конец маяка + Duration. Конец BTI — по ПОСЛЕДНЕМУ принятому маяку (10.42.5.1):
- * если за маяком взвода идут ещё маяки (CDOWN > 0), поправка по ним (bti_bi2_track_best_metric) выдаётся через
+ * если за маяком взвода идут ещё маяки (CDOWN > 0), поправка по ним (bti_beacon_track_best_metric) выдаётся через
  * ~1,40 мкс после конца маяка (стенд bcn2) и должна успеть, пока GP0 идёт. AP не обязан оставлять запас после
  * последнего маяка: у vendor Duration ⌊⌋ — последний маяк 1 мкс, первый кончает BTI раньше последнего + 1,4 мкс
  * (стенд ft3: R2 n = 2, 3 — «GP0 уже кончился» на поправке, первый SSW по первому маяку +0,2). Поэтому GP0 взводится
  * длиннее на ABFT_STA_GP0_CATCH_CLK (путь поправки + шаг 0,2 мкс), а превышение off вычитается из GP1 и GP2 — при
- * взводе (bti_tx_program_bi2_regs, bf_gpc_program_mac_by_mode_b) и в поправке — так что граница слота и конец A-BFT
+ * взводе (bti_sta_arm_abft_first_slot, abft_sta_arm_abft_end_timer) и в поправке — так что граница слота и конец A-BFT
  * остаются от конца BTI. Короткая Duration (единственный маяк: D_last 3 мкс у нашего AP, 1 мкс у vendor) — GP0 не
  * короче 1 мкс, превышение — так же (стенд ft1, n = 1: без этого +1,65 мкс). off < GP1 станции. */
 #define ABFT_STA_GP0_CATCH_CLK  264u    /* 1,40 мкс (путь поправки после конца маяка, bcn2) + 0,20 = 1,60 мкс */
@@ -146,7 +146,7 @@ static inline __attribute__((always_inline)) u32 abft_sta_gp0_clk(u32 dur_us, u3
 _Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_US < ABFT_STA_STD_GP1_CLK &&
                ABFT_STA_GP0_CATCH_CLK < ABFT_STA_STD_GP1_CLK, "превышение GP0 меньше GP1 станции");
 
-/* Конец BTI станции — по последнему маяку (поправка GP1/GP2, bti_bi2_track_best_metric, 10.42.5.1). */
+/* Конец BTI станции — по последнему маяку (поправка GP1/GP2, bti_beacon_track_best_metric, 10.42.5.1). */
 /* Поправка станции по последнему маяку успевает, только если конец GP0 (конец BTI по ПЕРВОМУ маяку) позже конца
  * последнего маяка на ~1,4 мкс: отчёт о его приёме (MAC_EVT1_PPDU_REPORT) — через ~0,3 мкс после конца, затем путь цикла
  * (стенд bcn2: команды поправки через 1,40 мкс после конца маяка). Удлинять GP0 станции нельзя: путь uc от конца
@@ -170,11 +170,12 @@ _Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_
  *   Duration = ⌈(cdown·(TXTIME(SSW) + gap) + MBIFS) / 165⌉ = ss_plan_tx_dur − gap + MBIFS − ⌊cdown·δ / 165⌋,
  *   δ = frame·165 − TXTIME(SSW) (тактов, на которые frame в плане длиннее кадра; 15 при frame 15).
  * Тождество верно, пока MBIFS — целое число мкс. ⌊cdown·δ/165⌋ — умножением: m = δ·101681 ≥ δ·2^24/165,
- * (cdown·m) >> 24; точно при cdown ≤ 255, δ ≤ 164 (проверено перебором; cdown·m < 2^32), без деления на пути
+ * (cdown·m) >> 24; точно при cdown ≤ 255, δ ≤ 164 и при всём CDOWN 0..511 (9.5.1) для δ = 15 — frame 15, единственный
+ * план SSW (проверено перебором; cdown·m < 2^32), без деления на пути
  * между SSW. При смене
  * антенны (несколько DMG-антенн у пира) план добавляет на неё frame + gap (LBIFS, ifs.h) —
  * эту часть Duration берёт из плана как есть (на стенде путь не исполняется). Конец выделения
- * («whichever comes first») не учитывается — как и раньше. */
+ * («whichever comes first») — вычетом из плана перед развёрткой (txss.c ssw_plan_cap_by_allocation). */
 _Static_assert(DMG_MBIFS_CLK % DMG_CLK_PER_US == 0, "MBIFS — целое число мкс");
 #define SLS_MBIFS_US          (DMG_MBIFS_CLK / DMG_CLK_PER_US)
 static inline __attribute__((always_inline)) u32 sls_ssw_dur_mul(u32 frame_us)
@@ -226,7 +227,7 @@ static inline __attribute__((always_inline)) u8 ssw_snr_report(s32 snr_db)
 
 /* ---- TXOP BTI (802.11-2020 10.42.4, 9.2.5.1): Duration маяков и конец BTI по эфиру ---- */
 /* TXTIME маяка — по формуле Control PHY (ifs.h) от длины PSDU, которую fw кладёт в fwsh_diag.bcn_psdu_len при
- * постановке шаблона (TX_API_send_dband_bcon); P = TXTIME + SBIFS; TXOP = ⌈((n − 1)·P + d·165) / 165⌉ мкс (d —
+ * постановке шаблона (tx_api_send_dband_bcon); P = TXTIME + SBIFS; TXOP = ⌈((n − 1)·P + d·165) / 165⌉ мкс (d —
  * длительность маяка из r47, MTP_AGGREGATION, целые мкс вверх) — у последнего маяка остаток TXOP ≥ d. Сверка:
  * ⌈TXTIME/165⌉ должно совпасть с d из r47 (иначе MAC считает кадр иначе — не Control PHY, другая длина) — тогда
  * запасной путь: TXOP = n·(d + SBIFS) (план развёртки; ~55 мкс пустого эфира после 64 маяков) и счётчик

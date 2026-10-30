@@ -77,6 +77,8 @@ u32 ese_dti_window_now(void)
 u32 ese_dti_us_to_window_end(void)
 {
     u32 n = FWSH(ese_slot_tbl, count);
+    if (n == 0)                         /* без ESE — без чтения TSF (путь до первого SSW RSS, txss.c) */
+        return 0xffffffffu;
     u32 off = uc_read_tsf_lo() - MMIO32(HW_MAC_BI_START_TSF_LO);
     for (u32 k = 0; k < n && k < ESE_SLOTS_N; k++) {
         u32 d = off - FWSH_AT(ese_slot_tbl, slot, k).start;
@@ -86,9 +88,22 @@ u32 ese_dti_us_to_window_end(void)
     return 0xffffffffu;
 }
 
+/* Остаток текущего выделения DTI, мкс: меньшее из «до TBTT» (DTI кончается началом BTI следующего BI, любое
+ * выделение — не позже; HW_MAC_USEC_TO_TBTT [25:0], при выключенном MAC 0x3ffffff) и «до конца окна ESE». Для
+ * Duration SSW / SSW-Feedback (9.3.1.15, 9.3.1.16 b: «until the end of the current allocation») и проверки
+ * остатка перед повтором Feedback (10.42.6.2, tail.c sswfb_retry_fits). noinline — см. sswfb_retry_fits. */
+__attribute__((noinline)) u32 dti_alloc_left_us(void)
+{
+    u32 rem = MMIO32(HW_MAC_USEC_TO_TBTT) & 0x3ffffffu;
+    u32 win = ese_dti_us_to_window_end();
+    if (win < rem)
+        rem = win;
+    return rem;
+}
+
 /* Начало DTI (bi_dti_step): без расписания — снять свою паузу (расписание сняли); с ним —
  * закрыть, если сейчас не идёт разрешённое окно. */
-void ese_dti_dti_start(void)
+void ese_dti_on_dti_start(void)
 {
     if (!ese_dti_scheduled()) {
         ese_dti_open();

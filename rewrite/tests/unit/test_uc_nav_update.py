@@ -57,7 +57,7 @@ class World:
 
 
 def world(uc):
-    """После загрузки и конфигурации MAC: NAV включён (boot: rx_nav_set_flag_b1_if_enabled(1)) и свободен."""
+    """После загрузки и конфигурации MAC: NAV включён (boot: rx_nav_reset_flags_arm(1)) и свободен."""
     lmac_mac_cfg(uc)
     uc.w16(NAV_ENABLE, 1)
     uc.w32(NAV_FLAGS, 2)

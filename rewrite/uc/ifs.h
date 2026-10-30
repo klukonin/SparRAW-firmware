@@ -114,6 +114,13 @@ _Static_assert(DMG_RESP_TIMEOUT_SLOTS == 4u, "AckTimeout в слотах");
 /* dot11BFRetryLimit (MIB, DEFVAL 8): инициатор может повторить SSW-Feedback до этого числа раз (10.42.6.2, «may restart
  * the SSW feedback procedure up to dot11BFRetryLimit times»). vendor — 2 повтора (3 попытки). */
 #define DOT11_BF_RETRY_LIMIT     8u
+/* Ожидание ответчиком SLS SSW-Feedback после своей RSS (GP0 из txss_resp_wait_iss_end — взводится до RSS, к сроку
+ * прибавляется её длительность; выход txss_resp_wait_fdbk по r54.6): Feedback начинается через MBIFS после RSS (10.42.2.2), инициатор может повторить его dot11BFRetryLimit раз,
+ * каждый цикл — Feedback, MBIFS, SSW-Ack, PIFS (10.42.6.2). Срок покрывает все попытки: 9 × 8829 = 79461 такт ≈ 482 мкс.
+ * vendor брал слово за концом таблицы rss_wait_clk[9] (индекс 10, 0x8020ec), никем не записываемое: срок 0. */
+#define DMG_SSW_FB_CYCLE_CLK     (DMG_TXTIME_SSW_FB_CLK + DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_PIFS_CLK)
+#define DMG_RESP_FDBK_WAIT_CLK   ((1u + DOT11_BF_RETRY_LIMIT) * DMG_SSW_FB_CYCLE_CLK)
+_Static_assert(DMG_RESP_FDBK_WAIT_CLK == 79461u && DMG_RESP_FDBK_WAIT_CLK < (1u << 24), "срок Feedback в поле GP");
 
 /* ---- Сторожа опоздания по SIFS_CNT ----
  * SIFS_CNT — r55 после команды 0x4d000000: [15:8] целые мкс, [7:0] такты 0…164 (165 МГц); сравнение — по сырому
@@ -135,12 +142,12 @@ _Static_assert(DMG_RESP_TIMEOUT_SLOTS == 4u, "AckTimeout в слотах");
  * опыта; здесь короче). Порог = D − P − шаг: 4,34 − 2,64 − 0,10 = 1,60 мкс → [15:8] 1, [7:0] 0,60 × 165 = 99 тактов.
  * Удлинение пути от проверки до 0x19 (abft_ssw_go → abft_ssw_burst) на ΔP требует уменьшить порог на ΔP. */
 #define SIFS_CNT_ABFT_SSW_LATE   SIFS_CNT_CODE(1u, 99u)     /* 0x163 = 1,60 мкс */
-/* СРОК. AP, SSW-Feedback в A-BFT (mac_mode_program_c → direct_tx_step): начало Feedback — за aSSFBDuration + MBIFS
+/* СРОК. AP, SSW-Feedback в A-BFT (abft_rx_ssw_tx_feedback → direct_tx_ssw_feedback): начало Feedback — за aSSFBDuration + MBIFS
  * до конца слота (802.11-2020 10.42.5.2), точку держит MAC (GP1 + MBIFS из 0x886d00 + 0,55 мкс; от 0x19 не зависит).
- * Срок для uc — последняя выдача команд direct_tx_step, которую MAC ещё принимает. Замер (стенд, развёртка задержки
- * перед direct_tx_step, отсчёт по SIFS_CNT у проверки; 6 проходов, шаг 0,25 и 0,1): естественный путь — 2,58–2,68;
+ * Срок для uc — последняя выдача команд direct_tx_ssw_feedback, которую MAC ещё принимает. Замер (стенд, развёртка задержки
+ * перед direct_tx_ssw_feedback, отсчёт по SIFS_CNT у проверки; 6 проходов, шаг 0,25 и 0,1): естественный путь — 2,58–2,68;
  * при SIFS_CNT до 6,91–7,85 Feedback уходит в свою точку (сдвиг ≤ 0,06), станция принимает его через 275,3 мкс после
- * события слота; дальше — поздняя команда в direct_tx_step / mac_program_rx_window (MAC_HW_ICR б4/б5, assert 0x26) или
+ * события слота; дальше — поздняя команда в direct_tx_ssw_feedback / mac_program_rx_window (MAC_HW_ICR б4/б5, assert 0x26) или
  * потеря Feedback у станции, граница от прохода к проходу 7,0…7,9. Худший проход: последняя удачная — SIFS_CNT 6,91.
  * Порог = последняя удачная − шаг = 6,91 − 0,10 = 6,81 мкс → [15:8] 6, [7:0] ⌊0,81 × 165⌋ = 133 такта. SIFS_CNT
  * считается от события GP1, а точка Feedback = GP1 + MBIFS + 0,55: при смене длины слота (формула aSSDuration,
@@ -156,7 +163,7 @@ _Static_assert(DMG_RESP_TIMEOUT_SLOTS == 4u, "AckTimeout в слотах");
  * последнего удачного на 0,14 мкс (> шага развёртки) — подтверждён, оставлен. */
 #define SIFS_CNT_RX_ENTRY_LATE   SIFS_CNT_CODE(1u, 32u)     /* 0x120 = 1,19 мкс */
 /* СРОК. Переключение с приёма на передачу после конца принятого PPDU (rx_end_switch_to_tx): опоздание — отмена 0x1f000601. Места вызова: rx_flow_handle_frame
- * (RTS / CF-End с Duration / sifs_resp), rx_flow_step (продолжение TXOP), rx_funcs_handle_ppdu_report (ответчик TXSS
+ * (RTS / CF-End с Duration / sifs_resp), rx_flow_step (продолжение TXOP), rx_handle_ppdu_report (ответчик TXSS
  * и разбор SSW в BF). Естественный SIFS_CNT под TCP 1,9–2,1 мкс (95 %), 2,5–2,8 изредка, единицы 5,4 / 6,3 на 2700.
  * Замер (опыт rg, 2026-10-24; сторож снят, спин по SIFS_CNT до цели, шаг 0,1): RTS/CF-End и TXOP — цель до 8,0 мкс,
  * ~1900 переключений на каждом, TCP 925/945 Мбит/с — без сбоев (срок > 8 мкс); BF (ответчик TXSS, .11 vendor шлёт

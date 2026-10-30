@@ -57,7 +57,7 @@ _Static_assert(sizeof(struct ieee80211_hdr) == 0x18, "ieee80211_hdr");
 #define IEEE80211_HDR_LEN       0x18u  /* mgmt-заголовок */
 #define IEEE80211_HDR_SHORT_LEN 0xau   /* extension/control-заголовок */
 
-/* DMG-бикон (extension-кадр, подтип 0; tx_mgmt_build_step 0x8d7df4): после короткого
+/* DMG-бикон (extension-кадр, подтип 0; tx_mgmt_build_dmg_bcon_fixed 0x8d7df4): после короткого
  * заголовка (FC, Duration, BSSID — struct ieee80211_hdr) поля не выровнены — побайтно. */
 struct ieee80211_dmg_beacon {
     u8 hdr[IEEE80211_HDR_SHORT_LEN];           /* 0x00 */
@@ -71,7 +71,7 @@ IEEE_OFF(struct ieee80211_dmg_beacon, bcn_int, 0x15);
 IEEE_OFF(struct ieee80211_dmg_beacon, dmg_params, 0x1d);
 _Static_assert(sizeof(struct ieee80211_dmg_beacon) == 0x1e, "ieee80211_dmg_beacon");
 
-/* Заголовок QoS Data (0x1a Б; тестовый кадр FW2FW, tx_send_packet_step). */
+/* Заголовок QoS Data (0x1a Б; тестовый кадр FW2FW, tx_build_fw2fw_test_hdr). */
 struct ieee80211_qos_hdr {
     struct ieee80211_hdr h;                    /* 0x00 */
     u16 qos_ctrl;                              /* 0x18: [3:0] TID */
@@ -322,7 +322,7 @@ IEEE_OFF(struct rx_pkt, frame, 0x38);
 _Static_assert(sizeof(struct rx_pkt) == 0x538, "rx_pkt");
 #define RX_PKT_OF_BUF(buf)  ((struct rx_pkt *)((u32)(buf) - __builtin_offsetof(struct rx_pkt, frame)))
 
-/* Запись разбора mgmt-кадра (rx_mgmt_prs__parse 0x8de190, set_parse_ei 0x8e6a54): ссылки
+/* Запись разбора mgmt-кадра (rx_mgmt_prs__parse 0x8de190, rx_mgmt_store_ie 0x8e6a54): ссылки
  * на элементы и указатели на поля фиксированной части в теле кадра. */
 struct rx_mgmt_ei {
     u32 busy;                                  /* 0x00: 1 — занята */

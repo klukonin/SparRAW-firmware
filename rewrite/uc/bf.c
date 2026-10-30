@@ -15,20 +15,20 @@
 /* ---- Forward-декларации функций этого файла ---- */
 
 /* ---- Локальные stub-ы глубоких подфункций ---- */
-void peer_masks_or_sta_bit_into_8571c4(u32 a)
+void itx_ka_publish_sta_pending(u32 a)
 {
     u32 mask = 1u << a;
     u32 r1 = itx_ka_pending & mask;   /* ld.as [gp,0x12] */
     FWSH(ll_ctx, pending_mask) |= r1;
 }
-void g_80212c_reset(void)
+void sls_reset_sweep_results(void)
 {
     memset0_words_uc(sls.top, sizeof(sls.top));
     memset0_words_uc(&sls.best, sizeof(sls.best));
     for (s32 r1 = 4; r1 >= 0; r1--)
         sls.rank[r1] = (u32)r1;
 }
-void rs_abort(u32 a)
+void rate_search_abort(u32 a)
 {
     struct rs_sta_state *st = &rs_state[a];
     if (st->active != 0) {
@@ -40,7 +40,7 @@ void rs_abort(u32 a)
     st->phase_prev = 1;
     st->active = 0;
 }
-void bi_tx_check_idle_and_start_uc(u32 a)
+void mac_backoff_settle_set_chain_modes(u32 a)
 {
     /* 0x93696c: ждать устойчивого r40; если хоть один полубайт цепей = 0 — 0x1f000601. */
     u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
@@ -70,7 +70,7 @@ void mac_publish_masks(void)
         MMIO32(HW_QSET0_MASK_VECTOR + r2 * 4) = val; /* add2 — ×4 */
     }
 }
-void mac_mode_kick(struct sls_peer_rec *a)
+void abft_initiator_feedback_loop(struct sls_peer_rec *a)
 {
     struct sls_peer_rec *r13 = a;
     u32 r3 = mac_ifs_shadow;           /* ldw.as [gp,0x4b] */
@@ -83,15 +83,16 @@ void mac_mode_kick(struct sls_peer_rec *a)
     }
     for (;;) {                                  /* L_92c05c */
         uc_spin_until_event4(MAC_EVT4_GP0_END | MAC_EVT4_GP2_END);
+        UC_STAMP(STAMP_ABFT_SLOT, mac_evt4(), 0);
         if (mac_evt4() & MAC_EVT4_GP0_END) {
             mac_ifs_restore_sifs();             /* bl.d L_92bfc0 — и выход */
             return;
         }
         uc_mac_cmd(0x49000100);
-        mac_mode_program_c(r13);                /* затем b_s L_92c05c — снова ждать */
+        abft_rx_ssw_tx_feedback(r13);                /* затем b_s L_92c05c — снова ждать */
     }
 }
-void uc_spin_until_event4_r0_100(void)
+void uc_spin_until_gp2_end(void)
 {
     uc_spin_until_event4(MAC_EVT4_GP2_END);
 }
@@ -260,9 +261,9 @@ void rx_mode_configure(u32 a, u32 b)
                     if (r1 == 0x7fff00) {
                         /* три установки бит-полей в [0x801024]
                          * (регистры: r0=ptr=0x801024, r1=значение) */
-                        bf_set32((u32)&rf_chain_word, 8, 15, bti_sweep_set);
-                        bf_set32((u32)&rf_chain_word, 4, 4, (r3 >> 4) & 0xf);
-                        bf_set32((u32)&rf_chain_word, 0, 4, r3 & 0xf);
+                        bf_set32_lo_hi((u32)&rf_chain_word, 8, 15, bti_sweep_set);
+                        bf_set32_lo_hi((u32)&rf_chain_word, 4, 4, (r3 >> 4) & 0xf);
+                        bf_set32_lo_hi((u32)&rf_chain_word, 0, 4, r3 & 0xf);
                     } else {
                         rf_chain_word = r3;
                     }
@@ -279,7 +280,7 @@ void rx_mode_configure(u32 a, u32 b)
             if (r15 >= 8)
                 uc_assert((u32)__builtin_return_address(0), 0x12f0);
             r19 = (u32)brp_rf.module_byte[r15];
-            r0 = rate_search_current_mcs_b(r15);
+            r0 = rate_search_current_mcs_try(r15);
             if ((s32)r0 < 9)
                 r0 = FWSH(fwsh_sets, rx_gain_ofs_lo_mcs);
             else
@@ -303,7 +304,7 @@ void rx_mode_configure(u32 a, u32 b)
             r0 = calib_gain_ofs + agc_cfg.agc_start;
             if (r0 >= 0x3f)                  /* mov.cc -> clamp down */
                 r0 = 0x3f;
-            phy_set_88306c_field(r0);
+            phy_set_rx_agc_row(r0);
             r2 = rf_gain_cb;
             ((void (*)(u32, u32))r2)(r19, r17);
             r0 = rf_chain_word;
@@ -314,14 +315,14 @@ void rx_mode_configure(u32 a, u32 b)
             r0 = calib_gain_ofs + agc_cfg.agc_start_b;
             if (r0 >= 0x3f)
                 r0 = 0x3f;
-            phy_set_88306c_field(r0);
+            phy_set_rx_agc_row(r0);
             r2 = rf_gain_cb;
             ((void (*)(u32, u32))r2)(r19, r17);
             r0 = sta_tab[r15].rx_sel;
         }
 
         /* ---- L_92f67e ---- */
-        (void)brp_split_id(r0);
+        (void)rf_set_cur_sector_word(r0);
         if (r16 == 2)
             uc_mac_cmd(0x3d000400);
         /* L_92f696 */
@@ -333,7 +334,7 @@ void rx_mode_configure(u32 a, u32 b)
         if (r17 >= 8)
             uc_assert((u32)__builtin_return_address(0), 0x12f0);
         r18 = (u32)brp_rf.module_byte[r17];
-        r0 = rate_search_current_mcs_b(r17);
+        r0 = rate_search_current_mcs_try(r17);
         if ((s32)r0 < 9)
             r15 = FWSH(fwsh_sets, rx_gain_ofs_lo_mcs);
         else
@@ -349,7 +350,7 @@ void rx_mode_configure(u32 a, u32 b)
         r0 = calib_gain_ofs + agc_cfg.agc_start_b;
         if (r0 >= 0x3f)
             r0 = 0x3f;
-        phy_set_88306c_field(r0);
+        phy_set_rx_agc_row(r0);
         r2 = rf_gain_cb;
         ((void (*)(u32, u32))r2)(r18, r15);
     }
@@ -401,12 +402,12 @@ void uc_log_emit2(u32 lvl, u32 token, u32 a0, u32 a1)
 
 /* ================================================================== */
 
-void bf_pending_clear_bit(u32 bit)
+void bg_task_clear_pending_bit(u32 bit)
 {
     bg_task_pending &= ~(1u << bit);
 }
 
-void bf_pending_set_bit(u32 bit)
+void bg_task_set_pending_bit(u32 bit)
 {
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~(1u << 1));
@@ -423,38 +424,53 @@ void bf_abort_noop_hook(u32 a) { (void)a; }
 void bf_sm_brp_noop_hook_a(void) { }
 void bf_sm_brp_noop_hook_b(void) { }
 
-u32 bf_sm_clear_slot_diag(void)
+u32 bf_sm_clear_txrx_state(void)
 {
     txrx_state1 = 0;
     txrx_state2 = 0;
     return 0;                                   /* r0 = 0 */
 }
 
-void bf_enter_mode3(u32 a, u32 b)
+void bf_enter_sta_tx_pause(u32 a, u32 b)
 {
     /* 6.2 asm 0x920cb8: a не используется, b (r1) -> [0x8004f0], bf_pause_sta_tx(3, b). */
     (void)a;
     bf_cur_sta = b;
-    internal_tx_check_idle(3);
+    internal_tx_set_pending_bit(3);
     bf_pause_sta_tx(3, b);
 }
 
-void bf_abort_step(u32 a)
+void bf_sm_schedule(u32 a)
 {
-    bf_pending_set_bit(1);
-    peer_masks_or_sta_bit_into_8571c4(a);
+    bg_task_set_pending_bit(1);
+    itx_ka_publish_sta_pending(a);
     bf_abort_noop_hook(a);
 }
 
-void bf_clear_pending_and_notify(u32 a)
+/* = internal_tx_clear_pending_bit(3) + bf_resume_sta_tx(3, a), но маски qset публикуются один раз: публикация — 4 записи
+ * регистров MAC по ~30 тактов, двойная стоила 313 тактов на завершении BF (стенд 2026-10-29, метки STAMP_BF_SEG).
+ * Итоговые регистры те же; пропадает лишь промежуточное состояние (~1 мкс), которое MAC видел у vendor между публикациями. */
+static u32 bf_resume_sta_tx_masks(u32 a0, u32 a1);
+
+void bf_exit_sta_tx_pause(u32 a)
 {
-    internal_tx_clear_pending_bit(3);
-    bf_resume_sta_tx(3, a);
+    u32 saved = arc_lr(ARC_STATUS32);
+    arc_flag(saved & ~(1u << 1));
+    u32 pub = 0;
+    u32 m = itx_pending.mask & ~(1u << 3);
+    itx_pending.mask = m;
+    if (m == 0) {
+        internal_tx_drop_event_mask();
+        pub = 1;
+    }
+    if (bf_resume_sta_tx_masks(3, a) || pub)
+        mac_publish_masks();
+    arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
 }
 
-void bf_abort_to_state11(u32 a)
+void bf_abort_sta(u32 a)
 {
-    bf_clear_pending_and_notify(a);
+    bf_exit_sta_tx_pause(a);
     bf_sm_set_sta_state(a, 0x11);
 }
 
@@ -474,7 +490,7 @@ void bf_metrics_reset_and_stamp(void)
     ba_stats.reset_tsf = uc_read_tsf_lo();
 }
 
-void bf_clear_sta_bit_state34(u32 bit, u32 st)
+void bf_clear_rank_valid_bit(u32 bit, u32 st)
 {
     if (st != 3 && st != 4)
         return;
@@ -494,7 +510,7 @@ void bf_clear_all_sta(void)
 
 void bf_init_globals(void)
 {
-    g_80212c_reset();
+    sls_reset_sweep_results();
     bf_tx_sector = 0x21;                    /* sth.as [gp,-93] */
     bf_rx_sector = 0x21;                    /* sth.as [gp,-94] */
     bf_ctrl.snr_samples = 0x80;
@@ -503,14 +519,14 @@ void bf_init_globals(void)
 
 void bf_flow_exit(u32 a0)
 {
-    if (a0 < SPARRAW_MAX_STA && sta_link_byte_by_index(a0) == 0) {   /* у пира 8 (A-BFT) записи link_stat нет */
+    if (a0 < SPARRAW_MAX_STA && rs_internal_trigger_disabled(a0) == 0) {   /* у пира 8 (A-BFT) записи link_stat нет */
         if (VOL(link_stat[a0].bf_reasons) & 0xbf)     /* bic r0,r0,-0xc0 == & 0xbf */
-            rs_abort(a0);
+            rate_search_abort(a0);
     }
     internal_tx_clear_pending_bit(3);
     bf_pause_sta_tx(3, a0);
-    bi_tx_check_idle_and_start_uc(2);
-    bf_pending_set_bit(1);
+    mac_backoff_settle_set_chain_modes(2);
+    bg_task_set_pending_bit(1);
     txrx_state1 = 0;
     txrx_state2 = 0;
 }
@@ -519,7 +535,7 @@ void bf_reset_sta(u32 a0, u32 a1)
 {
     if (bf_req.pending_mask & (1u << (a0 & 0x1f))) {
         bf_sm_set_sta_state(a0, 0);
-        bf_clear_pending_and_notify(a0);
+        bf_exit_sta_tx_pause(a0);
         bf_req_dequeue_head(0, 0);
     }
     if (a0 < SPARRAW_MAX_STA)
@@ -539,22 +555,22 @@ u32 bf_req_try_claim(struct rx_meas_ctx *m, u32 kind)
     return 1;
 }
 
-void bf_req_claim_and_report_2b(struct rx_meas_ctx *m)
+void bf_req_report_chest_cb(struct rx_meas_ctx *m)
 {
     if (bf_req_try_claim(m, 5) == 0)
         uc_assert((u32)__builtin_return_address(0), 0xf5);   /* vendor продолжает */
-    uc_evt_send_2b(m->state_b);
+    uc_evt_send_channel_estimation(m->state_b);
 }
 
-void bf_req_claim_and_report_23(struct rx_meas_ctx *m)
+void bf_req_report_pkt_cb(struct rx_meas_ctx *m)
 {
     if (bf_req_try_claim(m, 3) == 0)
         uc_assert((u32)__builtin_return_address(0), 0xa2);
     m->pkt.state = (u8)m->state;                /* stb [r13,83] = [r13,0xc] */
-    uc_evt_send_23((u32)&m->pkt);
+    uc_evt_send_rx_pkt_data((u32)&m->pkt);
 }
 
-void bf_trigger_for_mid(u32 a0)
+void bf_trigger_for_sta(u32 a0)
 {
     u32 buf[3];
     bf_pause_sta_tx(3, a0);
@@ -573,16 +589,16 @@ void bf_trigger_for_mid(u32 a0)
 void bf_ctx_dispatch_by_role(struct sls_peer_rec *a)
 {
     if (bcn_rx.bcn_sent != 0) {
-        mac_mode_kick(a);
+        abft_initiator_feedback_loop(a);
         return;
     }
     if (bcn_rx.abft_go != 0) {
-        /* обычно ответ уже сделан из bti_bi2_track_best_metric (bi_ctx.fast_done, сюда не доходит); запасной
+        /* обычно ответ уже сделан из bti_beacon_track_best_metric (bi_ctx.fast_done, сюда не доходит); запасной
          * вход — без подготовки после маяка CDOWN 0 */
         abft_responder_fast(a, 0, 0);
         return;
     }
-    uc_spin_until_event4_r0_100();
+    uc_spin_until_gp2_end();
 }
 
 u32 bf_sm_brp_init_result(u32 a0)
@@ -591,7 +607,7 @@ u32 bf_sm_brp_init_result(u32 a0)
     u32 v = bf_sta[a0].flow_status;
     if (v == 0) {
         brp_init_retry_cnt = 0;
-        bf_enter_mode3(9, a0);
+        bf_enter_sta_tx_pause(9, a0);
         return 0;
     }
     if (v == 0x30)
@@ -619,7 +635,7 @@ u32 bf_sm_on_brp_init(u32 a0)
     }
     if (r != 0) {
         bf_sm_brp_noop_hook_b();
-        g_80212c_reset();
+        sls_reset_sweep_results();
     }
     return r;
 }
@@ -628,7 +644,7 @@ u32 bf_sm_brp_resp_result(u32 a)
 {
     u32 v = bf_sta[a].flow_status;
     u32 r = (v == 0x33) ? 1 : 2;
-    g_80212c_reset();
+    sls_reset_sweep_results();
     return r;
 }
 
@@ -637,7 +653,7 @@ u32 bf_sm_on_brp_resp(u32 a0)
     u32 v = bf_sta[a0].flow_status;
     u32 r;
     if (v == 0) {
-        bf_sm_set_state(a0, 0xa);
+        bf_sm_prepare_state_entry(a0, 0xa);
         bf_sm_brp_noop_hook_a();
         brp_responder_flow_enter(a0);
         r = 0;
@@ -648,7 +664,7 @@ u32 bf_sm_on_brp_resp(u32 a0)
     }
     if (r != 0) {
         bf_sm_brp_noop_hook_b();
-        g_80212c_reset();
+        sls_reset_sweep_results();
         sls_x64 = 0;
     }
     return r;
@@ -662,8 +678,8 @@ u32 bf_sm_txss_init_result(u32 a0)
     u8 *cnt = 0;
     switch (v) {
     case 0:
-        bf_sm_set_state(a0, 3);
-        bf_enter_mode3(3, a0);
+        bf_sm_prepare_state_entry(a0, 3);
+        bf_enter_sta_tx_pause(3, a0);
         break;
     case 1:
         cnt = &txss_retry_cnt[0];
@@ -691,7 +707,7 @@ u32 bf_sm_txss_init_result(u32 a0)
             r = 2;
     }
     if (r == 0) {
-        internal_tx_check_idle(3);
+        internal_tx_set_pending_bit(3);
         bf_store_flow_status(a0, 0);
     }
     return r;
@@ -711,7 +727,7 @@ u32 bf_sm_on_txss_init(u32 a0)
         r = 2;
     }
     if (r != 0)
-        g_80212c_reset();
+        sls_reset_sweep_results();
     return r;
 }
 
@@ -733,7 +749,7 @@ u32 bf_sm_on_txss_resp(u32 a0)
     u32 v = bf_sta[a0].flow_status;
     u32 r;
     if (v == 0) {
-        bf_sm_set_state(a0, 4);
+        bf_sm_prepare_state_entry(a0, 4);
         bf_txss_reset_report_ctx();
         txss_resp_flow(a0);
         r = 0;
@@ -743,12 +759,12 @@ u32 bf_sm_on_txss_resp(u32 a0)
         r = 2;
     }
     if (r != 0)
-        g_80212c_reset();
+        sls_reset_sweep_results();
     return r;
 }
 
-/* bf_sm_set_state: переключение состояния (0x92af2c). */
-void bf_sm_set_state(u32 sta, u32 state)
+/* bf_sm_prepare_state_entry: переключение состояния (0x92af2c). */
+void bf_sm_prepare_state_entry(u32 sta, u32 state)
 {
     /* Таблица 0x801818 (state-3, 0..7): 3 — [0x24]=0 + копия; 9 — копия;
      * 4,10 — только [0x24]=0; 5..8 и вне 3..10 — ничего. */
@@ -763,7 +779,7 @@ void bf_sm_set_state(u32 sta, u32 state)
     } else if (state == 4 || state == 10) {
         sls_x64 = 0;
     }
-    bf_clear_sta_bit_state34(sta, r3);
+    bf_clear_rank_valid_bit(sta, r3);
 }
 
 /* bf_sm_set_sta_state: запись состояния станции (0x92b220). */
@@ -786,7 +802,7 @@ u32 bf_sm_run_sta(u32 sta)
         struct bf_sta_s *e = &bf_sta[sta];
         bf_res.diag = e->state | (e->flow_status << 4);  /* диагностика: состояние|подсостояние */
     } while (r != 2 && r != 3);
-    return bf_sm_clear_slot_diag();
+    return bf_sm_clear_txrx_state();
 }
 
 /* bf_sm_dispatch_by_state: диспетчер по состоянию (0x921fa8). */
@@ -865,11 +881,10 @@ void bf_pause_sta_tx(u32 a0, u32 a1)
     arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
 }
 
-/* bf_resume_sta_tx (0x92bb34) — по эталону. */
-void bf_resume_sta_tx(u32 a0, u32 a1)
+/* Снять причину a0 паузы станции a1; 1 — причин не осталось, очереди станции вернулись в маски qset (опубликовать).
+ * Вызывать с запрещёнными L1. */
+static u32 bf_resume_sta_tx_masks(u32 a0, u32 a1)
 {
-    u32 saved = arc_lr(ARC_STATUS32);
-    arc_flag(saved & ~(1u << 1));
     u16 *pm = &tx_dis_mask[a1];       /* add1_s r2,r2,r1 */
     u16 v = *pm & ~(1u << (a0 & 0x1f));         /* bclr r13,r13,r0 */
     u16 w = sta_tab[a1].flags;
@@ -877,8 +892,18 @@ void bf_resume_sta_tx(u32 a0, u32 a1)
     if ((w & 1) && v == 0) {
         qset_shadow.qset5_mask |= sta_tab[a1].qid_mask_q5;
         qset_shadow.qset6_mask = sta_tab[a1].qid_mask_q6 | qset_shadow.qset6_mask;
-        mac_publish_masks();
+        return 1;
     }
+    return 0;
+}
+
+/* bf_resume_sta_tx (0x92bb34). */
+void bf_resume_sta_tx(u32 a0, u32 a1)
+{
+    u32 saved = arc_lr(ARC_STATUS32);
+    arc_flag(saved & ~(1u << 1));
+    if (bf_resume_sta_tx_masks(a0, a1))
+        mac_publish_masks();
     arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
 }
 
@@ -920,7 +945,7 @@ u32 bf_req_dequeue_head(u32 a0, u32 a1)
         u32 nx = q->fifo[q->head % BF_REQ_FIFO_N];
         *(u32 *)sls.peer_mac = *(u32 *)sta_tab[nx].mac;
         sls.peer_mac[2] = sta_tab[nx].mac[2];
-        bf_abort_step(nx);
+        bf_sm_schedule(nx);
     }
     if (a1 == 0) {
         sta_apply_bf_result(a0, sta);
@@ -991,7 +1016,7 @@ void bf_init_sm(u32 a, u32 b)
     if (r0 != 0) {
         *(u32 *)sls.peer_mac = *(u32 *)sta_tab[sta].mac;
         sls.peer_mac[2] = sta_tab[sta].mac[2];
-        bf_abort_step(sta);
+        bf_sm_schedule(sta);
     }
     arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
 }
@@ -1003,6 +1028,12 @@ void bf_sm_process_request_fifo(void)
     struct bf_req_q_s *q = &bf_req;
     if (q->pending_mask == 0)
         return;
+#ifdef UC_STAMP_MASK
+    u32 bt0 = arc_lr(0x100);
+#define BF_SEG(n) UC_STAMP(STAMP_BF_SEG, (n) | (e->state << 8), arc_lr(0x100) - bt0)
+#else
+#define BF_SEG(n) do { } while (0)
+#endif
     ucode_pm_set_busy_flag(0);
     uc_tx_is_idle();
     u32 sta = q->fifo[q->head % BF_REQ_FIFO_N];
@@ -1068,6 +1099,7 @@ void bf_sm_process_request_fifo(void)
     }
 
     /* 0x921e98: завершение запроса */
+    BF_SEG(1);
     if (e->state == 0x11) {
         if (lmac_personality == 1)
             bf_pause_sta_tx(3, sta);
@@ -1080,7 +1112,8 @@ void bf_sm_process_request_fifo(void)
         }
     }
     bf_sm_set_sta_state(sta, 0);
-    bf_clear_pending_and_notify(sta);
+    bf_exit_sta_tx_pause(sta);
+    BF_SEG(2);
     if (e->req_desc == 0) {
         uc_log_emit1(0x20, 0x1000cdc, sta);
     } else {
@@ -1093,7 +1126,9 @@ void bf_sm_process_request_fifo(void)
             e->done_cb2 = 0;
         }
     }
+    BF_SEG(3);
     bf_req_dequeue_head(r15, 0);
+    BF_SEG(4);
     bf_res.diag = e->state | (e->flow_status << 4);
     if (dti_qset_mode == 2 && maint_sta_mask != 0 && r16 == 1) {
         rx_mode_configure(2, sta);
@@ -1107,13 +1142,15 @@ pick:                                           /* 0x921e08 */
     else
         bf_sm_set_sta_state(sta, 0xd);
 pending:                                        /* 0x921e3a */
-    bf_pending_set_bit(1);
+    bg_task_set_pending_bit(1);
     goto reprog;
 abort:                                          /* 0x921e8a */
-    bf_abort_step(sta);
+    bf_sm_schedule(sta);
 reprog:                                         /* 0x921f7e */
     uc_mac_cmd(((e->state | (e->flow_status << 4)) & 0xfff) | 0xfaa000);
     bf_res.diag_last = bf_res.diag;
+    BF_SEG(5);
+#undef BF_SEG
 }
 
 /* bf_reset_sta_slot (0x92484c). */
@@ -1137,7 +1174,7 @@ void bf_reset_sta_slot(u32 a0)
  * маяка → эта команда» фиксированными 4 мкс (a0 = (4 − Duration)·0xa5, GP0 = (Duration − 4)·0xa5).
  * Здесь ~25 инструкций (mul64, без деления); весь путь от MAC_EVT1_RX_FRAME — в bti.c. Запас: не оценён;
  * отклонение нашего пути от vendor-ских ~4 мкс сдвигает границы A-BFT станции на ту же величину. */
-void bf_gpc_program_mac_by_mode_b(u32 a0)
+void abft_sta_arm_abft_end_timer(u32 a0)
 {
     u32 mode = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
     if (mode < ABFT_SS_FRAMES_PER_SLOT)      /* поле FSS ниже aSSFramesPerSlot: A-BFT без нас (решение — rx.c/bti.c) */
@@ -1197,7 +1234,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
     if (r13 == 8) {
         uc_log_emit2(0x21, 0x1000bf8, r13, r16);
         e->state = 0xb; e->flow_status = 0; e->flow_status = 0x35;
-        bf_abort_step(r16);
+        bf_sm_schedule(r16);
         sls_clear_rx_state();
         return 0;
     }
@@ -1221,7 +1258,7 @@ u32 bf_abort_unexpected(u32 a0, u32 a1)
     volatile struct bf_sta_s *f = &bf_sta[r13];
     f->state = 0xb; f->flow_status = 0; f->flow_status = 0x35;
     e->state = 0xb; e->flow_status = 0; e->flow_status = 0x35;
-    bf_abort_step(r13);
+    bf_sm_schedule(r13);
     sls_clear_rx_state();
     return 0;
 }

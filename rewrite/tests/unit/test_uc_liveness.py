@@ -32,8 +32,8 @@ BF_RETRY_LIMIT = 8                                     # dot11BFRetryLimit (uc/i
 PATH = 2 * CLK                                         # запас на путь uc от события до возврата (≤ 2 мкс)
 
 SLS_RX_FLAGS = 0x8021e0
-RSS_WAIT_CLK = 0x8020c4                                # u32[9] по станциям; [10] = 0x8020ec — rss_wait_clk_x10
-RSS_WAIT_CLK_X10 = 0x8020ec
+TXSS_TIMING = 0x802e64                                 # u16[9][4] тайминги развёртки по станциям, [0] — total, мкс
+RSS_WAIT_CLK = 0x8020c4                                # u32[9] по станциям; [10] = 0x8020ec
 BRP_INIT_REQ_NORESP = 0x801e94 + 0x4e
 HW_MAC_USEC_TO_TBTT = 0x886ec0
 
@@ -89,15 +89,15 @@ class GP:
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Ответ на собственный кадр: CTS на RTS, Ack на данные — keep-alive (internal_tx_flow_sm2), TXOP (tx_send_and_await_rx_frame)
+# Ответ на собственный кадр: CTS на RTS, Ack на данные — keep-alive (internal_tx_keepalive_flow), TXOP (tx_send_and_await_rx_frame)
 
 def test_cts_wait_silent_peer_ends_by_cts_timeout(uc):
-    """RTS ушёл, CTS нет: itx_wait_cts_b выходит по GP0 (gp0_arm_usec_b(0x12) в internal_tx_flow_sm2) не позже
+    """RTS ушёл, CTS нет: itx_wait_cts_b выходит по GP0 (gp0_timer_arm_usec(0x12) в internal_tx_keepalive_flow) не позже
     CTSTimeout = aSIFSTime + aSlotTime + aRxPHYStartDelay = 18 мкс (10.3.2.9) от конца RTS."""
     gp = GP(uc)
     uc.ext[42] = 0
     t0 = uc.t1()
-    uc.call('gp0_arm_usec_b', 0x12)
+    uc.call('gp0_timer_arm_usec', 0x12)
     r = uc.call('itx_wait_cts_b')
     assert r == 0
     assert uc.t1() - t0 <= RESP_TIMEOUT + PATH, 'ждал %.1f мкс' % ((uc.t1() - t0) / CLK)
@@ -105,23 +105,23 @@ def test_cts_wait_silent_peer_ends_by_cts_timeout(uc):
 
 
 def test_ack_wait_silent_peer_ends_by_ack_timeout(uc):
-    """Данные keep-alive ушли, Ack нет: itx_wait_ack выходит по GP0 (gp0_arm_usec_b(0xc)) не позже AckTimeout
+    """Данные keep-alive ушли, Ack нет: itx_wait_ack выходит по GP0 (gp0_timer_arm_usec(0xc)) не позже AckTimeout
     = 18 мкс (10.3.2.11)."""
     GP(uc)
     uc.ext[42] = 0
     t0 = uc.t1()
-    uc.call('gp0_arm_usec_b', 0xc)
+    uc.call('gp0_timer_arm_usec', 0xc)
     assert uc.call('itx_wait_ack') == 0
     assert uc.t1() - t0 <= RESP_TIMEOUT + PATH
 
 
 def test_txop_response_wait_silent_peer_times_out(uc):
-    """tx_await_rx_or_timeout (ответ на кадр TXOP, tx_send_and_await_rx_frame: gp0_arm_usec_b(0x12) при
+    """tx_await_rx_or_timeout (ответ на кадр TXOP, tx_send_and_await_rx_frame: gp0_timer_arm_usec(0x12) при
     dti_qset_mode 0) — выход по GP0, возврат 1 (тайм-аут), не позже AckTimeout (10.3.2.11)."""
     GP(uc)
     uc.ext[42] = 0
     t0 = uc.t1()
-    uc.call('gp0_arm_usec_b', 0x12)
+    uc.call('gp0_timer_arm_usec', 0x12)
     assert uc.call('tx_await_rx_or_timeout') == 1
     assert uc.t1() - t0 <= RESP_TIMEOUT + PATH
 
@@ -186,13 +186,6 @@ def test_txss_initiator_silent_responder_fdbk_retries_bounded(uc):
     assert uc.t1() - t0 <= (1 + BF_RETRY_LIMIT) * (MBIFS + TXTIME_SSW_ACK + PIFS + PATH)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    'txss_resp_wait_iss_end (uc/tail.c) взводит GP0 ожидания SSW-Feedback (txss_resp_wait_fdbk: цикл '
-    'sxd_hal_wait_slot2_busy2 + r54.6 без иного выхода) длительностью rss_wait_clk_x10 = rss_wait_clk[10] '
-    '(0x8020ec, за концом таблицы из 9 станций) — слово никто не пишет, в образе 0: срок 0 тактов. По '
-    '10.42.2.2/10.42.2.4 Feedback начинается через MBIFS после RSS и обнаруживается через aRxPHYStartDelay; '
-    'GP с длительностью 0 — либо нет ожидания Feedback вовсе, либо (если 0 не срабатывает) ответчик ждёт '
-    'Feedback вечно при молчащем инициаторе. Поведение GP при 0 не установлено.'))
 def test_txss_responder_fdbk_wait_deadline_armed(uc):
     """Ответчик SLS после своей RSS ждёт SSW-Feedback: срок ожидания (GP0, 0x4f перед 0x52000408) должен
     покрывать начало Feedback (MBIFS после RSS, 10.42.2.2) + обнаружение (aRxPHYStartDelay) и быть конечным:
@@ -200,14 +193,17 @@ def test_txss_responder_fdbk_wait_deadline_armed(uc):
     uc.ext[54] = 1                                          # txss_end_ind: ISS кончилась — путь к RSS
     uc.ext[42] = 0
     uc.w32(SLS_RX_FLAGS, 0)
+    rss_us = 64 * 4 * 16 + 3 * 16                               # план своей RSS: 64 сектора × 4 антенны пира (txss_timing)
+    uc.w16(TXSS_TIMING + 8 * 0, rss_us)
     uc.call('txss_resp_wait_iss_end', 0, 0x29528,
             stub={'mac_mode_switch_core_and_rf': 0, 'txss_program_tx_frame': 1, 'txss_rank_best_sector': 0})
     cmds = uc.mac_cmds
     i = cmds.index(0x52000408)
     assert cmds[i - 1] >> 24 == 0x4f
     v = cmds[i - 1] & 0xffffff
+    rss = rss_us * CLK                                          # GP0 взводится до RSS — срок отсчитывается и через неё
     hi = (1 + BF_RETRY_LIMIT) * (TXTIME_SSW_FB + MBIFS + TXTIME_SSW_ACK + PIFS)
-    assert MBIFS + RX_START_CTRL <= v <= hi, 'GP0 ожидания Feedback = %d тактов' % v
+    assert rss + MBIFS + RX_START_CTRL <= v <= rss + hi, 'GP0 ожидания Feedback = %d тактов (RSS %d)' % (v, rss)
 
 
 def test_txss_responder_fdbk_wait_bounded_by_its_gp0(uc):
@@ -243,13 +239,13 @@ def test_txss_responder_fdbk_wait_bounded_by_its_gp0(uc):
 # A-BFT AP (10.42.5.2): SSW ответчиков в слоте; конец слота — GP1
 
 def test_abft_ap_slot_silent_ends_at_slot_boundary(uc):
-    """mac_mode_program_c (AP в A-BFT): в слоте ни одного SSW — выход по GP1 (граница слота) без передачи
+    """abft_rx_ssw_tx_feedback (AP в A-BFT): в слоте ни одного SSW — выход по GP1 (граница слота) без передачи
     Feedback. Срок — длительность слота aSSSlotTime (10.42.5.2), здесь — взведённая длительность GP1."""
     GP(uc)
     uc.ext[42] = 0
     slot = 0x1000
     uc.call('gp_timer_arm', 1, slot, 0, 0)
     t0 = uc.t1()
-    uc.call('mac_mode_program_c', 0x803000, stub={'direct_tx_step': 0, 'uc_evt_build_and_post_report': 0})
-    assert not [c for c in uc.calls if c[0] == 'direct_tx_step']
+    uc.call('abft_rx_ssw_tx_feedback', 0x803000, stub={'direct_tx_ssw_feedback': 0, 'uc_evt_build_and_post_report': 0})
+    assert not [c for c in uc.calls if c[0] == 'direct_tx_ssw_feedback']
     assert uc.t1() - t0 <= slot + PATH

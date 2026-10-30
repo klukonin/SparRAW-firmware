@@ -28,7 +28,7 @@
 
 /* bf_req__is_claimable (0x8f5cac, 36 Б) — по сути «запрос id идёт»: активен ([+0x18] != 0)
  * и не завершён ([+0x1c] == 0); id != 0 — ещё и [+0] == id. Результат — байт 0/1. */
-u32 bf_req_is_claimable(struct fw_sysapi_mgr *req, u32 id)
+u32 bf_req_is_active(struct fw_sysapi_mgr *req, u32 id)
 {
     u32 r = (req->active != 0 && req->stopped == 0) ? 1u : 0u;
     if (id != 0)
@@ -39,7 +39,7 @@ u32 bf_req_is_claimable(struct fw_sysapi_mgr *req, u32 id)
 /* sched__alloc_entry (0x8db5d8, 50 Б): LMAC-команда 0x42 (0xc Б): байты 0..4 тела =
  * (u8)p[0], p[1], p[4], p[2], p[3] (p — слова), слово +8 = tsf. Байты 5..7 не пишутся:
  * у vendor — остаток слота пула, у нас нули (mem_pool_alloc_locked обнуляет). */
-void sched_alloc_entry(const u32 *p, u32 tsf)
+void lmac_if_send_pmc_triggers_cfg(const u32 *p, u32 tsf)
 {
     struct lmac_cmd_meas_filter *body = lmac_cmd_pool_alloc();
     body->cid = (u8)p[0];
@@ -59,7 +59,7 @@ void sched_alloc_entry(const u32 *p, u32 tsf)
 static void sched_apply_entry_done_cb(struct fw_sysapi_mgr *req, u32 a, const void *b)
 {
     req->status = a;
-    l2_mgr_high_false_alarm_secondary_lock_cb(req, b);
+    fw_sysapi_pmc_triggers_resp_cb(req, b);
 }
 
 /* sched__apply_entry (0x8f1dc4, 74 Б): начать запрос (start_sysapi_cmd(req, 8, hdr = a2)),
@@ -74,7 +74,7 @@ void sched_apply_entry(struct fw_sysapi_mgr *req, const u32 *a1, const u32 *a2, 
     fw_sysapi_mgr_start_sysapi_cmd(req, 8, a2);
     req->completion_cb = sched_apply_entry_done_cb;
     mac_read_tsf64(0, tsf, 0);
-    sched_alloc_entry(a1, tsf[0]);
+    lmac_if_send_pmc_triggers_cfg(a1, tsf[0]);
     lo = tsf[0];
     fw_sysapi_mgr_send_evt2host(req, 1, &lo, 4, (const u32 *)req->ut.w);
     req->ut.subtype = (u16)a3;
@@ -83,7 +83,7 @@ void sched_apply_entry(struct fw_sysapi_mgr *req, const u32 *a1, const u32 *a2, 
 /* l2_mgr__high_false_alarm_secondary_lock_cb (0x8f3c9c, 74 Б): ответ LMAC на запрос
  * расписания — 16 Б res[0..3] копируются на стек, журнал 0x10131a0, хосту (send_evt2host,
  * статус req->status); res[0] == 1 — запрос завершён: stop_sysapi_cmd(req, 8). */
-void l2_mgr_high_false_alarm_secondary_lock_cb(struct fw_sysapi_mgr *req, const u32 *res)
+void fw_sysapi_pmc_triggers_resp_cb(struct fw_sysapi_mgr *req, const u32 *res)
 {
     u32 buf[4];
 
@@ -137,12 +137,12 @@ void stats_delta_since_baseline(struct fw_sysapi_mgr *req, u32 *out)
     u32 tmp = 0;
     u64 v, base;
 
-    v = mac_tx_cnt_get_u64_14();
+    v = mac_tx_cnt_get_u64();
     base = (u64)fw_sysapi_mgr.mac_base.tx_lo | ((u64)fw_sysapi_mgr.mac_base.tx_hi << 32);
     v -= base;
     out[0] = (u32)v;
     out[1] = (u32)(v >> 32);
-    v = mac_rx_cnt_get_u64_bc();
+    v = mac_rx_cnt_get_u64();
     base = (u64)fw_sysapi_mgr.mac_base.rx_lo | ((u64)fw_sysapi_mgr.mac_base.rx_hi << 32);
     v -= base;
     out[2] = (u32)v;
@@ -157,7 +157,7 @@ void stats_delta_since_baseline(struct fw_sysapi_mgr *req, u32 *out)
 
 /* stats__log_counters (0x8f62f8, 118 Б): дельты статистики (0x28 Б, буфер обнулён) —
  * четыре журнала (младшие слова u64 TX/RX; TX ok/fail; RX сумма/crc; id и пара счётчиков)
- * и хосту (send_evt2host, статус req->status). Зовёт mac_ampdu_statistics_timeout_cb
+ * и хосту (send_evt2host, статус req->status). Зовёт mac_ampdu_stats_snapshot_baseline
  * (0x8f6370 / 0x8f6406). */
 void stats_log_counters(struct fw_sysapi_mgr *req)
 {
@@ -196,7 +196,7 @@ static u32 arc_norm32(u32 x)
 /* hwd__apply_table_entry_c (0x8f8f60, 58 Б): пара (a, b) u64 сдвигается вправо на s (сдвиг
  * 0x8c0430 — логический), чтобы b уложилось в 32 бита: s = 0 при b_hi == 0, иначе
  * 31 − norm(b_hi). out[0] = (u32)(a >> s), out[1] = (u32)(b >> s). ctx не используется. */
-void hwd_apply_table_entry_c(struct fw_sysapi_mgr *ctx, u32 *out, u64 a, u64 b)
+void stats_norm_u64_pair(struct fw_sysapi_mgr *ctx, u32 *out, u64 a, u64 b)
 {
     u32 bh = (u32)(b >> 32);
     u32 s = 0;
@@ -210,14 +210,14 @@ void hwd_apply_table_entry_c(struct fw_sysapi_mgr *ctx, u32 *out, u64 a, u64 b)
 
 /* hwd__apply_table_entry (0x8f2e0c, 104 Б): out+0 — (*pb, *pa), out+0x10 — (*pd, *pc),
  * out+0x30 — (*pc − *pd, *pc) нормированными парами; out[0x38/0x3c] = *pa >> 3 (u64). */
-void hwd_apply_table_entry(struct fw_sysapi_mgr *ctx, u32 *out, const u64 *pa, const u64 *pb,
+void stats_pack_u64_counter_block(struct fw_sysapi_mgr *ctx, u32 *out, const u64 *pa, const u64 *pb,
                            const u64 *pc, const u64 *pd)
 {
     u64 v;
 
-    hwd_apply_table_entry_c(ctx, out, *pb, *pa);
-    hwd_apply_table_entry_c(ctx, out + 0x10 / 4, *pd, *pc);
-    hwd_apply_table_entry_c(ctx, out + 0x30 / 4, *pc - *pd, *pc);
+    stats_norm_u64_pair(ctx, out, *pb, *pa);
+    stats_norm_u64_pair(ctx, out + 0x10 / 4, *pd, *pc);
+    stats_norm_u64_pair(ctx, out + 0x30 / 4, *pc - *pd, *pc);
     v = *pa >> 3;
     out[0x38 / 4] = (u32)v;
     out[0x3c / 4] = (u32)(v >> 32);
@@ -226,13 +226,13 @@ void hwd_apply_table_entry(struct fw_sysapi_mgr *ctx, u32 *out, const u64 *pa, c
 /* hwd__apply_table_entry_b (0x8f2e74, 106 Б): нормированные пары (32-битные входы
  * расширяются нулём): out+8 — (a2, a2 + a3 с переносом в старшее слово), out+0x18 — (a5, a4),
  * out+0x20 — (a7, a4), out+0x28 — (a5, a6). */
-void hwd_apply_table_entry_b(struct fw_sysapi_mgr *ctx, u32 *out, u32 a2, u32 a3, u32 a4,
+void stats_pack_u32_counter_block(struct fw_sysapi_mgr *ctx, u32 *out, u32 a2, u32 a3, u32 a4,
                              u32 a5, u32 a6, u32 a7)
 {
-    hwd_apply_table_entry_c(ctx, out + 8 / 4, (u64)a2, (u64)a2 + (u64)a3);
-    hwd_apply_table_entry_c(ctx, out + 0x18 / 4, (u64)a5, (u64)a4);
-    hwd_apply_table_entry_c(ctx, out + 0x20 / 4, (u64)a7, (u64)a4);
-    hwd_apply_table_entry_c(ctx, out + 0x28 / 4, (u64)a5, (u64)a6);
+    stats_norm_u64_pair(ctx, out + 8 / 4, (u64)a2, (u64)a2 + (u64)a3);
+    stats_norm_u64_pair(ctx, out + 0x18 / 4, (u64)a5, (u64)a4);
+    stats_norm_u64_pair(ctx, out + 0x20 / 4, (u64)a7, (u64)a4);
+    stats_norm_u64_pair(ctx, out + 0x28 / 4, (u64)a5, (u64)a6);
 }
 
 /* 0x801b6c: таблица переходов switch vendor stats__read_counter_by_id (0x8dd7c8) (ldb.x [0x801b6c, индекс] → переход на

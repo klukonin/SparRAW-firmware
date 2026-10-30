@@ -161,7 +161,7 @@ u32 ka_detector_is_enabled(struct ll_ka_det *d)
 /* tx_ageing_detector__is_enabled (0x8da260, 76 Б): то же, бит 0; ассерт 0x1504. */
 u32 tx_ageing_detector_is_enabled(struct ll_ageing_det *d)
 {
-    if (ll_detector_is_armed_b(d) == 0)
+    if (ll_ageing_detector_is_armed(d) == 0)
         return 0;
     return detector_flag_enabled(&d->cid, &d->ctx, 0, 0x1504, __builtin_return_address(0));
 }
@@ -208,7 +208,7 @@ void tx_ppdu_ageing_timeout_detector_start_monitoring(struct ll_ageing_det *det)
     struct ll_ctx *ctx;
     u32 cid, en;
     struct vring_schd_if *tbl;
-    if (ll_detector_is_armed_b(det) == 0) {
+    if (ll_ageing_detector_is_armed(det) == 0) {
         fw_log_emit0(0xb, 0x10147d4);
         return;
     }
@@ -219,8 +219,8 @@ void tx_ppdu_ageing_timeout_detector_start_monitoring(struct ll_ageing_det *det)
     cid = d->cid;
     fw_log_emit3(0x2b, 0x101482c, cid, en, ((volatile struct ll_ctx *)ctx)->cfg[cid].period);
     fw_log_emit1(0x2b, 0x101489c, VCTX(d)->cfg[d->cid].ageing_thr);
-    detector_arm_timer(&det->svc);
-    peer_check_flag_30(det);
+    detector_disarm_timer(&det->svc);
+    ll_ageing_reset_peer_state(det);
     tbl = vring_active_ring_table();
     tbl->vt->clear_time(tbl, d->cid);
     VCTX(d)->traffic[d->cid] = 0;
@@ -253,8 +253,8 @@ void ka_necessity_detector_start_monitoring(struct ll_ka_det *det)
     fw_log_emit2(0x2b, 0x1014b74, (u32)e->snr_lo, (u32)e->snr_hi);
     p = VCTX(d)->cfg[d->cid].ka_period_lo;
     fw_log_emit2(0x2b, 0x1014ba8, p, p);
-    detector_arm_timer(&det->svc);
-    ka_check_peer_state(det);
+    detector_disarm_timer(&det->svc);
+    ka_reset_peer_state(det);
     VCTX(d)->ka_cnt[d->cid] = 0;
     detector_init_common(&det->svc, VCTX(d)->cfg[d->cid].period,
                          0, 1, 5);
@@ -265,7 +265,7 @@ void ka_necessity_detector_start_monitoring(struct ll_ka_det *det)
 /* bad_beacons_detector__arm (0x8e7adc, 18 Б): обнулить счётчик и включить. */
 void bad_beacons_detector_arm(struct ll_bcn_det *o)
 {
-    bad_beacons_check_counter(o);
+    bad_beacons_reset_counter(o);
     ((volatile struct ll_bcn_det *)o)->armed = 1;
 }
 
@@ -294,7 +294,7 @@ static u32 ps_sta_has_pending_data(u32 cid)
     volatile struct ll_ctx *ctx = LLC;
     struct vring_schd_if *tbl = vring_active_ring_table();
     u32 ring = tbl->vt->vring_of_pring(tbl, cid);
-    u32 host = (ring == 0xff) ? 0 : hwd_dma_get_881c80(ring);
+    u32 host = (ring == 0xff) ? 0 : hwd_dma_ring_has_data(ring);
     u32 bit = 1u << cid;
     u32 a = ctx->pending_mask & bit;
     u32 b = fwq_tx_avail.prio_mask & bit;
@@ -349,7 +349,7 @@ static u32 tsf_ref_gt(const u32 *ref, const u32 *now)
 }
 
 /* Команда uc 0x26 (CMD_KEEP_ALIVE_TRIGGER, тело 1 Б = cid): uc keep_alive_arm_slot ставит бит cid в itx_ka_pending,
- * internal_tx_flow_sm2 шлёт RTS → CTS → кадр из очередей станции → Ack. ОШИБКА vendor 6.2: task пишет в журнал
+ * internal_tx_keepalive_flow шлёт RTS → CTS → кадр из очередей станции → Ack. ОШИБКА vendor 6.2: task пишет в журнал
  * «Initiating CMD_KEEP_ALIVE_TRIGGER to uCode», но команду не шлёт — ни один из 60 вызовов lmac_if__post_cmd в fw 6.2
  * не передаёт 0x26, и keep-alive в простое не уходит никогда (стенд 2026-10-24: журнал fw каждые ~31 с, путь uc ни
  * разу). В 4.1 это делает lmac_if_keep_alive_trigger_handler (0x8d85e4, send_cmd2_lmac(0x26, 1)), вызов из task. */
@@ -377,7 +377,7 @@ void ka_necessity_detector_task(struct psvc *svc, u32 count)
     (void)count;
     if (ka_detector_is_enabled(det) == 0) {
         fw_log_emit0(0xb, 0x1014be8);
-        lm_if_stop_link_a(det);
+        lm_if_stop_ka_detector(det);
         return;
     }
     mac_read_tsf64(0, now, 0);
@@ -440,20 +440,20 @@ void ka_necessity_detector_task(struct psvc *svc, u32 count)
 
 /* mid__field_18_step (0x8cbf18, 20 Б): время скана при соединении (scan_mngr записи mid
  * соединения cid, [mid+0x23c]). */
-static u32 mid_field_18_step(u32 cid)
+static u32 conn_connected_scan_time(u32 cid)
 {
-    return scan_mngr_update_step(((volatile struct mid *)conn_mgr_by_cid(cid)->mid)->disc.scan);
+    return scan_mngr_get_connected_scan_time(((volatile struct mid *)conn_mgr_by_cid(cid)->mid)->disc.scan);
 }
 
 /* tx_ppdu_ageing__hook_ret0 (0x8cbb80, 4 Б): всегда 0. */
-static u32 tx_ppdu_ageing_hook_ret0(u32 v)
+static u32 tx_ppdu_ageing_hook_noop(u32 v)
 {
     (void)v;
     return 0;
 }
 
 /* lmac_if__get_evt_byte3 (0x8cb910, 4 Б): байт [gp,201] = 0x80024d (аргумент не читает). */
-static u32 lmac_if_get_evt_byte3(u32 v)
+static u32 lmac_if_get_ps_no_tx_mask(u32 v)
 {
     (void)v;
     return ps_lmac_evt_cid_mask;
@@ -484,7 +484,7 @@ void tx_ppdu_ageing_timeout_detector_task(struct psvc *svc, u32 count)
     (void)count;
     if (tx_ageing_detector_is_enabled(det) == 0) {
         fw_log_emit1(0xb, 0x10148c0, d->cid);
-        lm_if_stop_link_b(det);
+        lm_if_stop_ageing_detector(det);
         return;
     }
     mac_read_tsf64(0, now, 0);
@@ -515,12 +515,12 @@ void tx_ppdu_ageing_timeout_detector_task(struct psvc *svc, u32 count)
             p += 8;
         }
     }
-    r17 = mid_field_18_step(d->cid);
-    r16 = tx_ppdu_ageing_hook_ret0(r17);
+    r17 = conn_connected_scan_time(d->cid);
+    r16 = tx_ppdu_ageing_hook_noop(r17);
     pending = ps_sta_has_pending_data(d->cid);
     cid = d->cid;
     m160 = VCTX(d)->pending_mask & (1u << cid);
-    evt = lmac_if_get_evt_byte3(m160);
+    evt = lmac_if_get_ps_no_tx_mask(m160);
     cid = d->cid;
     evt &= 1u << cid;
     if (pending == 0 || d->last_traffic != traffic) {
@@ -603,7 +603,7 @@ static void bad_beacons_detector_handle_bcons_info(struct ll_bcn_det *det)
     fw_log_emit1(0x1b, 0x1014dd4, cid);
     conn_disc_detail_set(o->cid, WMI_SPARRAW_DISC_LOST_LINK_NO_BEACONS);
     conn_disconnect(conn_mgr_by_cid(o->cid), 1, 1);
-    bad_beacons_check_counter(det);
+    bad_beacons_reset_counter(det);
 }
 
 /* bad_beacons__on_bi_evt (0x8cd880 → 0x8cd888 с lm_if соединения, 114 Б): BI —
@@ -630,7 +630,7 @@ static void bad_beacons_on_bi_evt(struct conn *conn)
 /* connection__cmp_bf_id (0x8e75a4, 68 Б): скользящее окно ([0x80025b] — длина, степень
  * двойки) значений v: bf_win_fill — заполнено, bf_win_sum — сумма, bf_win_pos — позиция,
  * bf_win — окно; bf_last = v. */
-void connection_cmp_bf_id(struct conn *conn, u32 v)
+void connection_bf_id_window_push(struct conn *conn, u32 v)
 {
     u32 n = conn->bf_win_fill, idx;
     u32 len = conn_bf_id_win_len;
@@ -644,17 +644,17 @@ void connection_cmp_bf_id(struct conn *conn, u32 v)
 }
 
 /* connection__bf_id_at_6c (0x8e75e8, 18 Б): среднее по окну. */
-u32 connection_bf_id_at_6c(struct conn *conn)
+u32 connection_bf_id_window_avg(struct conn *conn)
 {
     return (u8)fw_divmod_unsigned(conn->bf_win_sum, conn->bf_win_fill);
 }
 
 /* connection__bf_notify_entry (0x8e7530, 26 Б): последнее значение bf_last в окно,
  * среднее — в bf_avg. */
-static void connection_bf_notify_entry(struct conn *conn)
+static void connection_bf_id_update_avg(struct conn *conn)
 {
-    connection_cmp_bf_id(conn, conn->bf_last);
-    conn->bf_avg = (u8)connection_bf_id_at_6c(conn);
+    connection_bf_id_window_push(conn, conn->bf_last);
+    conn->bf_avg = (u8)connection_bf_id_window_avg(conn);
 }
 
 
@@ -665,7 +665,7 @@ static void conn_retry_timer_expired(u32 a0, u32 a1)
     struct conn *conn = (struct conn *)a0;
     (void)a1;
     conn->retry_timer = 0;
-    connection_bf_notify_entry(conn);
+    connection_bf_id_update_avg(conn);
     if (conn->retry_cnt <= conn_bf_id_win_len)
         conn_arm_retry_timer(conn, 0);
 }
@@ -677,7 +677,7 @@ void conn_arm_retry_timer(struct conn *conn, u32 restart)
     if (restart == 1)
         conn->retry_cnt = 0;
     conn->retry_cnt = (u8)(conn->retry_cnt + 1);
-    conn_check_field_50(conn);
+    conn_cancel_retry_timer(conn);
     conn->retry_timer = u_schd_schedule(conn_retry_timer_expired, (u32)conn, 0, 0,
                                       conn_retry_delay, 0, 0);
 }
@@ -689,7 +689,7 @@ void conn_mgr_bi_evt_all_conns(void)
 {
     u32 cid;
     struct conn *conn;
-    if (mid_state_is_2_or_3(0) == 0) {
+    if (mid_is_pcp_or_ap(0) == 0) {
         for (cid = 0; cid < SPARRAW_MAX_STA; cid++) {
             conn = conn_mgr_by_cid(cid);
             if (conn != 0 && conn->mlme.sm.state == 2)
@@ -703,7 +703,7 @@ void conn_mgr_bi_evt_all_conns(void)
 FWDATA(80075c) const struct psvc_vt ll_ka_det_vtbl = {
     .rsv0 = 0,
     .start = periodic_service_start,
-    .stop = detector_arm_timer,
+    .stop = detector_disarm_timer,
     .task = ka_necessity_detector_task,
     .run = periodic_service_run,
 };
@@ -712,7 +712,7 @@ FWDATA(80075c) const struct psvc_vt ll_ka_det_vtbl = {
 FWDATA(8008c4) const struct psvc_vt ll_ageing_det_vtbl = {
     .rsv0 = 0,
     .start = periodic_service_start,
-    .stop = detector_arm_timer,
+    .stop = detector_disarm_timer,
     .task = tx_ppdu_ageing_timeout_detector_task,
     .run = periodic_service_run,
 };

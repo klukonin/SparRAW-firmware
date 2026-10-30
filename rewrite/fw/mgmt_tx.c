@@ -100,7 +100,7 @@ __attribute__((section(".textlate"))) u32 ie_push_qos_capability(u8 *dst)
 }
 
 /* ie__push_eid151_len10 (0x8e1fbc, 24 Б): eid 0x97, len 10. Возврат 0xc. */
-__attribute__((section(".textlate"))) u32 ie_push_eid151_len10(u8 *dst, const u8 *src)
+__attribute__((section(".textlate"))) u32 ie_push_dmg_operation(u8 *dst, const u8 *src)
 {
     dst[0] = 0x97;
     dst[1] = 0x0a;
@@ -109,7 +109,7 @@ __attribute__((section(".textlate"))) u32 ie_push_eid151_len10(u8 *dst, const u8
 }
 
 /* ie__push_eid190_len4 (0x8e1fa4, 24 Б): eid 0xbe, len 4. Возврат 6. */
-__attribute__((section(".textlate"))) u32 ie_push_eid190_len4(u8 *dst, const u8 *src)
+__attribute__((section(".textlate"))) u32 ie_push_antenna_sector_id_pattern(u8 *dst, const u8 *src)
 {
     dst[0] = 0xbe;
     dst[1] = 0x04;
@@ -118,7 +118,7 @@ __attribute__((section(".textlate"))) u32 ie_push_eid190_len4(u8 *dst, const u8 
 }
 
 /* mgmt_tx__copy_ie_max96 (0x8e2048, 148 Б, тело 28 Б): копия до 0x60 байт. */
-__attribute__((section(".textlate"))) u32 mgmt_tx_copy_ie_max96(u8 *dst, const u8 *src, u32 len)
+__attribute__((section(".textlate"))) u32 mgmt_tx_copy_ie_bounded(u8 *dst, const u8 *src, u32 len)
 {
     if (len > 0x60)
         fw_sysassert_fatal(0, 0x11d5);
@@ -148,7 +148,7 @@ FWDATA(8023c8) const u8 mid_get_bcon_additional_ies_jt[9] = {
  * 1 (assoc resp) → +0x1bc, 4 (probe req) → +0x1c8, 5 (probe resp) → +0x1d4, 8 (бикон) →
  * журнал + 0x1e0; 2, 3, 6, 7 и ≥ 9 — ассерт 0x1217, 0. Прежде 2/3 давали блоки probe
  * req/resp, а 4..8 — блок бикона: в probe req не попадали IE хоста (ExtCap, DMG, WFA). */
-__attribute__((section(".textlate"))) struct app_ies *mid_get_bcon_additional_ies(struct mid_bss *mid, u32 frame_type)
+__attribute__((section(".textlate"))) struct app_ies *mid_get_app_ies_by_subtype(struct mid_bss *mid, u32 frame_type)
 {
     switch (frame_type) {
     case 0: return &mid->ie_assoc_req;
@@ -305,7 +305,7 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_copy_ie_hdr(u8 *dst, const str
 
 /* mgmt_tx__probe_resp_ies (0x8d7f78, 92 Б): набор IE для probe REQ/scan
  * (SSID + RSN + DMG capabilities + vendor-специфика). Возврат длины. */
-__attribute__((section(".textlate"))) u32 mgmt_tx_probe_resp_ies(u8 *dst, struct mid_bss *mid, const u8 *ssid,
+__attribute__((section(".textlate"))) u32 mgmt_tx_build_probe_req_ies(u8 *dst, struct mid_bss *mid, const u8 *ssid,
                                                                 u32 ssid_len)
 {
     u32 total = 0, n;
@@ -313,7 +313,7 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_probe_resp_ies(u8 *dst, struct
     n = ie_push_ssid(dst, ssid, ssid_len);            dst += n; total += n;
     n = ie_push_raw(dst, mid->rsn_ie);                dst += n; total += n;  /* RSN */
     n = ie_push_dmg_capabilities(dst, (u8 *)&mid->dmg_cap, 0); dst += n; total += n;
-    n = mgmt_tx_copy_ie_max96(dst, mid->vs_ie, mid->vs_ie_len); dst += n; total += n;
+    n = mgmt_tx_copy_ie_bounded(dst, mid->vs_ie, mid->vs_ie_len); dst += n; total += n;
 
     return total;
 }
@@ -338,13 +338,13 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_append_probe_resp_ies(u8 *dst,
     n = ie_push_dmg_capabilities(dst, (u8 *)&mid->dmg_cap, 0); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fb98, n, total);                    /* dband cap */
 
-    n = mgmt_tx_copy_ie_max96(dst, mid->vs_ie, mid->vs_ie_len); dst += n; total += n;
+    n = mgmt_tx_copy_ie_bounded(dst, mid->vs_ie, mid->vs_ie_len); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fbc8, n, total);                    /* vendor specific */
 
-    n = ie_push_eid151_len10(dst, mid->blk_f8); dst += n; total += n;
+    n = ie_push_dmg_operation(dst, mid->blk_f8); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fc00, n, total);                    /* dband oper */
 
-    n = ie_push_eid190_len4(dst, mid->blk_103); dst += n; total += n;
+    n = ie_push_antenna_sector_id_pattern(dst, mid->blk_103); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fc34, n, total);                    /* dband ANT */
 
     n = ie_push_edca(dst, mid);   dst += n; total += n;
@@ -370,18 +370,18 @@ __attribute__((section(".textlate"))) void mgmt_tx_build_probe_req(u32 payload, 
 
     u8 *dest = hdr + 0x18;
     struct mid_bss *mid = &mid_e->bss;
-    struct app_ies *internal = mid_get_bcon_additional_ies(mid, 4);
+    struct app_ies *internal = mid_get_app_ies_by_subtype(mid, 4);
     u32 ies_len;
 
     if (ies_block_is_empty(internal) != 0) {
         fw_log_emit0(0x2d, 0x1013bd0);   /* PROBE REQ internal IEs are built */
-        ies_len = mgmt_tx_probe_resp_ies(dest, mid, ssid_buf, ssid_len);
+        ies_len = mgmt_tx_build_probe_req_ies(dest, mid, ssid_buf, ssid_len);
         dest += ies_len;
     } else {
         u8 iesbuf[0x120];
         struct app_ies app_block;
         fw_log_emit0(0x2d, 0x1013bf4);   /* PROBE REQ internal & external IEs are built */
-        u32 n = mgmt_tx_probe_resp_ies(iesbuf, mid, ssid_buf, ssid_len);
+        u32 n = mgmt_tx_build_probe_req_ies(iesbuf, mid, ssid_buf, ssid_len);
         app_ies_set_buffer(&app_block, iesbuf, n, 0);
         u32 dest_block[1];
         dest_block[0] = (u32)dest;
@@ -410,7 +410,7 @@ __attribute__((section(".textlate"))) void mgmt_tx_build_probe_resp(u32 payload,
     dest += n_fixed;
     u32 fixed = n_fixed + 0x18;
 
-    struct app_ies *internal = mid_get_bcon_additional_ies(mid, 5);
+    struct app_ies *internal = mid_get_app_ies_by_subtype(mid, 5);
     u32 has_ext = (conn->vs_version == 0) ? 1u : 0u;
     u32 ies_len;
 

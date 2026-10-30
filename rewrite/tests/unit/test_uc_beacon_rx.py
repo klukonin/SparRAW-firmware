@@ -6,7 +6,7 @@
 Решение принимают два пути uc — оба проверяются одними сценариями:
   * rx_flow_handle_frame — маяк пришёл в общем пути приёма (вход в BTI с пути приёма, kind 1; станция без
     синхронизации BI, в т. ч. не ассоциированная);
-  * bti_bi2_event_step — первый маяк BTI при известном расписании BI (kind 0).
+  * bti_beacon_rx_step — первый маяк BTI при известном расписании BI (kind 0).
 Кадр маяка кладётся в rx_buf (0x804010) байтами по рис. 9-76, табл. 9-45, рис. 9-77; ожидания событий MAC — заглушки."""
 import pytest
 
@@ -28,7 +28,7 @@ ROLES = {'sta': (0, 1, 1), 'ap': (1, 2, 3), 'pcp': (1, 3, 2)}     # (uc_role_ap,
 RX_STUBS = ['rx_mac_prepare', 'rx_update_nav_from_frame', 'uc_wait_event_busy', 'rx_end_switch_to_tx',
             'sta_tbl_find_by_mac', 'uc_log_emit_snapshot', 'uc_assert']
 BTI_STUBS = ['uc_read_tsf_lo', 'uc_wait_event_busy', 'uc_log_emit_snapshot', 'uc_assert']
-BTI_TRUE = ['uc_bi_counter_in_window', 'uc_read_bi_sync', 'bti_worker_bi2_step', 'abft_sta_arm_gp0']
+BTI_TRUE = ['uc_bi_counter_in_window', 'uc_read_bi_sync', 'bti_beacon_rx_match_bss', 'abft_sta_arm_bti_end_timer']
 
 
 def bic_encode(cc=0, discovery=0, next_beacon=0, ati_present=0, abft_len=1, fss=15, is_resp_txss=1, next_abft=0,
@@ -93,18 +93,18 @@ def state(uc):
 def rx_path(uc, frame, my_bss=0, tsf=0):
     uc.wbytes(RX_BUF, frame)
     uc.ext.update({42: 1 << 16, 36: 1 << 7, 38: my_bss & 1, 37: 0, 55: tsf})   # r55 — TSF (uc_read_tsf_lo)
-    uc.call('rx_flow_handle_frame', 0x803e00, stub=stubs(uc, RX_STUBS))
+    uc.call('rx_flow_handle_frame', 0x807e00, stub=stubs(uc, RX_STUBS))
     return state(uc)
 
 
 def bti_path(uc, frame, my_bss=0, tsf=0):
     uc.wbytes(RX_BUF, frame)
     uc.ext.update({42: 1 << 12, 36: 1 << 7, 38: my_bss & 1})
-    zero(uc, 0x803f00, 0x40)
+    zero(uc, 0x807f00, 0x40)
     s = stubs(uc, BTI_STUBS)
     s['uc_read_tsf_lo'] = tsf
     s.update({n: 1 for n in BTI_TRUE})
-    uc.call('bti_bi2_event_step', 0x803f00, stub=s)
+    uc.call('bti_beacon_rx_step', 0x807f00, stub=s)
     return state(uc)
 
 
@@ -234,7 +234,7 @@ def test_discovery_beacon_decision(sta, path, cc, ra, bss_type, want):
 
 def run_btis(uc, path, n_btis, beacons_per_bti, bic, my_bss=0, **kw):
     """BTI подряд; в каждом маяки CDOWN k−1..0. Возврат — передаёт ли станция в A-BFT каждого BI. Как только решено
-    передавать, остаток BTI ведёт путь BTI (bti_bi2_track_best_metric), решение не пересматривается."""
+    передавать, остаток BTI ведёт путь BTI (bti_beacon_track_best_metric), решение не пересматривается."""
     out = []
     for bi in range(n_btis):
         go = 0

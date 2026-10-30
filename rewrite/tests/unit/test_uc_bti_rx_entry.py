@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Вход станции в BTI с пути приёма (bti_transmitter_bi2_flow, kind = 1): маяк уже разобран, uc ждёт следующий маяк
+"""Вход станции в BTI с пути приёма (bti_sta_beacon_abft_flow, kind = 1): маяк уже разобран, uc ждёт следующий маяк
 этого BTI, чтобы вовремя взвести A-BFT. Живучесть: ожидание ограничено концом BTI — Duration маяка (9.3.4.2: время до
 конца BTI); в BTI в эфире только маяки. Без срока станция ждала маяк следующего BI и отбрасывала кадры DTI (RTS, BRP,
 данные) — стенд 2026-10-28: шторм CTS, провал BRP, «lost link: no beacons»."""
@@ -30,7 +30,7 @@ def test_no_next_beacon_returns_by_end_of_bti(uc, duration_us):
     enter(uc, duration_us, cdown=40)
     uc.ext[42] = 0                                    # ни кадра, ни bi2_event
     t0 = uc.t1()
-    uc.call('bti_transmitter_bi2_flow', BI_CTX, stub=STUBS, max_steps=40 * duration_us * CLK_PER_US)
+    uc.call('bti_sta_beacon_abft_flow', BI_CTX, stub=STUBS, max_steps=40 * duration_us * CLK_PER_US)
     waited_us = (uc.t1() - t0) / CLK_PER_US
     assert waited_us <= duration_us * 1.05 + 20, 'ждал %.0f мкс при конце BTI через %d' % (waited_us, duration_us)
     assert uc.r8(BI_CTX + 4) == 4
@@ -43,7 +43,7 @@ def test_wait_survives_timer1_wrap(uc):
     uc.t1_base = ucemu.T1_LIMIT - 1000
     enter(uc, 100, cdown=10)
     uc.ext[42] = 0
-    uc.call('bti_transmitter_bi2_flow', BI_CTX, stub=STUBS, max_steps=200 * 100 * CLK_PER_US)
+    uc.call('bti_sta_beacon_abft_flow', BI_CTX, stub=STUBS, max_steps=200 * 100 * CLK_PER_US)
     assert uc.r8(BI_CTX + 4) == 4
 
 
@@ -52,5 +52,5 @@ def test_last_beacon_does_not_wait(uc):
     enter(uc, 1000, cdown=0)
     uc.ext[42] = 0
     t0 = uc.t1()
-    uc.call('bti_transmitter_bi2_flow', BI_CTX, stub=STUBS)
+    uc.call('bti_sta_beacon_abft_flow', BI_CTX, stub=STUBS)
     assert (uc.t1() - t0) / CLK_PER_US < 50

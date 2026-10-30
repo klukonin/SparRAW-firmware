@@ -33,10 +33,10 @@
 | поле | 4.1 | 6.2 | писатель 6.2 |
 |---|---|---|---|
 | bcon bitmap (lo, hi) | +0x04, +0x08 | то же | нет ни в одной версии: всегда 0 |
-| BTI start (lo, hi) / duration | +0x0c, +0x10 / +0x14 | то же | `bi_timing_snapshot_b` 0x922444; `l1__snapshot_bi_counter` 0x923a16 |
+| BTI start (lo, hi) / duration | +0x0c, +0x10 / +0x14 | то же | `bi_timing_snapshot` 0x922444; `l1__snapshot_bi_counter` 0x923a16 |
 | rssi valid / rssi | +0x18 / +0x1c | то же | `bti__bi2_event_step` 0x937264 |
 | snr valid / snr | +0x20 / +0x24 | то же | fw, `lmac_if__update_pct_stats` (LUT 0x805170) |
-| tx bcon / rx bcon / detected | +0x28 / +0x29 / +0x2a | то же | `bcon_txss_sweep_step` 0x93b748; `bti_worker_bi2_step` 0x923b44 |
+| tx bcon / rx bcon / detected | +0x28 / +0x29 / +0x2a | то же | `bcon_txss_sweep_step` 0x93b748; `bti_beacon_rx_match_bss` 0x923b44 |
 | AW start (lo, hi) / duration | +0x2c, +0x30 / +0x34 | то же | `mac_prog__cmd02_body` 0x9214ba |
 | backoff AW / tx atim pass / fail / counter | +0x38 / +0x39 / +0x3a / +0x3b | то же | `bi_rx__slot_handler` 0x92b4f8…; `bi_rx__start_rx_window` 0x921290 |
 | rx atim / bcons_atim_fail_vec | +0x3c / +0x3d | то же | `rx_flow__handle_frame` 0x932a6c; публикатор 0x93cdbc |

@@ -23,7 +23,7 @@
 /* low_sme__send_evt2sw (0x8e5474): событие хосту через обработчик operational-mbox
  * (operational_mbox.evt_send = operational_if_evt_send, ставит operational_if_init_mbox_ptr).
  * payload — буфер host_if_send_pair (перед ним 0x10 Б под mbox/wmi-заголовки). */
-__attribute__((section(".textlate"))) void low_sme_send_evt2sw(void *payload, u32 evt, u32 len, u32 mid, u32 a4, u32 a5, u32 a6)
+__attribute__((section(".textlate"))) void host_if_send_event(void *payload, u32 evt, u32 len, u32 mid, u32 a4, u32 a5, u32 a6)
 {
     if (a4 == 0 && a5 == 0 && len + 0x10 > 0x100)
         fw_sysassert_fatal((void *)0, 0x1061);
@@ -34,7 +34,7 @@ __attribute__((section(".textlate"))) void low_sme_send_evt2sw(void *payload, u3
 
 /* conn__sec_mode_not_1 (0x8da5f8, 14 Б): 0 — режим безопасности записи mid соединения
  * ([mid+0x2c]) == 1, иначе 1. */
-__attribute__((section(".textlate"))) u32 conn_sec_mode_not_1(struct conn *conn)
+__attribute__((section(".textlate"))) u32 conn_is_secured(struct conn *conn)
 {
     return (conn->mid->sec.auth == 1) ? 0 : 1;
 }
@@ -42,13 +42,13 @@ __attribute__((section(".textlate"))) u32 conn_sec_mode_not_1(struct conn *conn)
 /* ut_hw_cmd_008__params (0x8e6f94, 62 Б): дескриптор кольца entry (как ADDBA-параметры,
  * флаг f) с индексом ключа key_idx в битах 24..25 слова +0x10 (bits__set32_s24_w2
  * 0x8ed460) — LMAC-команда 2 через qh__write_or_conn_alloc. */
-__attribute__((section(".textlate"))) void vring_key_write_params(const struct vring_tbl_entry *entry,
+__attribute__((section(".textlate"))) void vring_key_program_desc(const struct vring_tbl_entry *entry,
                                                                   u32 flag, u32 key_idx)
 {
     struct macq_qdesc buf;
-    ba_sm_addba_at_10(entry, &buf, entry->sector_mode, (entry->ctl >> 1) & 1u, entry->to_res, flag);
+    tx_macq_build_sector_desc(entry, &buf, entry->sector_mode, (entry->ctl >> 1) & 1u, entry->to_res, flag);
     buf.sector.w0 = (buf.sector.w0 & ~(3u << 24)) | ((key_idx & 3u) << 24);
-    qh_write_or_conn_alloc(entry->macq, 2, &buf, 0);
+    macq_qh_write(entry->macq, 2, &buf, 0);
 }
 
 /* 0x8eacb0 (28 Б; в NAMES-EXTRA ut_hw_cmd_0x008): ключ для кольца стрима s —
@@ -56,7 +56,7 @@ __attribute__((section(".textlate"))) void vring_key_write_params(const struct v
 __attribute__((section(".textlate"))) void vring_reinstall_key(const struct stream_ctx *s, u32 flag,
                                                                u32 key_idx)
 {
-    vring_key_write_params(vring_tbl_entry_addr(s->tbl_vr), flag, key_idx);
+    vring_key_program_desc(vring_tbl_entry_addr(s->tbl_vr), flag, key_idx);
 }
 
 /* vring__reinstall_keys_for_mid (0x8ea7ac, 68 Б): для всех стримов (stream_by_vr, 10 шт.)
@@ -71,12 +71,12 @@ __attribute__((section(".textlate"))) void vring_reinstall_keys_for_conn(struct 
     }
 }
 
-/* install_key_handle (0x8f5a5c, 40 Б): событие 7 (NTF_KEY_INSTALLED) conn_main_sm и
+/* conn_on_key_installed (0x8f5a5c, 40 Б): событие 7 (NTF_KEY_INSTALLED) conn_main_sm и
  * переустановка ключей его колец. */
-__attribute__((section(".textlate"))) void install_key_handle(struct conn *conn)
+__attribute__((section(".textlate"))) void conn_on_key_installed(struct conn *conn)
 {
     conn_msm_event(&conn->msm, 7, 0, 0, 0);
-    vring_reinstall_keys_for_conn(conn, conn_sec_mode_not_1(conn));
+    vring_reinstall_keys_for_conn(conn, conn_is_secured(conn));
 }
 
 /* Задача после WMI_SCAN_COMPLETE (vendor 0x8ed9c4, 8 Б): low_sme__termination_check(1). */
@@ -91,7 +91,7 @@ __attribute__((section(".textlate"))) void low_sme_scan_done_task(u32 a0, u32 a1
  * ящика): у кольца с пулом буфер payload отдаётся колбэку free_cb (a4 ≠ 0) или free_cb2
  * (a5 ≠ 0; нет колбэка — ассерт 0xcd / 0xce), иначе возвращается в пул кольца
  * (буфер пула начинается на 0x10 Б раньше payload). */
-__attribute__((section(".textlate"))) void low_sme_check_state_1(struct mbox_ring *o, u32 payload, u32 a4, u32 a5)
+__attribute__((section(".textlate"))) void mbox_tx_release_payload(struct mbox_ring *o, u32 payload, u32 a4, u32 a5)
 {
     void (*cb)(u32);
     if (o->pooled != 1)
@@ -106,7 +106,7 @@ __attribute__((section(".textlate"))) void low_sme_check_state_1(struct mbox_rin
         cb = o->free_cb2;
     } else {
         fw_log_emit0(0, 0x1001b7c);
-        stream_mgr_check_vring(o->pool, (void *)(payload - 0x10));   /* mem_pool__free */
+        mem_pool_free_checked(o->pool, (void *)(payload - 0x10));   /* mem_pool__free */
         return;
     }
     cb(payload);
@@ -115,13 +115,13 @@ __attribute__((section(".textlate"))) void low_sme_check_state_1(struct mbox_rin
 /* low_sme__send_evt2_body (0x8cb1bc, 70 Б): ветка «хост не принимает события»
  * ([0x800018] == 0): low_sme__check_state_1(&mb->tx, …) с выключенными прерываниями.
  * Пустой payload — ассерт 0xc2 (vendor продолжает). */
-__attribute__((section(".textlate"))) void low_sme_send_evt2_body(struct fw_mailbox *mb, u32 payload, u32 a4, u32 a5)
+__attribute__((section(".textlate"))) void mbox_tx_discard_event(struct fw_mailbox *mb, u32 payload, u32 a4, u32 a5)
 {
     u32 s;
     if (payload == 0)
         fw_sysassert_fatal((void *)0, 0xc2);
     s = arc_irq_disable();
-    low_sme_check_state_1(&mb->tx, payload, a4, a5);
+    mbox_tx_release_payload(&mb->tx, payload, a4, a5);
     arc_irq_restore(s);
 }
 
@@ -138,12 +138,12 @@ __attribute__((section(".textlate"))) void operational_if_evt_send(u32 payload, 
     u8 *p = (u8 *)payload;
     u32 en = wmi_evt_ring_enabled;             /* [gp,-0x16c], читается до веток */
     if (evt == 0x15) {
-        install_key_handle(conn_mgr_by_cid(p[9]));
+        conn_on_key_installed(conn_mgr_by_cid(p[9]));
     } else if (evt == 0x1002) {                     /* WMI_CONNECT_EVENT: cid (+0x13) */
         struct conn *conn = conn_mgr_by_cid(p[0x13]);
-        if (conn_sec_mode_not_1(conn) == 0) {
+        if (conn_is_secured(conn) == 0) {
             fw_log_emit1(0x2e, 0x100ba20, p[0x13]);
-            install_key_handle(conn);
+            conn_on_key_installed(conn);
         }
     } else if (evt == 0x100a) {                     /* WMI_SCAN_COMPLETE_EVENT */
         u_schd_add(low_sme_scan_done_task, 0, 0, 1);
@@ -152,7 +152,7 @@ __attribute__((section(".textlate"))) void operational_if_evt_send(u32 payload, 
     if (en != 0)
         wmi_evt_post(ring, p, 0, evt, len, mid, a4, a5);
     else
-        low_sme_send_evt2_body(&ring->mb, payload, a4, a5);
+        mbox_tx_discard_event(&ring->mb, payload, a4, a5);
 }
 
 /* mgmt_pkt__clear (0x8cb160, 32 Б): занятую запись разбора кадра (busy == 1) очистить
@@ -420,7 +420,7 @@ __attribute__((section(".textlate"))) void mid_list_disconnect_all(struct mid *o
         result = mid_disconnect_cmd(obj, e, reason, protocol);
     }
     if (result == 0)
-        u_schd_add(low_sme_termination_check_thunk, 0, 0, 1);
+        u_schd_add(low_sme_termination_check_task, 0, 0, 1);
 }
 
 /* low_sme__termination_check (0x8e9110, 80 Б): снять бит termination-маски; при
@@ -439,7 +439,7 @@ __attribute__((section(".textlate"))) void low_sme_termination_check(u32 evt)
 }
 
 /* Thunk 0x8f6c44: low_sme_termination_check(0) — колбэк шедулера. */
-__attribute__((section(".textlate"))) void low_sme_termination_check_thunk(u32 a0, u32 a1)
+__attribute__((section(".textlate"))) void low_sme_termination_check_task(u32 a0, u32 a1)
 {
     (void)a0;
     (void)a1;
@@ -466,7 +466,7 @@ __attribute__((section(".textlate"))) void vring_ack_and_unmask_irq(struct vring
     entry->state = 1;
     if (state == 1) {
         u32 bit = 1u << entry->vr;
-        hwd_dma_ack_881c44(bit, 1);
+        hwd_dma_ack_vring_irq(bit, 1);
         vring_hw_unmask_irq(bit, 1);
     }
 }
@@ -484,7 +484,7 @@ __attribute__((section(".textlate"))) void vring_schd_reconnect_next(u32 id, u32
     if (old == 0)
         fw_sysassert_fatal((void *)0, 0x12af);   /* vendor: далее с old = 0 */
 
-    sm_pring_notify_step(old, 0);
+    sm_pring_accum_time(old, 0);
     p->bound = 0;
 
     if (id != 1) {
@@ -496,7 +496,7 @@ __attribute__((section(".textlate"))) void vring_schd_reconnect_next(u32 id, u32
             next = (struct vring_rec *)l->head;
             if (next == 0)
                 continue;
-            if (vring_schd_is_vring_ready(&vring_schd, next->pring) != 0)
+            if (vring_schd_is_pring_blocked(&vring_schd, next->pring) != 0)
                 continue;                       /* pring-id запрещён — ищем ниже */
             llist_pop_front((u32 *)l);
             vring_schd_bind_if_free(&vring_schd, next, p);
@@ -506,17 +506,17 @@ __attribute__((section(".textlate"))) void vring_schd_reconnect_next(u32 id, u32
         /* vendor (8c922e): для pring 1 сразу к постановке задачи — запись old не
          * возвращается ни в готовые, ни в ожидание. */
         if (old->enabled == 1 &&
-            hwd_dma_get_881c80(old->vr) == 1) {
+            hwd_dma_ring_has_data(old->vr) == 1) {
             if (next == 0 &&
-                vring_schd_is_vring_ready(&vring_schd, old->pring) == 0) {
+                vring_schd_is_pring_blocked(&vring_schd, old->pring) == 0) {
                 fw_log_emit1(0x27, 0x100bc3c, old->vr);
                 vring_schd_bind_if_free(&vring_schd, old, p);
             } else {
-                list_find_entry_d((u32 *)&vring_schd.ready[old->prio], (u32 *)old);
+                llist_append((u32 *)&vring_schd.ready[old->prio], (u32 *)old);
                 old->state = 2;
             }
         } else {
-            list_find_entry_d((u32 *)&vring_schd.waiting, (u32 *)old);
+            llist_append((u32 *)&vring_schd.waiting, (u32 *)old);
             vring_ack_and_unmask_irq(old);
         }
     }
@@ -550,7 +550,7 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_resp(struct mid
 
     fw_log_emit3(0x2c, 0x1016ae0, pkt->info.len, pkt->info.channel, u_schd_now());
 
-    int rssi = hwd_phy_get_883b80();
+    int rssi = hwd_phy_get_rssi_raw_locked();
     disc_probe_resp_rssi = (u32)rssi;
     /* volatile: записи в заголовок — до двух чтений disc_probe_resp_rssi для журнала, как
      * у vendor (иначе gcc поднимает volatile-чтения выше записей в пакет) */
@@ -586,7 +586,7 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_resp(struct mid
 }
 
 /* probe_resp_ind (0x8f7ae4, 512 Б): обработка probe-ответа активного скана —
- * find_main_sm_bcon_step → l2_mgr_connect_next → обновление peer_info →
+ * dband_info_find_by_bssid → scan_peer_find_by_bssid → обновление peer_info →
  * scan_mngr__prob_done. Включает колбэк 0x8f7cac (probe_resp_ind_done_cb). */
 
 __attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan, const void *bssid, const void *sa,
@@ -606,7 +606,7 @@ __attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan,
     if (scan->active_probs == 0)
         return 0;
 
-    struct dband_info *r13 = find_main_sm_bcon_step(&scan->pend, r15);
+    struct dband_info *r13 = dband_info_find_by_bssid(&scan->pend, r15);
     if (r13 == 0)
         return 0;
 
@@ -619,7 +619,7 @@ __attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan,
         fw_log_emit3(0x29, 0x1015fdc, omni, (u32)r20, (u32)(s32)r23);
         fw_log_emit1(0x29, 0x1016018, conn->bcon_time);
 
-        struct scan_peer *r14 = l2_mgr_connect_next(scan, (const u8 *)r15, r16);
+        struct scan_peer *r14 = scan_peer_find_by_bssid(scan, (const u8 *)r15, r16);
         if (r14 == 0) {
             /* добавить новую запись peer_info_array */
             u32 count = scan->peer_cnt[r16];
@@ -692,7 +692,7 @@ __attribute__((section(".textlate"))) void probe_resp_ind_done_cb(u32 payload, u
 
 /* l2_mgr__connect_next (0x8e4c24, 104 Б): запись peer_info_array канала band с BSSID key
  * или 0 (vendor: база записей scan + 0x84 — add2 r0,r4,0x21). */
-__attribute__((section(".textlate"))) struct scan_peer *l2_mgr_connect_next(struct scan_mngr *obj,
+__attribute__((section(".textlate"))) struct scan_peer *scan_peer_find_by_bssid(struct scan_mngr *obj,
                                                                           const u8 *key, u32 band)
 {
     u32 i;
@@ -736,7 +736,7 @@ __attribute__((section(".textlate"))) void scan_mngr_prob_done(struct scan_mngr 
         fw_log_emit2(0x29, 0x1015cf0, entry->bssid_hi, entry->bssid_lo);
         tx_list_remove(&scan->pend, entry);
         if (conn_multi_omni_count < 2)          /* [gp,0xad] */
-            list_find_entry_d(&scan->scanned, entry);
+            llist_append(&scan->scanned, entry);
         else
             free_dband_info(entry);
     } else {
@@ -811,15 +811,15 @@ __attribute__((section(".textlate"))) void conn_abort(struct conn *conn, u32 fla
 /* conn__teardown_mac_rules (0x8f9400, 45 Б): снести MAC-правила соединения. */
 __attribute__((section(".textlate"))) void conn_teardown_mac_rules(struct conn *conn)
 {
-    lmac_if_send_sta_cfg_05(conn, 1);
+    lmac_if_send_sta_cfg(conn, 1);
     mac_parser_build_wildcard_rule(conn->cid);
-    stream_mgr_prepare_1f(conn->cid, 7);
-    conn_check_field_50(conn);
+    stream_mgr_write_filter_word(conn->cid, 7);
+    conn_cancel_retry_timer(conn);
     mid_list_remove_entry(conn->mid, conn);
 }
 /* lmac_if__send_sta_cfg_05 (0x8e7604, 140 Б): собрать STA-config команду
  * (0x28 Б) в пуле lmac-команд и отправить через lmac_if__post_cmd. */
-__attribute__((section(".textlate"))) void lmac_if_send_sta_cfg_05(struct conn *a, u32 b)
+__attribute__((section(".textlate"))) void lmac_if_send_sta_cfg(struct conn *a, u32 b)
 {
     struct lmac_cmd_sta_cfg *cmd = lmac_cmd_pool_alloc();
     u32 state = a->mid->bss.mode;
@@ -847,7 +847,7 @@ __attribute__((section(".textlate"))) void lmac_if_send_sta_cfg_05(struct conn *
     lmac_if_post_cmd(cmd, 5, 0x28, 0);
 }
 /* stream_mgr__prepare_1f (0x8dfafc, 67 Б): построить фильтр 0x1f + write_one. */
-__attribute__((section(".textlate"))) void stream_mgr_prepare_1f(u32 cid, u32 mask)
+__attribute__((section(".textlate"))) void stream_mgr_write_filter_word(u32 cid, u32 mask)
 {
     u32 w = 0;
     bits_set_s8_w5(&w, 0x1f);
@@ -874,7 +874,7 @@ __attribute__((section(".textlate"))) void mid_list_remove_entry(struct mid *obj
     if (mid_list_find_by_kind(obj, 1) == 0) {
         u32 mode = entry->mid->bss.mode;
         if (mode != 2 && mode != 3) {
-            obj_set_field4_one(&obj->bss);   /* add3 r0,r14,0x9 → obj+0x48 */
+            bss_set_state_idle(&obj->bss);   /* add3 r0,r14,0x9 → obj+0x48 */
             /* исправлено (vendor): AID прошлой ассоциации и таблица SP из ESE (общая с uc) жили после разрыва —
              * новая ассоциация с другим AID по тому же маяку (отпечаток ESE совпал) таблицу не пересобирала, и STA
              * инициировала в SP прежнего AID, т. е. чужой станции (10.36.6). */
@@ -888,7 +888,7 @@ __attribute__((section(".textlate"))) void mid_list_remove_entry(struct mid *obj
     }
 }
 /* obj__set_field4_one (0x8c4ee4): состояние BSS = 1. */
-__attribute__((section(".textlate"))) void obj_set_field4_one(struct mid_bss *obj)
+__attribute__((section(".textlate"))) void bss_set_state_idle(struct mid_bss *obj)
 {
     obj->state = MID_BSS_IDLE;
 }
@@ -909,14 +909,14 @@ __attribute__((section(".textlate"))) void connection_init(struct conn *conn, co
     conn->sw_tx_busy = 0;
     conn->skip_bf = 0;
     conn->sw_tx_sent = 0;
-    connection_store_ptr(&conn->lm, conn);
-    obj_vt802458_ctor(&conn->mlme, conn);
-    obj_vt802744_ctor(&conn->msm, conn);
+    lm_if_init(&conn->lm, conn);
+    mlme_sm_ctor(&conn->mlme, conn);
+    conn_msm_ctor(&conn->msm, conn);
     connection_init_fields(conn);
     conn->rx_sector = 0xffff;
 }
 /* connection__store_ptr (0x8d9264, 43 Б): lm_if — владелец conn, остальное обнулить. */
-__attribute__((section(".textlate"))) void connection_store_ptr(struct lm_if *a, struct conn *conn)
+__attribute__((section(".textlate"))) void lm_if_init(struct lm_if *a, struct conn *conn)
 {
     a->conn = conn;
     a->lm_sm = 0;
@@ -926,7 +926,7 @@ __attribute__((section(".textlate"))) void connection_store_ptr(struct lm_if *a,
     memset0_words(a->mcs_total, 0x1f);
 }
 /* obj_vt802458__ctor (0x8f5688, 53 Б): автомат MLME — поля + описатель 0x802458. */
-__attribute__((section(".textlate"))) void obj_vt802458_ctor(struct mlme_sm *a, struct conn *conn)
+__attribute__((section(".textlate"))) void mlme_sm_ctor(struct mlme_sm *a, struct conn *conn)
 {
     /* записи — в порядке и ширине vendor (две stw_s +0x28/+0x2a, conn последним): через
      * volatile, иначе gcc сливает полуслова в одно слово и переставляет */
@@ -948,7 +948,7 @@ __attribute__((section(".textlate"))) void obj_vt802458_ctor(struct mlme_sm *a, 
 }
 /* obj_vt802744__ctor (0x8d8d30, 45 Б): conn_main_sm — поля + описатель 0x802744 +
  * автомат разрыва (disc_flush_sm_init). */
-__attribute__((section(".textlate"))) void obj_vt802744_ctor(struct conn_msm *a, struct conn *conn)
+__attribute__((section(".textlate"))) void conn_msm_ctor(struct conn_msm *a, struct conn *conn)
 {
     a->conn = conn;
     a->bcon_timer = 0;
@@ -1020,7 +1020,7 @@ __attribute__((section(".textlate"))) void conn_mgr_add_to_rinking_list(struct c
     if (r14 == 0)
         fw_sysassert_fatal((void *)0, 0x11cc);
     r14->conn = conn;
-    list_find_entry_d((u32 *)&conn_mgr.rank_list, (u32 *)r14);
+    llist_append((u32 *)&conn_mgr.rank_list, (u32 *)r14);
     fw_log_emit1(0x2b, 0x100bdec, conn->cid);
 }
 /* conn_mgr__find_in_ranking_list_fw (0x8da308, 61 Б): поиск conn в списке ранжирования. */
@@ -1047,16 +1047,16 @@ __attribute__((section(".textlate"))) void find_sm_start_listen(struct conn *con
 __attribute__((section(".textlate"))) void lm_if_set_cid(struct lm_if *obj, u8 cid)
 {
     obj->lm_sm = &lm_sm_recs[cid];
-    obj_vt802da0_ctor(&lm_sm_recs[cid], obj);
+    lm_sm_ctor(&lm_sm_recs[cid], obj);
     obj->detectors = &ll_detectors[cid];
     fw_log_emit2(0x2b, 0x101428c, (u32)cid, (u32)&ll_detectors[cid]);   /* r3 после st_s [r13,0x7c] */
 }
 /* obj_vt802da0__ctor (0x8d8b30, 49 Б): автомат lm_sm — описатель 0x802da0 + поля. */
-__attribute__((section(".textlate"))) void obj_vt802da0_ctor(struct lm_sm *a, struct lm_if *lm)
+__attribute__((section(".textlate"))) void lm_sm_ctor(struct lm_sm *a, struct lm_if *lm)
 {
     basic_sm_bind_descriptor(a, &lm_sm_desc);
     a->lm = lm;
-    obj_vt802cc4_ctor(&a->msm, a);
+    maintain_sm_ctor(&a->msm, a);
     a->stop_pending = 0;
     a->lm_mode = 0;
     /* два stb, как vendor: volatile, иначе gcc сливает в одно полуслово */
@@ -1065,10 +1065,10 @@ __attribute__((section(".textlate"))) void obj_vt802da0_ctor(struct lm_sm *a, st
 }
 /* obj_vt802cc4__ctor (0x8f52bc, 72 Б): автомат maintain_sm — описатель 0x802cc4 + поля +
  * таймаут TXSS. */
-__attribute__((section(".textlate"))) void obj_vt802cc4_ctor(struct maintain_sm *a, struct lm_sm *l)
+__attribute__((section(".textlate"))) void maintain_sm_ctor(struct maintain_sm *a, struct lm_sm *l)
 {
     basic_sm_bind_descriptor(a, &maintain_sm_desc);
-    obj_vt802f58_ctor(&a->stats, a);
+    link_stats_sm_ctor(&a->stats, a);
     a->rs_mode = 2;
     a->lt_timer = 0;
     a->win_timer = 0;
@@ -1077,10 +1077,10 @@ __attribute__((section(".textlate"))) void obj_vt802cc4_ctor(struct maintain_sm 
     a->lm_sm = l;
     a->txss_timeout = (dashboard.cfg.special_flags & (1u << 6)) ? 0x2710u : maint_initial_txss_timeout;   /* ld_s [gp,744]: байтовое смещение (прежде ×4 = 0x800d24) */
     a->mcs = 0;
-    obj_vt802cc4_noop_vmethod(a);
+    maintain_sm_vmethod_noop(a);
 }
 /* obj_vt802f58__ctor (0x8d8dc0, 37 Б): автомат статистики линка — описатель 0x802f58 + поля. */
-__attribute__((section(".textlate"))) void obj_vt802f58_ctor(struct link_stats_sm *a, struct maintain_sm *m)
+__attribute__((section(".textlate"))) void link_stats_sm_ctor(struct link_stats_sm *a, struct maintain_sm *m)
 {
     basic_sm_bind_descriptor(a, &link_stats_sm_desc);
     a->latency_timer = 0;
@@ -1088,7 +1088,7 @@ __attribute__((section(".textlate"))) void obj_vt802f58_ctor(struct link_stats_s
     a->msm = m;
     a->high_per_cnt = 0;
 }
-__attribute__((section(".textlate"))) void obj_vt802cc4_noop_vmethod(struct maintain_sm *a) { (void)a; }
+__attribute__((section(".textlate"))) void maintain_sm_vmethod_noop(struct maintain_sm *a) { (void)a; }
 
 /* conn_mgr__link_down_evt (0x8daae8): лог + conn_abort + free_cid_db_element. Запись соединения освобождается —
  * её элемент списка ранжирования тоже (исправлено, vendor: после тайм-аута/отказа ассоциации и разрыва во время неё
@@ -1114,16 +1114,16 @@ __attribute__((section(".textlate"))) void conn_mgr_free_cid_db_element(u32 cid)
     /* 8caf80: пустой слот — ассерт 0x11d0, затем освобождение как обычно */
     if (r13->conn == 0)
         fw_sysassert_fatal((void *)0, 0x11d0);
-    stream_mgr_check_vring(&conn_mgr.conn_pool, r13->conn);
+    mem_pool_free_checked(&conn_mgr.conn_pool, r13->conn);
     r13->conn = 0;
     r13->used = 0;
 }
 
-/* free_dband_info (0x8f31a0): лог + stream_mgr_check_vring (pool.c). */
+/* free_dband_info (0x8f31a0): лог + mem_pool_free_checked (pool.c). */
 __attribute__((section(".textlate"))) void free_dband_info(struct dband_info *entry)
 {
     fw_log_emit0(0x2d, 0x1016f84);
-    stream_mgr_check_vring(&dband_info_pool, entry);
+    mem_pool_free_checked(&dband_info_pool, entry);
 }
 /* channels_switch_sm__action_abort_dwelling (0x8c203c, 44 Б; STOP_SCAN в DWELLING): снять
  * таймер пребывания (поле vendor не обнуляет) и STOP_DWELL. */
@@ -1136,13 +1136,13 @@ void channels_switch_sm_abort_dwelling(struct channels_switch_sm *cs)
 }
 
 /* conn__disconnect (0x8f2540): лог + lm_if_disable_link_loss_monitoring +
- * basic_sm_handle_event + conn_check_field_50. */
+ * basic_sm_handle_event + conn_cancel_retry_timer. */
 __attribute__((section(".textlate"))) void conn_disconnect(struct conn *conn, u32 reason, u32 protocol)
 {
     fw_log_emit2(0x2d, 0x101030c, reason, conn->cid);
     lm_if_disable_link_loss_monitoring(&conn->lm);
     conn_msm_event(&conn->msm, 8, reason, protocol, 0);
-    conn_check_field_50(conn);
+    conn_cancel_retry_timer(conn);
 }
 /* lm_if__disable_link_loss_monitoring (0x8c8f90, 48 Б): лог cid/is_enabled,
  * остановить мониторинг потери линка и сбросить ссылку на детекторы. */
@@ -1163,25 +1163,25 @@ __attribute__((section(".textlate"))) void lm_if_stop_link_loss_monitoring(struc
     fw_log_emit2(0x2b, 0x10142c4, obj->conn->cid, en);
     struct ll_detectors *m = obj->detectors;
     if (m != 0) {
-        lm_if_stop_link_b(&m->ageing);
-        lm_if_stop_link_a(&m->ka);
+        lm_if_stop_ageing_detector(&m->ageing);
+        lm_if_stop_ka_detector(&m->ka);
         bad_beacons_detector_stop_monitoring(&m->bcn);
     }
 }
-/* lm_if__stop_link_b (0x8e8088, 34 Б): при is_armed → detector_arm_timer + peer_check_flag_30. */
-__attribute__((section(".textlate"))) void lm_if_stop_link_b(struct ll_ageing_det *a)
+/* lm_if__stop_link_b (0x8e8088, 34 Б): при is_armed → detector_disarm_timer + ll_ageing_reset_peer_state. */
+__attribute__((section(".textlate"))) void lm_if_stop_ageing_detector(struct ll_ageing_det *a)
 {
-    if (ll_detector_is_armed_b(a) != 0) {
-        detector_arm_timer(&a->svc);
-        peer_check_flag_30(a);
+    if (ll_ageing_detector_is_armed(a) != 0) {
+        detector_disarm_timer(&a->svc);
+        ll_ageing_reset_peer_state(a);
     }
 }
-/* lm_if__stop_link_a (0x8e806c, 34 Б): при is_armed → detector_arm_timer + ka_check_peer_state. */
-__attribute__((section(".textlate"))) void lm_if_stop_link_a(struct ll_ka_det *a)
+/* lm_if__stop_link_a (0x8e806c, 34 Б): при is_armed → detector_disarm_timer + ka_reset_peer_state. */
+__attribute__((section(".textlate"))) void lm_if_stop_ka_detector(struct ll_ka_det *a)
 {
     if (ll_detector_is_armed(a) != 0) {
-        detector_arm_timer(&a->svc);
-        ka_check_peer_state(a);
+        detector_disarm_timer(&a->svc);
+        ka_reset_peer_state(a);
     }
 }
 /* bad_beacons_detector__stop_monitoring (0x8e8050, 35 Б): лог + armed = 0. */
@@ -1191,12 +1191,12 @@ __attribute__((section(".textlate"))) void bad_beacons_detector_stop_monitoring(
     a->armed = 0;
 }
 /* ll_detector__is_armed_b (0x8da378, 39 Б): cid != 0xff && ctx != 0. */
-__attribute__((section(".textlate"))) u32 ll_detector_is_armed_b(struct ll_ageing_det *a)
+__attribute__((section(".textlate"))) u32 ll_ageing_detector_is_armed(struct ll_ageing_det *a)
 {
     return (a->cid != 0xff && a->ctx != 0) ? 1u : 0u;
 }
 /* detector__arm_timer (0x8e7e8c, 31 Б): u_schd_now + cancel + stopped = 1 (vt->stop). */
-__attribute__((section(".textlate"))) void detector_arm_timer(struct psvc *obj)
+__attribute__((section(".textlate"))) void detector_disarm_timer(struct psvc *obj)
 {
     u_schd_now();
     timer_task_cancel(obj);
@@ -1213,9 +1213,9 @@ __attribute__((section(".textlate"))) void timer_task_cancel(struct psvc *obj)
 }
 /* peer__check_flag_30 (0x8c6844, 66 Б): не привязан — обнулить снимки; иначе сбросить
  * простой cid (ctx->idle). */
-__attribute__((section(".textlate"))) void peer_check_flag_30(struct ll_ageing_det *obj)
+__attribute__((section(".textlate"))) void ll_ageing_reset_peer_state(struct ll_ageing_det *obj)
 {
-    if (ll_detector_is_armed_b(obj) == 0) {
+    if (ll_ageing_detector_is_armed(obj) == 0) {
         obj->last_traffic = 0;
         obj->last_pring_time = 0;
         obj->last_act = 0;
@@ -1235,7 +1235,7 @@ __attribute__((section(".textlate"))) u32 ll_detector_is_armed(struct ll_ka_det 
 }
 /* ka__check_peer_state (0x8c67f0, 78 Б): период keep-alive cid — по умолчанию, накопленное
  * время — 0. */
-__attribute__((section(".textlate"))) void ka_check_peer_state(struct ll_ka_det *obj)
+__attribute__((section(".textlate"))) void ka_reset_peer_state(struct ll_ka_det *obj)
 {
     if (ll_detector_is_armed(obj) == 0) {
         obj->last_traffic = 0;
@@ -1249,7 +1249,7 @@ __attribute__((section(".textlate"))) void ka_check_peer_state(struct ll_ka_det 
     base->ka_acc[idx] = 0;
 }
 /* conn__check_field_50 (0x8c68d4): снять таймер повтора соединения. */
-__attribute__((section(".textlate"))) void conn_check_field_50(struct conn *conn)
+__attribute__((section(".textlate"))) void conn_cancel_retry_timer(struct conn *conn)
 {
     if (conn->retry_timer != 0) {
         u_schd_cancel(conn->retry_timer);
@@ -1259,7 +1259,7 @@ __attribute__((section(".textlate"))) void conn_check_field_50(struct conn *conn
 
 /* stream_mgr__ready_for_modify (0x8e23a4, 164 Б): готовность стрима к
  * модификации. Стрим vring idx (stream_by_vr); если удалён — лог, если vr == 9 —
- * выход; иначе для не-bcast — stream_mgr_ready_step (соединение — conn_by_cid(pring-id)),
+ * выход; иначе для не-bcast — stream_mgr_resume_active_scans (соединение — conn_by_cid(pring-id)),
  * затем метод ready (vt[4]) контекста. */
 __attribute__((section(".textlate"))) void stream_mgr_ready_for_modify(u32 idx, u32 a1)
 {
@@ -1278,17 +1278,17 @@ __attribute__((section(".textlate"))) void stream_mgr_ready_for_modify(u32 idx, 
         struct conn *r14 = conn_mgr_by_cid(s->conn->cid);
         if (r14 == 0)
             fw_sysassert_fatal((void *)0, 0x128e);   /* vendor: далее с r14=0 */
-        stream_mgr_ready_step();
+        stream_mgr_resume_active_scans();
     }
 
     s->vt->ready(s);
 }
 
 /* stream_mgr__ready_step (0x8e8310): обойти все mid-записи и scan_resume активные. */
-__attribute__((section(".textlate"))) void stream_mgr_ready_step(void)
+__attribute__((section(".textlate"))) void stream_mgr_resume_active_scans(void)
 {
     u32 it;
-    field_set_0x00_8e5dfc(&it, mids_get_count());
+    bit_iter_init(&it, mids_get_count());
     while (bit_iter_has_more(&it)) {
         u32 bit = bitmap_alloc_bit(&it);
         struct mid *mid = mid_list_by_mid_fw(bit);
@@ -1351,7 +1351,7 @@ __attribute__((section(".textlate"))) void scan_mngr_kick_scan_state_machine(str
  * info.mid, внешний буфер) — общий хвост ветвей discovery__rx_pkt_handler. */
 static void discovery_send_rx_mgmt(struct rx_pkt *pkt)
 {
-    low_sme_send_evt2sw(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)),
+    host_if_send_event(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)),
                         pkt->info.mid, 1, 0, 0);
 }
 

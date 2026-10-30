@@ -64,7 +64,7 @@ u32 lm_sm_get_mid_idx(struct lm_sm *l)
 
 /* maintain_ctx__set_field_9c (0x8ea9c8 → 0x8ea9c0, 12 Б): режим линк-менеджера
  * (lm_sm.lm_mode). */
-void maintain_ctx_set_field_9c(struct lm_if *lm, u32 v)
+void lm_if_set_lm_mode(struct lm_if *lm, u32 v)
 {
     lm->lm_sm->lm_mode = v;
 }
@@ -108,7 +108,7 @@ void rx_macq_program_desc_for_conn(struct conn *conn)
     buf.h[3] = 0;
     bits_set16h_s4_w5(&buf.h[3], (mac_parser_rule_f5_en != 0) ? 0x1fu : 0u);
     buf.h[3] |= 1u;
-    mac_parser_pack_rule_halfword(&buf, conn->cid);
+    mac_parser_write_rule_tbl_a(&buf, conn->cid);
 }
 
 /* conn_mgr__ranking_remove (0x8ca6fc, 100 Б; переход 0x8e7978): убрать соединение из
@@ -123,7 +123,7 @@ u32 conn_mgr_ranking_remove(struct conn *conn)
         if (e->conn == conn) {
             tx_list_remove(&conn_mgr.rank_list, e);
             e->conn = 0;
-            stream_mgr_check_vring(&conn_mgr.rank_pool, e);
+            mem_pool_free_checked(&conn_mgr.rank_pool, e);
             fw_log_emit1(0x2b, 0x100be68, conn->cid);
             return 1;
         }
@@ -175,14 +175,14 @@ void conn_post_lm_started(u32 a0, u32 a1)
 }
 
 /* lm_sm__post_evt6_via_owner (0x8ddbb4, 8 Б). */
-void lm_sm_post_evt6_via_owner(struct lm_if *lm)
+void lm_sm_notify_lm_started_via_owner(struct lm_if *lm)
 {
     conn_post_lm_started((u32)lm->conn, 0);
 }
 
 /* conn_main_sm__action_step_b (0x8ddb18, 64 Б): запуск линк-менеджера после ассоциации —
  * событие 5 (START_MAINTAIN_REQ) lm_sm; на FPGA — сразу NTF_LM_STARTED задачей. */
-void conn_main_sm_action_step_b(struct lm_if *lm)
+void conn_msm_start_link_manager(struct lm_if *lm)
 {
     if (platform_is_fpga()) {
         u_schd_add(conn_post_lm_started, (u32)lm->conn, 0, 1);
@@ -218,7 +218,7 @@ void scan_mngr_handle_link_up_event(struct scan_mngr *scan, struct conn *conn, u
     if (conn == 0)
         fw_sysassert_fatal((void *)0, 0x1249);
     fw_log_emit2(0x29, 0x1016234, conn->peer_hi, conn->peer_lo);
-    e = find_main_sm_bcon_step(&scan->pend, conn->peer);
+    e = dband_info_find_by_bssid(&scan->pend, conn->peer);
     if (e == 0) {
         fw_log_emit0(0x29, 0x101634c);
         return;
@@ -402,7 +402,7 @@ void conn_msm_on_own_start_link(struct conn_msm *sm, u32 a0, u32 a1)
 /* автомат соединения conn_main_sm: таблица 0x802554, описатель 0x802744 */
 /* 0x802554: таблица переходов [событие][состояние] (11 × 9). */
 FWDATA(802554) const struct sm_trans conn_msm_table[11][9] = {
-    [CONN_MSM_EV_OWN_START_LINK][CONN_MSM_UNRESOURCED] = { SM_ACT(conn_msm_on_own_start_link_unres), CONN_MSM_WAIT_FOR_BCON_RX },
+    [CONN_MSM_EV_OWN_START_LINK][CONN_MSM_UNRESOURCED] = { SM_ACT(conn_msm_on_own_start_link_unresourced), CONN_MSM_WAIT_FOR_BCON_RX },
     [CONN_MSM_EV_OWN_START_LINK][CONN_MSM_WAIT_FOR_BCON_RX] = { SM_ACT(conn_msm_on_own_start_link), CONN_MSM_WAIT_FOR_BCON_RX },
     [CONN_MSM_EV_OWN_START_LINK][CONN_MSM_WAIT_FOR_LINKUP] = { SM_ACT(conn_msm_on_own_start_link), CONN_MSM_WAIT_FOR_BCON_RX },
     [CONN_MSM_EV_OWN_START_LINK][CONN_MSM_READY_FOR_ASSOC] = { SM_ACT(conn_msm_on_own_start_link), CONN_MSM_WAIT_FOR_BCON_RX },
@@ -418,7 +418,7 @@ FWDATA(802554) const struct sm_trans conn_msm_table[11][9] = {
     [CONN_MSM_EV_BCON_RX][CONN_MSM_WAIT_FOR_ASSOC_DONE] = { SM_ACT(sm_action_nop_b), CONN_MSM_WAIT_FOR_ASSOC_DONE },
     [CONN_MSM_EV_BCON_RX][CONN_MSM_ASSOCIATED] = { SM_ACT(sm_action_nop_b), CONN_MSM_ASSOCIATED },
     [CONN_MSM_EV_BCON_RX][CONN_MSM_WAIT_FOR_LM_START] = { SM_ACT(sm_action_nop_b), CONN_MSM_WAIT_FOR_LM_START },
-    [CONN_MSM_EV_BCON_RX][CONN_MSM_KEY_ASSOC] = { SM_ACT(conn_msm_on_bcon_rx_key_assoc), CONN_MSM_KEY_ASSOC },
+    [CONN_MSM_EV_BCON_RX][CONN_MSM_KEY_ASSOC] = { SM_ACT(conn_msm_on_bcon_rx_key_assoc_ignore), CONN_MSM_KEY_ASSOC },
     [CONN_MSM_EV_BCON_RX][CONN_MSM_WAIT_FOR_DISCONN] = { SM_ACT(sm_action_nop_b), CONN_MSM_WAIT_FOR_DISCONN },
     [CONN_MSM_EV_NTF_LINKUP][CONN_MSM_UNRESOURCED] = { SM_ACT(sm_action_nop_b), CONN_MSM_UNRESOURCED },
     [CONN_MSM_EV_NTF_LINKUP][CONN_MSM_WAIT_FOR_BCON_RX] = { SM_ACT(sm_action_nop_b), CONN_MSM_WAIT_FOR_BCON_RX },
@@ -515,14 +515,14 @@ FWDATA(802744) struct sm_desc conn_msm_desc = {
 
 /* conn_main_sm__action_8e7a3c (0x8e7a3c, 62 Б; OWN_START_LINK в UNRESOURCED): cid
  * соединения, STA-конфиг uc (команда 5), правило MAC-парсера пира, далее как 0x8e2aac. */
-void conn_msm_on_own_start_link_unres(struct conn_msm *sm, u32 cid, u32 a1)
+void conn_msm_on_own_start_link_unresourced(struct conn_msm *sm, u32 cid, u32 a1)
 {
     if (cid >= SPARRAW_MAX_STA) {
         fw_sysassert_fatal((void *)0, 0x1543);
         return;
     }
     sm->conn->cid = (u8)cid;
-    lmac_if_send_sta_cfg_05(sm->conn, 0);
+    lmac_if_send_sta_cfg(sm->conn, 0);
     rx_macq_program_desc_for_conn(sm->conn);
     conn_msm_on_own_start_link(sm, cid, a1);
 }
@@ -539,9 +539,9 @@ void conn_msm_on_bcon_rx(struct conn_msm *sm, u32 a0, struct rx_pkt *pkt)
         u_schd_cancel(sm->bcon_timer);
         sm->bcon_timer = 0;
     }
-    lmac_if_send_cmd_0x04(2);
+    lmac_if_send_edca_cfg(2);
     conn = sm->conn;
-    maintain_ctx_set_field_9c(&conn->lm, (conn->initiator == 1) ? 2u : 1u);
+    lm_if_set_lm_mode(&conn->lm, (conn->initiator == 1) ? 2u : 1u);
     if (conn->skip_bf != 0) {
         conn_msm_event(sm, 2, 0, 0, 0);
         return;
@@ -566,7 +566,7 @@ no_link:
 }
 
 /* conn_main_sm__bcon_rx_timeout_evt (0x8c4804, 4 Б; BCON_RX в KEY_ASSOC): пусто. */
-void conn_msm_on_bcon_rx_key_assoc(void)
+void conn_msm_on_bcon_rx_key_assoc_ignore(void)
 {
 }
 
@@ -579,8 +579,8 @@ void conn_main_sm_linkup_ntf(struct conn_msm *sm, u32 a0)
     fw_log_emit2(0x2b, 0x1011a30, a0, conn->cid);
     sm->lm_start_req = 0;
     sm->lm_started = 0;
-    lmac_if_send_cmd_0x04(1);
-    maintain_ctx_set_field_9c(&sm->conn->lm, 0);
+    lmac_if_send_edca_cfg(1);
+    lm_if_set_lm_mode(&sm->conn->lm, 0);
     if (a0 == 0 && sm->conn->initiator == 1)
         conn_msm_defer(sm, 3, 0, 0, 0);
     if (a0 == 0 && sm->conn->initiator == 0) {      /* AP: ждать Assoc Request (см. conn_msm_assoc_wait_timeout) */
@@ -629,7 +629,7 @@ void conn_msm_on_assoc_done(struct conn_msm *sm)
     conn_msm_assoc_wait_cancel(sm);
     if (sm->lm_start_req == 0) {
         sm->lm_start_req = 1;
-        conn_main_sm_action_step_b(&sm->conn->lm);
+        conn_msm_start_link_manager(&sm->conn->lm);
     }
     if (sm->lm_started != 0)
         conn_msm_defer(sm, 6, 0, 0, 0);
@@ -658,7 +658,7 @@ static inline __attribute__((always_inline)) void conn_lp_delay(u32 n)
 
 /* conn__alloc_and_link (0x8e5258, 42 Б): LMAC-команда 0x1b (3 Б) {тип mid [e+0x50], a1}.
  * Первый аргумент vendor не читает. */
-void conn_alloc_and_link(u32 kind, u32 a1, u32 mid)
+void lmac_if_send_role(u32 kind, u32 a1, u32 mid)
 {
     struct lmac_cmd_role *c;
     (void)kind;
@@ -669,9 +669,9 @@ void conn_alloc_and_link(u32 kind, u32 a1, u32 mid)
 }
 
 /* conn__alloc_and_link_kind1 (0x8c733c, 12 Б). */
-void conn_alloc_and_link_kind1(u32 a1, u32 mid)
+void conn_send_role_on_connect(u32 a1, u32 mid)
 {
-    conn_alloc_and_link(1, a1, mid);
+    lmac_if_send_role(1, a1, mid);
 }
 
 /* dashboard__add_connection (0x8eabfc, 92 Б): счётчик соединений (биты 29..31 [0x853918])
@@ -697,8 +697,8 @@ void l2mgr_program_assoc_vring(u32 a0, u32 cid, const u8 *peer, const u8 *own, u
 {
     (void)a0;
     (void)a5;
-    l2mgr_program_args(vring_tbl_entry_addr(0x1a), peer, own, (u8)cid, (u8)type, 0xff);
-    l2mgr_program_args(vring_tbl_entry_addr(0x1e), peer, own, (u8)cid, (u8)type, 0xff);
+    l2mgr_program_macq_ra_ta(vring_tbl_entry_addr(0x1a), peer, own, (u8)cid, (u8)type, 0xff);
+    l2mgr_program_macq_ra_ta(vring_tbl_entry_addr(0x1e), peer, own, (u8)cid, (u8)type, 0xff);
 }
 
 /* l2mgr__send_pbss_joined_evt (0x8f6dac, 88 Б): событие 0x15 (0xc Б) {канал [mid+0x94],
@@ -713,7 +713,7 @@ void l2mgr_send_pbss_joined_evt(struct conn *conn)
     p[9] = conn->cid;
     p[0] = mid->bss.channel;
     fw_log_emit1(0x2b, 0x100d398, conn->aid);
-    low_sme_send_evt2sw(p, 0x15, 0xc, mid->id, 0, 0, 0);
+    host_if_send_event(p, 0x15, 0xc, mid->id, 0, 0, 0);
 }
 
 /* l2mgr__send_host_event (0x8f86cc, 392 Б): WMI_CONNECT_EVENTID (0x1002; wil6210 wmi.h
@@ -776,7 +776,7 @@ void l2mgr_send_host_event(u32 mid, u32 cid)
                 len = total & 0xffffu;
             }
             fw_log_emit1(0x2b, 0x100d3f8, mid);
-            low_sme_send_evt2sw(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)), mid, 1, 0, 0);
+            host_if_send_event(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)), mid, 1, 0, 0);
         } else {
             mem_pool_free_thunk(pkt);
         }
@@ -784,7 +784,7 @@ void l2mgr_send_host_event(u32 mid, u32 cid)
     }
     fw_log_emit3(0x2b, 0x100d438, p[0x13], len, p[0]);
     fw_log_emit1(0x2b, 0x100d484, p[0x14]);
-    low_sme_send_evt2sw(p, 0x1002, len, mid, 0, 0, 0);
+    host_if_send_event(p, 0x1002, len, mid, 0, 0, 0);
     if (dashboard.cfg.ap_sme_offload_mode == 0)
         l2mgr_pending_op_clear(1);
 }
@@ -811,7 +811,7 @@ void mlme_sm_association_done(u32 a0, u32 a1)
     else
         l2mgr_send_host_event(mid->id, conn->cid);
     sys_state_broadcast(5, conn->cid);
-    conn_alloc_and_link_kind1(0, mid->id);
+    conn_send_role_on_connect(0, mid->id);
     fw_status_set_state(6);
     dashboard_add_connection(conn);
     tdma_ap_update(conn->mid, 0);               /* простой TDMA точки (fw/tdma.c) */
@@ -851,7 +851,7 @@ void l2mgr_send_data_port_open_evt(u32 cid, u32 mid)
     memset0_words(p, 4);
     p[0] = (u8)cid;
     fw_log_emit1(0x2b, 0x100d56c, cid);
-    low_sme_send_evt2sw(p, 0x1860, 4, mid, 0, 0, 0);
+    host_if_send_event(p, 0x1860, 4, mid, 0, 0, 0);
     sys_state_broadcast(6, cid);
     /* В OOB-режиме vendor здесь запускал информационный поток AP/PCP — OOB R1/R2 только в
      * SparRAW-pro. */
@@ -894,7 +894,7 @@ void l2mgr_data_port_open_and_keys(u32 a0, u32 a1)
         goto out;
     }
     s = vring_tbl_find_by_id(conn);
-    if (rx_reorder_sw == 0 && conn_sec_mode_not_1(conn) != 0) {
+    if (rx_reorder_sw == 0 && conn_is_secured(conn) != 0) {
         u32 qi;
         if (s == 0)
             fw_sysassert_fatal((void *)0, 0x147d);
@@ -903,7 +903,7 @@ void l2mgr_data_port_open_and_keys(u32 a0, u32 a1)
         do {
             conn_lp_delay(0xa0);
         } while (MMIO32(HW_MAC_BUSY_STATUS) & 8u);
-        stream_mgr_prepare_1f(conn->cid, qi);
+        stream_mgr_write_filter_word(conn->cid, qi);
         vring_wait_drain(q);
         rx_macq_program_offload_desc((void *)q);
         macq_desc_read(d, 2, 1, 2, 1);
@@ -1036,7 +1036,7 @@ void conn_msm_log_state(struct conn_msm *sm)
 }
 
 /* sys_state__broadcast_7 (0x8f2790, 8 Б). */
-static void sys_state_broadcast_7(struct conn *conn)
+static void sys_state_broadcast_disconnecting(struct conn *conn)
 {
     sys_state_broadcast(7, conn->cid);
 }
@@ -1054,7 +1054,7 @@ void conn_main_sm_start_disc(struct conn_msm *sm, u32 reason, u32 protocol)
         sm->bcon_timer = 0;
     }
     conn_msm_assoc_wait_cancel(sm);
-    sys_state_broadcast_7(sm->conn);
+    sys_state_broadcast_disconnecting(sm->conn);
     conn_disc_event(&sm->disc, 0, reason, protocol, 0);
 }
 

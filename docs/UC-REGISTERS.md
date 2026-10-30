@@ -105,11 +105,11 @@ ucode очищает полубайт, вписывает индекс, сохр
 | биты селектора | группа | маска очистки | мест | пример |
 |---|---|---|---|---|
 | 3..0 | назначение не установлено | — | 0 | — |
-| 7..4 | назначение не установлено; пишется только при инициализации (=2) | `bic 0xf0` | 1 | `bi_mode_init_substep`, `0x1d000020` |
+| 7..4 | назначение не установлено; пишется только при инициализации (=2) | `bic 0xf0` | 1 | `bi_mode_init_event_timers`, `0x1d000020` |
 | 11..8 | r41 | `0xfffff0ff` | 11 | `fsched__pick_ready_queue` 0x92bec6 |
 | 15..12 | r40 (а также единичные чтения r37/r38/r54 сразу после) | `0xffff0fff` | 45 | `uc_read_bi_sync` 0x936b60 |
 | 19..16 | r47 | `0xfff0ffff` | 22 | `brp__program_and_measure` 0x9238a6 |
-| 23..20 | назначение не установлено; пишется только при инициализации (=2) | `0xff0fffff` | 1 | `bi_mode_init_substep`, `0x1d200000` |
+| 23..20 | назначение не установлено; пишется только при инициализации (=2) | `0xff0fffff` | 1 | `bi_mode_init_event_timers`, `0x1d200000` |
 
 Регистры r42, r43, r45, r49, r51, r53, r54 uc **никогда не выбирает**: в 6.2 нет ни одной
 записи, после которой читался бы такой регистр. Все их чтения совпадают по смыслу с
@@ -141,7 +141,7 @@ ucode очищает полубайт, вписывает индекс, сохр
 
 | маска | биты (имена §2.8/§2.15) | помощник | места |
 |---|---|---|---|
-| r42 `0x8000` | 15 `tx_end_event` | spin | 20: `abft_responder__tx_ssw` 0x930b04, `bcon_txss_sweep_step` 0x93b604/0x93b832, `bi_rx__start_rx_window` 0x92127e, `direct_tx__send_from_desc` 0x938872, `direct_tx_step` 0x92c554, `brp_init__tx_request` 0x922cca, `tx_bcast_flow` 0x937a38, `txop_initiator_open_txop_flow` 0x93a598, `sls__send_ssw_ack` 0x93455e и др. |
+| r42 `0x8000` | 15 `tx_end_event` | spin | 20: `abft_responder__tx_ssw` 0x930b04, `bcon_txss_sweep_step` 0x93b604/0x93b832, `bi_rx__start_rx_window` 0x92127e, `direct_tx__send_from_desc` 0x938872, `direct_tx_ssw_feedback` 0x92c554, `brp_init__tx_request` 0x922cca, `tx_bcast_flow` 0x937a38, `txop_initiator_open_txop_flow` 0x93a598, `sls__send_ssw_ack` 0x93455e и др. |
 | r42 `0x4000` | 14 `busy2_event` | spin | `mac_evt__enable_bit_sync` 0x9361f8, `_b` 0x936580, `tx_mtp_queue_gate` 0x939c24, `txop_initiator_open_txop_flow` 0x93a522, `brp_responder_flow_enter` 0x923088 |
 | r42 `0x10000` | 16 `ppdu_report_event` | busy | 14: `rx__arm_window*`, `rx__ppdu_is_ack*`, `rx__ppdu_is_cts*`, `rx_flow__handle_frame` 0x931f34, `rx_flow_step` 0x931b3c, `rx_funcs__handle_ppdu_report` 0x9316ee, `tx__await_rx_or_timeout` 0x924caa, `abft_resp__parse_fdbk` 0x93062c |
 | r42 `0x4002` | 1 `slot_event`, 14 | busy | `bti_worker__bti_transmitter_beacon_sweep_flow` 0x923e74, `mac__prepare_txrx_window` 0x920c60, `txss__program_tx_frame` 0x93c5c8, `mac__select_all_sectors_and_wait` 0x9368a4 |
@@ -151,14 +151,14 @@ ucode очищает полубайт, вписывает индекс, сохр
 | r42 `0x80100` | 8, 19 `busy_event` | busy | `sxd_hal__wait_slot2_busy` 0x936db8 |
 | r42 `0x4000`, t=0xa | 14 | sleep | `tx__send_and_await_rx_frame` 0x924a3a, 0x924b8a |
 | r42 `0x1000` / r54 `0x40` | 12 / 6 `gp0_end_ind` | ev1\|ev4 | `itx__wait_ack*`, `itx__wait_cts*`, `tx__await_rx_or_timeout` 0x924c90 — ждать ответный кадр, таймаут — GP0 |
-| r42 `0x1000` / r54 `0x80` | 12 / 7 `gp1_end_ind` | ev1\|ev4 | `abft_responder__respond_flow` 0x9304fc, `mac_mode_program_c` 0x92c144 |
+| r42 `0x1000` / r54 `0x80` | 12 / 7 `gp1_end_ind` | ev1\|ev4 | `abft_responder__respond_flow` 0x9304fc, `abft_rx_ssw_tx_feedback` 0x92c144 |
 | r42 `0x1080` / r54 `0x40` | 7 `txop_event`, 12 / 6 | ev1\|ev4 | `brp_init__exchange_request` 0x922954, `brp_initiator_brp_transaction_flow` 0x9225ce |
 | r42 `0x4000` / r54 `0x40` | 14 / 6 | ev1\|ev4 | `mac__arm_events_0xc00` 0x93e0c0 |
 | r42 `0x80000` / r54 `0x80`, `0x81`, `0xc1` | 19 / 7; 0+7; 0+6+7 (`txss_end_ind`) | ev1\|ev4 | `txss_init__send_fdbk_wait_ack` 0x93ba62, `txss_resp__wait_iss_end` 0x93bfca, `txss_init__wait_rss` 0x93bb72 |
 | r42 `0x10000` / r40 `0x1000000` | 16 / r40 б24 `cca_ppdu_comp` | r42\|r40 | `rx_flow__run` 0x930fd4 |
 | r54 `0x10000` | 16 `ext_gp_3_4_5_end_ind` | spin4 | `bcon_txss_sweep_step` 0x93b690 |
-| r54 `0x140` | 6, 8 `gp2_end_ind` | spin4 | `mac_mode_kick` 0x92c05c |
-| r54 `0x100` | 8 | spin4 | `uc_spin_until_event4_r0_100` 0x920b14 |
+| r54 `0x140` | 6, 8 `gp2_end_ind` | spin4 | `abft_initiator_feedback_loop` 0x92c05c |
+| r54 `0x100` | 8 | spin4 | `uc_spin_until_gp2_end` 0x920b14 |
 
 ### 2.5. r36…r39 — отчёт о принятом PPDU **[пак+код]**
 
@@ -200,8 +200,8 @@ Single-mapped (селектор не нужен). Перед чтением uc �
 
 | бит(ы) | имя | смысл в uc | где (vendor) |
 |---|---|---|---|
-| 0 | `my_bssid_beacon_detected` | маяк своей BSS → свой BTI отменяется | `bti__bi2_event_step` 0x936ec4, `bti_worker_bi2_step` 0x923ae6, `rx_flow__handle_frame` 0x9320bc, `rx_flow__run` 0x931250 |
-| 8..10 | `addr2_match_index` | индекс станции по TA | 8 мест: `rx_flow_step` 0x931c62, `rx_flow__handle_frame` 0x93208c/0x9324a4, `rx_funcs__handle_ppdu_report` 0x931720, `abft_resp__parse_fdbk` 0x93071c, `brp__is_peer_ctrl_frame` 0x9232da, `rx_meas__capture_frame` 0x92809c, `rx_capture__match_filter` 0x93e586, `mac_mode_program_c` 0x92c0d0 |
+| 0 | `my_bssid_beacon_detected` | маяк своей BSS → свой BTI отменяется | `bti__bi2_event_step` 0x936ec4, `bti_beacon_rx_match_bss` 0x923ae6, `rx_flow__handle_frame` 0x9320bc, `rx_flow__run` 0x931250 |
+| 8..10 | `addr2_match_index` | индекс станции по TA | 8 мест: `rx_flow_step` 0x931c62, `rx_flow__handle_frame` 0x93208c/0x9324a4, `rx_funcs__handle_ppdu_report` 0x931720, `abft_resp__parse_fdbk` 0x93071c, `brp__is_peer_ctrl_frame` 0x9232da, `rx_meas__capture_frame` 0x92809c, `rx_capture__match_filter` 0x93e586, `abft_rx_ssw_tx_feedback` 0x92c0d0 |
 | 11 | `addr2_match_valid` | индекс действителен (иначе станция 8 = неизвестна) | те же места перед 8..10; `rx__capture_frame`: `r38.11 ? r38[10:8] : 8` |
 | 11,13,14,28,29 | `addr2_match_valid`, `mcast_indication`, `bcast_indication`, `neighbour_indication`, `fcs_ok_partial` | `and r3,r38,0x30006800` — фильтр кадра | `rx_flow__handle_frame` 0x932506 |
 | 11+15 | `addr2_match_valid` + `reverse_direction_detected` | `(r38 & 0x8800) == 0x8800` → `0x802298 \|= 8` | `rx_flow__handle_frame` 0x9327a8 |
@@ -235,7 +235,7 @@ single-mapped значение: полубайт 15..12 выбирает рег�
 | 0x0 | `BACKOFF_IFS_STATUS` | 0..2 | `idle_detect` | состояние среды (5 — свободна для развёртки маяка) | 11 мест: `bti_worker__bti_transmitter_beacon_sweep_flow` 0x92413c, `rx_flow__run` 0x930e54/0x931042/0x931050, `rx_funcs__rx_flow` 0x93424e/0x9342a4, `mac__set_mode_0000` 0x93e104, `mac__rf_switch_cmd1f` 0x92c63c, `rx_resp__finish_restore_rx` 0x93371e/0x93374c (в трассу как `0xcac0xx`), `uc_sysassert__idle_hist` 0x9264e0 |
 | 0x0 | | 16..19, 20..23, 24..27, 28..31 | `remaining_slot_ac1..ac4` | четыре полубайта; цикл до изменения (`brne r13,r40`) | `bi_tx__check_idle_and_start_uc` 0x93699c…0x9369d2, `mac__set_chain_modes` 0x936a0e…0x936a38 |
 | 0x3 | `REMAINING_TIME_RD` | 0..15 | `dump___remaining_time` | остаток времени, `extw`; сравнивается с порогами (≤0x30 → `0x8005f8` б15) | `txop_initiator_open_txop_flow` 0x93a2bc, `mac__prepare_txrx_window` 0x920bcc, `internal_tx__flow_sm4` 0x926fd6, `tx__send_and_await_rx_frame` 0x924ab8, `tx_initiator_flow_fixed_scheduling` 0x938f68, `rx_flow__run` 0x93145c |
-| 0x4 | `BI_COUNTER` | 0..25 | `bi_counter` | позиция в BI, мкс | `uc_bi_counter_in_window` 0x9374a6, `bti__bi2_event_step` 0x9372c6, `l1__snapshot_bi_counter` 0x923a42, `bi_timing_snapshot_b` 0x9223a8, `internal_tx_isr` 0x92bca0 |
+| 0x4 | `BI_COUNTER` | 0..25 | `bi_counter` | позиция в BI, мкс | `uc_bi_counter_in_window` 0x9374a6, `bti__bi2_event_step` 0x9372c6, `l1__snapshot_bi_counter` 0x923a42, `bi_timing_snapshot` 0x9223a8, `internal_tx_isr` 0x92bca0 |
 | 0x4 | | 31 | `bi_sync` | BI синхронизирован | `uc_read_bi_sync` 0x936b8c |
 | 0x5 / 0x6 | `TSF_LOW_R40` / `TSF_HIGH_R40` | 0..31 | — | 64-битный TSF | `uc_read_tsf64` |
 | 0xa | `PHY_SIGNALS` | 0..2 | `cca` | — | `rx_flow__run` 0x9310d0, 0x931168 |
@@ -244,7 +244,7 @@ single-mapped значение: полубайт 15..12 выбирает рег�
 | 0xa | | 16..21 | `cca_event_counter` | сравнение счётчиков CCA | `rx_flow__run` 0x930f5e/0x931098/0x931202, `ucode_cmd_0x01_handler` 0x93aa26 |
 | 0xa | | 24 | `cca_ppdu_comp` | **канал свободен** (вместе с `!r42.busy2_event`) перед TX | 15 мест: `tx__cca_check_and_send` 0x924d44, `tx_bcast_flow` 0x937944, `txop__await_cts_ppdu` 0x9399e2, `txss__program_tx_frame` 0x93c5da, `internal_tx__flow_sm2/4/6`, `direct_tx__send_from_desc` 0x93874a, `bcon_txss_sweep_step` 0x93b4ea, `bi_rx__start_rx_window` 0x921174, `mac__set_mode_a000` 0x92a7b2 (ждать б24), `rx_flow__run` 0x930fc8 |
 | 0xb | `PHY_PLCP_RX_SIGNALS_R40` | 15 | `sifs_resp` | кадр требует ответа через SIFS | `rx_flow__handle_frame` 0x932490 |
-| 0xd | `BF_METRIC_R40` | 9..19 | см. §7.2 | 11-битная метрика со знаком (`lsr 9; bmsk 10; >0x3ff → −0x800`) | `bti__bi2_event_step` 0x936fa2/0x93702a, `bti_bi2__track_best_metric` 0x93dd16, `rx_flow__handle_frame` 0x932302, `rx_meas__capture_frame` 0x927fa8, `rx_meas__append_sample` 0x928890, `mac_mode_program_c` 0x92c196 |
+| 0xd | `BF_METRIC_R40` | 9..19 | см. §7.2 | 11-битная метрика со знаком (`lsr 9; bmsk 10; >0x3ff → −0x800`) | `bti__bi2_event_step` 0x936fa2/0x93702a, `bti_bi2__track_best_metric` 0x93dd16, `rx_flow__handle_frame` 0x932302, `rx_meas__capture_frame` 0x927fa8, `rx_meas__append_sample` 0x928890, `abft_rx_ssw_tx_feedback` 0x92c196 |
 
 Остальные регистры группы (1, 2, 7, 8, 9, 0xc, 0xe, 0xf) в uc 6.2 не выбираются.
 `mac__wait_event_r42_or_r40` проверяет r40 произвольной маской (единственный вызов — `0x1000000`,
@@ -259,8 +259,8 @@ single-mapped значение: полубайт 15..12 выбирает рег�
 | 0x1 | `QUEUE_SEL_FOUND_SET1_4_R41` | 24..28 | `qid_selected_qset4` (в паке 24..29) | qid набора 4 | `queue_sel__get_qset4` 0x92ea32 |
 | 0x1 | | 31 | `qset4_valid` | возврат функции | `queue_sel__get_qset4` 0x92ea3a |
 | 0x3 | `QSET_1_MASK_VECTOR` | 0..29 | (вектор) | есть ли ожидающие очереди, кроме 30/31 | `qset1_mask__any_pending_uc` 0x93c6ba |
-| 0x3 | | 30 | (вектор) | очередь 30 ожидает | `bti__prepare_sweep_set` 0x935ce2; `background_bi_step` 0x93c73e (`bclr.f 0,r41,30` — «кроме 30») |
-| 0xb | `MTP_Q_AVAIL` | 0..31 | `mtp_q_avail_vec` | OR с BAP_Q_AVAIL | `fsched__pick_ready_queue` 0x92bec6, `fsched__pick_queue_r41` 0x93983c, `rx_flow_substep_uc` 0x93db3e |
+| 0x3 | | 30 | (вектор) | очередь 30 ожидает | `bti__prepare_sweep_set` 0x935ce2; `pm_idle_try_enter` 0x93c73e (`bclr.f 0,r41,30` — «кроме 30») |
+| 0xb | `MTP_Q_AVAIL` | 0..31 | `mtp_q_avail_vec` | OR с BAP_Q_AVAIL | `fsched__pick_ready_queue` 0x92bec6, `fsched__pick_queue_r41` 0x93983c, `rx_flow_ctrl_qid_empty` 0x93db3e |
 | 0xc | `BAP_Q_AVAIL` | 0..29 | `bap_q_avail_vec` | `asl.f 0,r41,2` | `bap_q_avail__check` 0x9302c0, `macq__is_idle` 0x926108 |
 
 ### 2.8. r42 — события (EVENT1_STATUS) **[пак+код]**
@@ -277,12 +277,12 @@ single-mapped значение: полубайт 15..12 выбирает рег�
 | 8 | `slot2_event` | второй слот | `sxd_hal__wait_slot2_busy(2)` (маски `0x4100`, `0x80100`) |
 | 9 | `gp_timers_event` | **таймаут ожидания** (GP-таймер из `0x23010000\|t`) | добавляется во все `uc_wait_event_busy/sleep` с `t≠0`; прямо: `rx__dispatch_by_g_8005f8` 0x933494…0x933566, `rx_flow__handle_frame` 0x932726 — `while (!r42.9 && !r53.0)`, при б9 ассерт 0x3b |
 | 11 | `sfd_sync_event` | синхронизация SFD | маска `0x4800` (`rx_flow__run` 0x931140) |
-| 12 | `rx_frame_event` | **принят кадр** (ответ ACK/CTS, BRP, SSW) | 13 прямых мест: `itx__wait_ack*`, `itx__wait_cts*`, `tx__await_rx_or_timeout` 0x924c98, BRP-потоки, `bti__bi2_event_step` 0x936e9e, `bti_bi2__track_best_metric` 0x93dcce, `abft_responder__respond_flow` 0x930508, `mac_mode_program_c` 0x92c158 |
+| 12 | `rx_frame_event` | **принят кадр** (ответ ACK/CTS, BRP, SSW) | 13 прямых мест: `itx__wait_ack*`, `itx__wait_cts*`, `tx__await_rx_or_timeout` 0x924c98, BRP-потоки, `bti__bi2_event_step` 0x936e9e, `bti_bi2__track_best_metric` 0x93dcce, `abft_responder__respond_flow` 0x930508, `abft_rx_ssw_tx_feedback` 0x92c158 |
 | 14 | `busy2_event` | **среда занята / подтверждение команды**: перед TX — отказ, если взведён; после `0x27…+0x02004000` — ждать его | 26 прямых мест + маски: `tx__cca_check_and_send` 0x924d40, `tx_bcast_flow` 0x937940, `txop__await_cts_ppdu` 0x9399de, `tx_slot__dispatch` 0x938e52, `internal_tx__flow_sm2/4/6`, `bti_worker__…beacon_sweep_flow` 0x923e86/0x924158, `rx__program_mac_and_wait` 0x938d6c, `sxd_hal__wait_slot2_busy2` 0x936d46 и др. |
 | 15 | `tx_end_event` | **передача закончена** | 20 мест `uc_spin_until_event(0x8000)` (§2.4) |
 | 16 | `ppdu_report_event` | отчёт r36…r39 готов | `rx_flow_step` 0x931b34, `rx_flow__run` 0x93125c, `rx_flow__handle_frame` 0x931f20 + 14 мест `uc_wait_event_busy(0x10000)` |
 | 18 | `backoff_event` | конец backoff → `bi_dispatch_by_role` (L1) | `l1_task__main_step` 0x92cbfa/0x92ccb6 |
-| 19 | `busy_event` | L1: фаза автомата BI (`l1_task_phase_of(0x802f44)`); TXSS: неожиданный кадр | `l1_task__main_step` 0x92cb3c/0x92cc50, `background_bi_step` 0x93c74e, `txss_init__send_fdbk_wait_ack` 0x93ba6a, `txss_init__wait_rss` 0x93bb80, `sxd_hal__wait_slot2_busy` 0x936dc2 |
+| 19 | `busy_event` | L1: фаза автомата BI (`l1_task_run_bi_phase(0x802f44)`); TXSS: неожиданный кадр | `l1_task__main_step` 0x92cb3c/0x92cc50, `pm_idle_try_enter` 0x93c74e, `txss_init__send_fdbk_wait_ack` 0x93ba6a, `txss_init__wait_rss` 0x93bb80, `sxd_hal__wait_slot2_busy` 0x936dc2 |
 | 0..23 | все | `bmsk r?,r42,0x17` — снимок для лога L1 | `l1_task__main_step` 0x92cb06 |
 
 Биты 0 (`sifs_event`), 2, 3, 6 (`tsf_event`), 10, 13 (`cca_event`), 17, 20…23 (`comb_event1..4`)
@@ -309,7 +309,7 @@ uc 6.2 не проверяет. Отсутствие ожидания `tsf_event
 
 | бит(ы) | имя | смысл в uc | где (vendor) |
 |---|---|---|---|
-| 31 | `valid` | **ответ готов** (ожидание после запроса и после `0x19…`/`0x29000002`) | 52 места, самое частое ожидание uc: `tx_bcast_flow`, `txop_initiator_open_txop_flow`, `internal_tx__flow_sm2/4/6`, `direct_tx_step` 0x92c480, `txss__program_tx_frame` 0x93c46e, `bcon_txss_sweep_step` 0x93b4fe…, `brp_init__tx_request` 0x922c8c, `rx_flow__handle_frame` 0x932b2c… |
+| 31 | `valid` | **ответ готов** (ожидание после запроса и после `0x19…`/`0x29000002`) | 52 места, самое частое ожидание uc: `tx_bcast_flow`, `txop_initiator_open_txop_flow`, `internal_tx__flow_sm2/4/6`, `direct_tx_ssw_feedback` 0x92c480, `txss__program_tx_frame` 0x93c46e, `bcon_txss_sweep_step` 0x93b4fe…, `brp_init__tx_request` 0x922c8c, `rx_flow__handle_frame` 0x932b2c… |
 | 0..7 | `dump___null_status` | `extb r45 & ctx[0x18]` = 0 → разрешено (возврат 1) | `mtp__get_tx_permission` 0x93e8fc, `tx__submit_frame` 0x9396e4, `cf_end__send_frame` 0x9385c4, `mtp_queue__release_mgmt` 0x93eb02, `txop_initiator_open_txop_flow` 0x93a2d4/0x93a382 |
 | 1 | бит `null_status` (имя в паке не задано) | **очередь MTP пуста**: при 1 — лог «Error: MTP Queue is empty» (`0x10006a4`) и выход | `mtp_queue__release_mgmt` 0x93eaf8; `macq__probe_empty` 0x92db0a возвращает `!r45.1` (см. §7.1) |
 | 5 | бит `null_status` | при 1 и непустом `0x802229[3·sta]` → `ctx[0xc] \|= 2`, `ctx[0x20] = 0` | `txop_initiator_open_txop_flow` 0x93a4b8, `tx_mtp_queue_gate` 0x939bba, `rx__program_mac_and_wait` 0x938d18 |
@@ -329,7 +329,7 @@ uc 6.2 не проверяет. Отсутствие ожидания `tsf_event
 | 0x2 | `LFSR_VAL` | 0..31 | `dump___value` | ГПСЧ: `(r47·0xbd)>>32 + 0xa` (случайная задержка маяка) | `bti_worker__bti_transmitter_beacon_sweep_flow` 0x923d1e, `abft_responder__respond_flow` 0x9303f4/0x9305c2 |
 | 0x3 | `RFC_SWITCH_ERROR_STATUS` | 17 | `rfc_access_busy` | ждать снятия перед командой RFC | 11 мест: `rfc__issue_cmd_10` 0x92f8a6, `rfc__issue_cmd_20_uc` 0x92f90a, `rf__select_sector_cmd41` 0x92f978/0x92f9c8, `rf__write_sector_awv` 0x92fadc/0x92fb30, `brp__write_reg_pair` 0x92fa42, `config_brp_rf` 0x92557e/0x925686, `rfca__select_rf_uc` 0x928bd4, `brp__program_and_measure` 0x9238a8 |
 | 0x4 | `RFC_SWITCH2TX_STATUS` | 4..6 | из `analog_rx_off_status` (4..7) | `bic.f r12,r47,~0x70`: 0 → ассерт 0x133b | `direct_tx__send_from_desc` 0x93880c |
-| 0x5 | `RFC_SWITCH2RX_STATUS` | 0..3, 4..7, 12..15 | `analog_tx_off_status`, `analog_rx_on_status`, `rx_awv_cfg_status` | проверка статусов переключения на RX | `mac_mode_program_c` 0x92c32c/0x92c332/0x92c33c |
+| 0x5 | `RFC_SWITCH2RX_STATUS` | 0..3, 4..7, 12..15 | `analog_tx_off_status`, `analog_rx_on_status`, `rx_awv_cfg_status` | проверка статусов переключения на RX | `abft_rx_ssw_tx_feedback` 0x92c32c/0x92c332/0x92c33c |
 | 0x8 | `MTP_AGGREGATION` | 31 | `valid` | ждать | `bti__measure_frame_duration` 0x937d6e, `tx_bcast_flow` 0x937906 |
 | 0x8 | | 0..15 | `dump___aggregation_duration` | длительность, `extw` | `bti__measure_frame_duration` 0x937d74, `tx_bcast_flow` 0x93790a |
 
@@ -377,8 +377,8 @@ DCCM:
 | 0 | `txss_end_ind` | развёртка TXSS окончена | `txss_init__wait_rss` 0x93bb7a/0x93bbd0, `txss_resp__wait_iss_end` 0x93bf34/0x93bfd2, маски `0x81`/`0xc1` |
 | 1 | `rxss_bf_metric_ind` | метрика RXSS готова | `brp__program_and_measure` 0x923738/0x923744 |
 | 4 | `service_period_0_ind` | вход DTI-аллокации (ESE) | `l1__on_event4` 0x92cd46 |
-| 6 | `gp0_end_ind` | **таймаут GP0** (ответ не пришёл) | 14 мест + маски `0x40`: `itx__wait_ack*`, `itx__wait_cts*`, `tx__await_rx_or_timeout` 0x924c9e, BRP-потоки 0x92267c/0x9229a4, `txss_resp__wait_fdbk` 0x93bef8, `txss_init__wait_rss` 0x93bbb2, `bti_bi2__track_best_metric` 0x93dec8, `bti__r54_event_bit6` 0x92bf2c, `mac_mode_kick` 0x92c068, `mac__arm_events_0xc00` 0x93e0ce |
-| 7 | `gp1_end_ind` | таймаут GP1 (глобальный) | `abft_responder__respond_flow` 0x930574, `bti__arm_period_gp0` 0x9307f2, `mac_mode_program_c` 0x92c150, `txss_init__send_fdbk_wait_ack` 0x93ba70, `txss_init__wait_rss` 0x93bbbe, `txss_resp__wait_iss_end` 0x93bf3e/0x93bfd8 |
+| 6 | `gp0_end_ind` | **таймаут GP0** (ответ не пришёл) | 14 мест + маски `0x40`: `itx__wait_ack*`, `itx__wait_cts*`, `tx__await_rx_or_timeout` 0x924c9e, BRP-потоки 0x92267c/0x9229a4, `txss_resp__wait_fdbk` 0x93bef8, `txss_init__wait_rss` 0x93bbb2, `bti_bi2__track_best_metric` 0x93dec8, `bti__r54_event_bit6` 0x92bf2c, `abft_initiator_feedback_loop` 0x92c068, `mac__arm_events_0xc00` 0x93e0ce |
+| 7 | `gp1_end_ind` | таймаут GP1 (глобальный) | `abft_responder__respond_flow` 0x930574, `bti__arm_period_gp0` 0x9307f2, `abft_rx_ssw_tx_feedback` 0x92c150, `txss_init__send_fdbk_wait_ack` 0x93ba70, `txss_init__wait_rss` 0x93bbbe, `txss_resp__wait_iss_end` 0x93bf3e/0x93bfd8 |
 | 8 | `gp2_end_ind` | конец GP2 | `bti_bi2__gp2_end_flag` 0x923ca8, `bti_bi2__track_best_metric` 0x93ded0, маски `0x100`, `0x140` |
 | 15 | `ext_gp_0_1_2_end_ind` | переход AW→DTI | `l1__on_event4` 0x92cd24, `l1_fixed_sched__event_entry` 0x92cd96 |
 | 16 | `ext_gp_3_4_5_end_ind` | — | маска `0x10000` (`bcon_txss_sweep_step` 0x93b690) |
@@ -406,10 +406,12 @@ DCCM:
 (3,9..6,1 мкс), т. е. больше SIFS 3 мкс, и ни одного сбоя: срок ответа ACK/BA отсчитывается не от
 нуля `SIFS_CNT`, абсолютный порог по нему опоздание на этом пути не ловит. Порог как защита есть у
 vendor в `abft_responder__tx_ssw` 0x93095a: `SIFS_CNT ≥ 0x160` или `= 0` → SSW не передаётся
-(возврат 0). `REMAINING_TIME_RD` (R40[3]) — остаток времени сессии/SP с флагами
+(возврат 0). Стенд 2026-10-30 (rewrite/docs/MAC-STAND.md): на время приёма `SIFS_CNT` = 0 (на входе
+`rx_flow_run` — всегда 0), считает от конца принятого кадра; команда ответа проходит при `SIFS_CNT` до ~1050
+(BlockAck, iperf), граница пути ответа — 32–48 nop (48 — ошибка MAC). `REMAINING_TIME_RD` (R40[3]) — остаток времени сессии/SP с флагами
 `less_than_min_session_0..7`, к сроку ответа не относится.
 
-В `mac_mode_program_c` 0x92c25a, `rx__switch_to_rx_mode` 0x924fe2 и `rx_nav__set_from_duration`
+В `abft_rx_ssw_tx_feedback` 0x92c25a, `rx__switch_to_rx_mode` 0x924fe2 и `rx_nav__set_from_duration`
 0x92dd7c r55 читается после вычисленной команды; какой регистр выбран, не установлено (у последнего
 используется `(r55>>8)&0xff`, как `SIFS_CNT.usec`).
 
@@ -439,7 +441,7 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
 | CONTROLn | | 0 `IE`, 1 `NH`, 2 `W` | режим `uc_timer__start(a, count, limit, d)`: d=0 → 2 (NH), d=3 → 4 (W, сторожевой), иначе 3 (IE\|NH) + уровень IRQ `3+4·a` (d==2 → уровень 2) | `uc_timer__start` | [ISA]+[код] |
 | COUNT1 | | 0..23 | **метка времени трассы**: `lr [[0x800748]] & 0xffffff` → MAC-команда с кодом 0 (в кольцо r25) | `l1_task__main_step` 0x92cb1c, `mac_mode__switch_sequence` 0x9273e2, `macq__flush_queue` 0x925bca, `rx_resp__finish_restore_rx` 0x93373c/0x93376c, `txss_init__flow` 0x93bcb4 | [код] |
 | COUNT1/CONTROL1 | | — | сторожевой таймер L2: `sr [0x800754] → CONTROL1`, `sr 0 → COUNT1` | `l2_handle_watchdog` 0x92cfea/0x92cff0; для таймера 0 то же в `l1_task__entry` | [код] |
-| 0x200 | AUX_IRQ_LEV | бит n = уровень IRQ n | `uc_irq_set_level(n, l)`: `bclr` + `or l<<n`; IRQ 6 → 2-й уровень (`irq__init_event_masks`), 0xa и 0xe (`bi_mode_init_substep`), 3/7 (таймеры) | `uc_irq_set_level` 0x921018 | [ISA]+[код] |
+| 0x200 | AUX_IRQ_LEV | бит n = уровень IRQ n | `uc_irq_set_level(n, l)`: `bclr` + `or l<<n`; IRQ 6 → 2-й уровень (`irq__init_event_masks`), 0xa и 0xe (`bi_mode_init_event_timers`), 3/7 (таймеры) | `uc_irq_set_level` 0x921018 | [ISA]+[код] |
 | 0x5 | DEBUG | 3..10 `ASR` | `(lr [0x5] >> 3) & 0xff` — какие точки останова сработали | `uc_ap__read_triggered_mask` 0x920f9c (из `uc_vector_02`) | [ISA]+[код] |
 | 0x5 | | 24 | `sr 0x1000000,[0x5]` при программировании точки останова; назначение не установлено | `arc__program_action_point` 0x920f20 | [код] |
 | 0x220+2n / 0x221+2n | AP_AMV / AP_AMM | — | значение/маска точки останова n (адрес `0x220 + 2·n`) | `arc__program_action_point` 0x920f62/0x920f72, `uc_ap__read_match_value` 0x920fa8 | [ISA]+[код] |
@@ -465,7 +467,7 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
 | 1 (0x2) | передача данных/TXOP | `txop_initiator_open_txop_flow` (=2), `tx_bcast_flow` (=2), `bi_rx__start_rx_window` (=0x2002) | 12 мест: `rx_flow__run` 0x931424/0x931544, `rx__program_mac_and_wait` 0x938bee, `mtp__get_tx_permission` 0x93e9c0…, `rx_nav_update` 0x9345ea, `rx_resp__finish_restore_rx` 0x933850 (`!б1 \|\| (f8 & 0x11f) ≠ 0x100` → вернуть RF-цепь), `mac__prepare_txrx_window` 0x920b76 |
 | 2 (0x4) | приём (`rx_funcs__rx_flow`) | `rx_funcs__rx_flow` (=4) | `rx_flow__handle_frame` (`!б2` → `0x8005f8 \|= б25`) |
 | 3 (0x8) | приём (`rx_funcs__rx_flow`) | `rx_funcs__rx_flow` (=8) | `rx_get_required_response` 0x933200, `sls__rx_ssw_frame` 0x928532, `rx_flow__handle_frame` 0x932178 |
-| 4 (0x10) | развёртка маяка (BTI) | `bti_worker__bti_transmitter_beacon_sweep_flow` (=0x10) | 14 мест: при б4 команда передачи `0x18000000`, иначе `0x18001000` (`txss__program_tx_frame`, `sls__send_ssw_ack`, `abft_responder__tx_ssw`, `bcon_txss_sweep_step`, `direct_tx_step`, `txss_init__send_ssw_fdbk`) |
+| 4 (0x10) | развёртка маяка (BTI) | `bti_worker__bti_transmitter_beacon_sweep_flow` (=0x10) | 14 мест: при б4 команда передачи `0x18000000`, иначе `0x18001000` (`txss__program_tx_frame`, `sls__send_ssw_ack`, `abft_responder__tx_ssw`, `bcon_txss_sweep_step`, `direct_tx_ssw_feedback`, `txss_init__send_ssw_fdbk`) |
 | 5 (0x20) | TXSS-инициатор | `txss_init__flow` (=0x20) | `rx_funcs__handle_ppdu_report` 0x931976 (сектор с битом direction=1); группа `& 0x7e0` в `rx_flow__run` 0x931410 |
 | 6 (0x40) | TXSS-ответчик | `txss_resp__flow` (=0x40) | `rx_funcs__handle_ppdu_report` 0x93196c (direction=0) |
 | 7..9 | назначение не установлено | писатель в 6.2 не найден | только группа `& 0x7e0` (0x931410) |
@@ -541,7 +543,7 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
   `0xffffffff` (все) или `0x39` (б0, б3, б4, б5; задачи 1 и 2 запрещены).
 * `0x80058c` (`[gp,0x64]`) — **выполняемая** задача: обнуляется, затем ставится бит выбранной.
 * Выбор — старший бит `0x800584 & 0x800648` (`norm; rsub 0x1e`), переход по байтовой таблице
-  `0x8017d8`. Индекс ≥6 — ассерт 0x31. Нет задач — `background_bi_step`, затем `flag |0x6; sleep`.
+  `0x8017d8`. Индекс ≥6 — ассерт 0x31. Нет задач — `pm_idle_try_enter`, затем `flag |0x6; sleep`.
 
 | бит | обработчик (адрес ветки) | кто ставит | условие/ассерт |
 |---|---|---|---|
@@ -566,13 +568,13 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
 `0x800608` (`[gp,0x38]`) = `r51 & 0xf`, `0x80060c` (`[gp,0x39]`) = `r51 >> 4` (§2.13). Проверяется
 только бит 1 `0x800608` (`bic r,r,-3`): становится битом 6 команды `0x19000b00` /
 `0x19800830`, где `0x80060c << 14` — поле с бита 14 (`txop_initiator_open_txop_flow`,
-`tx_mtp_queue_gate`, `abft_responder__tx_ssw` 0x930c66, `direct_tx_step`).
+`tx_mtp_queue_gate`, `abft_responder__tx_ssw` 0x930c66, `direct_tx_ssw_feedback`).
 
 ### 4.6. Маски по станциям и qid **[код]**
 
 | слово | индекс бита | ставит | снимает | проверяет | смысл |
 |---|---|---|---|---|---|
-| `0x802948` | qid (`ctx[4]`, `fsched__cur_entry_byte0`) | `ucode_cmd_0x08_handler` (r0=3, тип 3, `r43.aggregation_enabled`); `l1_fixed_sched_ap_ev4_state4` 0x938880 | `ucode_cmd_0x08_handler` (r0=1, тип 3: `&= ~[0x801124+80·sta]`); `rx__dispatch_by_g_8005f8` (BlockAck при б30) | `txop_initiator_open_txop_flow` (бит есть → RTS/CTS, режим 4), `rx_flow_step`, `tx_initiator_flow_fixed_scheduling` (→ `0x8005f8` б30) | предположение: qid с открытым соглашением BA/агрегацией, для которых нужна защита RTS/CTS ([DATAPATH](DATAPATH.md) — «маска qid», [гипотеза]) |
+| `0x802948` | qid (`ctx[4]`, `fsched__cur_entry_byte0`) | `ucode_cmd_0x08_handler` (r0=3, тип 3, `r43.aggregation_enabled`); `l1_fixed_sched_ap_run_slot` 0x938880 | `ucode_cmd_0x08_handler` (r0=1, тип 3: `&= ~[0x801124+80·sta]`); `rx__dispatch_by_g_8005f8` (BlockAck при б30) | `txop_initiator_open_txop_flow` (бит есть → RTS/CTS, режим 4), `rx_flow_step`, `tx_initiator_flow_fixed_scheduling` (→ `0x8005f8` б30) | предположение: qid с открытым соглашением BA/агрегацией, для которых нужна защита RTS/CTS ([DATAPATH](DATAPATH.md) — «маска qid», [гипотеза]) |
 | `0x800564` | qid станции | — | `ucode_cmd` (`&= ~(1<<sta)`), `tx_sta__run_txop` (=0) | `rx_flow_step` (бит есть → `ctx[8] = [0x800538]`, тип ответа 2), `rx_flow__handle_frame`, `tx_mtp_queue_gate`, `mtp__get_tx_permission` | OR-ится в `0x8004c8` (разрешённые qid); назначение не установлено |
 | `0x8020b0` | станция 0..7, **б8 = неизвестный пир** | `bf_req__enqueue` 0x921bd4, `bf__abort_unexpected` 0x92b254 | `bf__abort_unexpected` (б8 → бит станции), `bf_clear_all_sta` 0x9218b4 | `bf__abort_unexpected` 0x92b288 (б8), `bf_sm` | маска станций с ожидающим запросом BF ([BF-ENGINE](BF-ENGINE.md)) |
 | `0x802194` | станция | — | — | `l1_task__main_step` (`30 − norm` → индекс станции фиксированного расписания) | — |
@@ -590,7 +592,7 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
 | `0x8021e0` | 0, 1, 2, 3, 4, 5, 9 | 6 | флаги TXSS: б0 ISS соседа, б1 развёртка соседа окончена, б2 SSW-FB, б3 SSW-ACK, б4 RTS ([BF-ENGINE](BF-ENGINE.md)); б5, б9 — в маске `rx_funcs__rx_flow` 0x933b9e, назначение не установлено |
 | `0x8021d8` | 3, 4, 5 | 4 | б3 — `rx__handle_status_flags` 0x939e26, `tx_sta__flow_loop` 0x939f42 (статистика CTS, `0x857e49`); б4 — `internal_tx__flow_sm2` 0x939456; б5 — `internal_tx__flow_sm6` 0x93d840; назначение б4/б5 не установлено |
 | `0x800874` | 0, 9, 16 | 3 | б0 — повтор BRP разрешён (`brp_initiator_brp_transaction_flow` 0x92269c, failure 3); б9 — `brp_init__flow` 0x922764; б16 — `brp_init__tx_request` 0x922d10 |
-| `0x80146c` | 0, 1 | 5 | NAV: б0 — NAV включён (`rx_nav__set_from_duration` 0x92ddbc, `bi__remaining_time_us` 0x92dc52, `pm__event_mask_restore` 0x92dce4); б1 — `rx_nav__arm_flag_if_enabled` 0x92dc34; `grant_detect_step` берёт [1:0] |
+| `0x80146c` | 0, 1 | 5 | NAV: б0 — NAV включён (`rx_nav__set_from_duration` 0x92ddbc, `bi__remaining_time_us` 0x92dc52, `pm__event_mask_restore` 0x92dce4); б1 — `rx_nav__arm_flag_if_enabled` 0x92dc34; `rx_nav_check_idle` берёт [1:0] |
 | `0x802298` | 1, 2, 3, 4 | 2 | флаги приёма: б3 — RD-кадр от известной станции (§2.5); б1 — `rx_funcs__rx_flow` 0x933c58; б4 — `rx_get_required_response` 0x9333a8 |
 | `0x80042f` | 0 | 16 | байт-счётчик чётности: `0x32000000 \| (b & 1)`, затем `++` (переключение двух буферов) |
 | `0x80051c` | 0..3; 4, 5 | 21 | конфигурация RF-цепи: `& 0xf` в `0x563f0020`; `\| 0x30` (б4, б5) в векторы `tx__program_vector_rf`, `0x41000000` |
@@ -629,7 +631,7 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
 | 0x886eb4 | `mac_timing_status` | 31 = значения времени готовы | опрос перед чтением TSF/BI | `mac__read_*_uc` (3 места) |
 | 0x886ec0 | `mac_usec_to_tbtt` | [25:0] | до TBTT, мкс | `mac__read_usec_to_tbtt_uc` |
 | 0x886f5c | `mac_tx_qid_enable_mask` | бит на qid, б31 internal TX | из тени `0x8004c8` (§4.4) | `tx_sta__run_txop` 0x93a142 |
-| 0x886024 | `prs_own_addr_hi` | 31 = свой адрес действителен | снимается в `bti__bi2_event_step`, ставится в `bi_manager_step_a` | — |
+| 0x886024 | `prs_own_addr_hi` | 31 = свой адрес действителен | снимается в `bti__bi2_event_step`, ставится в `bi_bti_end_update_counters` | — |
 | 0x88607c | `MAC_MAC_RGF_PMC_GENERAL_0` | 16 `rec_en_set`, 17 `rec_en_clr` | запуск/останов записи PMC | — |
 | 0x889488 | `abif_dvs_rf_ctrl` | [7:0] activate, [15:8] rfca_en, [23:16] config_en, [25:24] if_splitter | uc меняет [25:24] и [23:16] (`& 0xff00ffff \| b<<16`) | `rf__set_txrx_sets_save` 0x92a314, тень `0x8006a0` (§4.4) |
 | 0x8890cc | `rfc_core_ctrl` | 30 пуск, 29 занято | `\|= 1<<30`, опрос б29 (до 0x30d40 итераций) | `hwd_rfc_write_core` 0x92a3d8, `rfca__select_rf_uc` |
@@ -704,7 +706,7 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
   найден (только проверки); возможно, это остатки 4.1. Смысл `0x8005f8` б31.
 * `0x802948`, `0x800564` — точный смысл масок qid.
 * Бит 24 `sr` в DEBUG (AUX 0x5) при программировании точки останова.
-* Регистр r55 в `mac_mode_program_c`, `rx__switch_to_rx_mode`, `rx_nav__set_from_duration`.
+* Регистр r55 в `abft_rx_ssw_tx_feedback`, `rx__switch_to_rx_mode`, `rx_nav__set_from_duration`.
 * Признак полуслова в r34 (б24) — подтвердить на стенде или по второй ветке
   `direct_tx__send_after_delay`.
 

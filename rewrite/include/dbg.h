@@ -46,7 +46,7 @@ struct fw_log {
 _Static_assert(__builtin_offsetof(struct fw_log, ring) == 0x14, "fw_log.ring");
 _Static_assert(sizeof(struct fw_log) == 0x1014, "fw_log");
 
-/* Кольцо событий evt_ring_push_1c (0x84008c, 0xa4 Б; сразу за flash_ids, до lmac_mbox_shm). */
+/* Кольцо событий evt_ring_push (0x84008c, 0xa4 Б; сразу за flash_ids, до lmac_mbox_shm). */
 #define EVT_RING_N 32
 struct evt_ring {
     u32 data[EVT_RING_N];                      /* 0x00 */

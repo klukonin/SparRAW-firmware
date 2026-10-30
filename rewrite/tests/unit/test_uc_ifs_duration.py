@@ -39,19 +39,13 @@ def frame_duration_ok(d):
 # ---- SSW в ISS/RSS -------------------------------------------------------------------------------------------
 
 SWEEP_STUBS = {n: 0 for n in (
-    'direct_tx_program_cmd34', 'mac_program_tx_common', 'mac_evt_enable_bit_sync_b', 'mac_evt_enable_bit_sync',
+    'direct_tx_program_desc', 'mac_program_tx_common', 'mac_evt_enable_bit_sync_b', 'mac_evt_enable_bit_sync',
     'uc_spin_until_event', 'uc_spin_until_event4', 'mac_set_rf_chain_state_with_sta_sector', 'bcon_tx_ack_cmds',
     'mac_evt_select_timer_group', 'uc_send_evt_ps_awake_peer', 'uc_wait_event_busy', 'mac_cmd_29000001',
     'mac_select_all_sectors_and_wait', 'mac_program_rx_window', 'mac_program_tx_beacon')}
 
 
-CDOWN_U8 = ('802.11-2020 9.5.1 (CDOWN — 9 бит, 0..511), 10.42.2.2.2 (CDOWN — все оставшиеся передачи ко всем антеннам '
-            'пира, с LBIFS): 64 сектора × 4 антенны пира = 259 передач; uc держит CDOWN в u8 (dccm.h ss_plan_cdown, '
-            'txss.c txss_program_tx_frame «(u8)((r14 − 1) + n_frames·r14)») — CDOWN 258 → 2, развёртка короче и '
-            'Duration неверны')
-
-
-def sweep(uc, n_sectors, peer_ant, mode, sta=0):
+def sweep(uc, n_sectors, peer_ant, mode, sta=0, alloc_left_us=None):
     """Развёртка SSW (txss_program_tx_frame): mode 5 — ISS инициатора, 1 — RSS ответчика. Возвращает [(CDOWN, сектор,
     Duration)] по кадрам: на каждый кадр uc выдаёт 0x2d (CDOWN [9:1], сектор [15:10]) и 0x15 (Duration)."""
     lmac_mac_cfg(uc)
@@ -67,7 +61,11 @@ def sweep(uc, n_sectors, peer_ant, mode, sta=0):
     uc.w32(0x8014c0, 0)                 # uc_role_ap: STA (один набор RF)
     uc.w8(MAC_MON_SLOT_IDX, 0)          # индекс слота счётчиков MAC-монитора (иначе мусор эмулятора пишет мимо таблицы)
     uc.ext.update({42: 0, 43: 1 << 31})
-    r = uc.call('txss_program_tx_frame', sta, mode, 0, 3, 0, stub=SWEEP_STUBS, max_steps=20_000_000)
+    stub = dict(SWEEP_STUBS)
+    if alloc_left_us is not None:       # остаток выделения при подготовке развёртки: до TBTT, окна ESE нет
+        uc.w32(HW_MAC_USEC_TO_TBTT, alloc_left_us)
+        stub['ese_dti_us_to_window_end'] = 0xffffffff
+    r = uc.call('txss_program_tx_frame', sta, mode, 0, 3, 0, stub=stub, max_steps=20_000_000)
     assert r == 1
     cd = [((c >> 1) & 0x1ff, (c >> 10) & 0x3f) for c in uc.mac_cmds if c >> 24 == 0x2d]
     du = durations(uc)
@@ -100,8 +98,7 @@ def expected_ssw_duration(sched, i):
 
 
 @pytest.mark.parametrize('mode', [5, 1], ids=['iss', 'rss'])
-@pytest.mark.parametrize('n,ant', [(1, 1), (4, 1), (16, 1), (64, 1), (3, 2), (16, 4), (63, 4),
-                                   pytest.param(64, 4, marks=pytest.mark.xfail(strict=True, reason=CDOWN_U8))])
+@pytest.mark.parametrize('n,ant', [(1, 1), (4, 1), (16, 1), (64, 1), (3, 2), (16, 4), (63, 4), (64, 4)])
 def test_ssw_duration_and_cdown_over_sweep(uc, mode, n, ant):
     """Каждый SSW развёртки: CDOWN — число оставшихся передач (с LBIFS), Duration — до конца SSW с CDOWN 0 + MBIFS
     (9.3.1.15), для любого числа секторов и антенн пира (64 сектора × 4 антенны — CDOWN до 258)."""
@@ -115,10 +112,27 @@ def test_ssw_duration_and_cdown_over_sweep(uc, mode, n, ant):
     assert [s for _, s, _ in got] == [63 - i % n for i in range(n * ant)]    # каждая антенна пира — все секторы
 
 
+SSW_FRAME_ALLOWANCE_US = 17     # от чтения остатка до конца первого SSW: ⌈TXTIME(SSW)⌉ 15 + путь + округление регистра
+
+
+@pytest.mark.parametrize('mode', [5, 1], ids=['iss', 'rss'])
+@pytest.mark.parametrize('short', [0, 1, 5, 9, 30])
+def test_ssw_duration_capped_by_allocation_end(uc, mode, short):
+    """9.3.1.15: Duration SSW — до конца SSW с CDOWN 0 + MBIFS «or until the end of the current allocation, whichever
+    comes first». Выделение кончается на short мкс раньше конца последовательности: каждый Duration меньше эталона на
+    short (не больше MBIFS — Duration последнего SSW не уходит ниже 0), с допуском на путь в безопасную сторону."""
+    n = 16
+    sched = air_schedule(n, 1)
+    want = [expected_ssw_duration(sched, i) for i in range(len(sched))]
+    got = sweep(uc, n, 1, mode, alloc_left_us=want[0] + SSW_FRAME_ALLOWANCE_US - short)
+    cut = min(short, MBIFS_US)
+    assert [d for _, _, d in got] == [w - cut for w in want]
+
+
 # ---- SSW-Feedback (DTI) -------------------------------------------------------------------------------------
 
-FB_STUBS = {'direct_tx_program_cmd34': 0, 'mac_program_tx_common': 0, 'tx_fifo_write_bytes': 0,
-            'uc_wait_direct_tx_ready': 0, 'direct_tx_issue_cmd_33': 0,
+FB_STUBS = {'direct_tx_program_desc': 0, 'mac_program_tx_common': 0, 'tx_fifo_write_bytes': 0,
+            'uc_wait_direct_tx_ready': 0, 'direct_tx_commit': 0,
             'mac_evt_enable_bit_sync_b': 0, 'mac_set_rf_chain_state_with_sta_sector': 0, 'uc_spin_until_event': 0}
 
 
@@ -143,10 +157,6 @@ def test_ssw_feedback_duration_dti(uc, brp):
     assert d == [want]
 
 
-@pytest.mark.xfail(strict=True, reason='802.11-2020 9.3.1.16 b): Duration SSW-Feedback без BRP — «TXTIME(SSW-Ack) + '
-                   'MBIFS or the time until the end of the current allocation, whichever comes earlier»; uc '
-                   '(tail.c txss_init_send_ssw_fdbk, SSWFB_DUR_US) конец выделения не учитывает (abft.h: «Конец '
-                   'выделения не учитывается»)')
 def test_ssw_feedback_duration_capped_by_allocation_end(uc):
     """Остаток выделения 10 мкс (до TBTT и до конца окна DTI — как его считает sswfb_retry_fits) — Duration ≤ 10."""
     uc.w32(HW_MAC_USEC_TO_TBTT, 10)
@@ -159,7 +169,7 @@ def test_ssw_feedback_duration_capped_by_allocation_end(uc):
 
 # ---- SSW-Ack ------------------------------------------------------------------------------------------------
 
-ACK_STUBS = {'direct_tx_program_cmd34': 0, 'mac_program_tx_common': 0, 'rx_funcs_send_direct_frame': 0,
+ACK_STUBS = {'direct_tx_program_desc': 0, 'mac_program_tx_common': 0, 'direct_tx_send_frame': 0,
              'mac_evt_enable_bit_sync_b': 0, 'mac_set_rf_chain_state_with_sta_sector': 0}
 
 
@@ -179,14 +189,14 @@ def test_ssw_ack_duration(uc, d_fb):
 
 # ---- ответы через SIFS: Grant Ack, CF-End -------------------------------------------------------------------
 
-RESP_STUBS = {'direct_tx_program_cmd34': 0, 'mac_program_tx_with_rate': 0, 'tx_fifo_write_bytes': 0,
-              'uc_wait_direct_tx_ready': 0, 'direct_tx_issue_cmd_33': 0}
+RESP_STUBS = {'direct_tx_program_desc': 0, 'mac_program_tx_with_rate': 0, 'tx_fifo_write_bytes': 0,
+              'uc_wait_direct_tx_ready': 0, 'direct_tx_commit': 0}
 
 
 def grant_ack_duration(uc, d_grant):
     lmac_mac_cfg(uc)
     uc.w16(RX_BUF_DURATION, d_grant)
-    uc.call('rx_send_dmg_cts', stub=RESP_STUBS)
+    uc.call('rx_send_grant_ack', stub=RESP_STUBS)
     return durations(uc)
 
 
@@ -205,7 +215,7 @@ def test_grant_ack_duration_rounded_up(uc, d):
 def cf_end_response(uc, d_rx):
     lmac_mac_cfg(uc)
     uc.w16(RX_BUF_DURATION, d_rx)
-    ret = uc.call('rx_flow_send_imm_response', stub=RESP_STUBS)
+    ret = uc.call('rx_send_cf_end_response', stub=RESP_STUBS)
     return durations(uc), ret
 
 

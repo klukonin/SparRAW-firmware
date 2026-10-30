@@ -23,7 +23,7 @@
 /* ba_sm__setup_result (0x8c42a4, 112 Б): ADDBA Request пира, когда соединение ещё не в
  * состоянии 2, — ответить ADDBA Response с отказом (статус 1, окно 0, без A-MSDU). Имя
  * справки от строки журнала «BA Setup …»; по коду это отказ. f — тело действия. */
-__attribute__((section(".textlate"))) void ba_sm_setup_result(const struct ieee80211_addba *f, struct conn *conn)
+__attribute__((section(".textlate"))) void ba_sm_reject_addba_req(const struct ieee80211_addba *f, struct conn *conn)
 {
     u32 len = 0;
     u32 pl = TX_API_alloc_tx_payload();
@@ -163,7 +163,7 @@ __attribute__((section(".textlate"))) void stream_mgr_action(struct rx_pkt *pkt)
             fw_log_emit0(0x2b, 0x101079c);
             hexdump_words(pkt->body, pkt->info.len);
             if (conn != 0)
-                ba_sm_setup_result((const struct ieee80211_addba *)f, conn);
+                ba_sm_reject_addba_req((const struct ieee80211_addba *)f, conn);
             else
                 fw_log_emit0(0x2b, 0x10107cc);
         }
@@ -193,6 +193,6 @@ __attribute__((section(".textlate"))) void stream_mgr_action(struct rx_pkt *pkt)
         return;
     }
     fw_log_emit1(0x2b, 0x1010834, cat);
-    low_sme_send_evt2sw(&pkt->info, 0x1840, (pkt->info.len + sizeof(pkt->info)) & 0xffffu,
+    host_if_send_event(&pkt->info, 0x1840, (pkt->info.len + sizeof(pkt->info)) & 0xffffu,
                         pkt->info.mid, 1, 0, 0);
 }

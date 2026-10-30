@@ -22,9 +22,14 @@ def test_bad_wmi_rejected(sta, fw_path, check, cmd, body, expect):
     # новая строка журнала (с меткой времени) — не «среди последних N»: переподключение может дописать сотни строк
     before = {l for l in sta.dut.fw_log(fw_path) if expect in l}
     sta.dut.wmi_send(cmd, body)
-    import time; time.sleep(0.5)
-    log = sta.dut.fw_log(fw_path)
-    check.is_true(any(expect in l and l not in before for l in log), 'нет новой записи «%s» в журнале fw' % expect)
+    # запись — опросом до 5 с: занятая fw (смена канала и калибровка silent RSSI после сканирования) обрабатывает
+    # команду позже 0,5 с (сюита 2026-10-30: pcp_channel7 без записи за 0,5 с, повторы 2/2 — с записью)
+    import time
+    t0, found = time.time(), False
+    while not found and time.time() - t0 < 5:
+        time.sleep(0.5)
+        found = any(expect in l and l not in before for l in sta.dut.fw_log(fw_path))
+    check.is_true(found, 'нет новой записи «%s» в журнале fw за 5 с' % expect)
     check.is_true(sta.dut.fw_errors() == 0, 'ошибка FW после команды 0x%x' % cmd)
 
 

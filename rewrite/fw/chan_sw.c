@@ -49,7 +49,7 @@ __attribute__((section(".textlate"))) void hwd_rfc_powerdown_deep_all_rfs_fw(voi
     u8 old;
     fw_log_emit0(0x21, 0x101e3c0);
     hwd_abif_dvs_rfca_cmd_enable(0xff, &old);
-    hwd_setup_pair(0, 0);
+    hwd_rfc_powerdown_deep(0, 0);
     hwd_abif_dvs_rfca_cmd_enable(old, 0);
     fw_log_emit1(0x21, 0x101e3e0, old);
 }
@@ -97,7 +97,7 @@ void hwm_analog_channel_switch(u32 ch, u32 v1, u32 v2)
     do {
         tries = (u8)(tries + 1);
         hwd_rfc_powerdown_deep_all_rfs_fw();
-        hwd_abif_rgf_889380(1);
+        hwd_abif_rfc_divider_ctrl(1);
         hwd_abif_rfc_clk_ctrl(0);
         hwd_abif_fs_off(0);
         if (v1 != 0)
@@ -107,8 +107,8 @@ void hwm_analog_channel_switch(u32 ch, u32 v1, u32 v2)
         arc_zol_nops2_shl(0x7d, 8);     /* vendor 0x8d7446: mov_s 0x7d; asl_s 8; lp × 2 nop_s */
         hwd_abif_rfc_clk_ctrl(1);
         arc_zol_nops2(0x190);           /* vendor 0x8d745e: lp 400 × 2 nop_s */
-        hwd_abif_rgf_889380(0);
-        if ((int)rf_cfg_get_rf_mask_45e(&rf_obj) <= 0) {
+        hwd_abif_rfc_divider_ctrl(0);
+        if ((int)rf_obj_get_rf_mask(&rf_obj) <= 0) {
             ok = 1;
             break;
         }
@@ -118,7 +118,7 @@ void hwm_analog_channel_switch(u32 ch, u32 v1, u32 v2)
             chsw_config_fail_count += 1;
             hwm_analog_prepare_buf(0);
         } else if (rf_obj.role_pwr_flag != 0) {
-            hwd_abif_dvs_rfca_cmd_enable(rf_cfg_get_rf_mask_45e(&rf_obj), 0);
+            hwd_abif_dvs_rfca_cmd_enable(rf_obj_get_rf_mask(&rf_obj), 0);
             rfc_field_write(0, 0x44c, 1, 0);
         }
         if (ok == 1)
@@ -128,7 +128,7 @@ void hwm_analog_channel_switch(u32 ch, u32 v1, u32 v2)
 }
 
 /* hwm_analog_channel_switch__thunk_arg1_zero (0x8d73ec): r1 = r2 = 0. */
-void hwm_analog_channel_switch_thunk(u32 ch)
+void hwm_analog_channel_switch_no_range_check(u32 ch)
 {
     hwm_analog_channel_switch(ch, 0, 0);
 }
@@ -152,7 +152,7 @@ __attribute__((section(".textlate"))) u32 channels_switch_sm_switch_to_channel(u
     chsw_configured = 1;
     chsw_cur_channel = ch;
     chan_sw_set_active_channel(ch);
-    hwm_analog_channel_switch_thunk(ch);
+    hwm_analog_channel_switch_no_range_check(ch);
     hwm_apply_channel_config(1);
     if (chsw_pcp_ap_mode == 1 || calib_sys_state == 3 || calib_sys_state == 4)
         power_mngr_check_mode(0);

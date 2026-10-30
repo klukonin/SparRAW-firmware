@@ -37,7 +37,7 @@ FWDATA(801448) volatile u32 maintain_lt_period[MAINTAIN_LT_PERIOD_N] = {
  * maintain_sm_stop_lmac / maintain_sm_on_timer_fbf_done. Здесь — первые 0x22 Б; его
  * mcs_en_vec — переменные link_mcs_en_vec_lo/hi (0x80149e/0x8014a0, fw/dccm_names.txt) сразу
  * за ним: отдельные символы — как у vendor, доступ к ним — по абсолютным адресам
- * (с полями одного объекта gcc держал бы базу в регистре). lmac_if_send_cmd_0x13 копирует
+ * (с полями одного объекта gcc держал бы базу в регистре). lmac_if_send_rs_cfg копирует
  * все 0x26 Б с начала шаблона. */
 struct maintain_rs_cfg_head {
     u8  per_threshold[13];                     /* 0x00 */
@@ -73,7 +73,7 @@ FWDATA(80147c) const struct maintain_rs_cfg_head maintain_rs_cfg = {
 
 
 /* conn__get_cid_via_field8 (0x8cbec0, 6 Б): cid линка maintain_sm (владелец m->lm_sm). */
-static u32 conn_get_cid_via_field8(struct maintain_sm *m)
+static u32 maintain_sm_conn_cid(struct maintain_sm *m)
 {
     return conn_get_cid_of_obj(m->lm_sm);
 }
@@ -85,23 +85,23 @@ static inline struct lm_if *lm_sm_if(struct lm_sm *l)
 }
 
 /* conn__inject_evt3 (0x8dc4cc, 12 Б): событие 3 автомату разрыва. */
-static void conn_inject_evt3(struct conn *conn)
+static void conn_disc_inject_lms_stopped(struct conn *conn)
 {
     conn_sm_handle_event(conn, 3, 0, 0, 0);
 }
 
 /* lm__inject_conn_evt3 (0x8e81a4, 6 Б). */
-static void lm_inject_conn_evt3(struct lm_if *i)
+static void lm_disc_inject_lms_stopped(struct lm_if *i)
 {
-    conn_inject_evt3(i->conn);
+    conn_disc_inject_lms_stopped(i->conn);
 }
 
 
 
 /* ======================= LMAC-команды линка ======================= */
 
-/* lmac_if_send_cmd_0x15 (0x8dbf80, 32 Б): параметры RS. */
-static void lmac_if_send_cmd_0x15(u32 a0, u32 a1)
+/* lmac_if_send_rs_params (0x8dbf80, 32 Б): параметры RS. */
+static void lmac_if_send_rs_params(u32 a0, u32 a1)
 {
     struct lmac_cmd_rs_params *b = lmac_cmd_pool_alloc();
     b->personality = a0;
@@ -109,8 +109,8 @@ static void lmac_if_send_cmd_0x15(u32 a0, u32 a1)
     lmac_if_post_cmd(b, 0x15, 8, 0);
 }
 
-/* lmac_if_send_cmd_0x0f (0x8dbd74, 32 Б): {cid, флаг u16}. */
-void lmac_if_send_cmd_0x0f(u32 cid, u32 a1)
+/* lmac_if_send_maint_sta (0x8dbd74, 32 Б): {cid, флаг u16}. */
+void lmac_if_send_maint_sta(u32 cid, u32 a1)
 {
     struct lmac_cmd_maint_sta *b = lmac_cmd_pool_alloc();
     b->cid = cid;
@@ -118,10 +118,10 @@ void lmac_if_send_cmd_0x0f(u32 cid, u32 a1)
     lmac_if_post_cmd(b, 0xf, 8, 0);
 }
 
-/* lmac_if_send_cmd_0x13 (0x8dbbb4, 48 Б): {cid, a1, 0x26 Б из src}. Оба вызова vendor
+/* lmac_if_send_rs_cfg (0x8dbbb4, 48 Б): {cid, a1, 0x26 Б из src}. Оба вызова vendor
  * (0x8f234c, 0x8cab64) передают src = шаблон maintain_rs_cfg (0x80147c) — параметр src
  * свёрнут (как gcc сам делал .constprop при литерале). */
-static void lmac_if_send_cmd_0x13(u32 cid, u32 a1)
+static void lmac_if_send_rs_cfg(u32 cid, u32 a1)
 {
     struct lmac_cmd_rs_cfg *b = lmac_cmd_pool_alloc();
     b->cid = (u8)cid;
@@ -133,7 +133,7 @@ static void lmac_if_send_cmd_0x13(u32 cid, u32 a1)
 /* field_rw_0x00 (0x8db534, 98 Б): LMAC 0x14 — шесть флагов в слове буфера (биты 3, 2,
  * 1, 0, 4, 5 — a1..a6); первый аргумент (cid) vendor не использует. Остальные биты
  * слова — как были в буфере пула (vendor читает-модифицирует). */
-static void lmac_if_send_cmd_0x14(u32 cid, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6)
+static void lmac_if_send_bf_triggers(u32 cid, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6)
 {
     struct lmac_cmd_bf_triggers *b = lmac_cmd_pool_alloc();
     u32 w = b->triggers;
@@ -205,7 +205,7 @@ void lmac_if_install_key(u32 idx, u32 a1, const void *key, u32 a3, u32 a4)
 }
 
 /* maintain_sm__set_rs_params (0x8f1cdc, 42 Б): mode 0/1 → LMAC 0x15 {mode, v}. */
-static void maintain_sm_set_rs_params_m(struct maintain_sm *m, u32 mode, u32 v)
+static void maintain_sm_set_rs_params_impl(struct maintain_sm *m, u32 mode, u32 v)
 {
     m->rs_mode = mode;
     m->rs_val = v;
@@ -213,14 +213,14 @@ static void maintain_sm_set_rs_params_m(struct maintain_sm *m, u32 mode, u32 v)
         fw_sysassert_fatal((void *)0, 0x126a);
         return;
     }
-    lmac_if_send_cmd_0x15(mode == 1 ? 1u : 0u, v);
+    lmac_if_send_rs_params(mode == 1 ? 1u : 0u, v);
 }
 
 /* maintain_sm__set_rs_params_of_conn (0x8c6cb4, 6 Б): maintain_sm записи l.
  * Подменяет weak-заглушку lmac_evt.c (там же имя maintain_sm_set_rs_params). */
 void maintain_sm_set_rs_params(struct lm_sm *l, u32 mode, u32 v)
 {
-    maintain_sm_set_rs_params_m(&l->msm, mode, v);
+    maintain_sm_set_rs_params_impl(&l->msm, mode, v);
 }
 
 /* ======================= радио-менеджер ======================= */
@@ -287,7 +287,7 @@ void lm_sm_on_linkup_done(struct lm_sm *l)
     struct lm_if *i = lm_sm_if(l);
     if (l->stop_pending != 0) {
         l->stop_pending = 0;
-        lm_inject_conn_evt3(i);
+        lm_disc_inject_lms_stopped(i);
     } else {
         lm_notify_linkup(i, 0);
     }
@@ -302,7 +302,7 @@ void lm_sm_on_linkup_fail(struct lm_sm *l)
     fw_log_emit1(0x20, 0x1014784, l->stop_pending);
     if (l->stop_pending != 0) {
         l->stop_pending = 0;
-        lm_inject_conn_evt3(lm_sm_if(l));
+        lm_disc_inject_lms_stopped(lm_sm_if(l));
         return;
     }
     l->linkup_fails = (u8)(l->linkup_fails + 1);
@@ -347,7 +347,7 @@ void lm_sm_on_maintain_started(struct lm_sm *l)
     l->link_stat = 1;
     maintain_sm_set_rs_params(l, 0, (st == 2 || st == 3) ? 0u : 1u);
     lm_main_sm_config_lmac_bf_sm(l, G_FBF_PARAM);
-    lm_sm_post_evt6_via_owner(lm_sm_if(l));
+    lm_sm_notify_lm_started_via_owner(lm_sm_if(l));
 }
 
 /* lm_sm__action_8df614 (0x8df614): LM_EVT_BF_RESULTS в LM_STATE_CONFIGURED. */
@@ -400,7 +400,7 @@ void lm_sm_on_stop_link_wait(struct lm_sm *l)
 void lm_sm_on_stop_link(struct lm_sm *l)
 {
     lm_main_sm_config_lmac_bf_sm(l, G_FBF_PARAM);
-    lm_inject_conn_evt3(lm_sm_if(l));
+    lm_disc_inject_lms_stopped(lm_sm_if(l));
 }
 
 /* lm_sm__action_8e8004 (0x8e8004): LM_EVT_STOP_LINK при сопровождении — EVT_STOP (3). */
@@ -588,8 +588,8 @@ static u32 bf_lt_get_max_goodput(void)
     return G_LT_MAX_GOODPUT;
 }
 
-/* process_expected_bf_results (0x8e11f8, 30 Б): MCS вне маски 0x1dde — журнал. */
-static void process_expected_bf_results(struct maintain_sm *m, u32 mcs)
+/* maintain_sm_log_unexpected_mcs (0x8e11f8, 30 Б): MCS вне маски 0x1dde — журнал. */
+static void maintain_sm_log_unexpected_mcs(struct maintain_sm *m, u32 mcs)
 {
     (void)m;
     if (!((0x1ddeu >> (mcs & 31)) & 1u))
@@ -630,7 +630,7 @@ static void schedule_long_term_trigger(struct maintain_sm *m, u32 mcs, u32 n)
     m->lt_timer = u_schd_schedule(maintain_sm_lt_timer_cb, (u32)m, 0, 0, d, 0, 0);
 }
 
-static void channels_switch_check_g8004a8(struct maintain_sm *m);
+static void maintain_sm_restart_link_bad_win(struct maintain_sm *m);
 
 /* Колбэк таймера [M+0x20] (0x8c5ef8, 128 Б): итог окна BF-ответов; при числе ответов ниже
  * порогов ([0x8002c0]/[0x8002c4] или байты 0x80021b/0x80021c по биту 3 [0x803c20]) —
@@ -651,15 +651,15 @@ void maintain_sm_window_timer_cb(u32 a0, u32 a1)
     lim2 = (f & 8u) ? link_bad_thr_alt : link_bad_thr;
     a += b;
     if ((m->win_max_mcs == 1 && a >= lim1) || a >= lim2) {
-        if (conn_mgr_by_cid(conn_get_cid_via_field8(m)) == 0)
+        if (conn_mgr_by_cid(maintain_sm_conn_cid(m)) == 0)
             fw_sysassert_fatal((void *)0, 0x126c);
     }
-    channels_switch_check_g8004a8(m);
+    maintain_sm_restart_link_bad_win(m);
 }
 
 /* channels_switch__check_g8004a8 (0x8e46f4, 62 Б): перевзвести окно [M+0x20] на
  * [0x8002bc] (не на паузе). */
-static void channels_switch_check_g8004a8(struct maintain_sm *m)
+static void maintain_sm_restart_link_bad_win(struct maintain_sm *m)
 {
     if (G_MAINTAIN_PAUSED != 0)
         return;
@@ -705,7 +705,7 @@ static void maintain_sm_release_radio(struct maintain_sm *m)
         fw_log_emit1(0x20, 0x1014588, (u32)r);
         radio_mgr_remove_request(m->radio_req);
     } else {
-        radio_mgr_call_method_10(r);
+        radio_mgr_lock_free(r);
     }
     m->radio_req = 0;
     m->radio_locked = 0;
@@ -723,7 +723,7 @@ static void wbe_driver_close(void)
 static u32 link_chk_sys_idle(void)
 {
     u32 it, idle = 1;
-    field_set_0x00_8e5dfc(&it, mids_get_count());
+    bit_iter_init(&it, mids_get_count());
     while (bit_iter_has_more(&it)) {
         struct mid *e = mid_list_by_mid_fw(bitmap_alloc_bit(&it));
         if (e == 0)
@@ -742,9 +742,9 @@ static void maintain_sm_stop_lmac(struct maintain_sm *m)
     lmac_if_send_selective_neighbor_cfg(0, 0, 0, 0);
     maintain_sm_config_mcs_en_vec();
     cid = (u8)conn_get_cid_of_obj(m->lm_sm);
-    lmac_if_send_cmd_0x13(cid, 0);
+    lmac_if_send_rs_cfg(cid, 0);
     if (link_chk_sys_idle() != 0)
-        lmac_if_send_cmd_0x14((u8)conn_get_cid_of_obj(m->lm_sm), 0, 0, 0, 0, 0, 0);
+        lmac_if_send_bf_triggers((u8)conn_get_cid_of_obj(m->lm_sm), 0, 0, 0, 0, 0, 0);
 }
 
 /* maintain_sm__action_8f96c4 (0x8f96c4): EVT_START_MAINTAIN в STOPPED. */
@@ -768,8 +768,8 @@ void maintain_sm_on_start(struct maintain_sm *m)
         G_MAINTAIN_PAUSED = 0;
         vm->lt_paused = 0;
     }
-    obj_vt802cc4_noop_vmethod(m);
-    lmac_if_send_cmd_0x0f((u8)conn_get_cid_of_obj(m->lm_sm), 1);
+    maintain_sm_vmethod_noop(m);
+    lmac_if_send_maint_sta((u8)conn_get_cid_of_obj(m->lm_sm), 1);
     m->fbf_tries = 0;
     if (m->rs_mode != 1)
         maintain_sm_lock_radio(m);
@@ -828,7 +828,7 @@ void maintain_sm_on_fbf_fail(struct maintain_sm *m)
     maintain_sm_stop_lmac(m);
     if (m->radio_req != 0) {
         fw_log_emit1(0x2c, 0x10146b4, (u32)m->radio_req);
-        radio_mgr_call_method_10(m->radio_req);
+        radio_mgr_lock_free(m->radio_req);
         m->radio_req = 0;
     }
     lm_sm_event(m->lm_sm, 6, 0, 0, 0);
@@ -844,11 +844,11 @@ void maintain_sm_on_first_fbf_success(struct maintain_sm *m)
     (void)mid_list_by_mid_fw(lm_sm_get_mid_idx(m->lm_sm));
     link_stats_event(&m->stats, 0, 0, 0, 0);
     lm_sm_event(m->lm_sm, 7, 0, 0, 0);
-    process_expected_bf_results(m, m->mcs);
+    maintain_sm_log_unexpected_mcs(m, m->mcs);
     fw_log_emit0(0x20, 0x1014668);
     a1 = 1;                              /* OOB R1 (только SparRAW-pro): 0 */
     a2 = m->rs_mode == 0 ? 1u : 0u;
-    lmac_if_send_cmd_0x14((u8)conn_get_cid_of_obj(m->lm_sm), a1, a2, a1, a1, a1, a1);
+    lmac_if_send_bf_triggers((u8)conn_get_cid_of_obj(m->lm_sm), a1, a2, a1, a1, a1, a1);
     m->txss_timeout = G_TXSS_TIMEOUT;
     maintain_sm_lt_timer_cb((u32)m, 0);                                 /* field_set_0x1c__8d9c3c */
 }
@@ -859,11 +859,11 @@ void maintain_sm_on_timer_fbf_done(struct maintain_sm *m)
     fw_log_emit0(0x20, 0x10146e8);
     maintain_sm_config_mcs_en_vec();
     MMIO32(HW_FW_BF_MCS) = mcs_en_vec_first();   /* bf_mcs (REGS-KNOWN); в hw.h это BL_SHUTDOWN_HS */
-    lmac_if_send_cmd_0x13((u8)conn_get_cid_of_obj(m->lm_sm), 1);
+    lmac_if_send_rs_cfg((u8)conn_get_cid_of_obj(m->lm_sm), 1);
     lmac_if_send_selective_neighbor_cfg(0, 0, 0, 0);
     maintain_sm_lock_radio(m);
     if (link_bad_win_enable != 0)                          /* ldb_s [gp,0xa6] */
-        channels_switch_check_g8004a8(m);
+        maintain_sm_restart_link_bad_win(m);
     wbe_driver_close();
     m->hdr.trace = 0;
 }
@@ -881,7 +881,7 @@ void maintain_sm_on_rs_results(struct maintain_sm *m, const struct lmac_rs_resul
     if (res->status == 0) {
         u32 mcs = res->mcs;
         m->mcs = (u8)mcs;
-        process_expected_bf_results(m, mcs);
+        maintain_sm_log_unexpected_mcs(m, mcs);
         mcs = m->mcs;
         m->lt_fails = 0;
         if (m->win_max_mcs <= mcs)
@@ -900,7 +900,7 @@ void maintain_sm_on_high_per(struct maintain_sm *m)
 {
     if (link_high_per_check_en == 0)                         /* ld.as [gp,89] */
         return;
-    if (conn_mgr_by_cid(conn_get_cid_via_field8(m)) == 0)
+    if (conn_mgr_by_cid(maintain_sm_conn_cid(m)) == 0)
         fw_sysassert_fatal((void *)0, 0x126b);
 }
 
@@ -947,7 +947,7 @@ void maintain_sm_on_resume(struct maintain_sm *m)
         m->lt_paused = 0;
     }
     if (link_bad_win_enable != 0)
-        channels_switch_check_g8004a8(m);
+        maintain_sm_restart_link_bad_win(m);
 }
 
 /* maintain_sm__action_8f9a78 (0x8f9a78): EVT_STOP — LMAC-останов, таймеры, радио;
@@ -1140,7 +1140,7 @@ static void link_stats_ts_ring_update(struct link_stats_sm *s, struct link_stats
     (void)s;
     r->ts[r->tail & 0x1f] = mac_tx_cnt_delta_10_since_base();
     cur = mac_tx_cnt_delta_88_net_of_20();
-    (void)conn_get_cid_via_field8(o->msm);          /* vendor: результат не нужен */
+    (void)maintain_sm_conn_cid(o->msm);          /* vendor: результат не нужен */
     head = r->head;
     tail = r->tail;
     for (n = (u8)(tail - head); n != 0; n--) {
@@ -1186,7 +1186,7 @@ static void link_stats_calc_goodput(struct link_stats_sm *s, u32 *per, u32 *tota
  * a == 0 — перевзвести таймер отчёта. Регистры 0x880a58/5c/6c — значения для хоста. */
 void link_stats_report(struct link_stats_sm *s, u32 a)
 {
-    u32 cid = (u8)conn_get_cid_via_field8(s->msm);
+    u32 cid = (u8)maintain_sm_conn_cid(s->msm);
     u32 now = u_schd_now();
     u64 tx = link_stats_counter64_tx();
     u64 rx = link_stats_counter64_rx();
@@ -1536,7 +1536,7 @@ void disc_on_ready_for_flush(struct conn_disc_sm *d)
     if (d->steps & 8u) {
         d->steps = (d->steps & ~9u) | 1u;
         tx_ctrl_api_flush_connection(disc_conn(d)->cid);
-        lmac_if_send_cmd_0x0f(disc_conn(d)->cid, 0);
+        lmac_if_send_maint_sta(disc_conn(d)->cid, 0);
     } else {
         fw_log_emit0(0x2b, 0x1011c84);
     }
@@ -1619,7 +1619,7 @@ void disc_on_sw_data_stopped(struct conn_disc_sm *d)
 /* F — автомат find_sm (struct find_sm, x+0x1c), x — find_mngr (struct find_mngr,
  * include/mid.h): тихий режим (без событий хосту), таймер discovery, discovery идёт,
  * discovery-бикон поставлен, запись mid. */
-static struct mid *find_mngr_mid_e(struct find_mngr *x)
+static struct mid *find_mngr_mid(struct find_mngr *x)
 {
     return x->mid;
 }
@@ -1631,7 +1631,7 @@ void l2mgr_send_listen_started(u32 status, u32 mid)
     memset0_words(p, 4);
     p[0] = (u8)status;
     fw_log_emit2(0x2b, LS_FW(LISTEN_STARTED_EVT), mid, status);   /* vendor 0x100e0e8 — без статуса */
-    low_sme_send_evt2sw(p, 0x1914, 4, mid, 0, 0, 0);
+    host_if_send_event(p, 0x1914, 4, mid, 0, 0, 0);
 }
 
 /* l2mgr__send_search_started (0x8f8d74, 72 Б): событие 0x1915 {status}. */
@@ -1641,7 +1641,7 @@ void l2mgr_send_search_started(u32 status, u32 mid)
     memset0_words(p, 4);
     p[0] = (u8)status;
     fw_log_emit2(0x2b, 0x100e188, mid, status);
-    low_sme_send_evt2sw(p, 0x1915, 4, mid, 0, 0, 0);
+    host_if_send_event(p, 0x1915, 4, mid, 0, 0, 0);
 }
 
 /* l2mgr__send_discovery_stopped (0x8f8904, 66 Б): системное состояние 0x10, событие
@@ -1651,21 +1651,21 @@ static void l2mgr_send_discovery_stopped(u32 mid)
     (void)link_chk_sys_idle();
     sys_state_broadcast(0x10, 0);
     fw_log_emit1(0x2b, 0x100ec50, mid);
-    low_sme_send_evt2sw(host_if_send_pair(), 0x1917, 0, mid, 0, 0, 0);
+    host_if_send_event(host_if_send_pair(), 0x1917, 0, mid, 0, 0, 0);
 }
 
 /* find_mngr__listen_end (0x8daff0, 20 Б). */
 static void find_mngr_listen_end(struct find_mngr *x)
 {
     if (x->quiet == 0)
-        l2mgr_send_listen_started(0, find_mngr_mid_e(x)->id);
+        l2mgr_send_listen_started(0, find_mngr_mid(x)->id);
 }
 
 /* find_mngr__search_end (0x8e4c8c, 20 Б). */
 static void find_mngr_search_end(struct find_mngr *x)
 {
     if (x->quiet == 0)
-        l2mgr_send_search_started(0, find_mngr_mid_e(x)->id);
+        l2mgr_send_search_started(0, find_mngr_mid(x)->id);
 }
 
 /* find_mng::add_bcon (0x8c2870, 88 Б): поставить discovery-бикон (один раз). */
@@ -1681,7 +1681,7 @@ static void find_mngr_add_bcon(struct find_mngr *x)
     }
     fw_log_emit0(0x2c, 0x1017ae0);
     add_discovery_bcon(x->mid, 0);
-    lmac_if_send_cmd_0x23(1);
+    lmac_if_send_abft_cfg(1);
     x->bcon_added = 1;
 }
 
@@ -1693,7 +1693,7 @@ static void find_mngr_del_discovery_bcon(struct find_mngr *x)
         return;
     fw_log_emit0(0x2c, 0x1017b1c);
     x->bcon_added = 0;
-    tx_bcon_del_bcon(x->mid);
+    tx_bcon_del(x->mid);
     x->mid->bss.bi_ctrl[0] &= (u8)~2u;
 }
 
@@ -1706,7 +1706,7 @@ static void find_sm_stop_discovery(struct find_mngr *x)
     }
     discovery_rx_stop();
     x->active = 0;
-    l2mgr_send_discovery_stopped(find_mngr_mid_e(x)->id);
+    l2mgr_send_discovery_stopped(find_mngr_mid(x)->id);
 }
 
 /* Освободить все найденные BSS автомата (журнал tok на каждый). */
@@ -1744,18 +1744,9 @@ void find_sm_on_start(struct find_sm *f)
     for (i = 0; i < SPARRAW_MAX_STA; i++)
         f->bf_state[i] = SPARRAW_PEER_UNKNOWN;
     f->req = (u32)radio_mgr_request_secondary(find_sm_radio_allocated_cb, (u32)f, 0,
-        0xffff, find_mngr_mid_e(f->owner)->id);
+        0xffff, find_mngr_mid(f->owner)->id);
 }
 
-/* mid__link_acquisition [0x8da8fc] — копия: поиск записи по ключу. */
-static struct conn *find_link_acquisition(struct mid *mid, const void *key, const void *e, u32 a3,
-                                          u32 a4)
-{
-    struct conn *out = 0;
-    if (find_main_sm_bcon_lookup(mid, key, e, 0, &out, a3, 0, a4) == 0)
-        return 0;
-    return out;
-}
 
 /* find_main_sm::bcon (0x8f13f8, 214 Б): новый BSS (по BSSID кадра) — в список найденных
  * (пул dband_info_pool полон — только журнал); SSID из записи разбора. */
@@ -1766,7 +1757,7 @@ void find_main_sm_bcon(struct find_sm *f, struct rx_pkt *pkt)
     struct dband_info *e;
     const struct rx_mgmt_ei *ei;
     fw_log_emit0(0x2c, 0x1017c3c);
-    if (find_main_sm_bcon_step(&f->found, bssid->b) != 0)
+    if (dband_info_find_by_bssid(&f->found, bssid->b) != 0)
         fw_sysassert_fatal((void *)0, 0x1035);
     if (!(pool->used < pool->count)) {
         fw_log_emit1(0x1c, 0x1017c54, u_schd_now());
@@ -1785,8 +1776,8 @@ void find_main_sm_bcon(struct find_sm *f, struct rx_pkt *pkt)
         memcpy_fw(e->ssid, ei->ssid.body, ei->ssid.len);
         e->ssid_len = pkt->ei->ssid.len;
     }
-    (void)find_link_acquisition(find_mngr_mid_e(f->owner), bssid, 0, 0, 0xffff);
-    list_find_entry_d(&f->found, e);
+    (void)mid_link_acquisition(find_mngr_mid(f->owner), bssid, 0, 0, 0xffff);
+    llist_append(&f->found, e);
 }
 
 /* state_sm_8030f4__action_8f14d0 (0x8f14d0): EVT_BCON в STATE_SEARCHING (тип 2). */
@@ -1820,9 +1811,9 @@ void find_sm_on_beamforming(struct find_sm *f, struct conn *c, u32 status)
         return;
     }
     payload = TX_API_alloc_tx_payload();
-    e = find_mngr_mid_e(f->owner);
+    e = find_mngr_mid(f->owner);
     slen = mid_copy_ssid(&e->bss, ssid);
-    mgmt_tx_build_probe_req(payload, &len, find_mngr_mid_e(f->owner), c, ssid, slen);
+    mgmt_tx_build_probe_req(payload, &len, find_mngr_mid(f->owner), c, ssid, slen);
     hdr = (struct ieee80211_hdr *)payload;
     memcpy_fw(hdr->addr1.b, c->peer, 6);
     {   /* побайтно (stb ×6, как vendor) — volatile, иначе gcc сливает в stw */
@@ -1840,7 +1831,7 @@ void find_sm_on_beamforming(struct find_sm *f, struct conn *c, u32 status)
 }
 
 /* ie_list__first (0x8cbfc8, 52 Б): соединение записи mid e с cid или 0. */
-struct conn *ie_list_first(struct mid *e, u32 cid)
+struct conn *mid_conn_by_cid(struct mid *e, u32 cid)
 {
     u32 it;
     iter_init(&it, &e->conns);
@@ -1868,7 +1859,7 @@ _Static_assert(sizeof(struct ie_elem_blk) == 0x14, "ie_elem_blk");
 
 /* app_ies__set_probe_req_ies (0x8e6908, 52 Б) + app_ies__bind_buffer (0x8e6108): буфер и
  * длина в блок, итератор — на начало. */
-static const u8 *app_ies_set_probe_req_ies(struct ie_elem_blk *blk, const u8 *ie, u32 len)
+static const u8 *ie_elem_blk_bind_buffer(struct ie_elem_blk *blk, const u8 *ie, u32 len)
 {
     const u8 *old;
     if (len != 0 && ie == 0)
@@ -1925,7 +1916,7 @@ static void find_sm_probe_req(struct find_sm *f, struct rx_pkt *pkt, u32 searchi
     u32 len = (u16)(pkt->info.len - ((u32)ei->ies - (u32)pkt->hdr));
     u32 peer, ie, reply = 1, ftype = 1, out_len, payload;
     struct conn *c;
-    c = ie_list_first(x->mid, pkt->info.cid);
+    c = mid_conn_by_cid(x->mid, pkt->info.cid);
     if (c == 0) {
         fw_sysassert_fatal((void *)0, searching ? 0x1447 : 0x1448);
         return;
@@ -1950,7 +1941,7 @@ static void find_sm_probe_req(struct find_sm *f, struct rx_pkt *pkt, u32 searchi
                 ftype = 0;
             if (x->quiet == 0)
                 continue;
-            app_ies_set_probe_req_ies(&blk2, (const u8 *)ie, (u16)(((const u8 *)ie)[1] + 2));
+            ie_elem_blk_bind_buffer(&blk2, (const u8 *)ie, (u16)(((const u8 *)ie)[1] + 2));
             a = ies_scan_for_match(&blk2, 3);
             if (a == 0)
                 continue;
@@ -2018,7 +2009,7 @@ void find_sm_on_start_search(struct find_sm *f)
 void find_main_sm_stop(struct find_sm *f)
 {
     fw_log_emit1(0x2c, 0x1017bcc, f->req);
-    radio_mgr_call_method_10((struct rm_req *)f->req);
+    radio_mgr_lock_free((struct rm_req *)f->req);
     f->req = 0;
     find_sm_free_found(f, 0x1017bf8);
     find_mngr_del_discovery_bcon(f->owner);

@@ -21,10 +21,11 @@ import cpu as cpumod                                    # noqa: E402
 M32 = 0xffffffff
 ICCM = 0x920000                 # код uc виден и с 0, и с 0x920000
 SENTINEL = 0x9ff000             # адрес возврата из тестируемой функции
-SP0 = 0x803a48                  # вершина стека uc (как в eqcheck)
+SP0 = 0x804000                  # вершина стека uc (uc/uc.ld __stack_top)
 GP = 0x800528
 MAC_CMD_LOG = 0x800000          # r25 (uc/uc.ld mac_cmd_log)
 DCCM, DCCM_SIZE = 0x800000, 0x8000
+FW_PERI = 0x840000              # память fw, общая с uc (debugfs blob_fw_peri — её снимок)
 UC_DATA_HOST = 0x940000         # uc_data в .fw (вид хоста) = DCCM 0x800000
 
 
@@ -70,14 +71,36 @@ class _CPU(cpumod.CPU):
 
     def read_aux(self, addr):
         if (addr & M32) == 0x100:
-            # COUNT1 (Timer1, 165 МГц) идёт: такт на инструкцию от начала теста, заворот на пределе. Цикл, читающий
-            # Timer1, ограничен сроком — счётчик «вечного ожидания» для него сбрасывается.
+            # COUNT1 (Timer1, 165 МГц) идёт: такт на инструкцию от начала теста (с моделью железа machw — её часы),
+            # заворот на пределе. Цикл, читающий Timer1, ограничен сроком — счётчик «вечного ожидания» сбрасывается.
             self._o._spin = {}
+            if self._o.t1_hook:
+                return self._o.t1_hook()
             return (self._o.t1_base + self.insns) % (T1_LIMIT + 1)
         return super().read_aux(addr)
 
     def read_reg(self, n):
         if 32 <= n <= 56:
+            o = self._o
+            if o.ext_hook:
+                v = o.ext_hook(n)
+                if v is not None:
+                    key = (self.pc, n)
+                    if o._spin_val.get(key) != v:             # значение порта меняется (TSF, счётчики) — не зависание
+                        o._spin_val[key] = v
+                        o._spin = {}
+                    sp = o._spin[key] = o._spin.get(key, 0) + 1
+                    if sp > SPIN_MAX:
+                        # опрос в одной точке: если железо ещё что-то сделает — продвинуть часы к событию
+                        if o.hw.advance_to_next():
+                            o._spin[key] = 0
+                            v = o.ext_hook(n)
+                        else:
+                            raise SpinError('опрос r%d без выхода в %s (значение %#x): железо больше ничего не сделает'
+                                            % (n, o.where(self.pc), v))
+                    v &= M32
+                    self.trace.append(('extreg', 'r', n, 4, v))
+                    return v
             key = (self.pc, n)
             sp = self._o._spin[key] = self._o._spin.get(key, 0) + 1
             if sp > SPIN_MAX:
@@ -90,6 +113,13 @@ class _CPU(cpumod.CPU):
             self.trace.append(('extreg', 'r', n, 4, v))
             return v
         return super().read_reg(n)
+
+    def write_reg(self, n, v):
+        super().write_reg(n, v)
+        if n == 32 and self._o.cmd_hook:
+            self._o.cmd_hook(v & M32)
+        elif n in (33, 34) and self._o.fifo_hook:
+            self._o.fifo_hook(n, v & M32)
 
 
 class UC:
@@ -108,6 +138,7 @@ class UC:
                         dccm[o:o + len(data)] = data[:DCCM_SIZE - o]
             UC._cache[(elf, fw)] = (_sections(elf), _symbols(elf), bytes(dccm))
         secs, self.sym, dccm = UC._cache[(elf, fw)]
+        self.elf = elf
         self.addr2sym = {a: n for n, a in self.sym.items()}
         c = _CPU(self, functional_mmio=True)
         c.mmio(0x880000, 0x8c0000)
@@ -126,9 +157,27 @@ class UC:
         # (r40: б24 = 1, б3 = 0, поле 0..2 = 5; r45 б31 = 1). События приёма (r42, r54 …) тест задаёт сам.
         self.ext = {40: (1 << 24) | 5, 45: 1 << 31}
         self._spin = {}
+        self._spin_val = {}
         self.t1_base = 0               # COUNT1 в начале теста (задать, чтобы проверить заворот)
         self._ext_reads = {}
         self.calls = []
+        self.hw = None                 # модель MAC во времени (machw.HW) — подключает себя сама
+        self.ext_hook = None
+        self.fifo_hook = None                     # (n, v): запись порта FIFO передачи r33 (слово) / r34 (байт)
+        self.cmd_hook = None
+        self.t1_hook = None
+
+    @classmethod
+    def from_snapshot(cls, elf, uc_data, fw_peri=None):
+        """Эмулятор в состоянии стенда: uc_data — снимок DCCM uc (debugfs blob_uc_data), fw_peri — снимок памяти fw с
+        FW_PERI (blob_fw_peri), оба сняты с uc из того же elf. Без fw_peri память fw — детерминированный мусор
+        эмулятора, и путь кода, читающий её (кольца ящика, link_stat …), уходит в сторону. Модель MAC — HW(u,
+        mailbox=False): иначе её инициализация ящика затрёт кольца снимка (0x85f000)."""
+        u = cls(elf)
+        u.cpu.load(DCCM, bytes(uc_data))
+        if fw_peri is not None:
+            u.cpu.load(FW_PERI, bytes(fw_peri))
+        return u
 
     # ---- память ----
     def r8(self, a): return self.cpu.read(a, 1)
@@ -166,7 +215,41 @@ class UC:
         c.blink = SENTINEL
         c.halted = False
         self._spin = {}
-        c.run(self.sym[fn], stop=SENTINEL, max_steps=max_steps)
+        rep = os.environ.get('SPARRAW_STACK_REPORT')
+        if rep:
+            # глубина стека по функциям (SP0 − минимальный sp) — для бюджета стека при вложенном L1
+            # и участки с запрещёнными L1 (STATUS32.E1 = 0, снятым кодом): вызов стартует с E1 = 1, как в работе
+            orig, low = c.step, [SP0]
+            c.aux[0x0a] = c.aux.get(0x0a, 0) | 2
+            mask = dict(start=None, pc=0, worst=0, wpc=0)
+
+            def step():
+                pc = c.pc
+                orig()
+                if c.sp < low[0]:
+                    low[0] = c.sp
+                e1 = c.aux.get(0x0a, 0) & 2
+                if not e1 and mask['start'] is None:
+                    mask['start'], mask['pc'] = c.insns, pc
+                elif e1 and mask['start'] is not None:
+                    n = c.insns - mask['start']
+                    if n > mask['worst']:
+                        mask['worst'], mask['wpc'] = n, mask['pc']
+                    mask['start'] = None
+            c.step = step
+            try:
+                c.run(self.sym[fn], stop=SENTINEL, max_steps=max_steps)
+            finally:
+                c.step = orig
+                if mask['start'] is not None:                    # не восстановлен до возврата
+                    n = c.insns - mask['start']
+                    if n > mask['worst']:
+                        mask['worst'], mask['wpc'] = n, mask['pc']
+                with open(rep, 'a') as fh:
+                    fh.write('%s %d %s %d %s\n' % (fn, SP0 - low[0], os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0],
+                                                   mask['worst'], self.where(mask['wpc']) if mask['worst'] else '-'))
+        else:
+            c.run(self.sym[fn], stop=SENTINEL, max_steps=max_steps)
         if c.exhausted:
             raise RuntimeError('%s: не вернулась за %d шагов (pc=%#x в %s)' % (fn, max_steps, c.pc, self.where(c.pc)))
         self.last_trace = c.trace[start:]
@@ -183,6 +266,8 @@ class UC:
 
     def t1(self):
         """Текущее значение COUNT1 эмулятора (такты)."""
+        if self.t1_hook:
+            return self.t1_hook()
         return (self.t1_base + self.cpu.insns) % (T1_LIMIT + 1)
 
     @property

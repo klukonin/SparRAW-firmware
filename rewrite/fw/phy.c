@@ -100,7 +100,7 @@ void hwd_phy_init(void)
 }
 
 /* 0x803838: коэффициенты TX-фильтра PHY (10 бит) для 0x88416c..0x8842b8 — 4 симметричных набора
- * по 21 отсчёту (phy_load_88416c_table). */
+ * по 21 отсчёту (phy_load_tx_fir_coef_table). */
 FWDATA(803838) const u16 phy_tx_filter_coef[4 * 21] = {
     0x3f3, 0x3f3, 0x009, 0x01f, 0x012, 0x3de, 0x3b9, 0x3ea, 0x07e, 0x127, 0x172,
     0x127, 0x07e, 0x3ea, 0x3b9, 0x3de, 0x012, 0x01f, 0x009, 0x3f3, 0x3f3,
@@ -112,13 +112,13 @@ FWDATA(803838) const u16 phy_tx_filter_coef[4 * 21] = {
     0x137, 0x085, 0x3e9, 0x3b5, 0x3dd, 0x013, 0x021, 0x00a, 0x3f2, 0x3f3,
 };
 
-/* phy_load_88416c_table (0x8d46e4): коэффициенты TX-фильтра PHY 0x88416c..0x8842b8 из
+/* phy_load_tx_fir_coef_table (0x8d46e4): коэффициенты TX-фильтра PHY 0x88416c..0x8842b8 из
  * таблицы u16 0x803838 (4 симметричных набора по 21 10-битному отсчёту; зовётся из
  * power_mngr_check_mode 0x8e24e0 на каждой смене канала). vendor: lp 84 раза
  * `ldh.as r2,[0x803838,r1]` (u16, индекс ×2) → `st_s r2,[0x88416c + r1*4]`. Прежний порт
  * читал u32 (по два коэффициента в регистр, 0x03f303f3 вместо 0x3f3) и выходил на 0xa8 Б за
  * конец таблицы — TX-фильтр, в т. ч. для петлевых калибровок, получал мусор. */
-void phy_load_88416c_table(u32 a)
+void phy_load_tx_fir_coef_table(u32 a)
 {
     (void)a;
     u32 i;
@@ -167,7 +167,7 @@ __attribute__((section(".textlate"))) u32 bits_sign_extend_n(u32 value, u32 n)
 
 /* hwd_phy__get_883b80 (0x8d2cf4, 28 Б): читает снапшот RSSI/PHY 0x883bec,
  * извлекает 11-битное поле [20:10] и знаково расширяет (n=0xb). */
-__attribute__((section(".textlate"))) int hwd_phy_get_883b80(void)
+__attribute__((section(".textlate"))) int hwd_phy_get_rssi_raw_locked(void)
 {
     u32 v = (MMIO32(PHY_RX_RSSI_ADC_LOCKED) >> 10) & 0x7ffu;
     return (s16)bits_sign_extend_n(v, 0xb);

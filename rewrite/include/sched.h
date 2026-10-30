@@ -14,7 +14,7 @@
 typedef void (*u_schd_fn)(u32 a0, u32 a1);
 
 /* Сравнение моментов времени (time_cmp 0x8e91bc): 1 — b не позже a (с переполнением), иначе -1.
- * Компаратор сортированной вставки list_find_entry. */
+ * Компаратор сортированной вставки u_schd_tq_insert_sorted. */
 typedef s32 (*u_schd_cmp_fn)(u32 a, u32 b);
 
 /* Задача / таймер (0x1c Б): элемент пула u_schd.task_pool, узел llist ready-очереди или очереди
@@ -46,7 +46,7 @@ struct u_schd_tq_vt {
 };
 _Static_assert(sizeof(struct u_schd_tq_vt) == 8, "u_schd_tq_vt");
 
-/* Очередь таймеров (0x14 Б): задачи по возрастанию deadline (list_find_entry с time_cmp). */
+/* Очередь таймеров (0x14 Б): задачи по возрастанию deadline (u_schd_tq_insert_sorted с time_cmp). */
 struct u_schd_tq {
     struct llist list;                         /* 0x00 */
     u32 now;                                   /* 0x0c: «сейчас» в базе очереди при последнем

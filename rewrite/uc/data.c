@@ -55,30 +55,30 @@ UCDATA(80045c) u32 l1_fsched_flag = 0x1;
 UCDATA(800468) u32 fsched_peer_id = 0xff;
 /* При assert перевести детектор в режим 0 (uc_assert -> phy_rx_set_ina_det_mode_uc(0)). */
 UCDATA(800474) u32 assert_reset_ina_det = 0x1;
-/* Разрешение команды 0x08 MAC-очереди (mac_q_tx_ppdu_cmd08). */
+/* Разрешение команды 0x08 MAC-очереди (mac_q_tx_ppdu_vring_cfg). */
 UCDATA(80047c) u32 macq_cmd08_en = 0x1;
-/* Флаг PM из команды 0x1b (читает background_bi_step). */
+/* Флаг PM из команды 0x1b (читает pm_idle_try_enter). */
 UCDATA(8004dc) u32 pm_cfg_flag = 0x1;
 /* Разрешение ожидания ответа / RX-потока (tx_send_and_await_rx_frame, rx_flow_step, fixed_sched_run_tx_slot). */
 UCDATA(8004ec) u32 rx_resp_wait_en = 0x1;
 /* Сдвиг лимита TXOP (txop_apply_limits_regs). */
 UCDATA(800504) u32 txop_limit_shift = 0x2;
-/* Порог, мкс, от TSF-метки 0x80053c (rx_funcs_rx_flow). */
+/* Порог, мкс, от TSF-метки 0x80053c (rx_flow_main). */
 UCDATA(800518) u32 rx_flow_timeout_us = 0x12c;
 
 /* ---- 0x80057c..0x8006ca ---- */
-/* Пороги фоновой задачи BI (background_bi_step). */
+/* Пороги фоновой задачи BI (pm_idle_try_enter). */
 UCDATA(80057c) u32 bg_bi_thr_a = 0xc8;
 UCDATA(800580) u32 bg_bi_thr_b = 0x3;
-/* Маска разрешённых фоновых задач (background_task_dispatch; uc_set_evt_id_5c пишет). */
+/* Маска разрешённых фоновых задач (background_task_dispatch; uc_set_bg_task_mask пишет). */
 UCDATA(800584) u32 bg_task_mask = 0xffffffff;
-/* Указатель на имя автомата BI; uc_init_cb_801aec копирует его в bi_sm_desc.name. В uc больше никем не читается. */
+/* Указатель на имя автомата BI; uc_init_cb_bi_sm_name копирует его в bi_sm_desc.name. В uc больше никем не читается. */
 UCDATA(8005ac) u32 bi_sm_name_ptr = (u32)bi_sm_name;
 /* Побитовая маска станций для BF/BRP. */
 UCDATA(8005b8) u16 bf_sta_mask = 0xffff;
 /* Тень текущего значения IFS/SIFS в MAC (сравнивается с 0x802974; bi_run_bti_cycle ждёт 0x300). */
 UCDATA(8005be) u16 mac_ifs_shadow = 0x300;
-/* Структура 0x800610: те же значения пишет boot_uc_init_g800610, читателей нет ни у vendor, ни у нас.
+/* Структура 0x800610: те же значения пишет boot_uc_init_and_run, читателей нет ни у vendor, ни у нас.
  * Смысл не установлен. */
 UCDATA(800610) UCD_BYTES(18) g800610_init = {{
     0x06, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x03, 0x00, 0x00,
@@ -113,7 +113,7 @@ UCDATA(8006c4) u16 bcast_mac[3] = {
 };
 
 /* ---- 0x800718..0x8008b8 ---- */
-/* Разрешение сбора «бодрствующих» станций (aw_worker_collect_awake_peers). */
+/* Разрешение сбора «бодрствующих» станций (aw_collect_awake_peers). */
 UCDATA(800718) u32 aw_collect_en = 0x1;
 /* Смысл не установлен: статически никто не читает (ни vendor, ни мы). */
 UCDATA(800728) u32 g800728 = 0x1;
@@ -135,7 +135,7 @@ UCDATA(800778) u32 uc_log_module_tab[16] = {
 /* Init-дескриптор 0x8007c8 {ключ, функция, приоритет}: функция. */
 UCDATA(8007cc) u32 init_desc_globals_fn = (u32)&uc_init_cb_globals;
 /* Слово конфигурации BRP: биты 15..20 = 10, 24..26 = 5 (brp_pick_sector_cfg, config_brp_rf).
- * +4 (0x800828) пишет uc_init_cb_copy_8006b7. */
+ * +4 (0x800828) пишет uc_init_cb_copy_rf_mask. */
 UCDATA(800824) u32 brp_ctx_cfg = 0x5850000;
 /* Структура 0x80088c: BRP по SNR (пишет ucode_cmd_0x3b). */
 UCDATA(80088c) u32 brp_snr_cfg_enable = 0x1;
@@ -161,11 +161,11 @@ UCDATA(800fc0) UCD_ARRAY(u8, 32) lin_to_db8_32 = {{
     0x60, 0x62, 0x64, 0x66, 0x68, 0x6a, 0x6b, 0x6d, 0x6e, 0x70, 0x71, 0x73, 0x74, 0x75, 0x76, 0x77,
 }};
 /* Init-дескриптор 0x800fe0: функция (копия маски RF 0x8006b7 -> 0x800828). */
-UCDATA(800fe4) u32 init_desc_copy_8006b7_fn = (u32)&uc_init_cb_copy_8006b7;
+UCDATA(800fe4) u32 init_desc_copy_8006b7_fn = (u32)&uc_init_cb_copy_rf_mask;
 /* Дескриптор BF-запроса по умолчанию (bf_init_sm, bf_reset_sta_slot, bf_abort_unexpected -> bf_req_enqueue).
  * +8 и +0x10 никем не читаются статически. */
 UCDATA(800fec) struct bf_req_desc bf_req_desc_default = {
-    .done_cb = (u32)&notify_aoa_build,
+    .done_cb = (u32)&bf_done_report_build_send,
     .x8 = 1,
     .x10 = 1,
 };
@@ -241,36 +241,36 @@ UCDATA(8015c8) u32 bi_event_names[5] = {
 };
 /* Таблица автомата BI: 5 событий × 4 состояния, {действие, следующее состояние} (uc_sm_handle_event через bi_sm_desc). */
 UCDATA(8015dc) struct bi_sm_entry bi_sm_table[20] = {
-    { (u32)&bi_sm_action_935b4c, 0 },   /* событие 0 */
-    { (u32)&bi_sm_action_92646c, 1 },
-    { (u32)&bi_sm_action_935b4c, 0 },
-    { (u32)&bi_sm_action_92156c, 3 },
-    { (u32)&bi_sm_action_935a08, 1 },   /* событие 1 */
-    { (u32)&bi_sm_action_92646c, 1 },
-    { (u32)&bi_sm_action_9262e8, 2 },
-    { (u32)&bi_sm_action_92646c, 3 },
-    { (u32)&bi_sm_action_935d0c, 2 },   /* событие 2 */
-    { (u32)&bi_sm_action_935d0c, 2 },
-    { (u32)&bi_sm_action_9262e8, 2 },
-    { (u32)&bi_sm_action_92153c, 3 },
-    { (u32)&bi_sm_action_935a94, 3 },   /* событие 3 */
-    { (u32)&bi_sm_action_935a94, 3 },
-    { (u32)&bi_sm_action_9262e8, 2 },
-    { (u32)&bi_sm_action_92150c, 3 },
-    { (u32)&bi_sm_action_923a5c, 0 },   /* событие 4 */
-    { (u32)&bi_sm_action_92646c, 1 },
-    { (u32)&bi_sm_action_9262e8, 2 },
-    { (u32)&bi_sm_action_935d0c, 2 },
+    { (u32)&bi_sm_on_dti_to_bti, 0 },   /* событие 0 */
+    { (u32)&bi_sm_action_invalid, 1 },
+    { (u32)&bi_sm_on_dti_to_bti, 0 },
+    { (u32)&bi_sm_on_dti_to_bti_in_aw, 3 },
+    { (u32)&bi_sm_on_bti_to_abft, 1 },   /* событие 1 */
+    { (u32)&bi_sm_action_invalid, 1 },
+    { (u32)&bi_sm_on_event_in_dti, 2 },
+    { (u32)&bi_sm_action_invalid, 3 },
+    { (u32)&bi_sm_on_enter_dti, 2 },   /* событие 2 */
+    { (u32)&bi_sm_on_enter_dti, 2 },
+    { (u32)&bi_sm_on_event_in_dti, 2 },
+    { (u32)&bi_sm_on_bhi_to_dti_in_aw, 3 },
+    { (u32)&bi_sm_on_enter_aw, 3 },   /* событие 3 */
+    { (u32)&bi_sm_on_enter_aw, 3 },
+    { (u32)&bi_sm_on_event_in_dti, 2 },
+    { (u32)&bi_sm_on_bhi_to_aw_in_aw, 3 },
+    { (u32)&bi_sm_on_aw_to_dti_in_bti, 0 },   /* событие 4 */
+    { (u32)&bi_sm_action_invalid, 1 },
+    { (u32)&bi_sm_on_event_in_dti, 2 },
+    { (u32)&bi_sm_on_enter_dti, 2 },
 };
 /* Init-дескриптор 0x801640: функция (копия bi_sm_name_ptr -> bi_sm_desc.name).
  */
-UCDATA(801644) u32 init_desc_801aec_fn = (u32)&uc_init_cb_801aec;
+UCDATA(801644) u32 init_desc_801aec_fn = (u32)&uc_init_cb_bi_sm_name;
 /* 0x80164c..0x801693: прежние таблицы слотов A-BFT vendor 6.2 (ssw_tab_a/ssw_tab_b/period_tab) — убраны: aSSDuration и
  * aSSSlotTime считаются формулой (abft.h, abft_ssdur_clk/abft_slot_clk). */
 
 /* ---- 0x8016e4..0x801be8 ---- */
-/* Init-дескриптор 0x8016e0: функция (boot_uc_init_more(&rx_meas)). */
-UCDATA(8016e4) u32 init_desc_more_fn = (u32)&uc_init_cb_more;
+/* Init-дескриптор 0x8016e0: функция (rx_meas_ctx_init(&rx_meas)). */
+UCDATA(8016e4) u32 init_desc_more_fn = (u32)&uc_init_cb_rx_meas;
 /* Смысл не установлен, статически никто не читает (0x228, 0x00ffffff, затем пары u16 — похоже на
  * таблицу пар значение/адрес регистра). */
 UCDATA(80170c) UCD_BYTES(128) g80170c = {{
@@ -330,7 +330,7 @@ UCDATA(801adc) struct sm_desc bi_sm_desc = {
     .table = (u32)bi_sm_table,
     .state_names = (u32)bi_state_names,
     .event_names = (u32)bi_event_names,
-    .name = 0,                          /* uc_init_cb_801aec копирует bi_sm_name_ptr */
+    .name = 0,                          /* uc_init_cb_bi_sm_name копирует bi_sm_name_ptr */
 };
 UCDATA(801af0) char bi_state_name_bti[13] = "BI_STATE_BTI";
 UCDATA(801b00) char bi_state_name_abft[14] = "BI_STATE_ABFT";

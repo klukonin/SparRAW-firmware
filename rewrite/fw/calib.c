@@ -115,31 +115,31 @@ static s32 calib_abs32(s32 v)
 }
 
 /* lo_power_calib__get_param_d0 (0x8cc390): байт [gp,208] = 0x800254. */
-u32 lo_power_calib_get_param_d0(void)
+u32 lo_power_calib_get_gc_ctrl(void)
 {
     return (calib_lo_power_gc_ctrl);
 }
 
 /* calib__results_addr_800a34 (0x8cc394): адрес таблицы результатов 0x800a34. */
-u32 *calib_results_addr_800a34(void)
+u32 *calib_lo_power_get_rfc_saved(void)
 {
     return calib_lo_power_rfc_saved;
 }
 
 /* calib__results_addr_800a28 (0x8cc39c): адрес таблицы результатов 0x800a28. */
-u32 *calib_results_addr_800a28(void)
+u32 *calib_lo_power_get_rfc_packed(void)
 {
     return calib_lo_power_rfc_packed;
 }
 
 /* lo_power_calib__get_state_obj (0x8cc3a4): байт [gp,209] = 0x800255. */
-u32 lo_power_calib_get_state_obj(void)
+u32 lo_power_calib_get_stg2_bias(void)
 {
     return (calib_lo_power_stg2_bias);
 }
 
 /* lo_power_calib__get_table_idx (0x8cc3a8): байт [gp,210] = 0x800256. */
-u32 lo_power_calib_get_table_idx(void)
+u32 lo_power_calib_get_xif_gc(void)
 {
     return (calib_lo_power_xif_gc);
 }
@@ -150,10 +150,10 @@ void calib_lo_power_save_level(u32 v)
     (calib_lo_power_level) = (u8)v;
 }
 
-/* calib_sar_step2 (0x8d47e4): одно SAR-измерение, среднее 8 сэмплов (>>3, 64 бит),
+/* calib_sar_final_step (0x8d47e4): одно SAR-измерение, среднее 8 сэмплов (>>3, 64 бит),
  * коррекция = -(среднее >> (shift-2)), ограниченная запасом SAR DC по всем 8 столбцам
  * (max/min разности половин 0/1 поля 0x88af10), и запись её во все 8 столбцов. */
-void calib_sar_step2(u32 shift)
+void calib_sar_final_step(u32 shift)
 {
     s8 mx[2], mn[2];
     u32 sh = (u8)(shift - 2);
@@ -214,7 +214,7 @@ void calib_setup_loopback_rx_path(void)
     hwd_abif_caf_lpbk_mode(0);
     hwm_calib_set_loopback_mode(0);
     hwd_phy_self_mode_exit();
-    hwd_args_to_regs_default(rf_cfg_get_rf_mask_45e(&rf_obj));
+    hwd_rfc_apply_gain_tables_for_mask(rf_obj_get_rf_mask(&rf_obj));
     hwd_abif_rx_prepare_ifrx_pwdn(7);
     hwd_phy_rx_cal_corr_config(1u << 13, 1, 0);
     hwd_phy_self_rx_mode_entry();
@@ -285,7 +285,7 @@ void calib_lo_power_substep(u32 *out, u32 idx, u32 target)
 void hwf_calib_restore_path(void)
 {
     hwm_set_analog_path(0, 0, 0);
-    hwd_mac_uses_rgf_886200(0);
+    hwd_mac_prs_ctrl_calib_mode(0);
     hwf_calib_release_hw();
 }
 
@@ -296,13 +296,13 @@ void calib_lo_power_step(u32 bits3, u32 nibble, u32 *fields, u32 level)
     abif_set_3bit_all_chains(bits3);
     abif_set_nibble_all_chains(nibble);
     calib_lo_power_save_level(level);
-    rf_set_8894a0_field(level);
-    rfc_write_field_484(0, fields);
+    rf_set_dvs_clk_cfg_level(level);
+    rfc_write_lo_power_fields(0, fields);
 }
 
-/* hwf_calib_lo_power_flow (0x8d5fa8): проверка параметров (режим 0/4/5/6/7, уровни ≤0xe,
+/* hwf_calib_lo_power_apply (0x8d5fa8): проверка параметров (режим 0/4/5/6/7, уровни ≤0xe,
  * три поля 1..0xf), чтение RFC-полей 0x484 модуля rf, упаковка трёх полей и шаг. */
-u32 hwf_calib_lo_power_flow(u32 mode, u32 nibble, u32 f0, u32 f1, u32 f2, u32 level, u32 rf)
+u32 hwf_calib_lo_power_apply(u32 mode, u32 nibble, u32 f0, u32 f1, u32 f2, u32 level, u32 rf)
 {
     u32 cur[3], packed[3];
 
@@ -310,12 +310,12 @@ u32 hwf_calib_lo_power_flow(u32 mode, u32 nibble, u32 f0, u32 f1, u32 f2, u32 le
         (s32)nibble > 0xe || (s32)level > 0xe ||
         f0 == 0 || f1 == 0 || f2 == 0 ||
         f0 > 0xf || f1 > 0xf || f2 > 0xf) {
-        fw_log_emit0(0, 0x101bd48);   /* "hwf_calib_lo_power_flow invalid parameters input" */
+        fw_log_emit0(0, 0x101bd48);   /* "hwf_calib_lo_power_apply invalid parameters input" */
         return 0;
     }
     memcpy_fw(cur, calib_lo_power_cur_init, 0xc);      /* исходные значения из fw_data */
     memcpy_fw(packed, calib_lo_power_packed_init, 0xc);
-    rfc_read_field_484(rf, cur);
+    rfc_read_lo_power_fields(rf, cur);
     rfc_pack_field_value(rf, cur, packed, f0, f1, f2);
     calib_lo_power_step(mode, nibble, packed, level);
     return 1;
@@ -394,7 +394,7 @@ u32 calib_sar_step(u32 idx, u32 n, u32 avg, u32 thr)
 }
 
 /* hwf_calib_sar_alg (0x8d60bc): до 5 SAR-итераций (сдвиг n = 1, 0, -1, ...), пока
- * calib_sar_step не сойдётся; при skip_step2 == 0 — финальный шаг calib_sar_step2(0xd).
+ * calib_sar_step не сойдётся; при skip_step2 == 0 — финальный шаг calib_sar_final_step(0xd).
  * Возврат: 2 — не сошлось, 1 — сошлось не с первой итерации, 0 — с первой. */
 u32 hwf_calib_sar_alg(u32 skip_step2, u32 thr, u32 idx)
 {
@@ -411,7 +411,7 @@ u32 hwf_calib_sar_alg(u32 skip_step2, u32 thr, u32 idx)
     if (it == 5)
         fw_log_emit1(0x16, 0x101c968, it);
     if (skip_step2 == 0)
-        calib_sar_step2(0xd);
+        calib_sar_final_step(0xd);
     if (ok == 0) {
         fw_log_emit0(0x16, 0x101c99c);
         return 2;
@@ -430,8 +430,8 @@ void calib_setup_loopback_hw(u32 acquire, u32 abif, u32 phy, u32 sar, u32 shift)
     if (abif != 0) {
         hwd_abif_caf_lpbk_mode(0);
         hwm_calib_set_loopback_mode(0);
-        hwd_args_to_regs_default(rf_cfg_get_rf_mask_45e(&rf_obj));
-        hwd_rfc_write_core_fw_mode1(0);
+        hwd_rfc_apply_gain_tables_for_mask(rf_obj_get_rf_mask(&rf_obj));
+        hwd_rfc_apply_gain_tables(0);
         hwd_abif_rx_prepare_ifrx_pwdn(7);
         hwm_calib_set_loopback_mode(1);
         hwd_abif_sar_dc_config_rgf_mode(1);
@@ -458,7 +458,7 @@ void calib_setup_loopback_hw(u32 acquire, u32 abif, u32 phy, u32 sar, u32 shift)
 
 /* calib_sar__enable_path (0x8d6460): выключить SAR-измерение (en=0, период 0x2000) и/или
  * освободить HW калибровки. */
-void calib_sar_enable_path(u32 sar_off, u32 release)
+void calib_sar_disable_and_release(u32 sar_off, u32 release)
 {
     if (sar_off != 0)
         hwd_phy_rx_sar_cal_measurement_config(0, 0, 1, 0, 0x2000, 0);
@@ -507,7 +507,7 @@ void hwf_calib_release_hw(void)
         break;
     case 0x10:
         if (calib_hw_snap.abif_88af00 != 0)
-            ut_hw_modes_step(1, 0, 0);
+            ut_hw_modes_set_analog_loopback(1, 0, 0);
         else
             hwm_set_analog_path(1, 0, 0);
         if (calib_hw_snap.self_rx_mode != 0)
@@ -528,7 +528,7 @@ void hwf_calib_release_hw(void)
     hwd_phy_set_tx_swap_iq(calib_hw_snap.tx_swap_iq);
     hwd_phy_set_rx_swap_iq(calib_hw_snap.rx_swap_iq);
     hwd_phy_tx_predist_atten_man_config(calib_hw_snap.predist_atten[0], calib_hw_snap.predist_atten[1], calib_hw_snap.predist_atten[2]);
-    hwd_phy_tx_ctrl_884070(calib_hw_snap.tx_ctrl);
+    hwd_phy_tx_ctrl_set(calib_hw_snap.tx_ctrl);
 }
 
 /* 0x8036cc: таблица переходов vendor hwf_calib__acquire_hw (0x8d65e8): ldb.x, 16 записей, цель = 0x8d6652 + 2·запись.
@@ -557,14 +557,14 @@ void hwf_calib_acquire_hw(void)
     calib_hw_snap.dbg_clk_en = hwd_phy_dbg_clk_enable_get();
     calib_hw_snap.rx_tbl_force_en = hwd_abif_rx_table_index_force_en_get();
     calib_hw_snap.rx_tbl_force_val = (u8)abif_get_rx_table_index_force_val();
-    calib_hw_snap.agc_steps_dis = hwd_phy_get_883180();
+    calib_hw_snap.agc_steps_dis = hwd_phy_rx_agc_steps_disabled();
     calib_hw_snap.agc_force_en = (MMIO32(PHY_RX_AGC_INDEX_FORCE) >> 15) & 1u;
     calib_hw_snap.agc_force_idx = (u16)(MMIO32(PHY_RX_AGC_INDEX_FORCE) & 0x7fffu);
-    m = hwd_abif_uses_rgf_88af80_8ce614();
+    m = hwd_abif_lpbk_mode_get();
     calib_hw_snap.lpbk_mode = m;
     if (!(m == 1 || m == 2 || m == 4 || m == 0x10))   /* jump-таблица 0x8036cc */
         fw_sysassert_fatal(__builtin_return_address(0), 0x142b);
-    calib_hw_snap.abif_88af00 = hwd_abif_get_88af00();
+    calib_hw_snap.abif_88af00 = hwd_abif_analog_lpbk_active_get();
     calib_hw_snap.ifrx_pwdn = (u8)hwd_abif_rx_prepared_ifrx_pwdn_get();
     calib_hw_snap.self_rx_mode = (MMIO32(HW_PHY_RX_CTL) >> 2) & 1u;
     calib_hw_snap.self_tx_mode = (MMIO32(PHY_SELF_MODE_CTL_TX) >> 1) & 1u;
@@ -572,7 +572,7 @@ void hwf_calib_acquire_hw(void)
     calib_hw_snap.tx_swap_iq = hwd_phy_get_tx_swap_iq();
     calib_hw_snap.rx_en = MMIO32(HW_PHY_RX_CTL) & 1u;
     calib_hw_snap.tx_en = MMIO32(HW_PHY_TX_EN) & 1u;
-    hwd_phy_get_884100(calib_hw_snap.predist_atten);
+    hwd_phy_tx_predist_atten_man_get(calib_hw_snap.predist_atten);
     calib_hw_snap.tx_ctrl = (u8)(MMIO32(PHY_TX_CTRL_884070) & 3u);
     calib_hw_snap.tx_tbl_force_en = hwd_abif_tx_table_index_force_en_get();
     calib_hw_snap.tx_tbl_force_val = (u8)hwd_abif_tx_table_index_force_val_get();
@@ -730,14 +730,14 @@ void hwf_dc_calib_fix_dac1(u32 lo, u32 hi, u32 mode)
 /* calib__setup_loopback_hw_b (0x8d6a64): как calib__setup_loopback_hw, но без
  * write_core_fw_mode1/SAR DC в ABIF-части и без отладочного такта/AGC в PHY-части
  * (только self-RX и swap I/Q RX = 0); вместо SAR — rx_cal_corr_config(1 << shift, 1, 0). */
-void calib_setup_loopback_hw_b(u32 acquire, u32 abif, u32 phy, u32 corr, u32 shift)
+void calib_setup_loopback_hw_corr(u32 acquire, u32 abif, u32 phy, u32 corr, u32 shift)
 {
     if (acquire != 0)
         hwf_calib_acquire_hw();
     if (abif != 0) {
         hwd_abif_caf_lpbk_mode(0);
         hwm_calib_set_loopback_mode(0);
-        hwd_args_to_regs_default(rf_cfg_get_rf_mask_45e(&rf_obj));
+        hwd_rfc_apply_gain_tables_for_mask(rf_obj_get_rf_mask(&rf_obj));
         hwd_abif_rx_prepare_ifrx_pwdn(7);
         hwm_calib_set_loopback_mode(1);
     }
@@ -771,7 +771,7 @@ s32 hwf_vga_dc_measure(u32 sel, u32 shift)
 }
 
 /* calib__log_if_nonzero (0x8d6b20): при flag != 0 — hwf_calib__release_hw. */
-void calib_log_if_nonzero(u32 a, u32 flag)
+void calib_release_hw_if_flag(u32 a, u32 flag)
 {
     (void)a;   /* vendor: r0 не читается */
     if (flag != 0)
@@ -937,7 +937,7 @@ void calib_lo_set_result(u32 *p, u32 a, u32 b, u32 c, u32 d)
 /* Calib::Measure_VGA_Gains (0x8d4a08): до 3 попыток hwf_calib_bb_gain_rows по таблице
  * 0x801930; при успехе (1) — построить таблицу усиления (0x8423e4 → RX-таблица VGA).
  * Возврат: 1 — успех, 2 — не сошлось. */
-u32 Calib_Measure_VGA_Gains(void)
+u32 calib_measure_vga_gains(void)
 {
     const calib_vga_cfg_t *cfg = &calib_vga_cfg;
     calib_vga_pt_t res;
@@ -1487,7 +1487,7 @@ void if_gain_apply_delta(s32 delta, struct if_gain_meas *out)
  *        или осцилляции).
  * До 7 итераций. out: [0] TX-индекс, [1] RX-индекс, [2]/[4] индексы аттенюаторов, [6] g,
  * [7] шаг, [0xe] цель, [0xf] допуск; результат — [3],[5],[8],[9],[0xa],[0xc..0xd],[0x10]. */
-void IF_GAIN_GAIN(u32 mode, u32 sub, u32 act, struct if_gain_meas *out)
+void if_gain_adjust(u32 mode, u32 sub, u32 act, struct if_gain_meas *out)
 {
     u32 buf[14];                     /* sp+0x34: rx_cal_corr (2 слова) / счётчики RX (14 слов) */
     u32 tx_idx = out->tx_idx;             /* r16 */
@@ -1725,7 +1725,7 @@ u32 if_gain(u32 a0)
 
     if (a0 == 1) {
         st->m.tol = 0;
-        IF_GAIN_GAIN(1, 2, 6, &st->m);
+        if_gain_adjust(1, 2, 6, &st->m);
         r13 = if_gain_compute_correction(st->m.scaled, &st->m);
         if (r13 == 2) {
             fw_log_emit1(0x16, 0x101cc88, st->m.iter);
@@ -1735,7 +1735,7 @@ u32 if_gain(u32 a0)
         }
     } else if (a0 == 0) {
         st->m.tol = 3;
-        IF_GAIN_GAIN(1, 1, 6, &st->m);
+        if_gain_adjust(1, 1, 6, &st->m);
         r13 = if_gain_compute_correction(st->m.scaled, &st->m);
         ok = 0;
     } else {
@@ -1746,7 +1746,7 @@ u32 if_gain(u32 a0)
     if (a0 == 0 || (a0 == 1 && r13 == 2)) {
         (void)u_schd_now();
         st->m.tol = 1;
-        IF_GAIN_GAIN(1, 2, 3, &st->m);
+        if_gain_adjust(1, 2, 3, &st->m);
         r13 = if_gain_compute_correction(st->m.scaled, &st->m);
     }
 
@@ -1760,7 +1760,7 @@ u32 if_gain(u32 a0)
     if (r13 == 2) {
         (void)u_schd_now();
         st->m.tol = 0;
-        IF_GAIN_GAIN(1, 2, 6, &st->m);
+        if_gain_adjust(1, 2, 6, &st->m);
         r13 = if_gain_compute_correction(st->m.scaled, &st->m);
     }
 
@@ -1788,10 +1788,10 @@ u32 if_gain(u32 a0)
                 u32 val, m, n = 0;
                 pair[0] = 0;
                 pair[1] = 0;
-                obj = calib_obj4_reset_d4();
+                obj = calib_silent_rssi_reset();
                 agc_get_table_pair(obj, 1, &pair[0], &pair[1]);
                 val = pair[0] + (u32)(s32)(s8)st->agc_delta;
-                m = rf_cfg_get_rf_mask_45e(&rf_obj);
+                m = rf_obj_get_rf_mask(&rf_obj);
                 while (m != 0) {
                     m &= m - 1;
                     n = (u16)(n + 1);
@@ -1830,7 +1830,7 @@ void calib_corr_estimate_and_apply_rx_gain(void)
     hwd_abif_caf_lpbk_mode(0);
     hwm_calib_set_loopback_mode(0);
     hwd_phy_self_mode_exit();
-    hwd_args_to_regs_default(rf_cfg_get_rf_mask_45e(&rf_obj));
+    hwd_rfc_apply_gain_tables_for_mask(rf_obj_get_rf_mask(&rf_obj));
     hwm_calib_set_loopback_mode(1);
     hwd_phy_self_rx_mode_entry();
 
@@ -1861,14 +1861,14 @@ void calib_corr_estimate_and_apply_rx_gain(void)
     hwd_abif_rx_table_index_force_mode(0, 0);
     hwm_calib_set_loopback_mode(0);
     hwd_phy_tx_singen_config(0xb, 0xb, 6);
-    hwd_phy_tx_ctrl_884070(1);
+    hwd_phy_tx_ctrl_set(1);
     hwd_phy_rx_cal_corr_config(0x10000, 1, 0xb);
     hwd_phy_self_tx_mode_entry();
     hwd_phy_self_rx_mode_entry();
     hwd_phy_dbg_clk_enable(1);
     hwd_phy_rx_agc_index_force_mode(1, res->agc_idx);
     hwd_phy_rx_agc_steps_disable(1);
-    hwd_mac_uses_rgf_886200(1);
+    hwd_mac_prs_ctrl_calib_mode(1);
     hwm_set_analog_path(1, 0x1d, res->agc_idx);
 }
 
@@ -1986,12 +1986,12 @@ u32 calibrate_baseband_gain(struct calib_silent_rssi *obj, u32 mask, const struc
     else
         silent_rssi_load_params_a(obj);
     rfca = rfca_get_rf_mask();
-    rf = rf_cfg_get_rf_mask_45e(&rf_obj);
+    rf = rf_obj_get_rf_mask(&rf_obj);
     if (rf == 0) {
         fw_log_emit3(0, 0x10099f0, rf, 0, 0);
         fw_sysassert_fatal(__builtin_return_address(0), 0x1459);
     }
-    field_set_0x00_8e5dfc(&it, rf);
+    bit_iter_init(&it, rf);
     while (bit_iter_has_more(&it)) {
         u32 bit = bitmap_alloc_bit(&it);
         if (bit >= 8)
@@ -2002,7 +2002,7 @@ u32 calibrate_baseband_gain(struct calib_silent_rssi *obj, u32 mask, const struc
     hwd_abif_dvs_rfca_cmd_enable(rfca, 0);
 
     start = obj->start_idx;
-    m = rf_cfg_get_rf_mask_45e(&rf_obj);
+    m = rf_obj_get_rf_mask(&rf_obj);
     for (n = 0; m != 0; n = (u16)(n + 1))
         m &= m - 1;
     cnt = (u8)n;
@@ -2011,7 +2011,7 @@ u32 calibrate_baseband_gain(struct calib_silent_rssi *obj, u32 mask, const struc
         r15 = 1;
     } else if (rf_obj.sets_mode == 2 || rf_obj.sets_mode == 1) {
         ok = 0;
-        field_set_0x00_8e5dfc(&it, rf_cfg_get_rf_mask_45e(&rf_obj));
+        bit_iter_init(&it, rf_obj_get_rf_mask(&rf_obj));
         r15 = 0;
         while (bit_iter_has_more(&it)) {
             u32 bit = bitmap_alloc_bit(&it);
@@ -2063,12 +2063,12 @@ u32 silent_rssi_calibrate_single_rf_module(struct calib_silent_rssi *obj, u32 ma
     s32 target;
 
     (void)rfm;
-    rf = rf_cfg_get_rf_mask_45e(&rf_obj);
+    rf = rf_obj_get_rf_mask(&rf_obj);
     for (cnt = 0, t = rf; t != 0; cnt = (u16)(cnt + 1))
         t &= t - 1;
     if ((s32)cnt >= 2) {
         hwd_abif_dvs_rfca_cmd_enable((u8)(rf & ~bitmask), pprev);
-        hwd_setup_pair(0, 0);
+        hwd_rfc_powerdown_deep(0, 0);
         pprev = 0;               /* vendor 0x8c591a: второй cmd_enable уже без сохранения */
     }
     hwd_abif_dvs_rfca_cmd_enable((u8)bitmask, pprev);
@@ -2095,7 +2095,7 @@ u32 silent_rssi_calibrate_single_rf_module(struct calib_silent_rssi *obj, u32 ma
 
     ret = calib_silent_rssi_sparrow_find_rf_gain(obj, module_idx, mask >> 20, target);
     if ((s32)cnt >= 2) {
-        ut_hw_modes_chain_3(rf);
+        hw_modes_enable_rf_chain(rf);
         rfc_restore_txrx_sets_fw();
         rfc_field_write(0, 0x44c, 1, 0);
     }
@@ -2128,8 +2128,8 @@ void silent_rssi_set_rf_gain_index(struct calib_silent_rssi *obj, u32 idx, u32 a
         }
         g = 0xf;
     }
-    rfc_write_gain_idx_reg504(&rf_obj, (u32)g, a4);
-    txrx_sel(&rf_obj, rf_obj.rf_idx, 1, idx);
+    rfc_write_gain_index(&rf_obj, (u32)g, a4);
+    rf_sector_commit_by_dir(&rf_obj, rf_obj.rf_idx, 1, idx);
 }
 
 /* calib_silent_rssi_sparrow::find_agc_start (0x8ca5e8): итерационный поиск
@@ -2270,7 +2270,7 @@ u32 calib_silent_rssi_sparrow_find_rf_gain(struct calib_silent_rssi *obj, u32 id
     if (g[1] == 1 || g[1] == 0xf)
         fw_log_emit0(0x16, 0x1009ba4);
     d = d < 0 ? -d : d;
-    update_rf_xx_gains_tables(obj, idx, &g[1], &g[0]);
+    update_rf_gain_tables(obj, idx, &g[1], &g[0]);
     silent_rssi_set_rf_gain_index(obj, obj->rf_idx, g[1], 0, g[0], 0);
     return (d <= 1 ? 0u : 1u) + 1;
 }
@@ -2303,7 +2303,7 @@ u32 bitmap_expand_byte4_to_list(const struct calib_est *rfm, u8 *list)
     u32 it;
     u32 n = 0;
 
-    field_set_0x00_8e5dfc(&it, rfm->rf_mask);
+    bit_iter_init(&it, rfm->rf_mask);
     while (bit_iter_has_more(&it)) {
         list[n] = (u8)bitmap_alloc_bit(&it);
         n++;
@@ -2334,7 +2334,7 @@ u32 silent_rssi_agc_param_const_4(const struct calib_silent_rssi *obj, u32 idx)
 
 /* calib_silent_rssi__flag_step (0x8d33c4): hwd__program_rf_regs_seq(a0, a1, a2, 0 x6,
  * (a3 == 0) ? 0x10 : 0). Результат vendor не возвращает (r0 вызываемой — мусор). */
-void calib_silent_rssi_flag_step(u32 a0, u32 a1, u32 a2, u32 a3)
+void calib_silent_rssi_clear_rf_regs_seq(u32 a0, u32 a1, u32 a2, u32 a3)
 {
     hwd_program_rf_regs_seq(a0, a1, a2, 0, 0, 0, 0, 0, 0, (u8)((a3 == 0 ? 1u : 0u) << 4));
 }
@@ -2370,7 +2370,7 @@ void silent_rssi_report_agc_tables(void)
     if (lmac_ucode_ready == 0)
         return;
     buf = mem_pool_alloc_locked(&lmac_mbox.mb);
-    eng = calib_obj4_reset_d4();   /* возвращает объект движка 4 */
+    eng = calib_silent_rssi_reset();   /* возвращает объект движка 4 */
     agc_get_table_pair(eng, 1, &buf->start[0], &buf->table[0]);
     agc_get_table_pair(eng, 0, &buf->start[1], &buf->table[1]);
     for (i = 0; i < 8; i++) {
@@ -2378,9 +2378,9 @@ void silent_rssi_report_agc_tables(void)
         buf->param2[i] = (u8)silent_rssi_agc_param_const_2(eng, i);
     }
     act = rf_get_active_index();
-    silent_rssi_bits_set32_s0_w6(&calib_srssi_agc_word, buf->start[0] & 0x3fu);
-    silent_rssi_bits_set32_s12_w4(&calib_srssi_agc_word, silent_rssi_agc_param_const_4(eng, act) & 0xfu);
-    bits_set32_s16_w4_ptr(&calib_srssi_agc_word, silent_rssi_agc_param_const_2(eng, act) & 0xfu);
+    silent_rssi_agc_word_set_start(&calib_srssi_agc_word, buf->start[0] & 0x3fu);
+    silent_rssi_agc_word_set_param4(&calib_srssi_agc_word, silent_rssi_agc_param_const_4(eng, act) & 0xfu);
+    silent_rssi_agc_word_set_param2(&calib_srssi_agc_word, silent_rssi_agc_param_const_2(eng, act) & 0xfu);
     lmac_if_post_cmd(buf, 0x11, 0x20, 0);
 }
 
@@ -2692,9 +2692,9 @@ void calib_silent_rssi_sparrow_set_agc_start_val(struct calib_silent_rssi *obj, 
         v = val;
     }
     fw_log_emit2(0x26, 0x10094dc, val, v);
-    obj->agc_gain_arr = hwd_phy_uses_rgf_883100(obj->agc_start_b, obj->delta[0], obj->delta[1],
+    obj->agc_gain_arr = hwd_phy_pack_agc_gain_arr(obj->agc_start_b, obj->delta[0], obj->delta[1],
                                              obj->delta[2], obj->delta[3]);
-    obj->agc_gain_arr_mode = hwd_phy_uses_rgf_883100(obj->agc_start_mode_b, obj->delta[0], obj->delta[1],
+    obj->agc_gain_arr_mode = hwd_phy_pack_agc_gain_arr(obj->agc_start_mode_b, obj->delta[0], obj->delta[1],
                                              obj->delta[2], obj->delta[3]);
     silent_rssi_set_agc_search_window(obj->agc_start, obj->agc_gain_arr);
     silent_rssi_report_agc_tables();
@@ -2709,26 +2709,26 @@ static void calib_bf_set_word(u32 *p, u32 v, u32 lo, u32 w)
 }
 
 /* silent_rssi__bits_set32_s0_w6 (0x8ed388): *p биты 0..5 = v. */
-void silent_rssi_bits_set32_s0_w6(u32 *p, u32 v)
+void silent_rssi_agc_word_set_start(u32 *p, u32 v)
 {
     calib_bf_set_word(p, v, 0, 6);
 }
 
 /* silent_rssi__bits_set32_s12_w4 (0x8ed3ac): *p биты 12..15 = v. */
-void silent_rssi_bits_set32_s12_w4(u32 *p, u32 v)
+void silent_rssi_agc_word_set_param4(u32 *p, u32 v)
 {
     calib_bf_set_word(p, v, 12, 4);
 }
 
 /* bits__set32_s16_w4 (0x8ed3f4): *p биты 16..19 = v. Имя с _ptr: в macq.c уже есть
  * bits_set32_s16_w4 с другой (возвращающей) сигнатурой. */
-void bits_set32_s16_w4_ptr(u32 *p, u32 v)
+void silent_rssi_agc_word_set_param2(u32 *p, u32 v)
 {
     calib_bf_set_word(p, v, 16, 4);
 }
 
 /* calib__bits_set32_s20_w12 (0x8ed430): *p биты 20..31 = v. */
-void calib_bits_set32_s20_w12(u32 *p, u32 v)
+void calib_mask_set_mode(u32 *p, u32 v)
 {
     calib_bf_set_word(p, v, 20, 12);
 }
@@ -2736,13 +2736,13 @@ void calib_bits_set32_s20_w12(u32 *p, u32 v)
 /* 0x804adc: копия таблицы усилений RF со сдвигом (16 записей; в образе нули). */
 FWDATA(804adc) struct rf_reg_pair calib_rf_gain_tbl[16] = { { 0 } };
 
-/* update_rf_xx_gains_tables (0x8ed9cc): если RF-усиление модуля idx не изменилось
+/* update_rf_gain_tables (0x8ed9cc): если RF-усиление модуля idx не изменилось
  * и счётчик obj->tbl_rewrite = 0 — только переписать строку rf_obj.gain_tbl[15]. Иначе:
  * копия таблицы усилений rf_obj.gain_tbl (16 записей по 8 Б) в calib_rf_gain_tbl со сдвигом
  * на (*a - 2) (края заполняются крайним значением), запись 16 строк в RF, затем двух
  * строк второго усиления (*b) из rf_obj.gain2_tbl; запомнить *a и *b в объекте и
  * перевести их в «нормальные» 2/4. */
-void update_rf_xx_gains_tables(struct calib_silent_rssi *obj, u32 idx, u8 *a, u8 *b)
+void update_rf_gain_tables(struct calib_silent_rssi *obj, u32 idx, u8 *a, u8 *b)
 {
     struct rf_reg_pair buf[2];
 
@@ -2953,22 +2953,22 @@ u32 calib_sar_main(struct calib_obj *obj, u32 mask, u32 a2, u32 a3,
 u32 calib_lo_power_main(struct calib_obj *obj, u32 mask, u32 a2, u32 a3,
                                          struct calib_est *a4)
 {
-    u32 state = lo_power_calib_get_state_obj();      /* [gp+209] */
-    u32 param = lo_power_calib_get_param_d0();       /* [gp+208] */
+    u32 state = lo_power_calib_get_stg2_bias();      /* [gp+209] */
+    u32 param = lo_power_calib_get_gc_ctrl();       /* [gp+208] */
     u32 mode = ((struct calib_lo_power *)obj)->mode;
     u32 tidx;
     void *tbl;
 
     (void)mask; (void)a2; (void)a3; (void)a4;
     if (mode == 0) {
-        tidx = lo_power_calib_get_table_idx();
+        tidx = lo_power_calib_get_xif_gc();
         if (tidx == 0 && state == 0xe)
-            tbl = calib_results_addr_800a34();
+            tbl = calib_lo_power_get_rfc_saved();
         else
-            tbl = calib_results_addr_800a28();
+            tbl = calib_lo_power_get_rfc_packed();
     } else if (mode == 1) {
-        tidx = calib_lo_power_tidx_map[lo_power_calib_get_table_idx()];
-        tbl = calib_results_addr_800a28();
+        tidx = calib_lo_power_tidx_map[lo_power_calib_get_xif_gc()];
+        tbl = calib_lo_power_get_rfc_packed();
     } else {
         fw_log_emit1(6, 0x100a2f0, mode);
         fw_sysassert_fatal((void *)__builtin_return_address(0), 0x142c);
@@ -3046,8 +3046,8 @@ u32 calib_vga_main(struct calib_obj *obj, u32 mask, u32 a2, u32 a3,
     (void)obj; (void)a4;
     if ((mask & 0xfff00000u) == 0) {
         u32 idx = 0x1e, n;
-        Calib_Measure_VGA_Gains();
-        calib_setup_loopback_hw_b(0, 0, 0, 1, calib_vga_dc_shift);
+        calib_measure_vga_gains();
+        calib_setup_loopback_hw_corr(0, 0, 0, 1, calib_vga_dc_shift);
         r = calib_vga_gain_step(1, 0x3f);
         for (n = 0xb; n != 0; n--, idx = (u8)(idx + 1)) {
             hwd_abif_rx_table_index_force_mode(0, 0);
@@ -3055,11 +3055,11 @@ u32 calib_vga_main(struct calib_obj *obj, u32 mask, u32 a2, u32 a3,
             calib_lo_power_measure(0xff, 0xd, (calib_vga_pt_t *)buf);   /* результат не читается */
         }
     } else if (mode == 0xdc) {
-        calib_setup_loopback_hw_b(0, 0, 0, 1, calib_vga_dc_shift);
+        calib_setup_loopback_hw_corr(0, 0, 0, 1, calib_vga_dc_shift);
         r = calib_vga_gain_step(1, 0x3f);
     } else if (mode == 1) {
         u32 hi, lo, span, per, cnt;
-        calib_setup_loopback_hw_b(0, 0, 0, 1, calib_vga_dc_shift);
+        calib_setup_loopback_hw_corr(0, 0, 0, 1, calib_vga_dc_shift);
         hi = calib_vga_dc_win_hi;
         lo = calib_vga_dc_win_lo;
         span = (u8)(hi - lo + 1);
@@ -3112,7 +3112,7 @@ u32 calib_silent_rssi_main(struct calib_obj *o, u32 mask, u32 a2, u32 a3,
     }
     t0 = u_schd_now();
     if ((mask & 0xfff00000u) == 0) {
-        rf = rf_cfg_get_rf_mask_45e(&rf_obj);
+        rf = rf_obj_get_rf_mask(&rf_obj);
         cnt = 0;
         for (t = rf; t != 0; t &= t - 1)
             cnt = (u16)(cnt + 1);
@@ -3120,7 +3120,7 @@ u32 calib_silent_rssi_main(struct calib_obj *o, u32 mask, u32 a2, u32 a3,
         if (obj->calib_count == 0) {
             req.rfca = 0;
             hwd_abif_dvs_rfca_cmd_enable(rf, &req.rfca);
-            calib_silent_rssi_flag_step(0, 0x7f, 0, 0);
+            calib_silent_rssi_clear_rf_regs_seq(0, 0x7f, 0, 0);
             hwd_abif_dvs_rfca_cmd_enable(req.rfca, 0);
             rq = &req.est;
         }
@@ -3141,9 +3141,9 @@ u32 calib_silent_rssi_main(struct calib_obj *o, u32 mask, u32 a2, u32 a3,
 void calib_sar_pre(struct calib_obj *obj, u32 mask)
 {
     (void)obj; (void)mask;
-    calib_setup_loopback_hw_b(1, 1, 1, 1, 0xa);
+    calib_setup_loopback_hw_corr(1, 1, 1, 1, 0xa);
     (void)hwf_dc_calib_fix_dac1(0x3f, 0x3f, 1);
-    calib_log_if_nonzero(1, 1);
+    calib_release_hw_if_flag(1, 1);
     hwd_abif_sar_dc_config_rgf_mode(1);
     calib_setup_loopback_hw(1, 1, 1, 1, calib_sar_idx);
 }
@@ -3165,7 +3165,7 @@ void calib_lo_leakage_pre(struct calib_obj *obj, u32 mask)
     hwd_abif_caf_lpbk_mode(0);
     hwm_calib_set_loopback_mode(0);
     hwd_phy_self_mode_exit();
-    ut_hw_modes_step(1, 0x1c, 0x3f);
+    ut_hw_modes_set_analog_loopback(1, 0x1c, 0x3f);
     hwd_abif_tx_table_config_lo_leak_gain(0x1c, 0, 0);
     hwd_abif_tx_table_config_lo_leak_gain(0x1c, 1, 0);
     hwd_phy_self_tx_mode_entry();
@@ -3218,7 +3218,7 @@ void calib_silent_rssi_pre(struct calib_obj *obj, u32 mask)
 void calib_sar_post(struct calib_obj *obj, u32 mask)
 {
     (void)obj; (void)mask;
-    calib_sar_enable_path(1, 1);
+    calib_sar_disable_and_release(1, 1);
 }
 
 /* calib_lo_power_post (0x8c7c74): [vt 0x800694 + 0x20] — пусто. */
@@ -3232,7 +3232,7 @@ void calib_lo_power_post(struct calib_obj *obj, u32 mask)
 void calib_lo_leakage_post(struct calib_obj *obj, u32 mask)
 {
     (void)obj; (void)mask;
-    ut_hw_modes_step(0, 0, 0);
+    ut_hw_modes_set_analog_loopback(0, 0, 0);
     hwd_phy_tx_singen_transmit(0);
     hwf_calib_release_hw();
 }
@@ -3364,7 +3364,7 @@ void calib_lo_leakage_sweep(struct calib_obj *obj, u32 *out_x, u32 *out_y, const
     for (i = 0; steps[i * 2] != 0; i++) {
         calib_lo_leakage_prepare_ctx(ctx, (s32)xy[0], (s32)xy[1], (s32)steps[i * 2],
                                      (s32)steps[i * 2 + 1], (s32)steps[i * 2 + 1]);
-        hwf_set_agc_index_1c(obj, xy[0], xy[1]);
+        hwf_set_lo_leak_ctrl(obj, xy[0], xy[1]);
         calib_lo_leakage_substep(obj, dc);
         calib_lo_leakage_step(obj, dc);
         calib_nop_delay(800);
@@ -3383,7 +3383,7 @@ void calib_lo_leakage_sweep(struct calib_obj *obj, u32 *out_x, u32 *out_y, const
 
 /* hwf__set_agc_index_1c (0x8e67a4): LO-leak ctrl строки TX 0x1c: поле 1 = y, поле 0 = x
  * (младшие байты), затем перезапуск CAF-петли. */
-void hwf_set_agc_index_1c(struct calib_obj *obj, u32 x, u32 y)
+void hwf_set_lo_leak_ctrl(struct calib_obj *obj, u32 x, u32 y)
 {
     (void)obj;
     hwd_abif_tx_table_config_lo_leak_ctrl(0x1c, 1, (u8)y);
@@ -3424,7 +3424,7 @@ void ber_test_measure(struct calib_obj *obj, u32 *ctx, u32 *best_xy, u32 *best_m
     while (ber_test_accumulate_counters(ctx) != 0) {
         u32 m;
         ber_test_copy_counters(xy, ctx);
-        hwf_set_agc_index_1c(obj, xy[0], xy[1]);
+        hwf_set_lo_leak_ctrl(obj, xy[0], xy[1]);
         hwd_phy_rx_cal_corr((s32 *)res);
         m = approx_magnitude_b(obj, res[0], res[1]);
         if (hi > 0 || (hi == 0 && mag > m)) {
@@ -3468,31 +3468,31 @@ void hwf_calib_all(void)
             calib_all_lo_power_reset_done = 1;
         } else {
             sp0 = 0;
-            calib_bits_set32_s20_w12(&sp0, 0);
+            calib_mask_set_mode(&sp0, 0);
             calib_silent_rssi_sparrow_correction_alg(&calib_all_lo_power_obj.base, sp0, 1, 1, 0);
         }
     }
     fw_log_emit0(0x26, 0x101c640);
-    calib_setup_loopback_hw_b(1, 1, 1, 1, 0xa);
+    calib_setup_loopback_hw_corr(1, 1, 1, 1, 0xa);
     (void)hwf_dc_calib_fix_dac1(0x3f, 0x3f, 1);
-    calib_log_if_nonzero(1, 1);          /* vendor: r0=1 затирает результат до mov_s r1,r0 */
+    calib_release_hw_if_flag(1, 1);          /* vendor: r0=1 затирает результат до mov_s r1,r0 */
     fw_log_emit0(0x26, 0x101c674);
     calib_setup_loopback_hw(1, 1, 1, 1, 0xd);
     (void)hwf_calib_sar_alg(calib_sar_skip_step2, calib_sar_thr, calib_sar_idx);
-    calib_sar_enable_path(1, 1);         /* то же: r1 = r0 = 1 */
+    calib_sar_disable_and_release(1, 1);         /* то же: r1 = r0 = 1 */
     fw_log_emit0(0x26, 0x101c6a8);
     calib_setup_loopback_rx_path();
-    Calib_Measure_VGA_Gains();
+    calib_measure_vga_gains();
     calib_release_hw_thunk();
     fw_log_emit0(0x26, 0x101c6dc);
-    calib_setup_loopback_hw_b(1, 1, 1, 1, 0xa);
+    calib_setup_loopback_hw_corr(1, 1, 1, 1, 0xa);
     (void)calib_vga_gain_step(1, 0x3f);
     for (idx = 0x1e, n = 0xb; n != 0; n--, idx = (u8)(idx + 1)) {
         hwd_abif_rx_table_index_force_mode(0, 0);
         hwd_abif_rx_table_index_force_mode(1, idx);
         calib_lo_power_measure(0xff, 0xd, (calib_vga_pt_t *)buf);   /* результат не читается */
     }
-    calib_log_if_nonzero(1, 1);
+    calib_release_hw_if_flag(1, 1);
     fw_log_emit0(0x26, 0x101c710);
     calib_corr_estimate_and_apply_rx_gain();
     (void)if_gain(0);
@@ -3500,12 +3500,12 @@ void hwf_calib_all(void)
     if (calib_all_silent_rssi_en == 1) {
         fw_log_emit0(0x26, 0x101c744);
         sp0 = 0;
-        calib_bits_set32_s20_w12(&sp0, 0);
-        mask = rf_cfg_get_rf_mask_45e(&rf_obj);
+        calib_mask_set_mode(&sp0, 0);
+        mask = rf_obj_get_rf_mask(&rf_obj);
         calib_req_fill(&req, 0, 3, mask, 0xffffffffu);   /* r4 = r2 - 4 в слоте */
         if (rf_obj.sets_mode != 0) {
             struct calib_silent_rssi *obj;
-            obj = calib_obj4_reset_d4();   /* объект движка 4 (r0) */
+            obj = calib_silent_rssi_reset();   /* объект движка 4 (r0) */
             for (cnt = 0; mask != 0; mask &= mask - 1)
                 cnt = (u16)(cnt + 1);
             calib_silent_rssi_sparrow_correction_alg(&obj->base, sp0, 1, cnt, &req);
@@ -3530,10 +3530,10 @@ void calib_obj_reset_results(struct calib_obj *o)
         obj->rf_state[i] = 0;
     obj->bb_state = 0;
     obj->mode = 0;
-    rfc_read_field_484(rf_obj.rf_idx, calib_results_addr_800a34());
+    rfc_read_lo_power_fields(rf_obj.rf_idx, calib_lo_power_get_rfc_saved());
     {
-        const u32 *src = calib_results_addr_800a34();
-        u32 *dst = calib_results_addr_800a28();
+        const u32 *src = calib_lo_power_get_rfc_saved();
+        u32 *dst = calib_lo_power_get_rfc_packed();
         rfc_pack_field_value(rf_obj.rf_idx, src, dst, 0xc, 0xc, 0xc);
     }
     o->vt->main(o, 0, 0, 0, 0);

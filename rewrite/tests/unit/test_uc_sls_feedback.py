@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Обратная связь SLS против 802.11-2020: SSW-Feedback (9.3.1.16) и SSW-Ack (9.3.1.17) с полями SSW Feedback (9.5.3,
 рис. 9-849), BRP Request (9.5.4), Beamformed Link Maintenance (9.5.6); SSW-Feedback AP в A-BFT (10.42.5.2); разбор
-принятых SSW (9.5.1) и выбор лучшего сектора — цепочкой «измерение PHY → rx_funcs_handle_ppdu_report →
+принятых SSW (9.5.1) и выбор лучшего сектора — цепочкой «измерение PHY → rx_handle_ppdu_report →
 txss_rank_best_sector → кадр обратной связи» (10.42.2.2–10.42.2.5).
 
 Кадр — из FIFO direct-TX (FC, Duration, RA и хвост с поля SSW Feedback; TA вставляет MAC), Duration — команда 0x15
@@ -21,11 +21,11 @@ SLS_MEAS = A['sls_meas']
 FWSH_SLS_RANK = 0x857c1c                   # fwsh_sls_rank[sta] — 5 × sector_rec (12 Б), лучший первым
 TXRX_STATE1, TXRX_STATE2 = A['txrx_state1'], A['txrx_state2']
 HW_PHY_RX_SIGNAL_GAIN_ADC_DB, HW_PHY_RX_SNR_883AEC = 0x883830, 0x883aec
-SCRATCH = 0x803000                         # struct sls_peer_rec для direct_tx_step (свободная DCCM)
+SCRATCH = 0x803000                         # struct sls_peer_rec для direct_tx_ssw_feedback (свободная DCCM)
 
 TX_STUBS = {n: 0 for n in ('mac_evt_enable_bit_sync_b', 'mac_set_rf_chain_state_with_sta_sector', 'uc_spin_until_event',
                            'mac_program_rx_window')}
-RX_STUBS = {'uc_wait_event_busy': 0, 'rx_end_switch_to_tx': 0, 'rx_funcs_record_level_8020f8_8020fc': 0,
+RX_STUBS = {'uc_wait_event_busy': 0, 'rx_end_switch_to_tx': 0, 'bf_rep_record_snr_level': 0,
             'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0, 'ucode_pm_set_busy_flag': 0}
 
 
@@ -182,7 +182,7 @@ def test_abft_ssw_feedback_frame(uc):
     uc.w8(rec + 0x09, 61)                          # rx_sector
     uc.w8(rec + 0x0b, 5)                           # fb_sector — сектор окна приёма
     uc.wbytes(rec + 0x12, PEER)
-    uc.call('direct_tx_step', rec, stub=TX_STUBS)
+    uc.call('direct_tx_ssw_feedback', rec, stub=TX_STUBS)
     fr = tx_frames(uc)
     assert len(fr) == 1
     f = decode_fb_frame(fr[0])
@@ -206,9 +206,9 @@ def receive_sweep(uc, sta, frames, initiator):
     """frames: [(sector, antenna, adc_db, snr_db, fb_sector, fb_antenna)] в порядке приёма, CDOWN n−1 … 0.
     Инициатор принимает RSS (txrx_state1 б5, Direction 1), ответчик — ISS (б6, Direction 0); фаза — 0x200000.
     На кадр: измерение PHY (rx_flow_measure_snr_select_best: усиление ADC → snr_lin, 883aec → SNR дБ), разбор
-    (rx_funcs_handle_ppdu_report), по флагу кадра — txss_rank_best_sector (как txss_init_wait_rss /
+    (rx_handle_ppdu_report), по флагу кадра — txss_rank_best_sector (как txss_init_wait_rss /
     txss_resp_wait_iss_end). Возврат — вызовы sta_set_tx_sector (сектор, выбранный пиром для нас)."""
-    uc.call('g_80212c_reset')
+    uc.call('sls_reset_sweep_results')
     uc.wbytes(SLS_PEER_MAC, PEER)
     uc.w8(A['bf_ctrl'], 8)                        # bf_ctrl.snr_samples
     uc.w32(TXRX_STATE1, 0x20 if initiator else 0x40)
@@ -228,7 +228,7 @@ def receive_sweep(uc, sta, frames, initiator):
                        39: (1 << 15) if cd == 0 else 0})
         uc.call('rx_flow_measure_snr_select_best')
         uc.calls.clear()
-        uc.call('rx_funcs_handle_ppdu_report', stub=RX_STUBS)
+        uc.call('rx_handle_ppdu_report', stub=RX_STUBS)
         applied += [c[1][:3] for c in uc.calls if c[0] == 'sta_set_tx_sector']
         fl = uc.r32(SLS_RX)
         if fl & 1:
@@ -305,7 +305,7 @@ def test_wrong_direction_frames_ignored(uc, initiator):
     uc.w32(HW_PHY_RX_SIGNAL_GAIN_ADC_DB, 60)
     uc.w32(HW_PHY_RX_SNR_883AEC, (4 * 45) << 9)
     uc.call('rx_flow_measure_snr_select_best')
-    uc.call('rx_funcs_handle_ppdu_report', stub=RX_STUBS)
+    uc.call('rx_handle_ppdu_report', stub=RX_STUBS)
     assert not (uc.r32(SLS_RX) & 1)
     assert uc.rbytes(SLS, 12) == best_before
     assert uc.r8(SLS) == 20
@@ -325,7 +325,7 @@ def test_ssw_field_parse(uc, sector, cdown):
     uc.w32(HW_PHY_RX_SNR_883AEC, (4 * 20) << 9)
     uc.ext.update({42: 0, 49: 0, 36: 1 << 6, 37: 1 << 24, 38: (1 << 11), 39: (1 << 15) if cdown == 0 else 0})
     uc.call('rx_flow_measure_snr_select_best')
-    uc.call('rx_funcs_handle_ppdu_report', stub=RX_STUBS)
+    uc.call('rx_handle_ppdu_report', stub=RX_STUBS)
     assert uc.r32(SLS_RX) & 1
     assert (uc.r8(SLS_MEAS), uc.r8(SLS_MEAS + 1)) == (sector, 3)
     assert (uc.r8(SLS), uc.r8(SLS + 1)) == (sector, 3)

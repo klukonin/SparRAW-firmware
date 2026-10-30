@@ -49,11 +49,11 @@ static void rf_sector_commit(u32 rf, u32 sector, u32 tx, s32 commit, u32 tok_tx,
         return;
     if (tx != 0) {
         rf_sector_commit_tx(rf, sector);
-        ut_hw_drivers_cmd_0x508(rf, sector, (u32)commit);
+        ut_hw_drivers_cmd_tx_sector_gain_index(rf, sector, (u32)commit);
         fw_log_emit1(0x20, tok_tx, sector);
     } else {
         rf_sector_commit_rx(rf, sector);
-        ut_hw_drivers_cmd_0x507(rf, sector, (u32)commit);
+        rfc_core_fw_commit_rx_sector(rf, sector, (u32)commit);
         fw_log_emit1(0x20, tok_rx, sector);
     }
 }
@@ -154,7 +154,7 @@ void hwd_rfc_sector_x16_state_set(u32 rf, u32 sector, u32 tx, u32 idx, u32 val, 
 /* ===================== Модули RF ===================== */
 
 /* rfc__probe_modules (0x8d3fb4, 90 Б): для каждого из 8 RF-модулей, который подключён и
- * есть в mask: сделать активным, импульс бита 15 RFC 0x3e0 (rfc_read_or_dead — vendor
+ * есть в mask: сделать активным, импульс бита 15 RFC 0x3e0 (rfc_pulse_probe_bit — vendor
  * передаёт RF-объект в r0, функция его не читает), обнулить счётчик команд модуля
  * [0x8019cc + 4i]; *out — маска пройденных модулей. */
 void rfc_probe_modules(u32 mask, u8 *out)
@@ -167,7 +167,7 @@ void rfc_probe_modules(u32 mask, u8 *out)
         u32 m = (u8)(1u << i);
         if ((conn & mask) & m) {
             hwm_analog_select_active_rf_module(m);
-            rfc_read_or_dead();
+            rfc_pulse_probe_bit();
             rfc_cmd_count[i] = 0;
             *out = (u8)(*out | m);
         }
@@ -205,7 +205,7 @@ void hwf_rf_config(u32 ch)
 /* hwm_analog_select_active_rf_module (0x8d7584, 358 Б): сделать активными ровно модули
  * mask (из подключённых). Неподключённый mask — журнал 0x101d0a4 и выход; mask уже
  * активен — 0x101d12c. По каждому из 8 модулей m: неподключён и в mask — журнал 0x101d22c;
- * был активен и не в mask — выключение (rfca_cmd_enable(m), hwd_setup_pair(0) = RFC deep
+ * был активен и не в mask — выключение (rfca_cmd_enable(m), hwd_rfc_powerdown_deep(0) = RFC deep
  * power-down, сплиттеры/активация по новой маске, rfca_cmd_enable(новая маска)); не был
  * активен и в mask — включение (сплиттеры/активация по новой маске, rfca_cmd_enable(m),
  * восстановление TX/RX наборов RFC, поле 0x434 = 0x2ec33). В конце новая маска →
@@ -220,7 +220,7 @@ void hwm_analog_select_active_rf_module(u32 mask)
         fw_log_emit2(0, 0x101d0a4, mask, conn);
         return;
     }
-    act = rf_cfg_get_rf_mask_45e(&rf_obj);
+    act = rf_obj_get_rf_mask(&rf_obj);
     if (act == mask) {
         fw_log_emit2(0x20, 0x101d12c, mask, act);
         return;
@@ -238,7 +238,7 @@ void hwm_analog_select_active_rf_module(u32 mask)
         }
         if ((act & m) && !want) {
             hwd_abif_dvs_rfca_cmd_enable(m, 0);
-            hwd_setup_pair(0, 0);       /* r1 vendor — мусор после вызова; функция его не читает */
+            hwd_rfc_powerdown_deep(0, 0);       /* r1 vendor — мусор после вызова; функция его не читает */
             cur = (u8)(cur & ~m);
             hwd_abif_dvs_if_splitter_enable(cur);
             hwd_abif_dvs_lo_splitter_enable(cur);
@@ -258,7 +258,7 @@ void hwm_analog_select_active_rf_module(u32 mask)
             fw_log_emit2(0x20, 0x101d2f0, i, cur);
         }
     }
-    field_set_0x00_8e6f2c(&rf_obj, cur);
+    rf_obj_set_active_rf_mask(&rf_obj, cur);
     hwm_analog_save_rfc_enabled(&rf_obj, cur);
     fw_log_emit3(0x20, 0x101d344, cur, conn, mask);
     fw_log_emit2(0x20, 0x101d3c0, n_on, n_off);
@@ -275,10 +275,10 @@ void hwf_sector_rf_chain_get(u32 rf, u32 sector, u32 tx, u32 chain, u8 *out)
     u32 g;
 
     out[1] = hwd_rfc_read_sector_chain(rf, sector, tx, chain);
-    out[0] = (u8)ut_hw_drivers_cmd_0x50f(rf, sector, tx, (s32)chain);
+    out[0] = (u8)hwd_rfc_sector_edge_phase_get(rf, sector, tx, (s32)chain);
     g = (u8)((s32)chain >> 2);
     out[2] = (u8)hwd_rfc_read_sector_reg(rf, sector, tx, g);
-    out[3] = ut_hw_drivers_cmd_0x513(rf, sector, tx, (u32)((s32)g >> 2));
+    out[3] = hwd_rfc_sector_x16_state_get(rf, sector, tx, (u32)((s32)g >> 2));
     fw_log_emit3(0x20, 0x101b520, sector, tx, chain);
     fw_log_emit3(0x20, 0x101b570, out[1], out[0], out[2]);
     fw_log_emit1(0x20, 0x101b5c0, out[3]);
@@ -341,10 +341,10 @@ void hwf_sector_rf_chain_set(u32 rf, u32 sector, u32 tx, u32 chain, u32 edge_gai
         return;
     if (tx != 0) {
         rf_sector_commit_tx(rf, sector);
-        ut_hw_drivers_cmd_0x508(rf, sector, (u32)commit);
+        ut_hw_drivers_cmd_tx_sector_gain_index(rf, sector, (u32)commit);
     } else {
         rf_sector_commit_rx(rf, sector);
-        ut_hw_drivers_cmd_0x507(rf, sector, (u32)commit);
+        rfc_core_fw_commit_rx_sector(rf, sector, (u32)commit);
     }
     fw_log_emit1(0x20, 0x101b4c0, sector);
 }
@@ -379,7 +379,7 @@ u32 hw_sysapi_rfc_fetch_rgf_util(struct rfc_rgf_req *o)
         fw_log_emit0(5, 0x101abc0);
         return 2;
     }
-    field_set_0x00_8e5dfc(&it, (u8)mask);
+    bit_iter_init(&it, (u8)mask);
     while ((bit = bitmap_alloc_bit(&it)) != 0xffffffffu) {
         hwd_abif_dvs_rfca_cmd_enable((u8)(1u << bit), 0);
         bit = (u8)bit;
@@ -440,7 +440,7 @@ static void hw_sysapi_rfc_radio_locked_cb(struct rm_req *radio, u32 obj)
         len = 0x64;
     }
     wmi_evt_send_words(o->host_if, resp, (u16)len);
-    radio_mgr_call_method_10(radio);
+    radio_mgr_lock_free(radio);
     rf_sysapi_rfc_req = 0;
     fw_log_emit0(0x25, 0x101ad70);
 }
@@ -453,7 +453,7 @@ u32 hw_sysapi_rfc_read_write_rgf(struct rfc_rgf_req *obj)
 {
     u32 h;
 
-    (void)rf_cfg_get_rf_mask_45e(&rf_obj);
+    (void)rf_obj_get_rf_mask(&rf_obj);
     fw_log_emit1(0x20, 0x101a5f8, obj->rf_mask);
     if (rf_sysapi_rfc_req != 0) {
         fw_log_emit0(0x15, 0x101a69c);
@@ -471,25 +471,3 @@ u32 hw_sysapi_rfc_read_write_rgf(struct rfc_rgf_req *obj)
 
 /* ===================== rf_chain: дескрипторы MACQ ===================== */
 
-/* rf_chain__zero_and_program (0x8ea398, 30 Б): обнулённый 16-байтный дескриптор →
- * macq_desc__write_type6(desc, v). */
-void rf_chain_zero_and_program(u32 v)
-{
-    u32 d[4];
-
-    memset0_words(d, 0x10);
-    macq_desc_write_type6(d, v);
-}
-
-/* rf_chain__bits_set32_s22_w2 (0x8ed448, 12 Б): *p биты 22..23 = v (bf__set_field_word_fw
- * 0x8edcb8, r10 = 22, r11 = 1 → ширина 2). */
-void rf_chain_bits_set32_s22_w2(u32 *p, u32 v)
-{
-    *p = bf_put(*p, 22, 2, v);
-}
-
-/* rf_chain__bits_set32_s29_w2 (0x8ed4b4, 12 Б): *p биты 29..30 = v (r10 = 0x1d, r11 = 1). */
-void rf_chain_bits_set32_s29_w2(u32 *p, u32 v)
-{
-    *p = bf_put(*p, 29, 2, v);
-}

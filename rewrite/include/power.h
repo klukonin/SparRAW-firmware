@@ -14,7 +14,7 @@
 #define PWR_OFF(t, f, o) _Static_assert(__builtin_offsetof(t, f) == (o), #t "." #f)
 
 
-/* Режимы hw_modes PS-контекста (ut_hw_modes_cmd_0x308): flags — биты 0 PHY, 1 режим
+/* Режимы hw_modes PS-контекста (hw_modes_apply_power_state): flags — биты 0 PHY, 1 режим
  * питания (power_mode), 2 PCIe low power, 3 apply_flags (hwm_apply_mode_flags). */
 struct ps_hw_modes {
     u32 flags;                                 /* 0x00 */

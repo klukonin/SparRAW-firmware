@@ -8,7 +8,7 @@
 
 /* dpal__cpl_timeout_evt (0x8c9680): таймаут завершения — первое событие записывается,
  * повторное с другим значением → assert. */
-__attribute__((section(".textlate"))) void dpal_cpl_timeout_evt(u32 v)
+__attribute__((section(".textlate"))) void hwd_dma_set_ring_select(u32 v)
 {
     if (dpal_cpl_timeout_seen != 1) {
         MMIO32(HW_DMA_RING_SELECT) = v;
@@ -22,7 +22,7 @@ __attribute__((section(".textlate"))) void dpal_cpl_timeout_evt(u32 v)
 }
 
 /* vring__reg_write_locked_20 (0x8d0508, 48 Б). */
-__attribute__((section(".textlate"))) void vring_reg_write_locked_20(u32 val, u32 do_sync)
+__attribute__((section(".textlate"))) void vring_fw_ring_unmask_irq(u32 val, u32 do_sync)
 {
     u32 s = arc_irq_disable();
     MMIO32(HW_DMA_FW_ICR_C08_IMC) = val;
@@ -35,13 +35,13 @@ __attribute__((section(".textlate"))) void hwd_dma_set_ring_base(u32 idx, u32 a1
 {
     u32 off = idx * 896u;
     MMIO32(((off + 0x4409940u) >> 3) & ~3u) = a1;
-    if (a5 != 0) dpal_cpl_timeout_evt(a2);
+    if (a5 != 0) hwd_dma_set_ring_select(a2);
     MMIO32(((off + 0x4409720u) >> 3) & ~3u) = a3;
     MMIO32(((off + 0x4409740u) >> 3) & ~3u) = a4;
 }
 
 /* hwd_dma__set_ring_field_99e0 (0x8d0a80, 88 Б): 16-бит поле. */
-__attribute__((section(".textlate"))) void hwd_dma_set_ring_field_99e0(u32 idx, u32 value)
+__attribute__((section(".textlate"))) void hwd_dma_set_ring_host_thrsh(u32 idx, u32 value)
 {
     u32 bit, word_addr, word, mask;
     if (value & 0xffff0000u) fw_sysassert_fatal(0, 0xac);
@@ -64,7 +64,7 @@ __attribute__((section(".textlate"))) void hwd_dma_set_ring_field_9a10(u32 idx, 
 }
 
 /* hwd_dma__uses_rgf_881000 (0x8d0ba4, 92 Б). */
-__attribute__((section(".textlate"))) void hwd_dma_uses_rgf_881000(u32 a0, u32 a1, u32 a2)
+__attribute__((section(".textlate"))) void hwd_dma_set_ring_max_payload(u32 a0, u32 a1, u32 a2)
 {
     u32 bitoff, p, addr, mask, word;
     MMIO32(HW_DMA_RING_SEL_102C) = a1;
@@ -80,7 +80,7 @@ __attribute__((section(".textlate"))) void hwd_dma_uses_rgf_881000(u32 a0, u32 a
 }
 
 /* field_set_0x00__8d0a44 (0x8d0a44, 60 Б). */
-__attribute__((section(".textlate"))) void field_set_0x00_8d0a44(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6)
+__attribute__((section(".textlate"))) void hwd_dma_set_ring_cfg_flags(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6)
 {
     u32 value = (a1 << 1) | (a2 << 2) | (a3 << 3) | (a6 << 4) | (a4 << 5) | (a5 << 6);
     MMIO32((a0 * 896u + 0x44096e0u) >> 3) = value;
@@ -88,7 +88,7 @@ __attribute__((section(".textlate"))) void field_set_0x00_8d0a44(u32 a0, u32 a1,
 }
 
 /* macq_hw__set_low_nibble (0x8d0708, 36 Б): включить кольцо (low nibble = 0xf). */
-__attribute__((section(".textlate"))) void macq_hw_set_low_nibble(u32 idx)
+__attribute__((section(".textlate"))) void hwd_dma_enable_ring(u32 idx)
 {
     u32 addr = (idx * 896u + 0x44096c0u) >> 3;
     MMIO32(addr) = MMIO32(addr & ~3u) | 0xFu;
@@ -103,7 +103,7 @@ __attribute__((section(".textlate"))) void hwd_dma_reset_ring(u32 idx)
 }
 
 /* 0x802c34: конфигурация DMA-колец по номеру кольца (9 × 4 Б): [0] — параметр hwd_dma_set_ring_base,
- * [1] и [3] — параметры field_set_0x00_8d0a44, [2] — режим (0 — с базой; 1 — без: ассерт 0x120b
+ * [1] и [3] — параметры hwd_dma_set_ring_cfg_flags, [2] — режим (0 — с базой; 1 — без: ассерт 0x120b
  * при [3] == 0 и 0x120c для кольца 3). */
 FWDATA(802c34) const u8 dma_ring_cfg[9][4] = {
     { 0x01, 0x00, 0x01, 0x01 },   /* кольцо 0 */
@@ -127,7 +127,7 @@ __attribute__((section(".textlate"))) void dma_mgr_configure_ring(u32 a, u32 b, 
     if (b2 == 1u && b3 == 0u) fw_sysassert_fatal(0, 0x120b);
     if (b2 == 1u && a == 3u)  fw_sysassert_fatal(0, 0x120c);
 
-    field_set_0x00_8d0a44(a, b0, b1, b2, b3, is7, is8);
+    hwd_dma_set_ring_cfg_flags(a, b0, b1, b2, b3, is7, is8);
 
     if (is7) {
         if (a & 0xfffffff0u) fw_sysassert_fatal(0, 0xac);
@@ -139,18 +139,18 @@ __attribute__((section(".textlate"))) void dma_mgr_configure_ring(u32 a, u32 b, 
         u32 last = ((a == 4u) || is7) ? (d - 1u) : 0u;
         hwd_dma_set_ring_base(a, b, c, d, last, b0);
         if (!is7) {
-            hwd_dma_set_ring_field_99e0(a, 1u);
+            hwd_dma_set_ring_host_thrsh(a, 1u);
             hwd_dma_set_ring_field_9a10(a, 1u);
         } else if (e != 0u) {
-            hwd_dma_set_ring_field_99e0(a, e);
+            hwd_dma_set_ring_host_thrsh(a, e);
         }
         if (h >= 3u && h < 0x1f28u)
-            hwd_dma_uses_rgf_881000(a, 1u, h);
-        macq_hw_set_low_nibble(a);
+            hwd_dma_set_ring_max_payload(a, 1u, h);
+        hwd_dma_enable_ring(a);
     }
 
     if ((u32)(a - 3u) <= 3u)
-        vring_reg_write_locked_20(1u << a, 0u);
+        vring_fw_ring_unmask_irq(1u << a, 0u);
 }
 
 /* rx_macq__bind_queue (0x8e42b8, 136 Б): привязать MACQ-очередь к кольцу + enable. */

@@ -77,7 +77,7 @@ static u32 tdma_dti_start_us(const struct mid *mid, u32 ese_len)
     return (bti_clk + abft_clk + DMG_MBIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US;
 }
 
-static void tdma_put_field(u8 *f, u32 id, u32 src, u32 dst, u32 start, u32 dur)
+static void tdma_fill_ese_alloc_field(u8 *f, u32 id, u32 src, u32 dst, u32 start, u32 dur)
 {
     for (u32 i = 0; i < ESE_FIELD_LEN; i++)
         f[i] = 0;
@@ -207,10 +207,10 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     ie[0] = EID_EXT_SCHED_IE;
     ie[1] = (u8)(ese_len - 2u);
     u32 t = t0;
-    tdma_put_field(&ie[2], 0, 0xff, 0xff, base + t, TDMA_COMMON_US);
+    tdma_fill_ese_alloc_field(&ie[2], 0, 0xff, 0xff, base + t, TDMA_COMMON_US);
     t += TDMA_COMMON_US + g;
     for (u32 i = 0; i < n; i++) {
-        tdma_put_field(&ie[2u + (i + 1u) * ESE_FIELD_LEN], i + 1u, aid[i], mid->aid, base + t, w);
+        tdma_fill_ese_alloc_field(&ie[2u + (i + 1u) * ESE_FIELD_LEN], i + 1u, aid[i], mid->aid, base + t, w);
         t += w + g;
     }
     ss->built = 1;                          /* CBAP Only = 0 */

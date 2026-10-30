@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Цепочка SLS → BRP (10.42.6.4): BRP Request пира в SSW-Feedback/SSW-Ack (9.3.1.16/17, поле 9.5.4) разбирается
-приёмом (rx_funcs_handle_ppdu_report), инициатор BRP строит контекст (brp_init_reset_ctx) и кадр (brp_init_tx_request).
+приёмом (rx_handle_ppdu_report), инициатор BRP строит контекст (brp_init_reset_ctx) и кадр (brp_init_tx_request).
 Проверяется итог в кадре, а не отдельные функции: так ловятся ошибки состояния между ними."""
 import pytest
 
@@ -16,7 +16,7 @@ STA_TAB = 0x801104
 PEER = bytes.fromhex('24181d243b0b')
 
 RX_STUBS = {'uc_wait_event_busy': 0, 'rx_parse_ssw_field': 0, 'rx_end_switch_to_tx': 0,
-            'rx_funcs_record_level_8020f8_8020fc': 0, 'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0}
+            'bf_rep_record_snr_level': 0, 'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0}
 
 
 def receive_feedback(uc, l_rx, tx_trn_req=0, mid_req=0, bc_req=0, phase=1 << 23):
@@ -26,7 +26,7 @@ def receive_feedback(uc, l_rx, tx_trn_req=0, mid_req=0, bc_req=0, phase=1 << 23)
     uc.wbytes(FB_BRP_REQ, [l_rx | tx_trn_req << 5 | mid_req << 6 | bc_req << 7, 0, 0, 0])
     uc.w32(TXRX_STATE2, phase)
     uc.ext.update({38: 0, 36: 1 << 6, 37: (1 << 25) if phase == 1 << 23 else (1 << 26), 39: 0})
-    uc.call('rx_funcs_handle_ppdu_report', stub=RX_STUBS)
+    uc.call('rx_handle_ppdu_report', stub=RX_STUBS)
     return uc.r8(BF_STA + 9), uc.r8(BF_STA + 0xa) & 1
 
 
@@ -82,5 +82,5 @@ def test_feedback_from_other_station_ignored(uc):
     uc.wbytes(FB_BRP_REQ, [16, 0, 0, 0])
     uc.w32(TXRX_STATE2, 1 << 23)
     uc.ext.update({38: 0, 36: 1 << 6, 37: 1 << 25, 39: 0})
-    uc.call('rx_funcs_handle_ppdu_report', stub=RX_STUBS)
+    uc.call('rx_handle_ppdu_report', stub=RX_STUBS)
     assert uc.r8(BF_STA + 9) == 7

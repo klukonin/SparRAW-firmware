@@ -53,7 +53,7 @@ static void mlme_release_radio(struct mlme_sm *sm)
         return;
     if (sm->radio_locked != 0) {
         fw_log_emit1(0x2c, 0x101159c, req);
-        radio_mgr_call_method_10(sm->rm_req);
+        radio_mgr_lock_free(sm->rm_req);
     } else {
         fw_log_emit1(0x2c, 0x10115c8, req);
         radio_mgr_remove_request(sm->rm_req);
@@ -96,7 +96,7 @@ static void pbss_disconnect_by_peer(struct mid *e, u32 reason, u32 protocol)
  * само соединение. */
 void disconnect_by_peer(u32 mid, struct conn *conn, u32 reason, u32 protocol)
 {
-    if (mid_state_is_2_or_3(mid) == 0)
+    if (mid_is_pcp_or_ap(mid) == 0)
         pbss_disconnect_by_peer(mid_list_by_mid_fw(mid), reason, protocol);
     fw_log_emit3(0x2b, 0x100d658, mid, reason, protocol);
     conn_disconnect(conn, reason, protocol);
@@ -167,7 +167,7 @@ void TX_API_post_tx_payload(u32 payload, u32 mid)
         fw_sysassert_fatal((void *)0, 0x11e9);
     len = TX_PKT_OF(payload)->len;
     fw_log_emit2(0x27, 0x10183f4, payload, (u32)__builtin_return_address(0));
-    low_sme_send_evt2sw((void *)payload, 0x1841, len, mid, 0, 1, 0);
+    host_if_send_event((void *)payload, 0x1841, len, mid, 0, 1, 0);
 }
 
 /* frame_builder: Assoc Request — фиксированные поля (0x8f4e9c, 34 Б): Capability Info
@@ -220,7 +220,7 @@ void mgmt_tx_build_assoc_req(u32 payload, u32 *out_len, struct mid *mid, struct 
     hexdump_words((void *)payload, fixed);
     hdr_fixed = (fixed + 0x18) & 0xffffu;
     dst += fixed;
-    internal = mid_get_bcon_additional_ies(mobj, 0);
+    internal = mid_get_app_ies_by_subtype(mobj, 0);
     ext = (conn->vs_version == 0) ? 1u : 0u;
     if (internal != 0 && ies_block_is_empty(internal) != 0) {
         fw_log_emit0(0x2d, 0x10139f4);
@@ -274,7 +274,7 @@ u32 mgmt_tx_assoc_resp_tlv(u8 *dst, struct mid_bss *mobj, u32 aid)
     n1 = ie_push_dmg_capabilities(dst, (u8 *)&mobj->dmg_cap, aid & 0xffu) & 0xffffu;
     fw_log_emit3(0x2d, 0x100fffc, 0x94, n1, aid);
     n = (n1 + n0) & 0xffffu;
-    n2 = ie_push_eid151_len10(dst + n1, mobj->blk_f8) & 0xffffu;
+    n2 = ie_push_dmg_operation(dst + n1, mobj->blk_f8) & 0xffffu;
     n = (n + n2) & 0xffffu;
     fw_log_emit2(0x2d, 0x1010018, 0xdd, n2);
     return n;
@@ -302,7 +302,7 @@ void mgmt_tx_build_assoc_resp(u32 payload, u32 *out_len, struct mid *mid, struct
     hexdump_words((void *)dst, fixed);
     hdr_fixed = (fixed + 0x18) & 0xffffu;
     dst += fixed;
-    internal = mid_get_bcon_additional_ies(mobj, 1);
+    internal = mid_get_app_ies_by_subtype(mobj, 1);
     aid = (conn->cid + 1) & 0xffu;
     if (ies_block_is_empty(internal) != 0) {
         fw_log_emit0(0x2d, 0x1013b50);
@@ -512,7 +512,7 @@ static u32 mlme_sm_check_assoc_capacity(struct mid *mid, const struct rx_mgmt_ei
 }
 
 /* mlme_sm__check_field_2c (0x8c6888, 20 Б): освободить сохранённый кадр rx_pkt. */
-static void mlme_sm_check_field_2c(struct mlme_sm *sm)
+static void mlme_sm_free_rx_pkt(struct mlme_sm *sm)
 {
     if (sm->rx_pkt != 0) {
         mem_pool_free_thunk(sm->rx_pkt);
@@ -561,7 +561,7 @@ static u32 parse_wilocity_vs_get_test_mode(u32 a0, const struct ie_ref *buf)
 
 /* lmac_if__send_sta_cfg_05_c (0x8dc3c4, 44 Б): LMAC-команда 5 (0x28 Б) — RX-сектор
  * станции; остальные поля буфера пула vendor не пишет. */
-static void lmac_if_send_sta_cfg_05_c(u32 cid, u32 sector, u32 x)
+static void lmac_if_send_sta_omni_sector_cfg(u32 cid, u32 sector, u32 x)
 {
     struct lmac_cmd_sta_cfg *b = mem_pool_alloc_locked(&lmac_mbox.mb);
     b->op = 2;
@@ -575,7 +575,7 @@ static void lmac_if_send_sta_cfg_05_c(u32 cid, u32 sector, u32 x)
 void conn_config_txss_and_sta(struct conn *conn)
 {
     lmac_if_config_txss(conn->cid);
-    lmac_if_send_sta_cfg_05_c(conn->cid, conn->rx_sector, *(volatile u8 *)&rf_obj.rf_idx);
+    lmac_if_send_sta_omni_sector_cfg(conn->cid, conn->rx_sector, *(volatile u8 *)&rf_obj.rf_idx);
 }
 
 /* ---------------- действия автомата MLME ---------------- */
@@ -656,7 +656,7 @@ void mlme_sm_on_connect(struct mlme_sm *sm, struct rx_pkt *pkt)
         mid = sm->conn->mid;
         if (mid == 0)
             fw_sysassert_fatal((void *)0, 0x11f8);
-        mlme_sm_check_field_2c(sm);
+        mlme_sm_free_rx_pkt(sm);
         if (mlme_sm_check_assoc_capacity(mid, pkt->ei, FC_STYPE(pkt->hdr->fc), &status) == 0 &&
             sm->busy == 0) {
             sm->status = 0x25;
@@ -702,7 +702,7 @@ void mlme_sm_on_connect(struct mlme_sm *sm, struct rx_pkt *pkt)
     }
     fw_log_emit1(0x2a, 0x10114c0, sm->sm.state);
     if (sm->rm_req == 0)
-        sm->rm_req = l2mgr_connect_args(mlme_rm_locked_cb, (u32)sm,
+        sm->rm_req = l2mgr_connect_request_radio(mlme_rm_locked_cb, (u32)sm,
                                         sm->conn->mid->id);
     if (sm->assoc_timer == 0)
         sm->assoc_timer = u_schd_schedule(mlme_assoc_timeout_cb, (u32)sm, 0, 1, delay, 0, 0);
@@ -804,7 +804,9 @@ void mlme_sm_on_assoc_reject(struct mlme_sm *sm, struct rx_pkt *pkt)
     /* НЕ vendor: protocol_reason_status события — Status Code отказа AP (успех с AID вне 1…254 — AID) вместо
      * 1: в фазе подключения драйвер его не отдаёт в cfg80211 как причину, а печатает (WMI_SPARRAW_DISC_ASSOC_*). */
     u32 proto = 1;
-    if (pkt != 0)
+    /* Пакет в a0 — только у станции (rx_pkt_handler, Assoc Response); у AP событие шлёт mlme_assoc_tx_done_cb с кодом
+     * TX-статуса в a0 — не указатель (было: разыменование status + 0xc, хосту уходил мусор вместо причины 1). */
+    if (sm->conn->mid->bss.mode == 1 && pkt != 0)
         proto = (pkt->ei->status != 0) ? pkt->ei->status : (pkt->ei->aid & 0x3fffu);
     fw_log_emit0(0x2a, 0x101168c);
     if (sm->assoc_timer != 0) {
@@ -1022,13 +1024,13 @@ void mlme_sm_on_ctrl_del_sta(struct mlme_sm *sm, const struct wmi_disconnect_sta
 /* ---------------- разрыв соединения ---------------- */
 
 
-/* link_lost_diag_part2 (0x8f2250, 250 Б): диагностический журнал при потере линка
+/* link_lost_diag_rx_and_temperatures (0x8f2250, 250 Б): диагностический журнал при потере линка
  * («LLD Part 2»): статистика приёма PHY, температура BB (MARLON-M: < 90 °C — норма,
  * < 100 °C — HIGH, иначе VERY HIGH) и каждого подключённого RF (MARLON-R, маска RF
  * объекта 0x8042c8: < 70 °C — норма; иначе HIGH / VERY HIGH по порогу 80 °C).
  * Баг vendor: порог 80 °C для RF сравнивается с температурой BB (r15), не RF (r13)
  * (0x8f231c: brge r15,0x13880) — как есть; печатается температура RF. */
-void link_lost_diag_part2(void)
+void link_lost_diag_rx_and_temperatures(void)
 {
     s32 bb, t;
     u32 i, tok;
@@ -1069,7 +1071,7 @@ void link_lost_diag_part2(void)
 
 /* mac__program_886c00_entry (0x8ea360, 56 Б): запись таблицы 0x886c00 (3 слова) и
  * запуск записи через 0x886bf8/0x886bfc; ожидание сброса бита 29. */
-void mac_program_886c00_entry(u32 a, u32 b, u32 c)
+void mac_ind_tbl_write(u32 a, u32 b, u32 c)
 {
     MMIO32(HW_MAC_IND_WR_DATA0) = a;
     MMIO32(HW_MAC_IND_WR_DATA1) = b;
@@ -1092,7 +1094,7 @@ static void l2mgr_send_pbss_leave_evt(struct conn *conn)
     p[7] = (u8)cid;
     memcpy_fw(p, conn->peer, 6);
     fw_log_emit1(0x2b, 0x100d268, cid);
-    low_sme_send_evt2sw(p, 0x16, 0xa, conn->mid->id, 0, 0, 0);
+    host_if_send_event(p, 0x16, 0xa, conn->mid->id, 0, 0, 0);
 }
 
 /* cnt_handler__clear_all (0x8f6424) — hw_init.c (сверено с vendor: повтор фазы 1 с
@@ -1111,7 +1113,7 @@ static void dashboard_on_disconnect(u32 cid)
 
 /* l2_mgr__chk_sys_idle — l2mgr.c (там static; у vendor результат здесь не используется,
  * остаётся только ассерт при пустой записи mid). */
-static void conn_chk_sys_idle(void)
+static void mids_assert_all_present(void)
 {
     u32 it = mids_get_count();
     while (bit_iter_has_more(&it)) {
@@ -1140,13 +1142,13 @@ void mlme_sm_disconnect_ev_handle(u32 a0, u32 code)
         fw_sysassert_fatal((void *)0, 0x16c1);
     fw_log_emit2(0x2b, 0x100d304, conn->cid, reason);
     if (reason == 1)
-        link_lost_diag_part2();
+        link_lost_diag_rx_and_temperatures();
     tbl = vring_active_ring_table();
     tbl->vt->allow(tbl, (u8)(1u << conn->cid));
     fw_log_emit1(0x2b, 0x100d334, conn->cid);
-    mac_program_886c00_entry(conn->cid, 0, 0);
+    mac_ind_tbl_write(conn->cid, 0, 0);
     if (mid_list_find_by_kind(conn->mid, 1) == 0)
-        conn_alloc_and_link(0, 1, 0);                    /* conn__alloc_and_link__thunk_0_1_0 */
+        lmac_if_send_role(0, 1, 0);                    /* conn__alloc_and_link__thunk_0_1_0 */
     if (conn->pbss != 0)
         l2mgr_send_pbss_leave_evt(conn);
     else                                                /* уточнение причины — в старшем байте reason */
@@ -1161,7 +1163,7 @@ void mlme_sm_disconnect_ev_handle(u32 a0, u32 code)
     low_sme_termination_check(0);
     dashboard_on_disconnect(cid);
     tdma_ap_update(e, conn);                    /* простой TDMA точки (fw/tdma.c) */
-    conn_chk_sys_idle();
+    mids_assert_all_present();
     if (conn->pbss == 0)
         sys_state_broadcast(8, cid);
 }
@@ -1284,7 +1286,7 @@ static void mlme_reassoc_tx_done_cb(u32 payload, u32 status, u32 a2)
         return;
     }
     lmac_if_install_key(conn->cid, 1, zero_key, 0, 0);
-    if (conn_sec_mode_not_1(conn)) {
+    if (conn_is_secured(conn)) {
         conn->msm.sm.state = CONN_MSM_ASSOCIATED;
         sm->sm.state = MLME_ASSOCIATE;
         if (sm->assoc_timer == 0)
@@ -1360,7 +1362,7 @@ void rx_pkt_handler(struct rx_pkt *pkt)
         }
         if (dashboard.cfg.ap_sme_offload_mode == 1) {
             fw_log_emit0(0x2a, 0x10111f4);
-            low_sme_send_evt2sw(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)),
+            host_if_send_event(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)),
                                 pkt->info.mid, 1, 0, 1);
             sm->host_pkt = pkt;
             mlme_sm_event(sm, 9, 0, 0, 0);
@@ -1399,7 +1401,7 @@ void rx_pkt_handler(struct rx_pkt *pkt)
         }
         if (dashboard.cfg.ap_sme_offload_mode == 1) {
             fw_log_emit0(0x2a, 0x1011244);
-            low_sme_send_evt2sw(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)),
+            host_if_send_event(&pkt->info, 0x1840, (u16)(pkt->info.len + sizeof(pkt->info)),
                                 pkt->info.mid, 1, 0, 1);
             fw_log_emit1(0x2a, 0x1011290, sm->busy);
             if (sm->busy != 0) {

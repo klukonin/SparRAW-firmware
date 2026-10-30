@@ -87,7 +87,7 @@ configurations from board file» (см. [§9.2](#92-загрузка-board-фа�
 | 9 | `isr_vring_dma` 0x8c1304 | `isr_vring_dma_fw` 0x8c1350 | DMA vring → `vring_schdlr__isr_dispatch` |
 | 10 | `isr_icr_887000_mask` 0x8c0824 | `isr_vec10__ack_mac_icr` 0x8c08f0 | ICR 0x887000: блок RGF_ICR 0x88700c (счётчики MAC): читает ICM 0x887014 (`mac_icr__read_cause_887014` 0x8dd8b8 / 4.1 `get_reg_887014` 0x8d9b2c) и пишет его обратно в ICR 0x887010 — только квитирует, не маскирует |
 | 11 | `isr_icr_88701c_mask` 0x8c08c4 | `isr_vec11__ack_mac_icr2` 0x8c0990 | ICR 0x88701c: блок RGF_ICR 0x887028: читает ICM 0x887030 (`mac_icr__read_cause_887030` 0x8dd8c4 / 4.1 `get_reg_887030` 0x8d9b38) и квитирует в ICR 0x88702c — только квитирует |
-| 12 | `isr_mac_886028` 0x8c0964 | `isr_mac_886028_fw` 0x8c0a30 | MAC/PHY |
+| 12 | `isr_mac_phy_irq` 0x8c0964 | `isr_mac_886028_fw` 0x8c0a30 | MAC/PHY |
 | 13 | `isr_pll_unlock` 0x8c0a20 | `fw_vector_13` 0x8c0aec | срыв PLL. 6.2: блок RGF_CAF_ICR 0x88946c — причина из ICM 0x889474, квитирование в ICR 0x889470; бит 2 «PLL5 UNLOCK», бит 7 «FS8 UNLOCK»; каждый — счётчик в gp-области, фатал (0x12ec/0x12ee) только при взведённом байт-флаге политики |
 | 14 | `isr_return_only` 0x8c0b2c | `fw_vector_14` 0x8c0be0 | не используется (`j.f [ilink1]`) |
 | 15 | `isr_pcie_debug` 0x8c0b30 | `fw_vector_15` 0x8c0be4 | PCIe debug. 6.2: причина `pcie_debug__read_and_ack_cause` 0x8d11b8 / 4.1 `rgf_reg_882680` 0x8ce474 (читает 0x882690, квитирует в 0x88268c); коды 0..3 через `pcie_debug__code_to_index` → `wbe_driver__pcie_debug_isr`, `dpal__cpl_timeout_log`, `pxe__isoc_in_dir_bypass_on` 0x8f7d10 / 4.1 `tail_WBE_DRIVER__pxe_isoc_in_dir_bypass` 0x8ef8fc / `pxe__isoc_in_dir_bypass_off` 0x8f7d18 (хвосты `WBE_DRIVER__pxe_isoc_in_dir_bypass`); неизвестная причина — «UN HANDLED PCIE DEBUG INTERRUPT», фатал 0x11a9 |
@@ -176,7 +176,7 @@ PCIe — 53 блока, 4 220 Б; энергосбережение — 65 бло
 * **Питание устройства и хост:** `pcie_device_power_if__init` 0x8d90d8,
   `__pcie_power_pcie_interrupt` 0x8e0470 и `__pcie_power_wake_signal` 0x8e05b4 (сигнал
   Wake хосту), `pcie_device_power_sm__pcie_traffic_resume_req` 0x8e05ec (368 Б).
-* **PERST и SerDes:** `pcie_perst_handler_step` 0x8f0d28, `pcie__dbi_read` 0x8c8208,
+* **PERST и SerDes:** `pcie_perst_reprogram_bars` 0x8f0d28, `pcie__dbi_read` 0x8c8208,
   `pcie_serdes__init_seq` 0x8f344c.
 * **Конфигурационное пространство (DBI):** `pcie__dbi_transfer` 0x8c828c.
 * Регистры: 0x8825c0 (последовательности программирования), 0x882644 (ожидание
@@ -311,7 +311,7 @@ IDLE.
   пределах, «final_measured_rssi / final_error», исход «did not converge»; регистры PHY
   0x883100/0x883700;
 * `calib_silent_rssi_sparrow__find_rf_gain` @0x8ca8fc — усиление РЧ RX,
-  `update_rf_xx_gains_tables`;
+  `update_rf_gain_tables`;
 * `calibrate_baseband_gain` @0x8c5708 — «Trigger AGC Calibration, Omni RF / ALL»,
   регистры 0x889080/0x889480.
 
@@ -813,7 +813,7 @@ PLCP, RX_GET_PKT_DATA, PHY_RX_STATISTICS) в [VENDOR-ENUMS.md](VENDOR-ENUMS.md) 
   0x8d6dcc / 4.1 0x8d406c, `approx_magnitude` 0x8d6490 / 4.1 0x8d3708,
   `hwd_phy__tx_self_transmit_wait_completion`, `hwd_phy__tx_singen_transmit`,
   `hwd_phy__tx_ctrl_884070`.
-* **LO power / LO leakage / BER:** `hwf_calib_lo_power_flow` 0x8d5fa8,
+* **LO power / LO leakage / BER:** `hwf_calib_lo_power_apply` 0x8d5fa8,
   `calib_lo_power__step` 0x8d5f78, `calib_lo_power_substep` 0x8d530c / 4.1 0x8d24e4,
   `rf__set_8894a0_field`, `abif__set_nibble_all_chains` 0x8d01c8,
   `abif__set_3bit_all_chains`, `calib_lo_power__step_save_mode` /
@@ -824,7 +824,7 @@ PLCP, RX_GET_PKT_DATA, PHY_RX_STATISTICS) в [VENDOR-ENUMS.md](VENDOR-ENUMS.md) 
   (`ber_test__measure` 0x8e8360 / 4.1 0x8e325c, `hwf__set_agc_index_1c` 0x8e67a4 / 4.1 0x8e1940), результат
   `calib_lo__set_result` 0x8f1d08 / 4.1 0x8ea598. `hwf__rf_lo_setup` 0x8d4978 / 4.1 0x8d190c (через
   `temp__store_lo_temp` от таймера температуры).
-* **SAR:** `calib_sar_step2` 0x8d47e4 / 4.1 0x8d1734 (выборки SAR PHY 0x885000, 64-битный
+* **SAR:** `calib_sar_final_step` 0x8d47e4 / 4.1 0x8d1734 (выборки SAR PHY 0x885000, 64-битный
   сдвиг `fw_ashr64` 0x8c0620).
 * **Накопители замеров PHY 0x885010…0x88510c [код]:** две пары массивов по индексу `idx` (шаг 8 Б).
   `hwd_phy__read_sar_sample` 0x8d2474 (в таблице UT — `hwd_phy_rx_cal_dc_measurement_read`, 0x428)
@@ -898,14 +898,14 @@ PLCP, RX_GET_PKT_DATA, PHY_RX_STATISTICS) в [VENDOR-ENUMS.md](VENDOR-ENUMS.md) 
   `tail_pcie_device_power_if__pcie_power_wake_s…` (`pcie_power__wake_signal`
   0x8ec05c / 4.1 `tail_pcie_device_power_if__pcie_power_wake_signal` 0x8e7400), `pcie_device_power_sm__init` (автомат питания устройства).
 * **Режимы питания (hw_modes, UT):** `hwm__apply_mode_flags` 0x8d7818 / 4.1 0x8d4d5c,
-  `ut_hw_modes_cmd_0x308` 0x8d7864 / 4.1 0x8d4da8 (режим питания), `ut_hw_modes_cmd_0x304_fw`
+  `hw_modes_apply_power_state` 0x8d7864 / 4.1 0x8d4da8 (режим питания), `hw_modes_set_pll_bypass`
   0x8d7c04 / 4.1 `ut_hw_modes_cmd_0x304` 0x8d5164 (PLL bypass/engage — `hw_modes__pll_bypass` 0x8d7748 / 4.1 0x8d4c8c,
   `hw_modes__pll_engage` 0x8d7714 / 4.1 0x8d4c58, `hw_modes__enable_pll` 0x8d772c / 4.1 0x8d4c70,
-  `hwd__wait_pll_lock` 0x8d041c / 4.1 0x8cd590), `ut_hw_modes_cmd_0x30b` 0x8d7cc4 / 4.1 0x8d521c,
-  `ut_hw_modes_cmd_0x30c` 0x8d7c70 / 4.1 0x8d51d0, `hw_modes__program_rf_clocks` 0x8d7c3c / 4.1 0x8d519c,
+  `hwd__wait_pll_lock` 0x8d041c / 4.1 0x8cd590), `hw_modes_set_adc_sar_vreg_b18` 0x8d7cc4 / 4.1 0x8d521c,
+  `ut_hw_modes_set_sleep_clk` 0x8d7c70 / 4.1 0x8d51d0, `hw_modes__program_rf_clocks` 0x8d7c3c / 4.1 0x8d519c,
   `hw__pll_mode_switch` 0x8d7c84, `abif__mode_switch` 0x8d7bd0 / 4.1 `rgf_reg_88a200` 0x8d5130,
   `hw_modes__set_loopback` 0x8d76ec / 4.1 0x8d4c30, `hwm__set_analog_path` 0x8d7528 / 4.1 0x8d4bd4,
-  `ut_hw_modes_step` 0x8d7358 / 4.1 0x8d4aa8, `ut_hw_modes__chain_3` 0x8d7500,
+  `ut_hw_modes_set_analog_loopback` 0x8d7358 / 4.1 0x8d4aa8, `ut_hw_modes__chain_3` 0x8d7500,
   `hwm_analog_channel_switch__thunk_arg1_zero` 0x8d73ec,
   `hwm_analog__prepare_buf` 0x8e2960 («RESET RF!!!»), `ut__begin_response`
   0x8eae60 / 4.1 0x8e5b7c (ответ UT-команды), `ut_hw_flows__hwm_alloc_and_store_thunk` 0x8ce4e8.
@@ -1003,7 +1003,7 @@ PLCP, RX_GET_PKT_DATA, PHY_RX_STATISTICS) в [VENDOR-ENUMS.md](VENDOR-ENUMS.md) 
 11. Содержимое таблиц, заполняемых `boot__install_handler_ptrs`; какие WMI-команды ведут в
     sysapi; отношение автоматов 6.2 `state_sm_8030e0`/`uses_*` к sysapi.
 12. Формат кадров FTM и источник меток времени (TX/RX offset 0x889548); путь AoA до
-    измерения в ucode (6.2 ucode `notify_aoa` 0x92de8c); имена обработчиков
+    измерения в ucode (6.2 ucode `mask_pop_msb_index` 0x92de8c); имена обработчиков
     `state_sm_8034c0__*` / `state_sm_803424__*` по таблицам переходов.
 13. Действительно ли `brd_if_multi_array__get_block_info` зовёт геттеры регистров MAC (§12).
 14. Роли `mem_resource__check_timeout_cb` и `mids__count_active_conns` (§12).

@@ -49,7 +49,7 @@ static void bf_set16_unaligned(u32 addr, unsigned shift, unsigned width, u32 v)
 /* ---------------- объекты, создаваемые с записью ---------------- */
 
 /* obj_vt8030f4__ctor (0x8f532c, 36 Б): автомат find_sm с описателем 0x8030f4, владелец a. */
-static void obj_vt8030f4_ctor(struct find_sm *o, struct find_mngr *a)
+static void find_sm_ctor(struct find_sm *o, struct find_mngr *a)
 {
     basic_sm_bind_descriptor(o, &find_sm_desc);
     o->owner = a;
@@ -59,7 +59,7 @@ static void obj_vt8030f4_ctor(struct find_sm *o, struct find_mngr *a)
 
 /* channels_switch_sm::ctor (obj_vt802fb4__ctor 0x8d9058, 44 Б): автомат каналов с описателем
  * 0x802fb4 для scan_mngr a и записи mid b. */
-static void obj_vt802fb4_ctor(struct channels_switch_sm *o, struct scan_mngr *a, struct mid *b)
+static void channels_switch_sm_ctor(struct channels_switch_sm *o, struct scan_mngr *a, struct mid *b)
 {
     basic_sm_bind_descriptor(o, &channels_switch_sm_desc);
     o->scan = a;
@@ -72,7 +72,7 @@ static void obj_vt802fb4_ctor(struct channels_switch_sm *o, struct scan_mngr *a,
 
 /* radio_req__addr_of (0x8f3698, 16 Б; vendor-имя неточно): объект scan_mngr записи mid i —
  * 0x8052ec + 0x228·i. */
-struct scan_mngr *radio_req_addr_of(u32 i)
+struct scan_mngr *scan_mngr_of_mid(u32 i)
 {
     return &scan_mngrs[i];
 }
@@ -80,7 +80,7 @@ struct scan_mngr *radio_req_addr_of(u32 i)
 /* scan_mngr__entry_addr (0x8cc6a4, 16 Б): автомат каналов записи mid i — 0x842d00 + 0x24·i.
  * noinline — как у vendor (отдельная функция): иначе gcc -Os, зная адрес &scan_cs_sms[i],
  * пересчитывает i·0x24 (__mulsi3) после вызова в scan_mngr_init. */
-__attribute__((noinline)) struct channels_switch_sm *scan_mngr_entry_addr(u32 i)
+__attribute__((noinline)) struct channels_switch_sm *channels_switch_sm_of_mid(u32 i)
 {
     return &scan_cs_sms[i];
 }
@@ -88,9 +88,9 @@ __attribute__((noinline)) struct channels_switch_sm *scan_mngr_entry_addr(u32 i)
 /* scan_mngr__init (0x8f1cb8, 36 Б): o — объект scan_mngr записи mid e. */
 void scan_mngr_init(struct scan_mngr *o, struct mid *e)
 {
-    struct channels_switch_sm *x = scan_mngr_entry_addr(e->id);
+    struct channels_switch_sm *x = channels_switch_sm_of_mid(e->id);
     o->cs = x;
-    obj_vt802fb4_ctor(x, o, e);
+    channels_switch_sm_ctor(x, o, e);
     o->mid = e;
 }
 
@@ -98,7 +98,7 @@ void scan_mngr_init(struct scan_mngr *o, struct mid *e)
  * x->mid = 0 (как у vendor). */
 static void mid_init_find_sm(struct find_mngr *x)
 {
-    obj_vt8030f4_ctor(&x->sm, x);
+    find_sm_ctor(&x->sm, x);
     x->mid = mid_list_by_mid_fw(0);
     x->quiet = 1;
     x->active = 0;
@@ -115,7 +115,7 @@ static void mid_init_scan_and_pools(struct mid_disc *obj, struct mid *e)
     obj->mid = e;
     for (i = 0; i < sizeof(mgmt_stats) / 4; i++)   /* 0x843158..0x843187 */
         z[i] = 0;
-    obj->scan = radio_req_addr_of(e->id);
+    obj->scan = scan_mngr_of_mid(e->id);
     scan_mngr_init(obj->scan, e);
     obj->scan->active = 0;
     mid_init_find_sm(&obj->find);
@@ -153,7 +153,7 @@ static void mid_init(struct mid_bss *o, struct mid *e)
 
 /* mid__set_default_counters (0x8f5350, 24 Б; vendor-имя неточно): безопасность записи по
  * умолчанию. */
-static void mid_set_default_counters(struct mid_sec *o, struct mid *e)
+static void mid_set_sec_defaults(struct mid_sec *o, struct mid *e)
 {
     o->dot11_auth = 1;
     o->auth = 1;
@@ -174,7 +174,7 @@ static void mid_reset_sched_alloc_regs(void)
 
 /* mid__program_88c068 (0x8d0e14, 52 Б): пары 13-битных полей из полуслов
  * [gp+0x100..0x10c] = 0x800284..0x800290 (ldh — без знака), бит 31. */
-static void mid_program_88c068(void)
+static void mid_program_sched_ext(void)
 {
     u32 lo = sched_ext_a_lo & 0x1fff;
     u32 hi = ((u32)sched_ext_a_hi << 16) & 0x1fff0000;
@@ -191,11 +191,11 @@ static void mid_init_sched_scheme(struct sched_scheme *s, struct mid *e)
     s->mid = e;
     s->ese = &ese_sched;                  /* mid__sched_scheme_addr (0x8ccb74): 0x8052e4 */
     memset0_words(&s->alloc_tpl, 0xf);
-    bf_set32((u32)&s->alloc_tpl.ctrl, 4, 3, 1);
+    bf_set32_lo_hi((u32)&s->alloc_tpl.ctrl, 4, 3, 1);
     s->alloc_tpl.ctrl |= 1u << 7;
     s->alloc_tpl.b[0xc] = 1;
     mid_reset_sched_alloc_regs();
-    mid_program_88c068();
+    mid_program_sched_ext();
 }
 
 /* ---------------- BSS-объект записи ---------------- */
@@ -205,7 +205,7 @@ static void mid_init_sched_scheme(struct sched_scheme *s, struct mid *e)
 static void bss_set_mode_capinfo(struct mid_bss *o, u32 mode, u32 priv)
 {
     u32 w;
-    bf_set32((u32)&o->capinfo_w, 0, 2, mode & 3);
+    bf_set32_lo_hi((u32)&o->capinfo_w, 0, 2, mode & 3);
     w = o->capinfo_w;
     w |= 1u << 2;
     w &= ~0x18u;
@@ -229,14 +229,14 @@ void bss_set_mode(struct mid_bss *o, u32 mode)
 }
 
 /* mid__reset_10b_at_248 (0x8c4e04, 28 Б). */
-static void mid_reset_10b_at_248(struct mid_bss *o)
+static void mid_reset_dmg_operation(struct mid_bss *o)
 {
     memset0_words(o->blk_f8, 10);
     o->blk_f8[9] = 0x14;
 }
 
 /* mid__reset_ie_area (0x8c4e20, 44 Б): 0x8ed2d4 — поле [0..1] полуслова (ldw/stw). */
-static void mid_reset_ie_area(struct mid_bss *o, u32 mode)
+static void mid_reset_dmg_params(struct mid_bss *o, u32 mode)
 {
     memset0_words(&o->dmg_params, 1);
     bf_set16((u32)&o->dmg_params_h, 0, 2, mode & 3);
@@ -274,7 +274,7 @@ static void l2mgr_set_edca_defaults(struct mid_bss *o)
     /* volatile: две записи stb, как у vendor (без volatile gcc сливает их в sth) */
     ((volatile struct mid_bss *)o)->edca_12 = 0xc;
     ((volatile struct mid_bss *)o)->edca_13 = 0x12;
-    bf_set32((u32)&o->edca_w, 0, 4, 0);
+    bf_set32_lo_hi((u32)&o->edca_w, 0, 4, 0);
     o->edca_w &= ~0xf0u;                  /* bic 0x30, bic 0xc0 */
     o->edca_15 = 0;
     edca_fill_default_ac_params(o);
@@ -310,17 +310,17 @@ void mid_reset_bss_defaults(struct mid_bss *o, const u8 *mac, const u8 *ssid, u3
     bss_set_mode(o, mode);
     o->bcon_int = 10;
     dmg_cap_build_sta_capability(o, o->owner->mac);
-    mid_reset_10b_at_248(o);
-    mid_reset_ie_area(o, mode);
+    mid_reset_dmg_operation(o);
+    mid_reset_dmg_params(o, mode);
     mid_reset_ssid(o);
     bcon_tx_build_step(o, 1);
     mid_set_ssid(o, ssid, ssid_len);
     l2mgr_set_edca_defaults(o);
-    obj_set_field4_one(o);
+    bss_set_state_idle(o);
     caps.h[1] &= (u16)~0x30u;                     /* побайтно у vendor: [sp+2], [sp+3] */
-    bf_set32(c, 5, 5, 0);                         /* mid__bits_set32_s5_w5 (0x8ed538) */
+    bf_set32_lo_hi(c, 5, 5, 0);                         /* mid__bits_set32_s5_w5 (0x8ed538) */
     bf_set16_unaligned(c + 1, 7, 5, 0);           /* bits__set16_s7_w5 (0x8ed1fc) */
-    bf_set32(c, 0, 5, 0xc);                       /* bits__set32_s0_w5 (0x8ed37c) */
+    bf_set32_lo_hi(c, 0, 5, 0xc);                       /* bits__set32_s0_w5 (0x8ed37c) */
     bf_set8(c + 1, 2, 5, 0xc);                    /* bits__set8_s2_w5 (0x8ed274) */
     sta_rec_unpack_5bit_caps(o, (const u8 *)c);
     vendor_ie_build_wilocity(o, o->owner->network_type, 0);
@@ -348,7 +348,7 @@ struct mid *mid_open(u32 mid)
     e->cid_mask = 0;
     mid_init_scan_and_pools(&e->disc, e);
     mid_init(&e->bss, e);
-    mid_set_default_counters(&e->sec, e);
+    mid_set_sec_defaults(&e->sec, e);
     e->sched = SCHED_SCHEME;                    /* mid__sched_obj (0x8ccb7c) */
     mid_init_sched_scheme(SCHED_SCHEME, e);
     return e;
@@ -359,7 +359,7 @@ void mid_list_insert(struct mid *e)
 {
     if (mid_list_by_mid_fw(e->id) != 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x11c4);
-    list_find_entry_d((u32 *)&mid_list, (u32 *)e);
+    llist_append((u32 *)&mid_list, (u32 *)e);
     MID_BITMAP = (u8)(MID_BITMAP | (1u << (e->id & 31)));
 }
 

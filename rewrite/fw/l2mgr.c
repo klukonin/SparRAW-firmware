@@ -39,7 +39,7 @@ FWDATA(801518) const struct ll_cid_cfg ll_cfg_presets[4] = {
 
 
 /* Поле слова w, биты [lo .. lo+n−1] = v (bits__set32_s* → bf__set_field_word_fw 0x8edcb8). */
-static void l2_bf32(u32 *w, u32 lo, u32 n, u32 v)
+static void l2_bitfield_set32(u32 *w, u32 lo, u32 n, u32 v)
 {
     u32 m = ((1u << n) - 1u) << lo;
     *w = (*w & ~m) | ((v << lo) & m);
@@ -55,25 +55,25 @@ __attribute__((section(".textlate"))) void lmac_if_send_qset_ranges(void)
 {
     struct lmac_cmd_qset_ranges *b = lmac_cmd_pool_alloc();
     b->sub = 1;
-    l2_bf32(&b->range_q4_q5, 0, 5, 0x19);
-    l2_bf32(&b->range_q4_q5, 8, 5, 0x1c);
-    l2_bf32(&b->range_q4_q5, 16, 5, 0x18);
-    l2_bf32(&b->range_q4_q5, 24, 5, 0x19);
+    l2_bitfield_set32(&b->range_q4_q5, 0, 5, 0x19);
+    l2_bitfield_set32(&b->range_q4_q5, 8, 5, 0x1c);
+    l2_bitfield_set32(&b->range_q4_q5, 16, 5, 0x18);
+    l2_bitfield_set32(&b->range_q4_q5, 24, 5, 0x19);
     lmac_if_post_cmd(b, 7, 0x10, 0);
     b = lmac_cmd_pool_alloc();
     b->sub = 2;
-    l2_bf32(&b->range_q6, 0, 5, 0);
-    l2_bf32(&b->range_q6, 8, 5, 0xa);
+    l2_bitfield_set32(&b->range_q6, 0, 5, 0);
+    l2_bitfield_set32(&b->range_q6, 8, 5, 0xa);
     lmac_if_post_cmd(b, 7, 0x10, 0);
 }
 
-/* lmac_if_send_cmd_0x00 (0x8db8cc, 124 Б): LMAC-команда 0x00 (0x44 Б) — конфигурация MAC
+/* lmac_if_send_mac_cfg (0x8db8cc, 124 Б): LMAC-команда 0x00 (0x44 Б) — конфигурация MAC
  * (ucode_cmd_0x00_handler): 0xc Б cfg, cfg w0c/w10 → regs.w0c/w10 (@0xc/@0x10), cfg w[0..3] →
  * regs.w14[2..5] (@0x1c..@0x28), regs.qset_mode (@0x2c) бит 0..3 = 8, ifs_us[0] = a1,
  * ifs_us[1] = a2, ifs_us[2] = 825, ifs_us[3]/[4] = 0xa5, x3c = 4, x3e = 2, rf_chain — байт
  * rf_obj.rf_idx (0x8042c8). regs.w14[0..1] и прочие биты qset_mode — как в буфере пула (vendor
  * их не пишет). Нет буфера — команды нет. */
-__attribute__((section(".textlate"))) void lmac_if_send_cmd_0x00(const struct lmac_mac_cfg_src *cfg, u32 a1, u32 a2)
+__attribute__((section(".textlate"))) void lmac_if_send_mac_cfg(const struct lmac_mac_cfg_src *cfg, u32 a1, u32 a2)
 {
     /* volatile: с полями struct gcc сливает пары sth (+0x34/+0x36, +0x3c/+0x3e) в одно st —
      * vendor пишет полусловами в этом порядке. */
@@ -106,7 +106,7 @@ __attribute__((section(".textlate"))) void lmac_if_send_cmd_0x00(const struct lm
  * vendor не инициализирует стек: старшие биты @0x14/@0x18/@0x1c — остатки стека
  * (в ucode уходят в mac_cfg +0x1c..+0x24 копией, разбираемые ucode поля — младшие биты).
  * У нас буфер обнулён — значения определены. */
-__attribute__((section(".textlate"))) void lmac_if_send_init_cfg(void)
+__attribute__((section(".textlate"))) void lmac_if_send_mac_init_cfg(void)
 {
     static const u8 head[0x14] = {
         4, 1, 0x96, 0, 0xa1, 0, 0x7b, 0, 0x16, 0, 0x12, 0, 0x60, 0, 0x91, 2,
@@ -119,8 +119,8 @@ __attribute__((section(".textlate"))) void lmac_if_send_init_cfg(void)
     c.w[1] |= 0x3f;
     c.w[2] = (c.w[2] & ~0xfu) | 8u;
     c.w[3] = (c.w[3] & ~0xfu) | 0x38u;
-    l2_bf32(&c.w[3], 6, 26, 0);
-    lmac_if_send_cmd_0x00(&c, 495, 0xa);
+    l2_bitfield_set32(&c.w[3], 6, 26, 0);
+    lmac_if_send_mac_cfg(&c, 495, 0xa);
 }
 
 /* l2mgr__mac_bringup, хвост при [gp,400] = [0x800314] != 0 (0x8f6b0c, 62 Б): регистры MAC
@@ -147,15 +147,15 @@ __attribute__((section(".textlate"))) void l2mgr_mac_bringup(void)
     mac_bringup_init_rx_desc();          /* 3 */
     lmac_if_send_qset_ranges();          /* 4 */
     mac_parser_configure(0, 0x1f);       /* 5 */
-    mac_bringup_prog_881000();           /* 6 */
-    mac_bringup_prog_881b00();           /* 7 */
-    vring_reg_write_locked_0c((u32)-1, 0); /* 8 */
-    lmac_if_send_init_cfg();             /* 9 */
+    mac_bringup_program_dma_cfg();           /* 6 */
+    mac_bringup_program_l2_offload();           /* 7 */
+    vring_dma_icr_write_locked((u32)-1, 0); /* 8 */
+    lmac_if_send_mac_init_cfg();             /* 9 */
     l2mgr_bringup_pair(1);               /* 10 */
     mac_bringup_init_dma_ctrl();         /* 11 */
     mac_bringup_init_tx_queues();        /* 12 */
-    mac_set_886838_b0(0);                /* 13 */
-    mac_bringup_set_886a80_ctl_bit0();   /* 14 */
+    mac_prp_ctrl_set_bit0(0);                /* 13 */
+    mac_bringup_set_mac_ctl_bit0();   /* 14 */
     if (l2mgr_mac_post_bringup_en != 0)
         l2mgr_post_bringup();
 }
@@ -186,9 +186,9 @@ __attribute__((section(".textlate"))) void wmi_evt_notify_fw_ready(void *mac, u3
     memcpy_fw(p + 8, mac, 6);
     *(u32 *)p = fw_ver_build;               /* sw_version (vendor — 1000, его build) */
     p[0xf] = 0;                             /* numof_additional_mids */
-    p[0x10] = hwd_rfc_read_get_result();    /* rfc_read_calib_result */
+    p[0x10] = hwd_rfc_get_rdac_result();    /* rfc_read_calib_result */
     fw_log_emit3(0x2b, 0x100f7e4, 0 /* OOB — только SparRAW-pro */, *(u16 *)((u8 *)mac + 4), *(u32 *)mac);
-    low_sme_send_evt2sw(p, 0x1001, 0x14, mid, 0, 0, 0);
+    host_if_send_event(p, 0x1001, 0x14, mid, 0, 0, 0);
 }
 /* ---------------- sys_state__broadcast ---------------- */
 
@@ -298,12 +298,16 @@ void temp_sense_on_system_state(u32 st, u32 idle, u32 conn)
         if (conn == 0 && idle == 1) {
             TS_ENABLED = 0;
             temp_sense_stop();
+            if (platform_is_asic() != 0 && temp_sense_disable == 0)
+                temp_bb_only_start();      /* SparRAW: BB и в простое (temp_service.c) */
         } else {
+            temp_bb_only_stop();
             TS_ENABLED = 1;
             temp_sense_read_and_check();
         }
         break;
     case 'B':
+        temp_bb_only_stop();
         TS_ENABLED = 0;
         temp_sense_stop();
         break;
@@ -359,7 +363,7 @@ void conn_mgr_system_state_evt_handler(u32 st, u32 arg)
 {
     switch (st) {
     case 0: case 10:
-        link_maintain_cfg_apply(mid_state_is_2_or_3(0), 0);
+        link_maintain_cfg_apply(mid_is_pcp_or_ap(0), 0);
         break;
     case 5:
         fw_log_emit1(0x2b, 0x100bf48, arg);
@@ -414,7 +418,7 @@ void scan_mngr_system_state_evt_handler(u32 st, u32 arg)
 __attribute__((section(".textlate"))) void sys_state_broadcast(u32 st, u32 arg)
 {
     u32 idle = l2_mgr_chk_sys_idle(st);
-    u32 conn = mid_state_is_2_or_3(0);
+    u32 conn = mid_is_pcp_or_ap(0);
     temp_sense_on_system_state(st, idle, conn);
     /* power_mgr_ut_dispatch (PS-менеджер по системному состоянию) — PS вырезан. */
     calib_mngr_system_state_evt_handler(st, arg);
@@ -436,7 +440,7 @@ __attribute__((section(".textlate"))) void rx_pool_init(void)
 
 /* mid_ctx_pool__init (0x8f56d0, 48 Б): пул элементов списка каналов 0x842c74 (10 × 0xc)
  * и счётчики скана scan_stats (7 полуслов 0x805514). */
-static void mid_ctx_pool_init(void)
+static void scan_ch_pool_init(void)
 {
     u32 i;
     mem_pool_init(&scan_ch_pool, scan_ch_mem, sizeof(struct scan_ch), SCAN_CH_N);
@@ -446,9 +450,9 @@ static void mid_ctx_pool_init(void)
 
 /* mid_ctx__init_pools (0x8d91f4, 60 Б): пул записей mid mid_pool (0x804e7c, 1 × 0x2b0),
  * пустой список mid_list (0x804e70), битовая карта mid [0x800259] = 0, fwsh_long_range = 0. */
-__attribute__((section(".textlate"))) void mid_ctx_init_pools(void)
+__attribute__((section(".textlate"))) void mid_ctx_init(void)
 {
-    mid_ctx_pool_init();
+    scan_ch_pool_init();
     mem_pool_init(&mid_pool, mid_recs, sizeof(struct mid), MID_RECS_N);
     llist_init(&mid_list);
     mid_open_bitmap = 0;
@@ -482,7 +486,7 @@ u32 detector_slot_is_bound(struct ll_bcn_det *o)
 }
 
 /* bad_beacons__check_counter (0x8c67bc, 50 Б): обнулить счётчик плохих биконов cid. */
-void bad_beacons_check_counter(struct ll_bcn_det *o)
+void bad_beacons_reset_counter(struct ll_bcn_det *o)
 {
     if (detector_slot_is_bound(o) == 0)
         return;
@@ -500,13 +504,13 @@ static void bad_beacons_detector_init(struct ll_bcn_det *det, u32 cid, struct ll
     o->cid = (u8)cid;
     o->ctx = ctx;
     o->armed = 0;
-    bad_beacons_check_counter(det);
+    bad_beacons_reset_counter(det);
 }
 
 /* detector__init_per_cid_a (0x8d9134, 62 Б): детектор keep-alive. Записи — в порядке
  * vendor (cid, ctx, log_tsf): volatile, иначе после встраивания в l2mgr_init gcc
  * переставляет их. */
-static void detector_init_per_cid_a(struct ll_ka_det *det, u32 cid, struct ll_ctx *ctx)
+static void ka_necessity_detector_init(struct ll_ka_det *det, u32 cid, struct ll_ctx *ctx)
 {
     volatile struct ll_ka_det *o = det;
     if ((s32)cid >= (s32)SPARRAW_MAX_STA)
@@ -520,7 +524,7 @@ static void detector_init_per_cid_a(struct ll_ka_det *det, u32 cid, struct ll_ct
 
 /* detector__init_per_cid_b (0x8d91b4, 62 Б): детектор старения TX (порядок записей — как
  * у _a). */
-static void detector_init_per_cid_b(struct ll_ageing_det *det, u32 cid, struct ll_ctx *ctx)
+static void tx_ppdu_ageing_detector_init(struct ll_ageing_det *det, u32 cid, struct ll_ctx *ctx)
 {
     volatile struct ll_ageing_det *o = det;
     if ((s32)cid >= (s32)SPARRAW_MAX_STA)
@@ -547,8 +551,8 @@ static void link_loss_detectors_init(void)
     memset0_words(conn_mgr.cid_db, sizeof(conn_mgr.cid_db));
     for (cid = 0; cid < SPARRAW_MAX_STA; cid++) {
         struct ll_detectors *d = &ll_detectors[cid];
-        detector_init_per_cid_b(&d->ageing, cid, &ll_ctx);
-        detector_init_per_cid_a(&d->ka, cid, &ll_ctx);
+        tx_ppdu_ageing_detector_init(&d->ageing, cid, &ll_ctx);
+        ka_necessity_detector_init(&d->ka, cid, &ll_ctx);
         bad_beacons_detector_init(&d->bcn, cid, &ll_ctx);
     }
 }
@@ -564,7 +568,7 @@ static void l2mgr_init_periodic_detector(struct phy_monitor *o)
 
 /* ---------------- TX-пулы, OOB-кольца ---------------- */
 
-/* tx_api__init_pools (0x8f552c) и всё под ней (tx_macq_api_step 0x8d986c, очереди
+/* tx_api__init_pools (0x8f552c) и всё под ней (tx_macq_config_bcon_mgmt_queues 0x8d986c, очереди
  * 0x19/0x1e/0x1a, tx_api__reset_state_words 0x8f5270) — fwq_tx.c. */
 
 /* l2mgr__reset_oob_rings (0x8e4058, 60 Б): записи разбора mgmt rx_pkt_srvs.ei[0..4]
@@ -618,7 +622,7 @@ __attribute__((section(".textlate"))) void vring_tbl_init(void)
 
 /* rf_kill_sm__init (0x8d8bc0, 88 Б): автомат RF kill (описатель 0x802338, старт ENABLED).
  * Линия RF kill не разрешена (бит 0 [0x880a94]) — IRQ замаскировать. Иначе
- * mac_toggle_880288_b1, при RF kill (бит 0 [0x880288] == 0) — журнал и событие W_DISABLE
+ * mac_rf_kill_pin_toggle, при RF kill (бит 0 [0x880288] == 0) — журнал и событие W_DISABLE
  * (1); квитировать и размаскировать IRQ бита 27. */
 /* 0x804c34: объект автомата rf_mgmt_sm (в образе нули). */
 FWDATA(804c34) struct basic_sm rf_mgmt_sm = { 0 };
@@ -630,7 +634,7 @@ __attribute__((section(".textlate"))) void rf_kill_sm_init(u32 o)
         rf_kill_mask_irq();
         return;
     }
-    mac_toggle_880288_b1();
+    mac_rf_kill_pin_toggle();
     if ((MMIO32(HW_RF_KILL_PIN) & 1u) == 0) {
         fw_log_emit0(0x20, 0x100ba50);
         basic_sm_handle_event((void *)o, 1, 0, 0, 0);
@@ -654,7 +658,7 @@ __attribute__((section(".textlate"))) void l2mgr_init(void)
     /* OOB R1/R2 по strap-битам (0x880018 [31:29]) — только SparRAW-pro: режим не включается. */
     dashboard.cfg.oob_r1_mode = 0;
     dashboard.cfg.oob_r2_mode = 0;
-    mid_ctx_init_pools();
+    mid_ctx_init();
     link_loss_detectors_init();
     radio_mgr_init_global();
     vring_tbl_init();
