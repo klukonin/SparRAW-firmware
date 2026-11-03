@@ -215,8 +215,10 @@ def test_abft_slot_start(abft):
     _no(r, _by(f, 'ssw_start', 'abft_slot_start', 'abft_ss_end'))
 
 
-@pytest.mark.xfail(strict=True, reason='9.3.1.15: Duration SSW станции в A-BFT на ⌈TXTIME(SSW)⌉ = 15 мкс меньше '
-                                       '«time until the end of the current SSW slot» (у последней — 22 вместо 36)')
+@pytest.mark.xfail(strict=True, reason='9.3.1.15: Duration SSW станции в A-BFT на 1 мкс больше ⌈времени до конца '
+                                       'слота⌉ у части кадров (259 → 260, последняя 37 вместо 36): uc считает от '
+                                       'номинального начала слота, а пачка в эмуляции идёт на ~0,31–0,35 мкс позже '
+                                       '(то же, что test_abft_slot_start; стенд std4/5: −0,03…+0,04)')
 def test_abft_ssw_duration(abft):
     r = abft
     _no(r, _by(r['RB'].judge_duration(r['evs'], AP_S, r['sched'], r['lim']), 'SSW'))
@@ -290,10 +292,9 @@ def test_live_sls_mbifs(live):
     _no(r, [x for x in _sls(r) if any(s in x.msg for s in SLS_TIMING)])
 
 
-@pytest.mark.xfail(strict=True, reason='9.3.1.15: Duration SSW в DTI (ISS станции и точки, RSS) на ⌈TXTIME(SSW)⌉ = '
-                                       '15 мкс меньше CDOWN·(SBIFS + TXTIME(SSW)) + MBIFS; у SSW с CDOWN 0 — 0 вместо '
-                                       'MBIFS 9')
 def test_live_ssw_duration(live):
+    """9.3.1.15: Duration SSW в DTI (ISS станции и точки, RSS) — ⌈CDOWN·(TXTIME(SSW) + SBIFS) + MBIFS⌉, у CDOWN 0 —
+    MBIFS 9 (стенд dur3: 25/9 у CDOWN 1/0)."""
     r = live
     _no(r, _by(r['RB'].judge_duration(r['evs'], AP_S, r['sched'], r['lim']), 'SSW'))
 

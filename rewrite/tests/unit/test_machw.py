@@ -210,6 +210,28 @@ def test_rss_frames_sbifs_apart(uc):
     assert all(165 - tol <= g <= 165 + tol for g in gaps), ['%.2f мкс' % (g / CLK_PER_US) for g in gaps[:4]]
 
 
+@pytest.mark.parametrize('n', [1, 16, 32])
+def test_rss_ssw_duration_on_air(uc, n):
+    """9.3.1.15: Duration SSW в эфире (вне A-BFT) — до конца SSW с CDOWN 0 плюс MBIFS, мкс вверх (9.2.5.1):
+    ⌈CDOWN·(TXTIME(SSW) + SBIFS) + MBIFS⌉; у SSW с CDOWN 0 — MBIFS 9. Модель MAC (H-LITSSW) несёт 0x15 SSW как есть —
+    стенд dur3: CDOWN 1/0 = 25/9."""
+    hw = HW(uc, ifs=1485)
+    _sls_responder_setup(uc, n, 1)
+    uc.w32(0x886d00, 0x1730000 | ifs_code(1485))
+    uc.w16(0x8005be, ifs_code(1485))
+    seen = []
+    hw.on_tx = lambda r: seen.append(r)
+    hw.air_rx(2000, 26, 'ISS пира CDOWN 0', txss_end=True)
+    uc.call('txss_resp_flow', 0, stub={'mac_set_rf_chain_state_with_sta_sector': 0}, max_steps=50_000_000)
+    ssw = [r for r in seen if r['what'].startswith('sweep')]
+    assert len(ssw) == n, [r['what'] for r in seen]
+    step = ctrl_txtime_clk(26) + 165                         # TXTIME(SSW) + SBIFS, такты
+    for r in ssw:
+        cd = int(r['what'].split()[2])
+        assert r['dur_us'] == -(-(cd * step + 1485) // CLK_PER_US), (r['what'], r['dur_us'])
+    assert int(ssw[-1]['what'].split()[2]) == 0 and ssw[-1]['dur_us'] == 9
+
+
 # ---- развёртка маяков BTI (AP) -----------------------------------------------------------------------------
 
 def test_beacon_sweep_sbifs_on_air(uc):

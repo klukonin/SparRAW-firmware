@@ -1408,7 +1408,11 @@ class HW:
         H-DUR18 (стенд 2026-11-04, PMC обоих узлов): в режиме 0x14000007 MAC вычитает из 0x15 ⌈TXTIME⌉ своего PPDU,
         если кадр пущен 0x18 без б12 (CF-End держателя 34 → 19 и 18 → 3, ATIM 38 → 19, RTS keep-alive 40 → 25, маяки
         BTI — 0x18000000, 0x15 − 20); с б12 (0x18001000 — SLS в DTI: SSW 1012, SSW-Feedback 37, SSW-Ack 10) — 0x15
-        буквально. Кадр FIFO без 0x18 (ответ uc через SIFS, tx_send_imm_response) — буквально (не снято)."""
+        буквально. Кадр FIFO без 0x18 (ответ uc через SIFS, tx_send_imm_response) — буквально (не снято).
+        H-LITSSW: SSW развёртки (кадр FIFO с полем SSW 0x2d — ISS/RSS в DTI и пачка A-BFT) в буквальном режиме несёт
+        0x15 как есть, без вычета TXTIME: стенд dur3 (2026-10-22) — SSW CDOWN 1/0 = 25/9 при 0x15 = 25/9 (SLS_SSW_DUR,
+        uc/abft.h), vendor 17/1 при 0x15 = ss_plan_tx_dur 17/1; std4 — первый SSW в A-BFT 275 при 0x15 = 275. Вычет
+        ⌈TXTIME⌉ — только у маяка (шаблон без FIFO; rnd1/bcn1: 1269 = 1289 − 20). Вне развёртки — 0x15 буквально."""
         if not p['what'].startswith('sweep'):
             # H-DURQ (стенд 2026-10-31, STAMP_RX_DUR): Duration RTS и кадров очереди ставит MAC — остаток лимита TXOP
             # (HW_MAC_TXOP_LIMIT_0 [31:16], мкс) от начала TXOP − SIFS: RTS 2000 − SIFS − TXTIME(RTS) = 1982; запись 0x15
@@ -1426,6 +1430,8 @@ class HW:
         if self.dur_new or self.txop_end is None:
             self.txop_end = p['start'] - MACLAT_CLK + self.dur_us * CLK_PER_US
             self.dur_new = False
+        if self.dur_literal and p.get('fifo') is not None:   # H-LITSSW: SSW развёртки из FIFO — 0x15 как есть
+            return self.dur_us
         if self._dur_minus_txtime():
             return max(0, self.dur_us - -(-p['dur'] // CLK_PER_US))
         if self.dur_literal:

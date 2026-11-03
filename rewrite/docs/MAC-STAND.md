@@ -353,6 +353,12 @@ N BIs A-BFT 4 (B27..B30), PCP Association Ready 0; шаблон vendor держ�
 эталон (tests/ref) видел RTS с Duration 10 и данные с 0. Кадры, которые собирает uc (DMG CTS, CF-End, FIFO), несут
 значение uc.
 
+Буквальный режим Duration (0x14000007) у кадров развёртки различается по виду кадра (H-LITSSW): маяк из шаблона
+(без FIFO) несёт 0x15 − ⌈TXTIME⌉ (rnd1/bcn1: 1269 = 1289 − 20), SSW из FIFO (ISS/RSS в DTI, пачка A-BFT) — 0x15 как
+есть: dur3 — наш SSW CDOWN 1/0 = 25/9 при 0x15 = 25/9 (SLS_SSW_DUR), vendor 17/1 при 0x15 = ss_plan_tx_dur 17/1; std4 —
+первый SSW в A-BFT 275. Модель (machw._dur_field) вычитала ⌈TXTIME⌉ у всех кадров развёртки — эталон видел Duration SSW
+на 15 мкс меньше 9.3.1.15 (CDOWN 0 — 0 вместо MBIFS), хотя команды uc верны (test_uc_sls_sweep, test_machw).
+
 H-DUR18 (стенд 2026-11-04, three.fw, PMC-запись своих кадров на обоих узлах, iperf вверх/вниз 30 с): в режиме
 `0x14000007` у кадра FIFO, пущенного `0x18` без б12, MAC кладёт в Duration **0x15 − ⌈TXTIME своего PPDU⌉**; с б12
 (`0x18001000` — SLS в DTI) — 0x15 буквально. Данные:
