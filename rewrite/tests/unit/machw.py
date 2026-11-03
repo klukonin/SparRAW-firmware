@@ -17,7 +17,7 @@ fw → uc (8, L1) и пробуждение (10, L2); ядро (tools/arcemu/cpu
 прерывания; irqs=False — прежняя модель (будит любое событие, прерываний нет). Опрос порта, который никакое будущее
 событие не изменит, — SpinError (зависание).
 
-Каждое допущение о железе — константа или ветка с меткой H-*: H-ORIGIN, H-CLK2, H-GP3, H-GP5, H-GP9, H-HDR, H-PHYRX, H-T1,
+Каждое допущение о железе — константа или ветка с меткой H-*: H-ORIGIN, H-ORIGIN-RX, H-CLK2, H-GP3, H-GP5, H-GP9, H-HDR, H-PHYRX, H-T1,
 H-MTP, H-IRQ, H-TRN, H-TXOPGO, H-RESULTGO, H-SLOT2, H-SLOT (своя передача), H-DATAMCS (MCS 8 — STAMP_TXOP_CONT) — замеры стенда (uc/abft.h, метки
 uc/dbg.h); H-TVEC, H-WAKE, H-FW2UC — по коду и документации; H-GP4, H-T23, H-E27, H-BUSY (режим 2 — по исходу стенда),
 H-QSEL, H-QEMPTY, H-TXGO18F, H-TXAFTERACK, H-RETRY, H-AMPDU (форма — стенд), H-TXOPEVT-CFEND, H-HDR-SC — по смыслу кода и стандарту (непроверено, см. notes вне
@@ -41,6 +41,12 @@ from costmodel import Cost                                     # noqa: E402
 
 # ---- константы железа ----
 MACLAT_CLK = 91                      # H-ORIGIN: прямая передача — IFS(0x886d00) + 0,55 мкс после точки отсчёта
+# H-ORIGIN-RX: прямая передача, отсчитанная от конца принятого PPDU (ответ SLS в DTI: RSS после ISS, SSW-Feedback после
+# RSS, SSW-Ack после SSW-Feedback; продолжение TXOP после Ack), — IFS(0x886d00) + 0,05 мкс. Стенд, опыт E1 (2026-10-21,
+# notes IFS-MEASURED, uc/bf.c txss_resp_flow): SSW-Ack через 9,05 мкс после конца SSW-Feedback при 0x886d00 = MBIFS —
+# в той же калибровке (начало кадра = tx_end − 1,45 мкс), что и 0,55 мкс H-ORIGIN после события GP сетки A-BFT. 0,55 —
+# задержка от события GP, к отсчёту от конца приёма она не относится (прежде модель давала ответы SLS через 9,55 мкс).
+MACLAT_RX_CLK = 8
 GP3_DELAY_CLK = 7                    # H-GP3: пуск по триггеру 03 — IFS(0x886d00) + 7 тактов после txop_event
 HDR_CLK = 1495                       # H-HDR: rx_frame_event через 9,06 мкс от начала кадра
 # H-PHYRX (стенд, метка STAMP_CCA_DET, 2026-10-30): поле cca PHY_SIGNALS ненулевое уже на входе L1 по busy_event;
@@ -1364,7 +1370,7 @@ class HW:
             # кончился позже (стенд A-BFT: Feedback = GP1 + MBIFS + 0,55 мкс при конце SSW станции после GP1)
             ref, kind = self.gp_hw_ref, 'gp'
         if kind in ('rx', 'gp', 'gp0', 'gp1', 'gp2') and self.now - ref < 4 * self.ifs_clk():
-            resp_point = ref + self.ifs_clk() + MACLAT_CLK
+            resp_point = ref + self.ifs_clk() + (MACLAT_RX_CLK if kind == 'rx' else MACLAT_CLK)   # H-ORIGIN-RX / H-ORIGIN
             start = resp_point                            # ответная передача: MAC держит IFS от точки отсчёта
             if self.now > resp_point:
                 rec = (self.now, what, self.now - resp_point, self.ifs_ref_kind)

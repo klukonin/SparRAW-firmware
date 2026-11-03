@@ -283,11 +283,10 @@ def test_live_sls(live):
     _no(r, [x for x in f if not any(s in x.msg for s in SLS_TIMING + SLS_DUR)])
 
 
-@pytest.mark.xfail(strict=True, reason='10.42.6.2, 10.3.2.3.10: RSS, SSW-Feedback и SSW-Ack в DTI через 9,55–9,57 мкс '
-                                       'после предыдущей фазы — MBIFS 9 мкс +0,49 допуска превышен на ~0,07 мкс '
-                                       '(задержка старта MAC 0,55 мкс, machw H-ORIGIN — замер стенда, uc её не '
-                                       'вычитает)')
 def test_live_sls_mbifs(live):
+    """10.42.2.2, 10.42.6.2, 10.3.2.3.10: RSS, SSW-Feedback и SSW-Ack в DTI — через MBIFS (9 мкс, −0/+0,49) после
+    предыдущей фазы. Старт прямой передачи от конца приёма — IFS(0x886d00) + H-ORIGIN-RX (machw, стенд E1: 9,05 мкс);
+    прежде модель прибавляла 0,55 мкс H-ORIGIN (замер от события GP сетки A-BFT) и давала 9,55–9,57 мкс."""
     r = live
     _no(r, [x for x in _sls(r) if any(s in x.msg for s in SLS_TIMING)])
 

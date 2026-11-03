@@ -194,18 +194,28 @@ def test_rx_to_tx_header_in_switch_window(build_dir, uc_fw):
     assert hit, 'ни один заголовок не попал в окно — окно сместилось, пересчитать задержки'
 
 
+# 802.11-2020 Table 20-30: aSIFSTime 3 мкс, aSlotTime 5 мкс, aAirPropagationTime 0,1 мкс; MBIFS = 3·aSIFSTime
+# (10.3.2.3.10); допуск IFS DMG — −0 / +10 %·(aSlotTime − aAirPropagationTime) = +0,49 мкс (10.3.2.3.3).
+STD_MBIFS_CLK = 3 * 3 * CLK_PER_US
+STD_IFS_TOL_CLK = int(0.1 * (5 - 0.1) * CLK_PER_US)            # 80 тактов (0,485 мкс), вниз
+
+
 def test_rss_frames_sbifs_apart(uc):
-    """10.3.2.3.8: SSW одной развёртки разделены SBIFS. Первый SSW RSS — через MBIFS после конца ISS (10.42.2.2)."""
-    hw = HW(uc, ifs=1485)
+    """10.3.2.3.8: SSW одной развёртки разделены SBIFS. Первый SSW RSS — через MBIFS после конца ISS (10.42.2.2) с
+    допуском −0/+0,49 мкс без поправки модели: прямая передача от конца приёма — IFS + H-ORIGIN-RX (стенд E1: SSW-Ack
+    через 9,05 мкс), а не + 0,55 мкс H-ORIGIN от события GP (прежде модель давала 9,55)."""
+    from machw import MACLAT_RX_CLK
+    hw = HW(uc, ifs=STD_MBIFS_CLK)
     _sls_responder_setup(uc, 16, 1)
-    uc.w32(0x886d00, 0x1730000 | ifs_code(1485))
-    uc.w16(0x8005be, ifs_code(1485))
+    uc.w32(0x886d00, 0x1730000 | ifs_code(STD_MBIFS_CLK))
+    uc.w16(0x8005be, ifs_code(STD_MBIFS_CLK))
     hw.air_rx(2000, 26, 'ISS пира CDOWN 0', txss_end=True)
     uc.call('txss_resp_flow', 0, stub={'mac_set_rf_chain_state_with_sta_sector': 0}, max_steps=50_000_000)
     rss = [a for a in hw.air_log if a[2] == 'tx']
     iss_end = [a for a in hw.air_log if a[2] == 'rx'][0][1]
     tol = MODEL_TOL_CLK
-    assert 1485 <= rss[0][0] - iss_end <= 1485 + 81 + tol      # MBIFS −0/+0,49 мкс
+    assert rss[0][0] - iss_end == STD_MBIFS_CLK + MACLAT_RX_CLK
+    assert STD_MBIFS_CLK <= rss[0][0] - iss_end <= STD_MBIFS_CLK + STD_IFS_TOL_CLK   # MBIFS −0/+0,49 мкс
     gaps = [b[0] - a[1] for a, b in zip(rss, rss[1:])]
     assert all(165 - tol <= g <= 165 + tol for g in gaps), ['%.2f мкс' % (g / CLK_PER_US) for g in gaps[:4]]
 
