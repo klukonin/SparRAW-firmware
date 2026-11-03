@@ -679,14 +679,17 @@ __attribute__((section(".textlate"))) void add_bcon(struct mid *obj)
         r18 = &bcon_info_static;          /* статическая память */
     }
 
-    bcon_bi_ctrl_set_abft_len(r13->bi_ctrl, r13->abft_len & 7);
-    r13->bi_ctrl[0] &= ~(1u << 1);
+    bic_set(r13->bi_ctrl, BIC_ABFT_LENGTH, r13->abft_len & 7);
+    bic_set(r13->bi_ctrl, BIC_DISCOVERY_MODE, 0);
     memcpy_fw(r18->bi_ctrl, r13->bi_ctrl, 6);
-    /* PCP Association Ready (флаг готовности шаблона, байт 5 б4–5 → B43 в эфире): 9.3.4.2 — «reserved when transmitted
-     * by a non-PCP STA»; AP — не PCP: в эфир 0. Шаблон не меняется (assoc_ready_check_trig читает его). vendor ставил
-     * и в режиме AP; vendor STA тогда к точке не ассоциируется — сознательное соответствие стандарту. */
+    /* PCP Association Ready (B43): 9.3.4.2 — «reserved when transmitted by a non-PCP STA»; AP — не PCP: в эфир 0.
+     * Шаблон не меняется (assoc_ready_check_trig читает его). vendor ставил и в режиме AP; vendor STA тогда к точке
+     * не ассоциируется — сознательное соответствие стандарту. */
     if (r13->mode == MID_MODE_AP)
-        r18->bi_ctrl[5] &= (u8)~0x30u;
+        bic_set(r18->bi_ctrl, BIC_PCP_ASSOC_READY, 0);
+    /* Тело кадра собрано до A-BFT Length и снятия PCP Association Ready — в него то же поле, что uc передаёт MAC (в эфир
+     * поле собирает MAC; vendor оставлял в теле прежний шаблон) */
+    memcpy_fw(((struct ieee80211_dmg_beacon *)payload)->bi_ctrl, r18->bi_ctrl, 6);
     r18->mac = 0;
     r18->cfg = ((r13->state == 2) ? 1u : 0u) << 1;
     r18->bi_mode = 1;
@@ -723,26 +726,11 @@ __attribute__((section(".textlate"))) void bcon_post_send_cb(struct bcon_post_in
 }
 /* --- sub-хелперы add_bcon (портированы) --- */
 
-/* Побайтовая вставка bit-поля: байт (bf__set_field_byte_fw) и LE-полуслово
- * (bf__set_field_u16_le). Адрес может быть нечётным — работаем побайтово. */
-static inline void bits_set8(u8 *p, u32 start, u32 width, u32 v)
-{
-    u32 m = ((1u << width) - 1) << start;
-    *p = (u8)((*p & ~m) | ((v << start) & m));
-}
-static inline void bits_set16_le(u8 *p, u32 start, u32 width, u32 v)
-{
-    u32 w = (u32)p[0] | ((u32)p[1] << 8);
-    u32 m = ((1u << width) - 1) << start;
-    w = (w & ~m) | ((v << start) & m);
-    p[0] = (u8)w;
-    p[1] = (u8)(w >> 8);
-}
-
 /* add_discovery_bcon (0x8c2904, 300 Б): бикон discovery-режима на время пребывания на канале
- * (scan_type — второй аргумент). Поле Beacon Interval Control записи (bss.bi_ctrl): б1 = 1
- * (discovery), [5][5:4] = 0 (0x8ed298), A-BFT len [9:7] = 1 (0x8ed1f0), [3][7:5] = 1
- * (0x8ed2b0), [1..2][12:7] = 0 (0x8ed208); при scan_type 3 — ещё б0 = 1, A-BFT len = 3,
+ * (scan_type — второй аргумент). Поле Beacon Interval Control записи (bss.bi_ctrl, рис. 9-77): Discovery Mode = 1,
+ * PCP Association Ready = 0, A-BFT Length = 1, N BIs A-BFT = 1, Next A-BFT и Fragmented TXSS = 0 (vendor писал те же
+ * значения в свою раскладку шаблона, 0x8ed298/0x8ed1f0/0x8ed2b0/0x8ed208); при scan_type 3 — ещё CC Present = 1,
+ * A-BFT Length = 3,
  * MAC в CMD_BCON_MGT — direct_scan_mac скана записи, bi_mode 3; иначе без MAC, bi_mode 2.
  * Затем кадр DMG-бикона (tx_mgmt_srvs__build_dmg_beacon), post-send-info из пула 0x805a98
  * (как add_bcon: cfg 0) и TX_API__send_dband_bcon на канале 1 без write-back (кадр
@@ -756,14 +744,15 @@ __attribute__((section(".textlate"))) void add_discovery_bcon(struct mid *mid_e,
 
     if (payload == 0)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1537);
-    bi[0] |= 1u << 1;
-    bits_set8(&bi[5], 4, 2, 0);
-    bcon_bi_ctrl_set_abft_len(bi, 1);
-    bits_set8(&bi[3], 5, 3, 1);
-    bits_set16_le(&bi[1], 7, 6, 0);
+    bic_set(bi, BIC_DISCOVERY_MODE, 1);
+    bic_set(bi, BIC_PCP_ASSOC_READY, 0);
+    bic_set(bi, BIC_ABFT_LENGTH, 1);
+    bic_set(bi, BIC_N_BIS_ABFT, 1);
+    bic_set(bi, BIC_NEXT_ABFT, 0);
+    bic_set(bi, BIC_FRAGMENTED_TXSS, 0);
     if (scan_type == 3) {
-        bi[0] |= 1u;
-        bcon_bi_ctrl_set_abft_len(bi, 3);
+        bic_set(bi, BIC_CC_PRESENT, 1);
+        bic_set(bi, BIC_ABFT_LENGTH, 3);
         bi_mode = 3;
         mac = mid_e->disc.scan->direct_mac;
     }
@@ -788,97 +777,143 @@ __attribute__((section(".textlate"))) void add_discovery_bcon(struct mid *mid_e,
         fw_log_emit0(0x1c, 0x10171d8);   /* "send_dband_bcon() failure" */
 }
 
-/* bss_bi_ctrl__PCP_ready_set (0x8c4be8, 56 Б): лог security_en + биты [4..5] байта
- * bi_ctrl[5] (obj+0x10c; 1 при security_en == 1, иначе 0). База полей — add3 r13,r15,0x20 =
- * obj+0x100. */
+/* bss_bi_ctrl__PCP_ready_set (0x8c4be8, 56 Б): лог security_en + PCP Association Ready (B43 шаблона; 1 при
+ * security_en == 1, иначе 0). vendor — 2 бита B44..B45 своей раскладки шаблона. */
 __attribute__((section(".textlate"))) void bss_bi_ctrl_pcp_ready_set(struct mid_bss *mid, u32 security_en)
 {
     fw_log_emit2(0x2b, 0x100c3dc, security_en, dashboard.pcp_security_en);
-    bits_set8(&mid->bi_ctrl[5], 4, 2, (security_en == 1) ? 1u : 0u);
+    bic_set(mid->bi_ctrl, BIC_PCP_ASSOC_READY, (security_en == 1) ? 1u : 0u);
 }
 
-/* bcon_tx_build_step (0x8c4c20, 142 Б): собрать frame-control/PCP-поля бикона
- * (obj+0x107..0x10c; obj — e+0x48 записи mid); при a1!=0 дополнительно взвести PCP_ready.
- * База полей — add3 r13,r0,0x20 = obj + (0x20 << 3) = obj+0x100 (прежде было +0x20). */
+/* bcon_tx_build_step (0x8c4c20, 142 Б): шаблон Beacon Interval Control бикона (bss.bi_ctrl, рис. 9-77; obj — e+0x48
+ * записи mid); при a1 != 0 дополнительно PCP Association Ready.
+ * исправлено (vendor): шаблон был в собственной раскладке vendor (TXSS Span B22..B28, N BIs A-BFT B29..B31, N A-BFT in
+ * Ant B38..B43, PCP Association Ready B44..B45), её же копия шла в тело кадра; в эфир поле собирал MAC из команд uc
+ * (стенд: верно), но тело и разбор (bcn_tx_init_bi_cfg) расходились с 9.3.4.2. Значения те же. */
 __attribute__((section(".textlate"))) void bcon_tx_build_step(struct mid_bss *mid, u32 a1)
 {
-    u8 *m = mid->bi_ctrl;                 /* obj+0x107: m[0..5] — байты obj+0x107..0x10c */
-    u8 b;
-    u32 is23;
+    u8 *m = mid->bi_ctrl;
 
-    /* байт obj+0x10b: bits_set8_s2_w4(0) + bits_set8_s0_w2(0) → очистить [0..5] */
-    m[4] &= ~0x3fu;
-
-    /* u16@obj+0x107: bcon_bi_ctrl_set_abft_len(1) → бит 7 = 1 (биты 8..9 = 0) */
-    bcon_bi_ctrl_set_abft_len(m, 1);
-
-    /* байт obj+0x107: очистить биты 6 и 0 */
-    b = m[0];
-    b &= ~(1u << 6);
-    b &= ~(1u << 0);
-    m[0] = b;
-
-    /* бит 1 байта obj+0x107 = 1 если тип [mid+8] НЕ в {2,3} */
-    is23 = (mid->mode == 2 || mid->mode == 3) ? 1u : 0u;
-    b = m[0];
-    b &= ~(1u << 1);
-    b |= (is23 ? 0u : 2u);
-    m[0] = b;
-
-    /* байт obj+0x109: очистить бит 5 */
-    m[2] &= ~(1u << 5);
-
-    /* байт obj+0x108: bits_set8_s2_w4(fwsh_long_range == 0 ? 0xf : 3) + бит 6
-     * (ldb_s — беззнаковая загрузка байта; mov.le ⟺ ==0 для 0..255; mov.le r1,0xf —
-     * прежде здесь было 7) */
-    /* fwsh_long_range — литеральным адресом (FWSH_A_*): с символом gcc переносит записи m[0]/m[2] за
-     * это чтение (порядок доступов vendor меняется) */
-    /* Поле FSS: 15 (16 SSW в слоте); в long range vendor ставил 3 — ниже aSSFramesPerSlot = 4 (802.11-2020
+    bic_set(m, BIC_CC_PRESENT, 0);
+    /* Discovery Mode = 1 у записи не AP/PCP (bss.mode не 2/3) */
+    bic_set(m, BIC_DISCOVERY_MODE, (mid->mode == 2 || mid->mode == 3) ? 0u : 1u);
+    bic_set(m, BIC_NEXT_BEACON, 0);
+    bic_set(m, BIC_ATI_PRESENT, 0);
+    bic_set(m, BIC_ABFT_LENGTH, 1);
+    /* fwsh_long_range — литеральным адресом (FWSH_A_*): с символом gcc переносит записи шаблона за это чтение.
+     * Поле FSS: 15 (16 SSW в слоте); в long range vendor ставил 3 — ниже aSSFramesPerSlot = 4 (802.11-2020
      * 10.42.5.2, Table 11-22: «shall set the FSS subfield … no less than aSSFramesPerSlot»), такой маяк роняли
      * станции vendor и прежний uc (assert 0x1540/0x145d, чтение таблицы слотов за границей). Стандартный минимум — 4. */
-    m[1] = (u8)((m[1] & ~(0xfu << 2)) |
-                   (((*(volatile u8 *)FWSH_A_fwsh_long_range == 0) ? ABFT_FSS_FIELD : ABFT_FSS_FIELD_MIN) << 2));
-    m[1] |= (1u << 6);
-
-    /* u16@obj+0x10b: bits_set16_s6_w6(0) → очистить биты [6..11] */
-    bits_set16_le(m + 4, 6, 6, 0);
-
-    /* байт obj+0x10a, биты [5..7] → bi_cfg.n_bi_abft (bcn_tx_init_bi_cfg: s[3] >> 5) → поле N BIs A-BFT
-     * (include/abft_cfg.h: период A-BFT) */
-    bits_set8(m + 3, 5, 3, ABFT_N_BI_ABFT);
-
-    /* u16@obj+0x108: bcon_bits_set16_s7_w6(0) → очистить биты [7..12] */
-    bits_set16_le(m + 1, 7, 6, 0);
-
-    /* байт obj+0x107: bits_set8_s2_w4(0) → очистить биты [2..5] */
-    bits_set8(m, 2, 4, 0);
-
+    bic_set(m, BIC_FSS, (*(volatile u8 *)FWSH_A_fwsh_long_range == 0) ? ABFT_FSS_FIELD : ABFT_FSS_FIELD_MIN);
+    bic_set(m, BIC_IS_RESP_TXSS, 1);
+    bic_set(m, BIC_NEXT_ABFT, 0);
+    bic_set(m, BIC_FRAGMENTED_TXSS, 0);
+    bic_set(m, BIC_TXSS_SPAN, 1);
+    /* N BIs A-BFT → bi_cfg.n_bi_abft (bcn_tx_init_bi_cfg) — период A-BFT (include/abft_cfg.h) */
+    bic_set(m, BIC_N_BIS_ABFT, ABFT_N_BI_ABFT);
+    bic_set(m, BIC_ABFT_COUNT, 0);
+    bic_set(m, BIC_N_ABFT_IN_ANT, 0);
     if (a1 != 0)
         bss_bi_ctrl_pcp_ready_set(mid, 1);
-
-    /* u16@obj+0x109: bcon_bits_set16_s6_w7(1) → бит 6 = 1, биты [7..12] = 0 */
-    bits_set16_le(m + 2, 6, 7, 1);
 }
 
-/* tx_mgmt_srvs__build_dmg_beacon (0x8e9ccc, 124 Б): тело DMG-бикона (tx_mgmt_build_dmg_bcon_fixed
- * 0x8d7df4 — ниже) + IE хоста для бикона. */
+/* Порядковый номер элемента в теле DMG Beacon (802.11-2020 табл. 9-45); неизвестный — перед Vendor Specific. */
+static u32 dmg_bcon_ie_rank(u32 eid)
+{
+    switch (eid) {
+    case 148: return 7;                 /* DMG Capabilities */
+    case EID_EXT_SCHED: return 8;       /* Extended Schedule */
+    case 48:  return 9;                 /* RSN */
+    case 71:  return 10;                /* Multiple BSSID */
+    case 151: return 11;                /* DMG Operation */
+    case 162: return 12;                /* Next DMG ATI */
+    case 155: return 13;                /* DMG BSS Parameter Change */
+    case 158: return 14;                /* Multi-band */
+    case 157: return 15;                /* Awake Window */
+    case 143: return 16;                /* DMG Wakeup Schedule */
+    case 187: return 17;                /* UPSIM */
+    case 0:   return 18;                /* SSID */
+    case 6:   return 19;                /* IBSS Parameter Set */
+    case 7:   return 20;                /* Country */
+    case 11:  return 21;                /* BSS Load */
+    case 12:  return 22;                /* EDCA Parameter Set */
+    case 32:  return 23;                /* Power Constraint */
+    case 52:  return 24;                /* Neighbor Report */
+    case 40:  return 25;                /* Quiet */
+    case 46:  return 26;                /* QoS Capability */
+    case 60:  return 27;                /* Extended Channel Switch Announcement */
+    case 63:  return 28;                /* BSS Average Access Delay */
+    case 70:  return 29;                /* RM Enabled Capabilities */
+    case 83:  return 30;                /* Nontransmitted BSSID Capability */
+    case 107: return 31;                /* Interworking */
+    case 108: return 32;                /* Advertisement Protocol */
+    case 111: return 33;                /* Roaming Consortium */
+    case 185: return 34;                /* STA Availability */
+    case 154: return 35;                /* Next PCP List */
+    case 156: return 36;                /* PCP Handover */
+    case 190: return 37;                /* Antenna Sector ID Pattern */
+    case 221: return 0x101;             /* Vendor Specific — после всех */
+    default:  return 0x100;
+    }
+}
+
+#define DMG_BCON_IE_MAX 31u                 /* + свой DMG Operation — не больше 32 (маска done) */
+
+/* tx_mgmt_srvs__build_dmg_beacon (0x8e9ccc, 124 Б): тело DMG-бикона (tx_mgmt_build_dmg_bcon_fixed 0x8d7df4 — ниже) +
+ * IE хоста для бикона. исправлено (vendor): блок IE копировался как есть — ESE (TDMA точки, расписание хоста)
+ * оказывался после элементов хоста, в том числе Vendor Specific; теперь элементы — в порядке табл. 9-45 (равные —
+ * в порядке блока). AP/PCP без DMG Operation от хоста — свой (ie_push_dmg_operation): 11.1.3.3.1 требует его при
+ * CBAP Only = 1 и при CBAP Only = 0 с ESE, иначе он необязателен (vendor не ставил). */
 __attribute__((section(".textlate"))) void tx_mgmt_srvs_build_dmg_beacon(u32 payload, u32 *out_len,
                                                                          struct mid *obj, u32 a3)
 {
-    u32 len;
+    u32 len, cnt = 0, has_op = 0, i;
     struct app_ies *block;
+    const u8 *el[DMG_BCON_IE_MAX + 1];
+    u8 op[12];
     (void)a3;
 
     len = tx_mgmt_build_dmg_bcon_fixed(payload, obj);
     fw_log_emit1(0x2d, 0x1013da0, len);              /* "Before IE push - len %d" */
 
     block = mid_get_app_ies_by_subtype(&obj->bss, 8);
-    if (block == 0 || ies_block_is_empty(block) != 0) {
+    const u8 *ie = (block != 0 && ies_block_is_empty(block) == 0) ? (const u8 *)block->buf : 0;
+    u32 n = ie != 0 ? block->len : 0u;
+    for (i = 0; i + 2u <= n && i + 2u + ie[i + 1] <= n; i += 2u + ie[i + 1]) {
+        if (ie[i] == 151)
+            has_op = 1;
+        if (cnt < DMG_BCON_IE_MAX)
+            el[cnt] = ie + i;
+        cnt++;
+    }
+    if (cnt > DMG_BCON_IE_MAX) {
+        /* больше элементов, чем помещается в таблицу порядка, — блок как есть (порядок хоста) */
+        memcpy_fw((void *)(payload + len), ie, n);
+        len += n;
+        cnt = 0;
+    }
+    if (has_op == 0 && (obj->bss.mode == MID_MODE_AP || obj->bss.mode == MID_MODE_PCP)) {
+        ie_push_dmg_operation(op, &obj->bss);
+        el[cnt++] = op;
+    }
+    if (cnt == 0) {
         fw_log_emit1(0x2d, 0x1013e18, len);          /* "No App IE added ... - len %d" */
     } else {
+        u32 done = 0;
         fw_log_emit1(0x2d, 0x1013dc8, len);
-        memcpy_fw((void *)(payload + len), (const void *)block->buf, block->len);
-        len += block->len;
+        for (u32 k = 0; k < cnt; k++) {
+            u32 best = 0, br = 0xffffffffu;
+            for (i = 0; i < cnt; i++) {
+                u32 r = dmg_bcon_ie_rank(el[i][0]);
+                if (!(done & (1u << i)) && r < br) {
+                    br = r;
+                    best = i;
+                }
+            }
+            done |= 1u << best;
+            memcpy_fw((void *)(payload + len), el[best], 2u + el[best][1]);
+            len += 2u + el[best][1];
+        }
         fw_log_emit1(0x2d, 0x1013df0, len);          /* "After IE push - len %d" */
     }
 
@@ -922,6 +957,13 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_copy_bi_ctrl(u8 *dst, const st
     memcpy_fw(dst, obj->bss.bi_ctrl, 6);
     return 6;
 }
+/* CBAP Only (9.4.1.46): 1 — весь DTI CBAP (нет ни схемы ESE, ни фиксированного расписания). Общий для DMG Parameters
+ * маяка и поля DMG Parameters в Capability Information Probe/(Re)Association Response (push_cap_info_resp): по
+ * 9.4.1.46 поле в этих кадрах значит то же, что в маяке. */
+__attribute__((section(".textlate"))) u32 dmg_cbap_only(const struct mid *obj)
+{
+    return (fixed_sched.enabled != 0 || sched_scheme_is_built(obj->sched) != 0) ? 0u : 1u;
+}
 /* BUILDER_push_dmg_parameters (0x8c06d0, 104 Б): DMG-параметры в байт IE.
  * CBAP Only (B2) = 1 только когда весь DTI — CBAP: нет ни расписания ESE, ни фиксированного
  * расписания (802.11-2020 9.4.1.46, 10.39.6.3: «CBAP Only = 0, если DTI распределён Extended
@@ -932,9 +974,7 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_copy_bi_ctrl(u8 *dst, const st
 __attribute__((section(".textlate"))) u32 builder_push_dmg_parameters(u8 *dst, const struct mid *obj)
 {
     *(u8 *)dst = (*(u8 *)dst & ~3u) | (obj->bss.mode & 3);
-    u32 r15 = 1;
-    if (fixed_sched.enabled != 0 || sched_scheme_is_built(obj->sched) != 0)
-        r15 = 0;
+    u32 r15 = dmg_cbap_only(obj);
     u8 b = *(u8 *)dst;
     b = (b & ~0xcu) | ((r15 & 1) << 2);
     b = (b & ~0x30u) | ((obj->sec.privacy != 0) ? 0x10u : 0u);
@@ -948,18 +988,16 @@ __attribute__((section(".textlate"))) u32 sched_scheme_is_built(const struct sch
 {
     return obj->built;
 }
-/* mgmt_tx__copy_addr_from_conn (0x8c0664): копия direct_scan_mac scan_mngr записи, 6 байт. */
+/* mgmt_tx__copy_addr_from_conn (0x8c0664): Clustering Control маяка discovery (поле есть при CC Present, fw ставит его
+ * только вместе с Discovery Mode — add_discovery_bcon): рис. 9-79 — A-BFT Responder Address (B0..B47) = direct_scan_mac
+ * scan_mngr записи, Reserved B48..B63. исправлено (vendor): октеты 6..7 не писались — в эфир уходил остаток буфера TX;
+ * резерв — 0. */
 __attribute__((section(".textlate"))) u32 mgmt_tx_put_clustering_ctrl(u8 *dst, const struct mid *obj)
 {
     memcpy_fw(dst, obj->disc.scan->direct_mac, 6);
+    dst[6] = 0;
+    dst[7] = 0;
     return 8;
-}
-/* bcon__bits_set16_s7_w3 (0x8ed1f0): установить 3 бита [7..9] LE-полуслова.
- * Побайтовый read-modify-write (адрес может быть нечётным). */
-__attribute__((section(".textlate"))) void bcon_bi_ctrl_set_abft_len(u8 *p, u32 v)
-{
-    p[0] = (u8)((p[0] & ~(1u << 7)) | ((v & 1u) << 7));   /* бит 7 */
-    p[1] = (u8)((p[1] & ~3u) | ((v >> 1) & 3u));         /* биты 8..9 */
 }
 /* TX_API__send_dband_bcon (0x8e5284, 136 Б): заполнить TX-дескриптор
  * (payload-0x24) и поставить пакет в очередь 0x8421e4. Возврат 0 = ok. */

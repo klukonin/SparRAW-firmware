@@ -145,7 +145,9 @@ FWDATA(800231) volatile u8 conn_multi_omni_count = 0x1;
 FWDATA(800232) u8 vring_pring_stop_max_polls = 0x5;
 FWDATA(800233) volatile u8 calib_lo_power_level = 0xc;
 FWDATA(800234) volatile u8 rf_fs8_unlock_fatal = 0x1;
-FWDATA(800235) volatile u8 rf_chain_sector_desc_f4 = 0x1;
+/* 1 — RTS перед каждым TXOP в CBAP. Без него (0) ответчик на стенде не принимает первый A-MPDU TXOP (слушает
+ * квазиненаправленно, наводится по RTS): TCP 908–919/954 → 436–484/250–259 Мбит/с (MAC-STAND H-PKTMODE). */
+FWDATA(800235) volatile u8 txq_pkt_mode = 0x1;
 FWDATA(800236) volatile u8 sched_fixed_active = 0x0;
 FWDATA(800237) u8 chsw_rx_agc_step_c0_lo = 0x1b;
 FWDATA(800238) u8 chsw_rx_agc_step_c0_hi = 0x1b;

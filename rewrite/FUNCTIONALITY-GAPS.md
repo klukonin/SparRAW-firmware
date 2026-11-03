@@ -31,9 +31,117 @@
 | Неинициализированные байты пула в событиях хосту/LMAC — единое правило: тело элемента обнуляет mem_pool_alloc_locked (2026-10-20); у сборщиков — «у vendor остаток слота пула» | pool.c (+ комментарии wmi_h_*.c, sysapi_stats.c, misc_ext_sysapi.c, pcp_ext.c) | сделано (заметно: 0x1a0f — статус 0) |
 | Прежние TODO в fw/*.c (2026-10-20): портированы sniffer WMI_CFG_RX_CHAIN, edca__fill_default_ac_params (EDCA IE был с нулевыми AC), add_discovery_bcon, l2_mgr::connect_multi_omni (+ копия команды вместо указателя в кольцо ящика); прочие — утверждения | wmi_cmd.c, mid.c, stubs.c | сделано; стенд не проверял (sniffer, discovery, multi-omni, EDCA в probe resp/биконе AP) |
 | cnt_handler__clear_all (0x8f6424): опрос lp N+1 при счётчике N — при полном таймауте счётчик −1 и ассерт не срабатывает (особенность vendor, сохранена; исправление даст ассерт при загрузке, если биты готовности не встают — только со стендом) | hw_init.c | кандидат в баг vendor |
+| SNR Report (9.5.3, 4·(SNR − 19)) в SSW A-BFT станции, SSW-Feedback AP и SLS DTI — был младший байт метрики BF (r40 сел. 0xd [19:9]), как vendor (стенд: метрика 197…299 при SNR PHY 10,8…14,8 дБ, корреляция 0,38 — не дБ). Теперь SNR оценки PHY (0x883aec [17:9], четверти дБ) кадра, лучшего по метрике, — `snr_report_phy` в момент обновления лучшего | uc/abft.h, bti.c, tail.c, tx.c | исправлено |
 | Порог ICCM: код до 0x8fc7b4 из 0x900000 (~14 КБ запаса) | fw.ld | следить |
 
 ## Сознательные отличия от vendor (баги vendor исправлены, с доказательствами в комментариях)
+
+- **Поля WMI** (2026-10-31; тест test_fw_wmi_fields): WMI_CFG_RX_CHAIN wb_thrsh / host_thrsh / max_rx_pl_per_desc —
+  __le16 драйвера (vendor читал со знаком: 0x8001 проходил проверку степени двойки как «< 3»); TSF в
+  WMI_NOTIFY_REQ_DONE — mac_read_tsf64 (старшее–младшее–старшее с повтором; vendor читал по разу — при переносе TSF
+  на 2^32 мкс меньше). ACS (0x9005): значения как у vendor, поля названы по драйверу — по +4 маска filled = 3
+  (beacon_found, busy_time — только они заполняются), по +6 число каналов.
+- **Приём и мелкие поля кадров** (2026-10-31; тест test_fw_mgmt_frames): AID из Association Response — младший
+  октет (9.4.1.8: в DMG старшие 8 бит — резерв; маска 0x3fff не-DMG отвергала AID с битами B8..B13, fw/mlme.c
+  `DMG_AID`); ESE у станции — все Number of Blocks окон аллокации с шагом Allocation Block Period (9.4.2.131; vendor —
+  только первое), записи таблицы по возрастанию начала (fw/rx.c); последний элемент нулевой длины в кадре разбирается
+  (9.4.2.1; vendor: цикл до остатка ≥ 3, fw/rx_mgmt.c); Clustering Control маяка discovery — Reserved B48..B63 = 0
+  (рис. 9-79; vendor — остаток буфера TX, fw/stubs.c); RSN по умолчанию — RSN Capabilities 0 целиком (рис. 9-289;
+  vendor оставлял B14 OCVC и B15 прежнего буфера, fw/wmi_cmd.c).
+- **Элементы Probe Response / Probe Request / QoS Info** (fw/mgmt_tx.c, 2026-10-31): vendor собирал Probe Response в
+  порядке SSID, RSN, DMG Capabilities, Vendor Specific, DMG Operation, Antenna Sector ID, EDCA, QoS Capability и сливал
+  с IE хоста по Element ID; теперь — порядок табл. 9-39 (RSN 16 → EDCA 18 → … Multi-band 53 → DMG Capabilities 54 →
+  DMG Operation 55 → Antenna Sector ID 57 → Vendor Specific), QoS Capability убран (в табл. 9-39 его нет). Probe Request
+  — без RSN (табл. 9-38). QoS Info в Association Request (рис. 9-101) — 0x00: 0x08 объявлял U-APSD AC_BE, а
+  энергосбережения нет. Тест: test_fw_mgmt_frames.
+- **CBAP Only в Capability Information ответов** (fw/mgmt_tx.c `push_cap_info_resp`, 2026-10-31): vendor в Probe
+  Response и (Re)Association Response всегда ставил B2 = 1 — и при DTI, распределённом ESE (маяк — 0); по 802.11-2020
+  9.4.1.46 поле значит то же, что в DMG Parameters маяка — общий `dmg_cbap_only`. В Association Request BSS Type,
+  CBAP Only, CBAP Source, ECAPC (резерв вне маяка и ответов) — 0 (vendor: 1 и 1). Тест: test_fw_mgmt_frames.
+- **DMG Operation: TDDTI и Pseudo-static allocations** (fw/mgmt_tx.c `ie_push_dmg_operation`): vendor всегда 0; теперь
+  по ESE маяка (рис. 9-556, 10.39.6, 10.39.6.4) — при TDMA точки оба 1. В DMG Capabilities (рис. 9-553) TDDTI и
+  Pseudo-static остаются 0 сознательно: способность «10.39.6 и 11.4» требует DMG ADDTS (11.4) и выделения по Poll
+  Required в A-BFT (10.42.5) — их нет. Power Source (B11) — по power_source (vendor 0, «от батареи»).
+  Тест: test_fw_mgmt_frames (тело Association Response и DMG Capabilities).
+- **Block Ack Policy в ADDBA** (fw/ba.c, 2026-10-31): vendor ставил B1 = 0 (delayed BA) в Request и Response; по
+  802.11-2020 9.4.1.13 — 1 (immediate). Тест: test_fw_peer_vanish (байты ADDBA в эфире), test_live_ampdu.
+- **Capability Request элемента DMG Beam Refinement** (uc/brp.c): vendor ставил и читал B50 (раскладка 802.11ad-2012 с
+  15-битным FBCK-TYPE); по рис. 9-558 — B53, B50 — бит Number of Beams в FBCK-TYPE. Тест: test_capability_request_bit53.
+- **Тело Grant Ack** (uc/tx.c `direct_tx_init_grant_ack`): 5 октетов Reserved (рис. 9-57) — vendor не обнулял байт
+  +0x14 (уходил остаток стека) и ставил код AllocationType в B4..B6. Тест: test_grant_ack_body_reserved.
+- **Supported MCS Set, Code Rate 13/16** (fw/mid.c): vendor B21 = 0 — по 9.4.2.127.2 MCS 5 и 9 тогда не поддерживаются
+  при любом Maximum SC MCS; теперь 1.
+- **Extended Schedule из WMI** (fw/wmi_h_bf.c): PCP Active B10 = 1 (10.39.6.1); Allocation ID 1..15, 0 — только у CBAP с
+  широковещательными AID (9.4.2.131; vendor — счётчик 0..15). Поля Allocation — по возрастанию начала (9.4.2.131;
+  vendor — в порядке записей хоста). Number of Blocks > 1 — команда отвергается (статус 1): таблица слотов точки
+  держит один блок на выделение (vendor молча объявлял 1 блок из шаблона). test_fw_ese.
+- **Поле r51 в командах 0x19** (uc, MTP_DESC_HI_OF): `(r51 >> 4) << 14` без маски залезло бы в код команды; маска
+  10 бит (б14..23), кроме цикла SSW A-BFT (ХРУПКО, запас 0…2 такта). Стенд: r51 [31:4] всегда 0.
+- **DMG BSS Parameter Configuration** (fw/mgmt_tx.c ie_push_dmg_operation, рис. 9-557): MinBHIDuration — наименьший
+  BHI (один BTI, bss_min_bhi_us), AssocRespConfirmTime — ⌈BI / 50 мс⌉ (vendor — 0: станция могла взять нулевой
+  dot11AssociationResponseTimeOut); PSRequestSuspensionInterval, BroadcastSTAInfoDuration, MinPPDuration, SPIdleTimeout —
+  0 сознательно (PS, рассылки сведений о станциях, PP/GP нет). test_fw_mgmt_frames.
+- **Listen Interval Association Request** (fw/mlme.c, 9.4.1.6): 0 — станция не уходит в PS; vendor — Beacon Interval в
+  TU (100 «интервалов»). test_fw_mgmt_frames.
+- **Диагностика модулей RF** (fw/rf_sector.c rfc_probe_modules, rfc_collect_rx_crc_stats; WMI_UNIT_TEST 0x516/0x517):
+  после обхода — прежний набор активных модулей; vendor оставлял активным последний, тень abif_dvs_rf_ctrl у uc
+  расходилась с регистром, запись uc по тени откатывала выбор. test_fw_rf_modules.
+- **Beacon Interval станции и Probe Response точки** (fw/scan_mngr.c bss_bi_cache, fw/wmi_cmd.c l2mgr_connect,
+  fw/wmi_h_pcp.c wmi_bcon_ctrl): CONNECT задаёт MAC станции BI точки из её маяка, принятого при скане (кольцо
+  BSSID → BI, 0x806990); vendor — pcp_bcon_interval (BI своей точки, 100 TU): при BI точки 200 TU станция вела сетку BI
+  с шагом 100 (стенд 2026-10-31: HW_MAC_BEACON_INTERVAL точки 0xc8, станции 0x64). Точка: поле записи bss.bcon_int —
+  BI из PCP_START; vendor оставлял прежнее — маяк 200 TU, Probe Response 100 TU. test_fw_beacon_interval.
+- **Элементы DMG Beacon** (fw/stubs.c tx_mgmt_srvs_build_dmg_beacon): порядок табл. 9-45 (vendor — блок как есть: ESE
+  TDMA и расписания хоста после IE хоста, в том числе Vendor Specific); AP/PCP — свой DMG Operation, если хост не дал
+  (11.1.3.3.1: обязателен при CBAP Only = 1 и при ESE; vendor не ставил). WMI_SCHEDULING_SCHEME заменял весь блок IE
+  маяка одним ESE (RSN и прочие IE хоста пропадали) — теперь ESE встаёт на место прежнего (mid_set_beacon_ese, как TDMA);
+  TX-буфер команды без флага 3 не освобождался. test_fw_ese.
+- **DMG Operation, MaxLostBeacons** (fw/mid.c): 20 → dot11MaxLostBeacons = 4 (DEFVAL, Annex C) — то же A, что в Tguard
+  псевдостатических выделений (fw/tdma.c, 10.39.6.5); DOT11_MAX_LOST_BEACONS. Прочие поля DMG BSS Parameter
+  Configuration (рис. 9-557) — 0: энергосбережения и динамических выделений нет (PSRequestSuspensionInterval, MinPPDuration,
+  SPIdleTimeout не используются), MinBHIDuration / BroadcastSTAInfoDuration / AssocRespConfirmTime 0 — открыто.
+- **DMG Capabilities в Association Response** (fw/mlme.c): AID = 0 — элемент описывает точку (STA Address — адрес
+  точки, 9.4.2.127; AID 0 — AP/PCP, 9.4.1.8); vendor ставил AID станции. AID станции — поле AID кадра (9.3.3.6).
+- **Шаблон Beacon Interval Control** (fw/stubs.c bcon_tx_build_step, add_bcon, add_discovery_bcon; fw/pcp_ext.c
+  bcn_tx_init_bi_cfg; fw/conn.c): шаблон записи mid и копия в теле DMG Beacon — по рис. 9-77 (поля BIC_* в
+  include/ieee80211.h). vendor держал свою раскладку (TXSS Span B22..B28, N BIs A-BFT B29..B31, N A-BFT in Ant
+  B38..B43, PCP Association Ready B44..B45) и копировал её в тело; в эфир поле собирает MAC из команд uc 0x2a/0x2b —
+  там верно (стенд 2026-10-31, MAC-STAND «Beacon Interval Control маяка»). Параметры BI для uc (LMAC 0x0b) — байт в
+  байт прежние (AP, PCP, Discovery 1/3). Тело кадра — итоговое поле (A-BFT Length записи, у AP PCP Association Ready 0;
+  vendor — шаблон до этих правок). test_fw_beacon_bic.
+- **Слот multi-omni CONNECT** (fw/scan_mngr.c, fw/wmi_cmd.c): BI цели × 1024 мкс; vendor × 1000 + 2400 — верно только при
+  100 TU (поле scan_peer «rssi» → bcn_int_tu, параметры probe_resp_ind — da/bssid). Период n × BI: BI = 0 в кадре пира
+  или n × BI × 1024 ≥ 2^32 (BI 32768 TU, n = 128 — ровно 2^32) — окна нет, подключение сразу, маяк не отсеивается
+  (multi_omni_period, include/scan_mngr.h; прежде — деление на 0, test_fw_multi_omni).
+- **Роли в A-BFT Discovery Mode** (uc/abft.h, наше, исправлено): AP и PCP были перепутаны (uc_role = bss.mode: 3 — AP,
+  2 — PCP, как табл. 9-69); тесты test_uc_beacon_rx и tools/test_abft_discovery кодировали ту же ошибку — исправлены.
+
+- **Allocation Duration кадра Grant** (uc/misc.c `frame_hdr_init`, 2026-10-31): vendor (0x9246fc) клал в B23..B31
+  длительность >> 7, в B32..B38 — длительность & 0x7f; по 802.11-2020 9.5.2 (рис. 9-847) младший бит — B23: [8:0] и
+  [15:9]. 1000 мкс уходили как 53255. Наш uc поле при приёме не разбирает — ломалась совместимость с чужими станциями.
+- **Ширина подполей Beacon Interval Control** (uc/bi.c `bi_cfg_pack_bcon_cfg`, `bi_ctrl_program_mac_bcon`, 2026-10-31):
+  vendor упаковывал байты LMAC 0x0b и счётчики BI в команды MAC 0x2a/0x2b без маски — значение шире подполя рис. 9-77
+  заходило в соседнее (TXSS Span → N BIs A-BFT, N A-BFT in Ant → PCP Association Ready), в Reserved B44..B47 и в код
+  команды; при N BIs A-BFT = 0 счётчик 0xff давал Next A-BFT = 15, Fragmented TXSS = 1, B44..B46 = 1. Теперь каждое
+  подполе — по своей ширине. Тест: test_uc_beacon_tx test_bic_field_wider_than_subfield, test_bic_counters_masked.
+- **Grant фиксированного расписания** (uc/fsched.c `fsched_tx_ctrl_frame`, uc/tx.c, fw/conn.c, 2026-10-31): AP отдаёт
+  TXOP станции — по 802.11-2020 10.39.7.3 Source AID = AID станции (ответчика), Destination AID = AID AP (0, 9.4.1.8),
+  AllocationType CBAP, Allocation Duration = 32768 («в текущем TXOP», 9.5.2 b), Beamforming Training = 0. vendor:
+  Source AID 0, Destination AID 1 (AID произвольной станции), Allocation Duration = длине слота (по 9.5.2 a — «AP начнёт
+  доступ через …»), BF Control = 7 (обещание SLS, которого нет; при Beamforming Training = 1 роли TXOP не меняются).
+  AID станций uc берёт из нового общего fwsh_peer_aid (0x857964; fw пишет при WMI_CONNECT_EVENT). Grant Ack:
+  Beamforming Training — копия из Grant (10.39.4), при 0 BF Control = 0 (vendor — всегда 7). Тесты: test_uc_grant_frame
+  test_fsched_grant_fields, test_grant_ack_copies_beamforming_training; test_fw_reassoc (fwsh_peer_aid).
+- **Старт AP/PCP без своего BSSID** (fw/wmi_h_pcp.c `l2mgr_pcp_start_flow`, 2026-10-31): vendor не ставил BSSID = свой
+  адрес (802.11-2020 3.1) — он оставался от последнего WMI_SET_MAC_ADDRESS / WMI_CONNECT (адрес прошлого AP) /
+  WMI_DISCOVERY_STOP; DMG Capabilities не пересобирался с max_assoc из WMI_PCP_START (поле Max Associated STA Number,
+  9.4.2.127.3 — прежнее значение). Теперь l2mgr_apply_mac_address(own) до смены канала.
+- **WMI_DISCOVERY_STOP** (fw/wmi_h_pcp.c `l2mgr_stop_discovery`): vendor возвращал BSS к адресу phy из flash, не к адресу
+  интерфейса — BSSID и регистры BSSID становились адресом phy. Теперь — mid->mac.
+
+- **DMG CTS-to-self нам** (uc/rx.c `rx_flow_handle_frame`, 2026-10-31): vendor сравнивал TA с копией своего адреса,
+  снятой по LMAC 0x00 при загрузке fw (до WMI_SET_MAC_ADDRESS хоста) — при адресе интерфейса ≠ адресу phy ветка не
+  срабатывала (стенд: копия 24:18:1d:26:d4:7b, интерфейс 26:18:1d:26:d4:7b). TA — с регистром своего адреса 0x886018.
 
 - **MCS ответа через SIFS** (uc/rx.c `rx_frame_tx_resp_seq`, 2026-10-30): vendor запрашивает Ack/BlockAck у MTP без
   MCS (0xff → `0x17` без [1:0] = 3), MAC шлёт BlockAck на кадр MCS 8 на MCS 1 (стенд: наш uc и vendor-AP, r38
@@ -239,6 +347,17 @@
   vendor — uc_assert 0x93/0x94 (быстрая ветка) и 141 (ветка BRP). На железе phy_rx_frame и cca_ppdu_comp меняются
   только с разбором заголовка, ≈ 9 мкс от начала кадра (стенд, метка STAMP_CCA_DET): окно ≈ 24 такта есть у любого
   перехода, например у повтора SSW-Feedback по таймеру (test_machw.py test_rx_to_tx_header_in_switch_window).
+- uc, A-BFT ответчик: SSW-Feedback принимается, только если RA — свой адрес (9.3.1.16, 10.42.5.2); vendor сверял один
+  TA с BSSID, и Feedback AP другой станции того же слота (коллизия RSS) брал как свой — чужой сектор и пропуск A-BFT
+  (tests/unit/test_uc_sls_feedback.py test_abft_feedback_to_other_sta_ignored).
+- fw, STA: после разрыва (любой путь, и отмена CONNECT, ждущего радио) BSSID BSS и регистры BSSID (парсер 0x886020 с
+  битом «действителен», MAC 0x886df0, L2 0x881b28) — снова свой адрес, как после загрузки (sta_bss_set_idle); vendor
+  оставлял адрес прежней точки — MAC помечал её маяки «своей BSS» (11.3.5.6/11.3.5.7: станция уже не ассоциирована;
+  tests/unit/fwflows.py idle_state — test_fw_conn_cleanup, test_fw_peer_vanish, test_fw_sta_disassoc).
+- fw, поиск (WMI_START_SEARCH → START_LISTEN / DISCOVERY_STOP): снятие маяка поиска возвращает настройку ответчика
+  A-BFT загрузки (LMAC 0x23: beacon_type «любые маяки»); vendor оставлял настройку поиска (только маяки Discovery
+  Mode = 1) — станция до перезагрузки не отвечала в A-BFT обычных маяков (10.42.5.1/10.42.5.2;
+  tests/unit/test_fw_abft_cfg.py).
 
 ## Сохранённые особенности vendor (с комментариями в коде)
 
@@ -263,6 +382,6 @@ tools/linktest.sh 30 10       # ping/iperf3
 | BA add/del_tx/del_rx | работает; после DELBA связь восстанавливается (у vendor — нет) |
 | FTM: сессия и результаты | = vendor: 0x1995 (3 измерения) + 0x1991 через ~17 мс; сырой RTT ≈ −0,3 нс (смещения не откалиброваны), заглушки ответчика TSF Sync/TOD/TOA Error; драйвер событий не обрабатывает |
 | monitor (sniffer, WMI_CFG_RX_CHAIN) | = vendor (~3800 кадров/6 с) |
-| AP: маяк/probe IE, EDCA, данные | = vendor; QoS Info исправлен на 0x08 (баг vendor) |
+| AP: маяк/probe IE, EDCA, данные | = vendor; QoS Info исправлен на 0x08 (баг vendor; с 2026-10-31 — 0x00, U-APSD нет) |
 | multi-omni connect | путь выполняется; данных нет и у vendor (AP не поддерживает) |
 | PCIe remove/rescan, reset | не проверить: вешают хост .12 и с vendor fw |

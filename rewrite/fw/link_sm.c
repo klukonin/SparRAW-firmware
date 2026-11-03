@@ -1694,7 +1694,11 @@ static void find_mngr_del_discovery_bcon(struct find_mngr *x)
     fw_log_emit0(0x2c, 0x1017b1c);
     x->bcon_added = 0;
     tx_bcon_del(x->mid);
-    x->mid->bss.bi_ctrl[0] &= (u8)~2u;
+    bic_set(x->mid->bss.bi_ctrl, BIC_DISCOVERY_MODE, 0);
+    /* исправлено (vendor): настройка ответчика A-BFT поиска (lmac_if_send_abft_cfg(1): «всегда», только маяки
+     * Discovery Mode = 1) оставалась и после него — станция не отвечала в A-BFT обычных маяков (Discovery Mode = 0),
+     * хотя 10.42.5.1/10.42.5.2 допускают ответ в A-BFT любого маяка. Возврат к настройке загрузки (lmac_ready). */
+    lmac_if_send_abft_cfg(0);
 }
 
 /* find_sm__stop_discovery (0x8e80a4, 38 Б). */

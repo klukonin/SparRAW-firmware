@@ -351,7 +351,7 @@ void l1_task_entry(u32 mode)
         UC_STAMP(STAMP_L1_EVT, mode << 24 | (mac_evt1() & 0xffffff), mac_evt4());
 #ifdef UC_STAMP_MASK
     if (((UC_STAMP_MASK) & (1u << STAMP_BI1_LEAD)) && mode == 1 && (mac_evt1() & MAC_EVT1_BI1))
-        UC_STAMP(STAMP_BI1_LEAD, MMIO32(HW_MAC_USEC_TO_TBTT), MMIO32(HW_MAC_TIMING_INDIRECT_REG_5));
+        UC_STAMP(STAMP_BI1_LEAD, MMIO32(HW_MAC_USEC_TO_TBTT), MMIO32(HW_MAC_TSF_LO));
 #endif
     if (mode == 0) {
         uc_mac_cmd(0xcafcaf);

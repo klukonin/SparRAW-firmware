@@ -74,7 +74,7 @@ struct dtx_ctrl_frame {
         u32  w14;                       /* [0,7) длительность [15:9] */
         struct {
             u8   alloc_hi;              /* 0x14 */
-            u8   bf_ctl0;               /* 0x15 BF Control: б0 1, б1/б2 — аргументы */
+            u8   bf_ctl0;               /* 0x15 BF Control, октет 0 (9.5.5): аргумент bf_ctl */
             u8   bf_ctl1;               /* 0x16 */
             u8   bf_ctl2;               /* 0x17 */
         };
@@ -116,15 +116,19 @@ _Static_assert(sizeof(struct dmg_ssw_frame) == 0x16, "dmg_ssw_frame");
 
 /* Параметры Grant для frame_hdr_init / direct_tx_send_ctrl_frame (fsched_tx_ctrl_frame, 12 Б). */
 struct dtx_grant_req {
-    u16  alloc_dur;                     /* 0x00 длительность выделения */
+    u16  dur;                           /* 0x00 поле Duration кадра (9.3.1.12) */
     u8   sta;                           /* 0x02 станция (sta_tab) */
     u8   rsv03;
     u32  alloc_type;                    /* 0x04 1 → тип выделения 1, иначе 0 */
     u8   src_aid;                       /* 0x08 */
     u8   dst_aid;                       /* 0x09 */
-    u8   rsv0a[2];
+    u16  alloc_dur;                     /* 0x0a Allocation Duration (9.5.2): мкс; DMG_ALLOC_DUR_IN_TXOP — в текущем TXOP */
 };
 _Static_assert(__builtin_offsetof(struct dtx_grant_req, src_aid) == 8, "dtx_grant_req.src_aid");
+_Static_assert(__builtin_offsetof(struct dtx_grant_req, alloc_dur) == 0xa, "dtx_grant_req.alloc_dur");
+/* Allocation Duration кадра Grant в CBAP «в пределах текущего TXOP» (802.11-2020 9.5.2 b; 10.39.7.3 — передача
+ * остатка TXOP ответчику). */
+#define DMG_ALLOC_DUR_IN_TXOP 32768u
 _Static_assert(sizeof(struct dtx_grant_req) == 12, "dtx_grant_req");
 
 /* Параметры автозаполнения RFC (rfc_auto_fill_apply, hwd_rfc_auto_fill_verify; «p_fill_info»),
@@ -694,7 +698,8 @@ struct bcn_rx_s {
     u32  bss_type;                      /* +0x08 DMG Parameters & 3 (3 — без A-BFT) */
     u8   sector;                        /* +0x0c Sector ID из SSW маяка */
     u8   antenna;                       /* +0x0d DMG Antenna ID */
-    u8 _pad0[2];
+    u8   snr_rep;                       /* +0x0e SNR Report (9.5.3) лучшего маяка — SNR PHY (snr_report_phy) */
+    u8 _pad0;
     s32  metric;                        /* +0x10 метрика лучшего маяка (r40 [10:0] со знаком) */
     u16  bssid[3];                      /* +0x14 */
     u16  relax_bti;                     /* +0x1a (наше, у vendor — выравнивание) б0 — задана, б1..15 — конец BTI (TSF +
@@ -740,7 +745,7 @@ struct sls_peer_rec {
     u8   abft_sector;                   /* +0x0e A-BFT: Sector Select из SSW-Feedback (+ поправка RF) */
     u8   abft_antenna;                  /* +0x0f A-BFT: Antenna Select */
     u8   snr;                           /* +0x10 SNR report (SSW-Feedback +1 / кадр +0x14) */
-    u8 _pad1;
+    u8   rx_snr_rep;                    /* +0x11 SNR Report (9.5.3) лучшего SSW пира — SNR PHY (snr_report_phy) */
     u16  peer_mac[3];                   /* +0x12 TA пира (кадр +0xa) */
 };
 _Static_assert(sizeof(struct sls_peer_rec) == 0x18, "sls_peer_rec");
@@ -1379,7 +1384,7 @@ struct bcast_stats {
     u8   tx2;                       /* +0x04 +4: вторая передача. Не литерал. */
     u8 _pad0[7];
     u32  x0c;                       /* +0x0c +0xc (r13[3]). Не литерал. */
-    u32  rx_sector;                 /* +0x10 +0x10: сектор окна приёма (<<8 в mac_program_rx_window). Не литерал. */
+    u32  tx_sector;                 /* +0x10 +0x10: TX-сектор широковещательного потока (<<8 в mac_program_tx_vector). Не литерал. */
 };
 _Static_assert(__builtin_offsetof(struct bcast_stats, cca_fail) == 0x0, "bcast.cca_fail");
 _Static_assert(__builtin_offsetof(struct bcast_stats, done) == 0x1, "bcast.done");
@@ -1387,7 +1392,7 @@ _Static_assert(__builtin_offsetof(struct bcast_stats, tx_end) == 0x2, "bcast.tx_
 _Static_assert(__builtin_offsetof(struct bcast_stats, tx1) == 0x3, "bcast.tx1");
 _Static_assert(__builtin_offsetof(struct bcast_stats, tx2) == 0x4, "bcast.tx2");
 _Static_assert(__builtin_offsetof(struct bcast_stats, x0c) == 0xc, "bcast.x0c");
-_Static_assert(__builtin_offsetof(struct bcast_stats, rx_sector) == 0x10, "bcast.rx_sector");
+_Static_assert(__builtin_offsetof(struct bcast_stats, tx_sector) == 0x10, "bcast.tx_sector");
 
 /* bi_win (0x802ec0). Блок счётчиков окон BI и тайминга BI (0x802ec0..0x802f13). Счётчики — по действиям автомата bi_sm (таблица 0x8015dc: соб */
 struct bi_win_ctx {
@@ -1607,7 +1612,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define bg_task_pending              (*(u32 *)0x800648)
 #define rf_modules                   (*(struct rf_modules_cfg *)0x8006b4)
 #define bcast_mac                    ((u16 *)0x8006c4)
-#define prs_mcast_addr               ((u8 *)0x8005e4)   /* [6] Копия MAC-адреса фильтра 0x886018/0x88601c (prs_mcast_addr_lo/hi), пишется u16×3 в LMAC 0x00; rx_flow_handle_f… */
+#define prs_own_addr_boot               ((u8 *)0x8005e4)   /* [6] Копия своего адреса (регистр 0x886018/0x88601c, prs_own_addr_boot_lo/hi в карте vendor), снимается по LMAC 0x00 при загрузке — до WMI_SET_MAC_ADDRESS, для сравнения не годится (rx_flow_handle_frame читает регистр); rx_flow_handle_f… */
 #define qsel_last_qid_c              ((u32 *)0x8005ec)   /* [2] tx_slot_pick_queue, набор qset 7..8: [r1] = qid+1 последней выбранной очереди; команда v = [0]|[1]<<8|0x130000… */
 #define txss_retry_cnt               ((u8 *)0x8005fc)   /* [3] bf_sm_txss_init_result: счётчики повторов TXSS по виду статуса ([0] — 1, [1] — 2/3, [2] — 4; до 4); sta_reset_… */
 #define sysassert_idle_sm_hist       ((u16 *)0x800758)   /* [8] uc_sysassert_idle_hist: гистограмма r40[2:0] (состояния SXD idle detect) за 20000 итераций; vendor-имя g_sysas… */
@@ -1623,7 +1628,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define cmd20_cfg                    ((u8 *)0x8025b8)   /* [36] Копия 0x24 Б тела LMAC 0x20 (ucode_cmd_0x20_handler); 0x8025b8..0x8025db. */
 #define rx_mode_hist                 ((u8 *)0x8025fc)   /* [16] Кольцо последних режимов RX (rx_mode__configure: hist[idx]=mode, idx=(idx+1)&0xf, hist[idx]=0xff как маркер). … */
 #define txop_limit_us                ((u32 *)0x80294c)   /* [4] 4 лимита TXOP (u16 из LMAC 0x21 → u32), txop__apply_limits_regs: [1]→сдвиг/мин, [2]|[3]<<16 → 0x886f74. LMAC-P… */
-#define ifs_cfg_us                   ((u16 *)0x80295c)   /* [6] 12 Б из тела LMAC 0x00 +0x30 (u16: [0] SIFS, [2] slot, [3], [4]); вход txrx_api_program_ifs_timing. Не литерал (0x80294… */
+#define ifs_cfg_clk                  ((u16 *)0x80295c)   /* [6] 12 Б из тела LMAC 0x00 +0x30, в тактах 165 МГц (u16: [0] SIFS, [2] slot = 825, [3], [4]; mac_clk_div165 делит на 165); вход txrx_api_program_ifs_timing. Не литерал (0x80294… */
 #define txq_slot_a                   ((u32 *)0x8029fc)   /* [3] Длины/номера слотов очередей группы A (0..2), tx_slot__pick_queue → MAC-команда v|b24|b28 (A[0] | A[1]<<8 | A[… */
 #define txq_slot_b                   ((u32 *)0x802a08)   /* [3] То же для группы B (3..5), команда с b25|b28. */
 #define tx_dis_mask                  ((u16 *)0x802a90)   /* [8] Маска запрета передачи по станциям (бит — причина): bf__pause_sta_tx / bf__resume_sta_tx; вендорское g_sm_disa… */
@@ -1751,8 +1756,8 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define bi_aw_flag                   (*(u32 *)0x800458)   /* [н] bi_sm_on_bhi_to_aw_in_aw/53c/56c ставят 1 (трассы 0xcaf66x, переход BHI→AW), 935a94 — 0. В 6.2 uc читателей нет; гейт «AW разрешён» по этому адресу опис... */
 #define bap_tx_up_status             (*(u32 *)0x800460)   /* [в] r53 & 0x10 (bap_tx_up_status) при приёме ACK/BA; при ≠0 BA не учитывается (rx_match_expected_response, rx_nav_update). UC-REGISTERS §2.14. */
 #define rx_resp_ackcts_cnt           (*(u32 *)0x800464)   /* [н] ++ в rx_get_required_response перед веткой ack_cts (L_9331c4); читателей нет. DATAPATH.md называет [gp-0xc4]=0x800464 «bcast qid» — это 4.1, в 6.2 ... */
-#define bf_rx_sector                 (*(u16 *)0x80046c)   /* [с] Сектор для слова +8 записи станции (0x80110c: (cfg|0x30)|s<<8) в sta_apply_bf_result; = байт 0x802110 результата BF; по умолчанию 0x21 (bf_init_glo... */
-#define bf_tx_sector                 (*(u16 *)0x80046e)   /* [с] Сектор для слова +4 записи станции (0x801108: (cfg|0x20)|s<<8); = байт 0x802111; по умолчанию 0x21. Пара к 0x80046c. */
+#define bf_sta_tx_sector             (*(u16 *)0x80046c)   /* [с] TX-сектор станции: для sta_tab[].tx_sel (+8, 0x80110c: (cfg|0x30)|s<<8) в sta_apply_bf_result; = байт 0x802110 результата BF; по умолчанию 0x21 (bf_init_glo... */
+#define bf_sta_rx_sector             (*(u16 *)0x80046e)   /* [с] RX-сектор станции: для sta_tab[].rx_sel (+4, 0x801108: (cfg|0x20)|s<<8); = байт 0x802111 (bf_res.rx_sector); по умолчанию 0x21. Пара к 0x80046c. */
 #define bf_cur_sta                   (*(u32 *)0x800470)   /* [в] Станция текущего BF-потока: пишут bf_sm_process_request_fifo, bf_enter_sta_tx_pause (через 0x800528-0xb8); internal_tx_isr («Postpone TxSS for sta_id %d»)... */
 #define txop_limit_cur               (*(u32 *)0x800478)   /* [с] txop_apply_limits_regs: предел TXOP после сдвига txop_limit_shift (из 0x802950); тот же a уходит в 0x886f70[31:16]. Только запись. */
 #define rx_resp_skip_cnt             (*(u32 *)0x800480)   /* [с] Обратный счётчик в rx_get_required_response: при ==1 перезаряжается из 0x800484 и ответ не формируется (return 0), при ≥2 — декремент. Периодически... */
@@ -1788,7 +1793,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define edca_ac_en_shadow            (*(u32 *)0x80050c)   /* [с] txrx_api_program_edca_ac (LMAC 0x04 EDCA): тень битов (i+8) и (i+20) по AC; уходит в MAC-команду m|0x07000000. */
 #define txss_ifs_restore             (*(u32 *)0x800510)   /* [с] txss_init_flow/txss_resp_flow ставят 1 после смены IFS (0x802974); в конце потока при ≠0 восстанавливают IFS из 0x802968 и шлют 0x1f000601; txss_*_... */
 #define tx_fifo_free                 (*(u32 *)0x800514)   /* [в] Свободное место FIFO TX в байтах (уменьшается при записи r33/r34; direct_tx_program_desc задаёт длину). UC-REGISTERS §2.2. */
-#define rf_chain_cfg                 (*(u32 *)0x80051c)   /* [в] Конфигурация RF-цепи из LMAC 0x00 (+0x40): &0xf → 0x563f0020; |0x30 в векторы TX/RX (0x41000000, mac_program_rx_window). 21 обращение; один раз чит... */
+#define rf_chain_cfg                 (*(u32 *)0x80051c)   /* [в] Конфигурация RF-цепи из LMAC 0x00 (+0x40): &0xf → 0x563f0020; |0x30 в векторы TX/RX (0x41000000, mac_program_tx_vector). 21 обращение; один раз чит... */
 #define rs_enabled_mask              (*(u32 *)0x800520)   /* [в] Маска станций с включённым rate search (LMAC 0x13 enable/disable); rs_is_sta_enabled. */
 #define rs_pending_mask              (*(u32 *)0x800524)   /* [с] Станции с ожидающим шагом rate search: rs_start (=1<<sta), rate_search_per_check, rate_search_pick_tx_params ставят; rs_end перебирает и снимает. (LINK-S... */
 #define rx_qset4_hit                 (*(u32 *)0x800528)   /* [н] Адрес gp. Как переменная: rx_flow_main ставит 1, если queue_sel_get_qset4 нашёл очередь (иначе 0); rx_flow_handle_frame использует для бита 4 0... */
@@ -1833,6 +1838,10 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define txrx_state2                  (*(u32 *)0x8005f8)   /* [в] txrx_state, слово 2 — ожидаемый ответ и фаза (биты 0..4 режим, б8 ждём, фазы BF). UC-REGISTERS §4.2. 104 обращения, 3 полусловом. */
 #define mtp_desc_lo                  (*(u32 *)0x800608)   /* [в] r51 & 0xf (MTP_DESCRIPTOR_SCRATCHPAD); б1 → бит 6 команды 0x19000b00/0x19800830. UC-REGISTERS §4.5. 39 обращений. */
 #define mtp_desc_hi                  (*(u32 *)0x80060c)   /* [в] r51 >> 4; <<14 в ту же команду 0x19. UC-REGISTERS §4.5. */
+/* Поле команды 0x19 из r51 (MTP_DESCRIPTOR_SCRATCHPAD): (r51 >> 4) << 14 — не выше б23 (код команды — б24..31), 10 бит.
+ * исправлено (vendor: без маски — r51 [31:14] попали бы в код команды). Стенд 2026-10-31 (STAMP_MTP_DESC, iperf): r51 —
+ * только 0x0 и 0x2, поле всегда 0. */
+#define MTP_DESC_HI_OF(r51)          (((r51) >> 4) & 0x3ffu)
 #define l2_wd_fired                  (*(u32 *)0x800624)   /* [в] l2_handle_watchdog ставит 1; l1_task_on_evt1 / l1_task_on_evt1_fixed_sched при ≠0 обнуляют и сообщают link lost. UCODE-TASKS.md, VERSION-DIFF.md, NA... */
 #define uc_wait_marker               (*(u32 *)0x800628)   /* [в] Метка текущего ожидания для отладки (0xff2f/0xff30 в mac_switch_rx_to_tx, 0xff31 в rx_get_required_response; 0 после выхода). volatile. */
 #define bti_busy_cancel_cnt          (*(u32 *)0x80062c)   /* [в] bti_ap_beacon_sweep_tx: ++ при отмене развёртки маяка по busy2 (MAC_EVT1_BUSY2), обнуляется при успехе. BEACONING.md («счётчик 0x800... */
@@ -1910,7 +1919,7 @@ _Static_assert(sizeof(struct ssw_parse) == 0xc, "ssw_parse");
 struct mtp_resp_info {
     u32  mcs;                           /* +0 r43 [20:16] */
     u32  cfg_10;                        /* +4 sta_tab[r43 [11:8]].cfg_10 */
-    u32  tx_sel;                        /* +8 sta_tab[…].tx_sel → окно приёма CTS */
+    u32  tx_sel;                        /* +8 sta_tab[…].tx_sel → TX-сектор/цепи для mac_program_tx_vector (RTS перед CTS) */
 };
 _Static_assert(sizeof(struct mtp_resp_info) == 0xc, "mtp_resp_info");
 
@@ -1942,6 +1951,7 @@ _Static_assert(sizeof(struct ss_timing) == 8, "ss_timing");
 #define rx_buf_fb_snr                (*(s8 *)0x804021)   /* [в] +0x11: SNR Report поля SSW-Feedback (ldb.x). */
 #define rx_buf_bcn_ssw               (*(u16 *)0x804022)   /* [в] +0x12: у DMG Beacon — поле SSW: >>10 Sector ID (у SSW-кадра +0x12 &3 — антенна). */
 #define rx_buf_ssw_fb0               (*(u8 *)0x804023)   /* [в] +0x13: SSW-Feedback у SSW-кадра (&0x3f сектор, >>6 антенна) — phy_params__snapshot, rx_funcs__handle_ppdu_report. Не литерал. */
+#define rx_buf_grant_bf              (*(u8 *)0x804025)   /* [в] +0x15: у Grant — BF Control, октет 0 (б0 Beamforming Training, 9.5.5). */
 #define rx_buf_bcn_ssw_hi            (*(u16 *)0x804024)   /* [в] +0x14: у маяка байт SSW: &3 DMG Antenna ID. */
 #define rx_buf_body18                (*(u8 *)0x804028)   /* [в] +0x18: у action-кадра — Category (0x14 = BRP-кадр по rx__is_brp_frame/rx__handle_brp_frame; STANDARD-MAPPING: 20); у маяка — байт 1 BI Control; u16... */
 #define rx_buf_body19                (*(u8 *)0x804029)   /* [в] +0x19: Action (==1 — BRP) / байт 2 BI Control. */

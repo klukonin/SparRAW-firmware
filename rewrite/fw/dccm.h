@@ -134,7 +134,8 @@ extern volatile u8 conn_multi_omni_count;            /* 0x800231: [gp,0xad]: ч�
 extern u8 vring_pring_stop_max_polls;                /* 0x800232: [gp,0xae]: предел перевзводов таймера останова pring (образ 5) */
 extern volatile u8 calib_lo_power_level;             /* 0x800233: [gp,0xaf]: сохранённый уровень LO power (calib_lo_power__save_level; образ 0xc) */
 extern volatile u8 rf_fs8_unlock_fatal;              /* 0x800234: [gp,0xb0]: != 0 — «FS8 UNLOCK» (вектор 13, бит 7) → фатал 0x12ee */
-extern volatile u8 rf_chain_sector_desc_f4;          /* 0x800235: [gp,0xb1]: поле 4..7 дескриптора сектора rf_chain; fixed_sched__start = 0 */
+extern volatile u8 txq_pkt_mode;          /* 0x800235: [gp,0xb1]: packet_mode очередей данных — поле [7:4] дескриптора сектора (режимы 5/6), MAC отдаёт его
+                                                    * в r43 [7:4]: 0 сразу, 1 RTS, 2 DMG CTS-to-self (стенд 2026-10-31, MAC-STAND H-PKTMODE); fixed_sched__start = 0 */
 extern volatile u8 sched_fixed_active;               /* 0x800236: [gp,0xb2]: фиксированное расписание запущено (0 в STA, 1 в AP); режим окна MACQ */
 extern u8 chsw_rx_agc_step_c0_lo;                    /* 0x800237: [gp,0xb3]: AGC-шаг → 0x8831c0[5:0] (hwd_phy__rx_agc_steps_disable(0); образ 0x1b) */
 extern u8 chsw_rx_agc_step_c0_hi;                    /* 0x800238: [gp,0xb4]: AGC-шаг → 0x8831c0[11:6] (образ 0x1b) */

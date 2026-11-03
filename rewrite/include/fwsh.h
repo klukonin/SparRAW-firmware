@@ -6,10 +6,11 @@
  *    заголовок fw_stats_hdr, снимок температур, журналы калибровки (fw-only, include/sys_cfg.h,
  *    calib.h, calib_engine.h); здесь — его общая с uc часть: сводка соединений fw_stats_dash
  *    (0x853910) и опубликованный отчёт MAC_MON mac_mon_pub (0x853940, 0x80 Б).
- *  - 0x857000..0x857964 — общий блок (обнуляет crt0 fw, fw/start.S): fwsh_diag, fwq_tx_avail,
+ *  - 0x857000..0x85796c — общий блок (обнуляет crt0 fw, fw/start.S): fwsh_diag, fwq_tx_avail,
  *    ll_ctx, ese_slot_tbl, байты STA-capability, отсчёты энергии fwsh_energy, статистика PHY
  *    fwsh_phy, наборы RF fwsh_sets (результаты и шаблон FTM — только SparRAW-pro, до 0x857828),
- *    RSSI станций fwsh_rssi (0x857828). За ним — SNR по секторам SLS fwsh_sect_snr (0x857860, до 0x857964).
+ *    RSSI станций fwsh_rssi (0x857828). За ним — SNR по секторам SLS fwsh_sect_snr (0x857860) и AID станций
+ *    fwsh_peer_aid (0x857964, до 0x85796c).
  *    Дальше (0x857a00..) — только uc: рейтинги секторов, link_stat (uc/dccm.h).
  *  - fixed_sched (0x847a3c) — объект fw (символ fw/fw.ld); uc читает его по указателю
  *    fwsh_sets.fsched_tbl.
@@ -438,6 +439,14 @@ struct fwsh_sect_snr {
 };
 FWSH_OFF(struct fwsh_sect_snr, cnt, 0x84);
 
+/* AID станций у AP/PCP (0x857964, SparRAW): fw пишет при ассоциации (l2mgr_send_host_event — тот AID, что ушёл
+ * станции в Association Response и хосту в WMI_CONNECT_EVENT), uc читает в Source AID кадра Grant фиксированного
+ * расписания (fsched_tx_ctrl_frame; 9.5.2). Индекс — cid (= индекс станции uc). AID DMG — 1…254 (9.4.1.8). */
+struct fwsh_peer_aid {
+    u8  aid[SPARRAW_MAX_STA];                  /* 0x00 */
+};
+_Static_assert(sizeof(struct fwsh_peer_aid) == SPARRAW_MAX_STA, "fwsh_peer_aid");
+
 
 
 /* ---------------- объекты ---------------- */
@@ -458,6 +467,7 @@ FWSH_OFF(struct fwsh_sect_snr, cnt, 0x84);
 #define FWSH_A_fwsh_sets          0x857730u
 #define FWSH_A_fwsh_rssi          0x857828u
 #define FWSH_A_fwsh_sect_snr      0x857860u
+#define FWSH_A_fwsh_peer_aid      0x857964u
 
 /* Поле общего объекта по его собственному литеральному адресу (целая константа «адрес
  * объекта + offsetof») — кодоген как с числом. Форма obj.field даёт у gcc адрес «база
@@ -489,6 +499,7 @@ extern struct fwsh_phy_blk fwsh_phy;           /* 0x8576a0 */
 extern struct fwsh_sets fwsh_sets;             /* 0x857730 */
 extern struct fwsh_rssi fwsh_rssi;             /* 0x857828 */
 extern struct fwsh_sect_snr fwsh_sect_snr;     /* 0x857860 */
+extern struct fwsh_peer_aid fwsh_peer_aid;     /* 0x857964 */
 #else
 /* uc: имена — макросы на литеральный адрес. */
 #define fw_stats_dash      (*(volatile struct fw_stats_dash *)FWSH_A_fw_stats_dash)
@@ -505,6 +516,7 @@ extern struct fwsh_sect_snr fwsh_sect_snr;     /* 0x857860 */
 #define fwsh_sets          (*(volatile struct fwsh_sets *)FWSH_A_fwsh_sets)
 #define fwsh_rssi          (*(volatile struct fwsh_rssi *)FWSH_A_fwsh_rssi)
 #define fwsh_sect_snr      (*(volatile struct fwsh_sect_snr *)FWSH_A_fwsh_sect_snr)
+#define fwsh_peer_aid      (*(volatile struct fwsh_peer_aid *)FWSH_A_fwsh_peer_aid)
 
 
 /* Псевдонимы uc. «Число наборов» развёртки = n_sec[1][0] (≥ 2 — по набору своя база сектора). */

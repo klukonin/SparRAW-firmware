@@ -4,6 +4,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/sta_max.h"
+#include "abft.h"
 static inline s32 min(s32 a, s32 b) { return a < b ? a : b; }   /* ARC min (знаковое) */
 static inline s32 max(s32 a, s32 b) { return a > b ? a : b; }   /* ARC max (знаковое) */
 
@@ -88,14 +89,18 @@ void direct_tx_program_desc(u32 a, u32 b)
     uc_mac_cmd((a << 16) | (b | 0x34000000));
 }
 
-void direct_tx_init_grant_ack(struct dtx_ctrl_frame *a, u32 b, u32 c)
+/* bf_ctl — младший октет BF Control (9.5.5, рис. 9-851/9-852): 0 — без обучения (Beamforming Training = 0, остальные
+ * подполя зарезервированы). */
+void direct_tx_init_grant_ack(struct dtx_ctrl_frame *a, u32 bf_ctl)
 {
     a->fc = 0x764;
+    /* Grant Ack (802.11-2020 9.3.1.18, рис. 9-57): после TA — 5 октетов Reserved, затем BF Control. исправлено (vendor
+     * direct_tx__init_rx_desc 0x9246c4): байт +0x14 не обнулялся (уходил остаток стека), в B4..B6 ставился код
+     * AllocationType от Grant — у Grant Ack это Reserved. */
     a->alloc = 0;
-    a->bf_ctl0 = 0;
+    a->alloc_hi = 0;
+    a->bf_ctl0 = (u8)bf_ctl;
     a->bf_ctl1 = 0;
-    bf_set32_lo_hi((u32)&a->alloc, 4, 3, 1);
-    a->bf_ctl0 = 1 | ((b & 1) << 1) | ((c & 1) << 2);
 }
 
 
@@ -237,7 +242,10 @@ void direct_tx_send_short_frame(u32 a)   /* 6.2 asm 0x93b32c */
 u32 direct_tx_send_ctrl_frame(const struct dtx_grant_req *a)
 {
     struct dtx_ctrl_frame buf;
-    frame_hdr_init(&buf, 1, 1, a);
+    /* BF Control = 0: обучения в начале выделения фиксированное расписание не планирует (9.5.5 — Beamforming
+     * Training = 0, прочие подполя зарезервированы). исправлено (vendor): 7 — Beamforming Training = 1, IsInitiatorTXSS =
+     * IsResponderTXSS = 1, обещание SLS, которого не было */
+    frame_hdr_init(&buf, 0, a);
     u32 r = direct_tx_send_from_desc((u32)&buf, a->sta, 0, 0, 0, ctrl_frame_mcs, 0x17);
     if (r == 0)
         return 0;
@@ -298,7 +306,7 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
  * 802.11-2020 10.23.2.2, 10.39.5), иначе проверка CCA устаревает и растёт риск коллизии.
  * Аппаратный срок MAC (что считает «поздно» после 0x29000001) не установлен.
  * Путь ~160 инструкций + ответ MTP (vendor ~ так же, тот же порядок команд); запас: сотни
- * тактов до конца слота. Тот же участок «слот → CCA → mac_program_rx_window(5) → 0x19000001»
+ * тактов до конца слота. Тот же участок «слот → CCA → mac_program_tx_vector(5) → 0x19000001»
  * есть в internal_tx_keepalive_flow (~78 инструкций), direct_tx_send_from_desc (~86), tx_bcast_flow,
  * bcon_txss_sweep_step (b == 5), txop_await_cts_ppdu (txss.c). Срыв: поздний старт после
  * слота — коллизия с соседом, отсчитавшим отсрочку; кадр/TXOP теряется, растёт CW. */
@@ -316,7 +324,7 @@ void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
     if (mac_cca_ok()) {
         u32 r3 = a->sta;
         struct sta_entry *r3b = &sta_tab[r3];
-        mac_program_rx_window(5, r3b->tx_sel, b);
+        mac_program_tx_vector(5, r3b->tx_sel, b);
         tx_send_and_await_rx_frame(a, c, d, 0);
     } else {
         uc_mac_cmd(0x29000002);
@@ -354,7 +362,7 @@ void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b)   /* 6.2 asm 0x9
     d[0x14] = 0;
     d[0x15] = 0;
     d[0x16] = 0;
-    d[0x11] = (u8)s->rx_metric;
+    d[0x11] = s->rx_snr_rep;                        /* SNR Report (9.5.3), snr_report_phy (abft.h) */
     d[0x17] = 0;
     struct ssw_ack_frame *fr = (struct ssw_ack_frame *)b;   /* та же раскладка: RA +4 */
     fr->ra[0] = s->peer_mac[0];         /* ldh/sth */
@@ -598,7 +606,7 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
         rx_mode_configure(3, sta);
         return 0;
     }
-    mac_program_rx_window(5, r13, rate);
+    mac_program_tx_vector(5, r13, rate);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
@@ -667,7 +675,7 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
     u32 r17 = (dti_qset_mode == 0) ? r1 : 0;
     if (b != 0) {
         uc_wait_one_event(6);
-        mac_program_rx_window(1, sta_tab[sta].tx_sel, r14);
+        mac_program_tx_vector(1, sta_tab[sta].tx_sel, r14);
     }
     txr.rx_wait = txr.rx_wait + 1;   /* [0x80242c + 4] */
     uc_mac_cmd(0x2008000);
@@ -958,7 +966,7 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
  * СРОК: команда передачи данных 0x19000001 до SIFS (3 мкс, допуск −0/+0.49 мкс) от конца
  * принятого CTS (802.11-2020 10.3.2.9, 10.23.2.8). Путь: выход из ожидания r42.rx_frame
  * (itx_wait_cts_b) → rx_ppdu_is_cts (ждёт r42.ppdu_report, 0x32, 0x2011000, r37) →
- * mac_program_rx_window(1) → tx_submit_frame (0x1b/0x16/0x17, r43, r45) → 0x20000400 →
+ * mac_program_tx_vector(1) → tx_submit_frame (0x1b/0x16/0x17, r43, r45) → 0x20000400 →
  * gp0_timer_arm_usec(0xc) → 0x2008000 → 0x19000001: ~208 инструкций + задержки ppdu_report и MTP
  * (vendor ~218). Запас: десятки инструкций (не измерен; ~300 тактов пути из 495). Срыв: данные
  * позже SIFS — сосед может занять среду; NAV из Duration RTS (0x15000028 = 40 мкс, фиксирован)
@@ -1016,7 +1024,7 @@ void internal_tx_keepalive_flow(u32 a)
     mac_cmd_29000001();
     if (mac_cca_ok()) {
         /* L_939242 */
-        mac_program_rx_window(5, sta_tab[sta].tx_sel, 0);
+        mac_program_tx_vector(5, sta_tab[sta].tx_sel, 0);
         uc_mac_cmd(0x19000001);
         uc_mac_cmd(0x18000000);
         mac_evt_enable_bit_sync_b(6);
@@ -1030,7 +1038,7 @@ void internal_tx_keepalive_flow(u32 a)
         abif_dvs_rf_ctrl_shadow = r;                           /* st.as [gp,0x5e] */
         *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r;
         if (itx_wait_cts_b() != 0) {
-            mac_program_rx_window(1, sta_tab[sta].tx_sel, 1);
+            mac_program_tx_vector(1, sta_tab[sta].tx_sel, 1);
             tx_submit_frame(ctx, 1, 0, 0);
             uc_mac_cmd(0x20000400);
             gp0_timer_arm_usec(0xc);

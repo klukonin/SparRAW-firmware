@@ -157,6 +157,7 @@ QSET_INTERNAL, QSET_MGMT = 8, 5
 # 7 → 8); кольца хоста uc включает в маске 6 (ucode_cmd_0x08_handler, тип 3) → набор 7. Из нескольких наборов с
 # кадрами — меньший (lowest_queue_set_found), внутри набора — меньший qid (не снято)
 HW_QSET0_MASK_VECTOR = 0x886d8c
+HW_MAC_TXOP_LIMIT_0 = 0x886f70    # [31:16] лимит TXOP, мкс (uc txop_apply_limits_regs, LMAC 0x21)
 QSET_DATA_MASK = 6
 HW_MAC_IFS_SIFS = 0x886d00           # [15:0] IFS ответа (SIFS или MBIFS): мкс << 8 | такты (живьём 0x01730300 = 3 мкс)
 HW_MAC_IFS_RIFS_SBIFS = 0x886d0c     # [31:24] SBIFS, мкс
@@ -622,6 +623,7 @@ class HW:
     # ---- арбитр очередей (H-BACKOFF) ----
     qid_en = 0
     nav_end = 0
+    medium_busy_end = 0                # конец последнего кадра в эфире (свой или чужой, включая TRN) — для AIFS
     backoff_ev = None
     backoff_seed = 1                  # seed генератора отсрочки (свой у каждого узла — воспроизводимо и независимо)
     backoff_log = None
@@ -644,15 +646,19 @@ class HW:
             return
         if not hasattr(self, 'backoff_rng'):
             self.backoff_rng = random.Random(self.backoff_seed)
-        t = max(self.now, self.nav_end) + AIFS_CLK + self.backoff_rng.randint(0, BACKOFF_CW) * SLOT_CLK
+        t = max(self.now, self.nav_end, self.medium_busy_end) + AIFS_CLK + self.backoff_rng.randint(0, BACKOFF_CW) * SLOT_CLK
         self.backoff_ev = self.at(t, self._backoff_fire, 'backoff')
 
     def _backoff_fire(self):
         self.backoff_ev = None
         if self._qsel() is None:
             return
-        if self.rx is not None or self.tx is not None or self.now < self.nav_end:
-            self._backoff_kick()                          # среда занята — отсрочка заново
+        # Среда занята — отсрочка заново. Отсчёт backoff идёт только после AIFS свободной среды (802.11-2020 10.23.2.4):
+        # промежуток короче AIFS (SBIFS 1 мкс между своими SSW TXSS, кадрами развёртки маяков) отсрочку не завершает.
+        # Прежде событие ставилось на момент без проверки — backoff кончался внутри своей TXSS (test_live_data).
+        if self.rx is not None or self.tx is not None or self.now < self.nav_end or \
+                self.now < self.medium_busy_end + AIFS_CLK:
+            self._backoff_kick()
             return
         if self.backoff_log is not None:
             self.backoff_log.append((self.now, self._qsel()))
@@ -704,16 +710,21 @@ class HW:
         if n == 43:                                       # ответ MTP: valid б31, MCS кадра очереди [20:16] (H-DATAMCS)
             if not self._mtp_valid():
                 return 0
-            q = self.mac_q.get(self.mtp_qid) if self.mtp_qid is not None and self.mtp_qid < 0x18 else None
+            q = self._q_avail(self.mtp_qid) if self.mtp_qid is not None and self.mtp_qid < 0x18 else None
             agg = (1 << 27) if self.q_agg.get(self.mtp_qid) else 0                       # H-AMPDU: AGG_EN
-            return (1 << 31) | ((self.data_mcs << 16) if q else 0) | agg
+            # H-PKTMODE (стенд 2026-10-30, метка STAMP_TXOP_OPEN, iperf и ping 84 Б): у очередей колец данных packet_mode
+            # [7:4] = 1 — TXOP через RTS при любой длине и с BA и без (≈1850 пусков на сторону), у очереди 0x1a — 0;
+            # qid_agg_mask на стенде всегда 0. Источник — поле [7:4] дескриптора сектора очереди (fw txq_pkt_mode = 1 для
+            # режимов 5/6; у 0x1a дескриптор сектора не пишется — 0), стенд 2026-10-31 — docs/MAC-STAND.md
+            pkt = (1 << 4) if self.mtp_qid is not None and self.mtp_qid < 0x18 else 0
+            return (1 << 31) | ((self.data_mcs << 16) if q else 0) | agg | pkt
         if n == 45:
             if not (self.perm_req_at is not None and self.now >= self.perm_req_at + MTP_PERM_LAT_CLK):
                 return 0
             # H-QEMPTY: null_status б1 — очередь MTP пуста (vendor-лог «MTP Queue is empty»): для очередей колец модели
             # (fw/хост → mac_q), запрошенных 0x16
             q = self.mtp_qid
-            empty = self.mac_q_model and q is not None and q < 0x1e and not self.mac_q.get(q)
+            empty = self.mac_q_model and q is not None and q < 0x1e and not self._q_avail(q)
             return (1 << 31) | (2 if empty else 0)
         if n == 47:
             return self._r47()
@@ -980,7 +991,7 @@ class HW:
         if self.frame_ready is None and self.resp_due is not None:
             self._hw_response()                       # ответ через SIFS собирает MAC (Ack/BA/CTS) — без FIFO
             return
-        q = self.mac_q.get(self.mtp_qid) if self.mtp_qid not in (None, 0x1e, 0x1f) else None
+        q = self._q_avail(self.mtp_qid) if self.mtp_qid not in (None, 0x1e, 0x1f) else None
         if self.frame_ready is None and self.ssw_field is None and q:
             # H-MACQ2: кадр из очереди MAC (кольцо fw → DMA → очередь) — целиком, как собрал fw; скорость — control
             # PHY (MCS дескриптора не моделируется)
@@ -1348,12 +1359,24 @@ class HW:
         v = (self.bic_a & 0xfffff) | (self.bic_b << 20) | ((self.bic_a >> 20) << 44)
         return v.to_bytes(6, 'little')
 
+    txopq_end = None                  # H-DURQ: конец TXOP по лимиту MAC (такты)
+
     def _dur_field(self, p):
         """Duration кадра в эфире и TXOP (H-DUR, H-TXOP, uc/abft.h). Кадр развёртки после записи 0x15 начинает TXOP
         заново за MACLAT до своего начала, длиной 0x15 (стенд bcn1: сдвиг txop_event 53 такта = δb − MACLAT). Duration
         маяка: буквальный режим (0x14000007) — 0x15 − ⌈TXTIME⌉; иначе (0x14000005) — ⌊остаток TXOP после кадра⌋.
         Вне развёртки — 0x15 буквально."""
         if not p['what'].startswith('sweep'):
+            # H-DURQ (стенд 2026-10-31, STAMP_RX_DUR): Duration RTS и кадров очереди ставит MAC — остаток лимита TXOP
+            # (HW_MAC_TXOP_LIMIT_0 [31:16], мкс) от начала TXOP − SIFS: RTS 2000 − SIFS − TXTIME(RTS) = 1982; запись 0x15
+            # на них не действует. Прочие кадры (FIFO uc: DMG CTS, CF-End, BRP …) — 0x15 буквально
+            fifo = p.get('fifo')
+            rts = fifo is not None and len(fifo) >= 2 and fifo[0] == 0xb4 and fifo[1] == 0
+            lim = self._raw(HW_MAC_TXOP_LIMIT_0) >> 16
+            if (rts or p.get('qframe') is not None) and lim:
+                if rts or self.txopq_end is None or p['start'] >= self.txopq_end:
+                    self.txopq_end = p['start'] - SIFS_CLK + lim * CLK_PER_US
+                return max(0, (self.txopq_end - (p['start'] + p['dur'])) // CLK_PER_US)
             return self.dur_us
         if self.dur_new or self.txop_end is None:
             self.txop_end = p['start'] - MACLAT_CLK + self.dur_us * CLK_PER_US
@@ -1427,6 +1450,20 @@ class HW:
             self._q_done(w['qid'], 0)
         self._resume_deferred(True)
 
+    def _q_avail(self, qid):
+        """H-QREAD: кадры очереди qid, ещё не выданные в эфир. Кадр в эфире или в ожидании Ack/BlockAck остаётся в
+        очереди (повтор при тайм-ауте — H-RETRY), но указатель чтения MAC уже за ним: MTP его не предлагает и при
+        отсутствии остальных отвечает «очередь пуста» (r45 null_status б1 → uc закрывает TXOP CF-End). Иначе следующий
+        кадр TXOP, закрытый до Ack предыдущего (H-TXAFTERACK), повторял бы неподтверждённый."""
+        q = self.mac_q.get(qid) or []
+        busy = 0
+        for t in (self.tx_pending, self.tx):
+            if t is not None and t.get('qid') == qid and t.get('qframe') is not None:
+                busy += len(t['qframe']) if isinstance(t['qframe'], list) else 1
+        if self.ack_wait is not None and self.ack_wait['qid'] == qid:
+            busy += self.ack_wait.get('n', 1)
+        return q[busy:]
+
     def _q_done(self, qid, status):
         self.q_retry.pop(qid, None)
         q = self.mac_q.get(qid)
@@ -1452,6 +1489,7 @@ class HW:
         t0 = p['start']                                   # время MAC, а не конец инструкции uc, в которую попал пуск
         self.tx = dict(start=t0, end=t0 + p['dur'], what=p['what'], dur_us=self.dur_us, qframe=p.get('qframe'),
                        qid=p.get('qid'))
+        self.medium_busy_end = max(self.medium_busy_end, self.tx['end'])
         self.air_log.append((self.tx['start'], self.tx['end'], 'tx', self.tx['what']))   # кадр в журнале с пуска
         f = p.get('fifo')
         if f is not None and len(f) >= 2 and f[0] == 0xe4 and f[1] == 0:
@@ -1540,6 +1578,7 @@ class HW:
             self.collisions.append((self.now, what, self.tx['what']))
             return
         self.rx = dict(start=self.now, end=self.now + dur, what=what, trn=trn)
+        self.medium_busy_end = max(self.medium_busy_end, self.rx['end'])
         dur -= trn_clk(trn)                               # данные; поле TRN — после них (H-TRN)
         self.r49 &= ~(1 << 5)
         self.bap_rx = False

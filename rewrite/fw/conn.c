@@ -751,6 +751,9 @@ void l2mgr_send_host_event(u32 mid, u32 cid)
     /* AP с SME прошивки: conn->aid = 0, станции в Assoc Response ушёл cid + 1 (mgmt_tx_build_assoc_resp) — хосту тот же
      * (исправлено, vendor: aid 0) */
     p[0x14] = sta ? e->aid : (conn->aid != 0 ? conn->aid : (u8)(cid + 1u));
+    /* AP/PCP: AID станции — uc в Source AID кадра Grant фиксированного расписания (9.5.2, fsched_tx_ctrl_frame) */
+    if (!sta && cid < SPARRAW_MAX_STA)
+        fwsh_peer_aid.aid[cid] = p[0x14];
     p[0x11] = 0;
     p[0x10] = 0;
     p[0x12] = 0;
@@ -958,7 +961,7 @@ void pcp_ready_timer_cb(u32 a0, u32 a1)
 }
 
 /* assoc_ready_check_trig (0x8c3db0, 224 Б): только AP/PCP (bss.mode 2/3) при [0x8002f4]:
- * готовность PCP по числу соединений (< max_assoc) и битам 4..5 bi_ctrl[5] ([mid+0x154]);
+ * готовность PCP по числу соединений (< max_assoc) и PCP Association Ready шаблона (bss.bi_ctrl B43);
  * при смене — если пул 0x842304 не исчерпан, таймер 10 мс (pcp_ready_timer_cb 0x8c6264),
  * иначе перезапуск PCP. */
 void assoc_ready_check_trig(struct mid *mid)
@@ -972,7 +975,7 @@ void assoc_ready_check_trig(struct mid *mid)
         return;
     if ((u32)o == 0)                                /* vendor проверяет адрес на 0 */
         fw_sysassert_fatal((void *)0, 0x11f3);
-    ready = (o->bi_ctrl[5] & 0x30u) ? 1u : 0u;
+    ready = bic_get(o->bi_ctrl, BIC_PCP_ASSOC_READY);
     n = (mid_count_active_conns(mid) < mid->max_assoc) ? 1u : 0u;   /* rlc: перенос */
     fw_log_emit2(0x2b, 0x100c988, ready, n);
     if (ready == n)

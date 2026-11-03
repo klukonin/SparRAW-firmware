@@ -69,6 +69,8 @@ def test_new_station_request_answered_with_matching_subtype(fw, reassoc):
     ev = _connect_evts(fw, n0)
     assert len(ev) == 1
     assert ev[0].body[0x14] == CID + 1, 'AID хосту не тот, что станции (cid + 1)'
+    # тот же AID — uc (fwsh_peer_aid, Source AID кадра Grant фиксированного расписания, 9.5.2)
+    assert fw.r8(0x857964 + CID) == CID + 1
     n = ev[0].body[0x11]                                    # assoc_req_len
     assert bytes(ev[0].body[0x17:0x17 + n]) == _req_body(False)
 

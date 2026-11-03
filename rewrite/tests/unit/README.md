@@ -26,16 +26,17 @@ docstring), а не наш код и не vendor. Тест проверяет и
 | файл | что |
 |---|---|
 | `test_uc_brp_frame.py` | BRP-кадр инициатора: BRP Request (9.5.4), DMG Beam Refinement (9.4.2.129), TRN-R по запросу пира |
-| `test_uc_brp_chain.py` | SSW-Feedback/SSW-Ack пира → запрос BRP-RX → наш BRP-кадр; резерв L-RX 17..31, MID/BC, чужой TA |
+| `test_uc_brp_chain.py` | SSW-Feedback/SSW-Ack пира → запрос BRP-RX → наш BRP-кадр; резерв L-RX 17..31, MID/BC, чужой TA; BRP-кадр пира на приёме (Table 9-488): Capability Request B53 (рис. 9-558, не биты FBCK-TYPE/MID Extension), RX-train-response B18, TX-TRN-REQ, L-RX → TRN-R в нашем ответе, кроме фазы установки |
 | `test_uc_sls_sweep.py` | SSW ISS/RSS (9.3.1.15, поле SSW 9.5.1): CDOWN/Sector ID/Direction, Duration при 1..64 секторах и повторах по антеннам (LBIFS), SSW Feedback ISS/не-ISS (9.5.3), SNR Report |
 | `test_uc_sls_feedback.py` | SSW-Feedback/SSW-Ack (9.3.1.16/17), Feedback AP в A-BFT, приём развёртки → лучший сектор → обратная связь, SSW станции в A-BFT (10.42.5.2: FSS, CDOWN, Duration до конца слота) |
-| `test_uc_beacon_tx.py` | DMG Beacon AP (9.3.4.2): BI Control (A-BFT Length, FSS, IsResponderTXSS, CC/Discovery, PCP Association Ready B43, Next A-BFT, A-BFT Count), развёртка 1..64 секторов, Duration до конца BTI |
+| `test_uc_beacon_tx.py` | DMG Beacon AP (9.3.4.2): BI Control из 0x2a/0x2b по рис. 9-77 (A-BFT Length, FSS, IsResponderTXSS, CC/Discovery, PCP Association Ready B43, A-BFT Count; Next A-BFT — по тому, есть ли A-BFT в BI, 10.42.5.1), развёртка 1..64 секторов, Duration — один конец BTI у всех маяков (9.2.5.1) |
 | `test_uc_beacon_rx.py` | приём маяка станцией: участие в A-BFT (Next A-BFT, длина, FSS), выбор слота, Discovery Mode (10.42.5.1), пропуск aMaxABFTAccessPeriod |
 | `test_uc_beacon_abft_resp.py` | маяк → ответ в A-BFT (10.42.5.2): FSS+1 SSW, CDOWN, Duration до конца слота, IsResponderTXSS |
 | `test_uc_ifs_mac.py` | IFS в MAC (табл. 20-30, 10.3.2.3): SIFS/slot/PIFS/MBIFS/RIFS/SBIFS в тактах 165 МГц, таймауты ответа |
 | `test_uc_ifs_sls_phases.py` | IFS по фазам SLS/BRP: MBIFS только где нужен, после BF всегда SIFS |
 | `test_uc_ifs_duration.py` | Duration SSW/SSW-Feedback/SSW-Ack/Grant Ack/CF-End (9.2.5.1 округление вверх), CDOWN с LBIFS |
 | `test_uc_nav_update.py` | NAV по Duration (10.3.2.4): длиннее/короче, 0, ≥ 32768, CF-End, DMG Beacon |
+| `test_air_model.py` | модель эфира `air.py` без эмулятора: BlockAck на A-MPDU — Compressed (9.3.1.8.2, рис. 9-42, Table 9-28: BA Control 0x0004, TID_INFO, SSN, битовая карта), дубликаты по Table 10-6 (<A2, TID> у QoS Data, запись <SN, FN>, только при Retry) |
 
 `xfail(strict=True)` — найденное отклонение от стандарта (пункт и место в коде — в reason); после исправления
 кода тест начинает проходить и strict-xfail падает — пометку снять.
@@ -120,6 +121,7 @@ TX завершаются; `idle_state(fw)` — поля «покоя» (зап�
 | `test_fw_peer_vanish.py` | пир пропал в любой момент. AP: до Ack на Assoc Response, после ассоциации до порта, после SLS в A-BFT без Assoc Request, LINK_LOST во время BF, во время ADDBA, при согласованном BA, с данными хоста, без трафика, во время DISCONNECT_STA; `SPARRAW_MAX_STA` станций — пропала одна; PCP_STOP; станция вернулась раньше срока. STA: скан/SLS, после SLS до маяка, BF линк-апа, Assoc Request без Ack, нет Assoc Response, сразу после ассоциации, с данными, ADDBA, BA, во время WMI_DISCONNECT. Проверка: одно WMI_DISCONNECT_EVENT не позже срока из параметров fw, состояние «покоя», uc о станции ничего не держит, WMI_ECHO, следующее подключение — как первое |
 | `test_fw_wmi_validation.py` | значения хоста вне допустимых: стендовые случаи `tests/test_sta_robust.py`, кольцо ≥ `STREAM_VR_N`, tid, cid ≥ `SPARRAW_MAX_STA`, канал, длины — отказ с журналом / статусом, без записи за массивами и без передачи в uc |
 | `test_fw_wmi_fuzz.py` | каждая команда диспетчера с телом из нулей / 0xff / `SPARRAW_MAX_STA` после загрузки и при подключённой STA — без фатального ассерта, вечного опроса и обращений вне карты памяти |
+| `test_fw_ese.py` | Extended Schedule в маяке точки (9.4.2.131, рис. 9-563/9-564, Table 9-257): WMI_SCHEDULING_SCHEME — тип SP/CBAP, Allocation ID (0 только у CBAP 255→255, уникальность), PCP Active = 1, Allocation Start = TSF окна; порядок по началу — strict xfail; TDMA точки при 2–3 станциях — окна после BTI и A-BFT, Tguard (10.39.6.5), не за концом BI, Destination AID точки 0 (9.4.1.8) |
 
 Найденный остаток или отказ — `xfail(strict=True)`: в reason — поле/путь, последствие и место в коде, где надо
 сбросить или проверить; ожидаемый фатальный ассерт проверяется по коду (`fwflows.known_fatal`, `raises=KnownFatal`) —

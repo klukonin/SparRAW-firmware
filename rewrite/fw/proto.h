@@ -286,7 +286,6 @@ void basic_sm_error_handler (const void *obj);                                  
 void basic_sm_handle_event (void *obj, u32 ev, u32 a0, u32 a1, u32 a2);                              /* power.c */
 void bcn_tx_init_bi_cfg (volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 w1);                   /* pcp_ext.c */
 void bcn_tx_init_ss_params (volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 w1);                /* pcp_ext.c */
-void bcon_bi_ctrl_set_abft_len (u8 *p, u32 v);                                                       /* stubs.c */
 void bcon_post_send_cb (struct bcon_post_info *info, u32 sent);                                      /* stubs.c */
 void bcon_tx_build_step (struct mid_bss *mid, u32 a1);                                               /* stubs.c */
 void ber_stats_snapshot (u32 *ctx);                                                                  /* calib.c */
@@ -310,8 +309,8 @@ u32 bits_set32_s8_w3 (u32 w, u32 v);                                            
 void bits_set_s8_w5 (u32 *p, u32 v);                                                                 /* tx_helpers.c */
 void bits_set_word (u32 *p, u32 start, u32 width, u32 v);                                            /* util.c */
 u32 bits_sign_extend_n (u32 value, u32 n);                                                           /* phy.c */
+void boot_config_mac_counters (void);                                                                /* boot.c */
 u32 boot_copy_name_str (void *obj, void *name, u32 off, void *dst);                                  /* stubs.c */
-void boot_fill_addr_tables (void);                                                                   /* boot.c */
 void boot_force_production_mode (void);                                                              /* platform.c */
 void boot_init_subsystems (struct dashboard *dash);                                                  /* subsys.c */
 void boot_install_diag_magic (void);                                                                 /* stubs.c */
@@ -332,7 +331,9 @@ u32 brd_if_vt_num_tx_sectors (struct brd_if *o);                                
 u32 brd_if_vt_read (struct brd_if *o, u32 k, u8 *out);                                               /* brd_if.c */
 const u8 *brd_if_vt_tx_sectors (struct brd_if *o);                                                   /* brd_if.c */
 void brd_section_info_reset (struct brd_section_info *info);                                         /* brd_if.c */
+u32 bss_bi_cache_get (const u8 *bssid);                                                              /* scan_mngr.c */
 void bss_bi_ctrl_pcp_ready_set (struct mid_bss *mid, u32 security_en);                               /* stubs.c */
+u32 bss_min_bhi_us (const struct mid *mid);                                                          /* tdma.c */
 void bss_set_active (struct mid_bss *obj);                                                           /* wmi_cmd.c */
 void bss_set_mode (struct mid_bss *o, u32 mode);                                                     /* mid.c */
 void bss_set_state_idle (struct mid_bss *obj);                                                       /* discovery.c */
@@ -604,9 +605,10 @@ void dmaq_hw_reset_ptrs (u32 vr);                                               
 void dmg_bcon_build_allocations (struct mid *a, struct rx_pkt *b);                                   /* rx.c */
 u32 dmg_bcon_rx_handler (struct mid_disc *obj, struct rx_pkt *pkt);                                  /* scan_mngr.c */
 void dmg_cap_build_sta_capability (struct mid_bss *obj, const u8 *sta_addr);                         /* wmi_cmd.c */
+u32 dmg_cbap_only (const struct mid *obj);                                                           /* stubs.c */
 void dpal_cpl_timeout_task (u32 a0, u32 a1);                                                         /* vectors.c */
 u32 eapol_frame_builder_build (u32 obj, u8 *buf, u32 *out_len, struct conn *ctx, u32 to_ds, const void *src, u32 len); /* vt_misc.c */
-void ese_alloc_to_slot (struct sched_scheme *obj, u32 a, const struct ese_alloc *b);                 /* rx.c */
+void ese_alloc_to_slot (struct sched_scheme *obj, u32 a, const struct ese_alloc *b, u32 blk_off);    /* rx.c */
 void ese_bits_set16h_s0_w3 (void *p, u32 v);                                                         /* rx_chain.c */
 void ese_bits_set32_s3_w29 (void *p, u32 v);                                                         /* rx_chain.c */
 u32 ese_peer_cid_by_aid (struct sched_scheme *obj, u32 a, u32 b);                                    /* rx.c */
@@ -835,7 +837,6 @@ u32 hwd_abif_tx_table_index_force_val_get (void);                               
 void hwd_abif_tx_table_read_dac_fssel (u32 row, u32 *out);                                           /* abif_ext.c */
 void hwd_abif_txrx_table_index_lpbk_mode (u32 a0, u32 a1);                                           /* calib_hw.c */
 void hwd_abif_xtal_ctrl (u32 on);                                                                    /* wmi.c */
-void hwd_dma_ack_rx_ring (u32 value, u32 sync_flag);                                                 /* rx.c */
 void hwd_dma_ack_unmask_irq (u32 a);                                                                 /* dma.c */
 void hwd_dma_ack_vring_irq (u32 a, u32 b);                                                           /* dma.c */
 void hwd_dma_enable_error_irqs (void);                                                               /* dma.c */
@@ -1028,7 +1029,7 @@ void hwm_start_33khz_measure (u32 a);                                           
 void ie_iter_init (struct ie_iter *it, struct app_ies *list);                                        /* mgmt_tx.c */
 u32 ie_push_antenna_sector_id_pattern (u8 *dst, const u8 *src);                                      /* mgmt_tx.c */
 u32 ie_push_dmg_capabilities (u8 *dst, u8 *src, u32 flag);                                           /* mgmt_tx.c */
-u32 ie_push_dmg_operation (u8 *dst, const u8 *src);                                                  /* mgmt_tx.c */
+u32 ie_push_dmg_operation (u8 *dst, struct mid_bss *bss);                                            /* mgmt_tx.c */
 u32 ie_push_edca (u8 *dst, const struct mid_bss *mid);                                               /* mgmt_tx.c */
 u32 ie_push_qos_capability (u8 *dst);                                                                /* mgmt_tx.c */
 u32 ie_push_raw (u8 *dst, const u8 *src);                                                            /* mgmt_tx.c */
@@ -1068,7 +1069,7 @@ void l2_mgr_lmac_high_false_alarm_evt_handler (void);                           
 void l2_mgr_lmac_new_link_evt_handler (const struct lmac_evt_bf_done *e, u32 st);                    /* lmac_evt.c */
 void l2_mgr_set_rf_params (u32 cid, u32 a1, u32 a2);                                                 /* l2mgr.c */
 void l2_offload_cfg_rx_decap (const u8 *p);                                                          /* rx_chain.c */
-void l2_offload_set_own_mac_addr (const u8 *m);                                                      /* wmi_cmd.c */
+void l2_offload_set_bssid (const u8 *m);                                                             /* wmi_cmd.c */
 void l2_offload_set_rx_decap_cfg (u32 cfg);                                                          /* rx_chain.c */
 u32 l2mgr_aborting_scan (u32 mid);                                                                   /* wmi_cmd.c */
 void l2mgr_apply_key_to_prings (struct conn *conn);                                                  /* l2mgr_key.c */
@@ -1247,7 +1248,7 @@ void low_sme_wmi_rf_mgmt_cmd_handler (const struct wmi_rf_mgmt_cmd *cmd);       
 void low_sme_wmi_scan_cmd_handler (struct wmi_start_scan_cmd *cmd, u32 mid);                         /* wmi_cmd.c */
 u32 lut_find_index (const struct sysapi_lut *lut, u32 key);                                          /* bf_result.c */
 void mac_ampdu_stats_snapshot_baseline (struct fw_sysapi_mgr *o);                                    /* mac_ext.c */
-void mac_apply_multicast_addr (struct mid *e, const u8 *mac);                                        /* wmi_cmd.c */
+void mac_apply_own_addr (struct mid *e, const u8 *mac);                                              /* wmi_cmd.c */
 void mac_bringup_init_dma_ctrl (void);                                                               /* mac_bringup.c */
 void mac_bringup_init_rx_desc (void);                                                                /* macq.c */
 void mac_bringup_init_rx_fields (const u8 *desc, u32 arg);                                           /* macq.c */
@@ -1274,8 +1275,8 @@ void mac_parser_install_default_rules (u32 obj);                                
 void mac_parser_install_rule0 (u32 v);                                                               /* mac_bringup.c */
 void mac_parser_install_rules_a (u32 obj);                                                           /* mac_parser.c */
 void mac_parser_install_rules_b (u32 obj);                                                           /* mac_parser.c */
+void mac_parser_set_bssid (const u8 *m);                                                             /* wmi_cmd.c */
 void mac_parser_set_default_ctrl (void);                                                             /* mac_bringup.c */
-void mac_parser_set_mcast_addr (const u8 *m);                                                        /* wmi_cmd.c */
 void mac_parser_set_own_addr (const u8 *m);                                                          /* wmi_cmd.c */
 void mac_parser_set_prs_cfg (u32 a0, u32 a1, u32 a2, u32 a3);                                        /* mac_bringup.c */
 void mac_parser_set_rule_ctl (u32 idx, u32 val);                                                     /* mac_bringup.c */
@@ -1295,7 +1296,7 @@ u32 mac_rx_cnt_get_crc_total (void);                                            
 u64 mac_rx_cnt_get_u64 (void);                                                                       /* mac_ext.c */
 u32 mac_rx_stats_crc_err (void);                                                                     /* link_diag.c */
 u32 mac_rx_stats_crc_ok (void);                                                                      /* link_diag.c */
-void mac_set_mcast_addr (const u8 *m);                                                               /* wmi_cmd.c */
+void mac_set_bssid (const u8 *m);                                                                    /* wmi_cmd.c */
 void mac_set_own_addr (const u8 *m);                                                                 /* wmi_cmd.c */
 void mac_set_power_mode_map_bf0 (u32 mode);                                                          /* power_halt.c */
 void mac_set_sw_clk_vec2_high (u32 on);                                                              /* power_halt.c */
@@ -1420,6 +1421,7 @@ struct mid *mid_open (u32 mid);                                                 
 void mid_replace_rsn_ie (struct mid_bss *obj, const u8 *ie);                                         /* wmi_cmd.c */
 void mid_reset_bss_defaults (struct mid_bss *o, const u8 *mac, const u8 *ssid, u32 ssid_len, u32 mode); /* mid.c */
 void mid_set_app_ie_block (struct mid_bss *obj, u32 type, u32 len, u32 buf);                         /* wmi_cmd.c */
+void mid_set_beacon_ese (struct mid *mid, const u8 *ese, u32 len);                                   /* tdma.c */
 void mid_set_default_rsn_ie (struct mid *e);                                                         /* wmi_cmd.c */
 void mid_set_ssid (struct mid_bss *obj, const u8 *ssid, u32 len);                                    /* wmi_cmd.c */
 u32 mid_shift_bcn_ext_sched (struct mid *mid);                                                       /* bf_result.c */
@@ -1532,11 +1534,13 @@ void pring_isr_dispatch (void);                                                 
 void pring_set_done_handler (pring_done_fn fn, u32 arg);                                             /* vring.c */
 void pring_stop_req_task (u32 idx, u32 a1);                                                          /* vectors.c */
 void print_input_filter_params (struct fw_sysapi_mgr *self, const u8 *p, u32 x);                     /* misc_ext_sysapi.c */
-u32 probe_resp_ind (struct scan_mngr *scan, const void *bssid, const void *sa, u32 channel, u32 rssi, u32 snr); /* discovery.c */
+u32 probe_resp_ind (struct scan_mngr *scan, const void *da, const void *bssid, u32 channel, u32 bcn_int_tu, u32 snr); /* discovery.c */
 void probe_resp_ind_done_cb (u32 payload, u32 status, u32 conn);                                     /* discovery.c */
 void ps_mark_data_pending (u32 idx, u32 flag);                                                       /* fwq_tx.c */
 void psc_req_reject (u32 cid, const u8 *f);                                                          /* action.c */
 u32 push_cap_info (u8 *dst, const u8 *src);                                                          /* mgmt_tx.c */
+u32 push_cap_info_req (u8 *dst, const struct mid_bss *bss);                                          /* mgmt_tx.c */
+u32 push_cap_info_resp (u8 *dst, const struct mid_bss *bss);                                         /* mgmt_tx.c */
 void qdesc_build_by_type (struct macq_ba_desc *d, u32 type, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6); /* mac_bringup.c */
 u32 qdesc_cfg_is_override (void);                                                                    /* rx_chain.c */
 void qos_ctrl_set_ack_policy (u16 *p, u32 v);                                                        /* tx_api.c */
@@ -1816,6 +1820,7 @@ void sm_pring_timeout_task (u32 i, u32 a1);                                     
 void sort_scan_ch_list (const u8 *cmd, u32 *dst);                                                    /* scan.c */
 void sparrow_m4_clear_b2 (u32 a);                                                                    /* power.c */
 void sparrow_m4_set_b1_b2 (u32 a);                                                                   /* power.c */
+void sta_bss_set_idle (struct mid *e);                                                               /* wmi_cmd.c */
 void static_ctors_run (void);                                                                        /* ctors.c */
 void stats_delta_since_baseline (struct fw_sysapi_mgr *req, u32 *out);                               /* misc_ext_sysapi.c */
 void stats_log_counters (struct fw_sysapi_mgr *req);                                                 /* misc_ext_sysapi.c */
@@ -2022,6 +2027,7 @@ void vring_ctx_free (struct stream_ctx *c);                                     
 void vring_dma_icr_write_locked (u32 val, u32 do_sync);                                              /* mac_bringup.c */
 void vring_enable_first_pending_gtk (void);                                                          /* ba.c */
 struct vring_rec *vring_find_busy_index (u32 pring);                                                 /* vring.c */
+void vring_fw_ring_mask_irq (u32 mask, u32 sync_flag);                                               /* rx.c */
 void vring_fw_ring_unmask_irq (u32 val, u32 do_sync);                                                /* dma_ring.c */
 u32 vring_get_pring_id (const struct stream_ctx *ctx);                                               /* stream_mgr.c */
 u32 vring_get_pring_id_of_obj (const struct stream_sm *obj);                                         /* stream_mgr.c */

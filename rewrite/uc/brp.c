@@ -206,7 +206,10 @@ u32 brp_parse_request_fields(u32 a)
     u8 *r13 = rx_buf;
     u32 r3 = (r13[0x21] << 8 | r13[0x20]) >> 0xa;
     r3 &= 1;
-    u32 r1 = (rx_buf_brp_x24 >> 0xa) & 1;
+    /* Capability Request — B53 элемента DMG Beam Refinement (802.11-2020 рис. 9-558: FBCK-TYPE B34..B51, MID Extension
+     * B52); полуслово +0x24 — B40..B55, бит 13. исправлено (vendor: бит 10 = B50 — бит Number of Beams в FBCK-TYPE;
+     * раскладка с 15-битным FBCK-TYPE). */
+    u32 r1 = (rx_buf_brp_x24 >> 13) & 1;
     u32 r14 = r1 << 3;
     u32 r13b = (rx_buf_brp_req >> 5) & 1;
     r13b <<= 1;
@@ -554,7 +557,7 @@ void brp_init_tx_request(void)
     brp_set_tx_sector_id((u32)brp_frame.brp_req, (r13b->tx_sel >> 8) & 0x3f);
     u32 r0e = brp_ctx.init_flags;            /* [0x800824+0x50] */
     if (r0e & (1u << 9)) {
-        brp_frame_dmg_br_tail |= 1u << 10;      /* vendor: u32 |= по 0x8008bc, меняется только этот бит */
+        brp_frame_dmg_br_tail |= 1u << 13;      /* Capability Request = B53 (рис. 9-558); исправлено (vendor: 1 << 10 = B50) */
         bits_set_u8_s0_w5_uc((u32)brp_frame.brp_req, 0x10);
         uc_mac_cmd(0x20000400);
         /* b_s L_922c60 — проверка [0x800878] пропускается */

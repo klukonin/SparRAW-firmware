@@ -955,8 +955,12 @@ static u32 seq_next_nibble(volatile struct sched_scheme *ssb, const volatile str
     u32 r;
     if (e->type == 1 && e->dest_aid == 0xff && e->src_aid == 0xff)
         return 0;
+    /* Allocation ID 0 — только у CBAP с широковещательными Source/Destination AID (802.11-2020 9.4.2.131); прочие —
+     * 1..15. исправлено (vendor: счётчик 0..15 по кругу — 0 выпадал и SP). */
     r = ssb->seq;
-    ssb->seq = (u8)((r + 1) & 0xfu);
+    if (r == 0 || r > 15)
+        r = 1;
+    ssb->seq = (u8)(r >= 15 ? 1 : r + 1);
     return r;
 }
 
@@ -983,6 +987,9 @@ static void sched_build_alloc_entry(u32 start, u32 nib, const volatile struct wm
      * аллокация, в том числе SP, объявлялась как CBAP (стенд 2026-10-23: таблица станции
      * ctrl 0x91 на SP 0→1 точки). Свою таблицу точка строит с типом из команды. */
     bf_set32_lo_hi(&t.w[0], 4, 3, e->type == 0 ? 0u : 1u);
+    /* PCP Active (B10) = 1: AP ставит 1 во всех аллокациях ESE (802.11-2020 10.39.6.1, 9.4.2.131, рис. 9-564) — как
+     * tdma_fill_ese_alloc_field. исправлено (vendor: 0). */
+    t.b[1] |= 1u << (10 - 8);
     t.b[4] = e->src_aid;
     t.h[3] = (u16)start;                           /* [6] */
     t.b[5] = e->dest_aid;
@@ -1021,9 +1028,8 @@ static void sched_build_allocation_entry(volatile struct sched_scheme *ssb, u32 
  * [ssb+0xc] = 1; ESE-режим — накопитель [ssb+0x14] = 3000, номер [ssb+4] = 0. Без IE —
  * [[[ssb]+4]] = 1; с IE — 2 и TX-буфер {0x90, 15·число, …}. Для каждой записи: номер,
  * начало (+ TSF начала BI + BI), поле IE и (если aid-пара наша) слот ESE. С IE и флагом 3
- * — блок IE в кадр (mid__apply_app_ies, тип 0) и add_bcon. Затем schedule_scheme__sum_two.
- * Возврат 0 (не используется). TX-буфер без флага 3 vendor не освобождает (утечка vendor,
- * сохранена). Имя — по адресу: 0x8c68a0 в stubs.c уже занял имя build_allocations. */
+ * — ESE в блок IE маяка (mid_set_beacon_ese) и add_bcon. Затем schedule_scheme__sum_two.
+ * Возврат 0 — принято, 1 — отказ (Number of Blocks > 1). Имя — по адресу: 0x8c68a0 в stubs.c уже занял имя build_allocations. */
 static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi_scheduling_scheme_cmd *b)
 {
     volatile struct sched_scheme *ssb = ssb_;      /* vendor: каждое поле читается заново */
@@ -1038,6 +1044,13 @@ static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi
         schedule_scheme_builder_build_allocations(ssb_);
         return 0;
     }
+    /* Number of Blocks > 1 (9.4.2.131: блоки через Allocation Block Period) — таблица слотов точки
+     * (sched_build_allocation_entry) держит один блок на выделение: объявить больше — маяк разойдётся с доступом
+     * точки. исправлено (vendor): число блоков и период хоста молча заменялись шаблоном (1 блок); теперь команда
+     * отвергается (статус 1), расписание не меняется. */
+    for (i = 0; i < n; i++)
+        if (b->allocs[i].num_of_blocks > 1)
+            return 1;
     if (fl & 4)
         schedule_scheme_builder_build_allocations(ssb_);
     ssb->built = 1;
@@ -1053,6 +1066,17 @@ static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi
     }
     base = mac_get_bi_start_tsf();
     base = mac_get_beacon_interval_us() + base;
+    /* Поля Allocation в элементе — по возрастанию начала (9.4.2.131: «ordered by increasing allocation start time»,
+     * равные — в любом порядке); исправлено (vendor: в порядке записей хоста). pos[i] — место записи i в элементе. */
+    u8 pos[WMI_SCHED_MAX_ALLOCS_PER_CMD];
+    for (i = 0; i < n; i++) {
+        u32 k = 0, j;
+        for (j = 0; j < n; j++)
+            if (b->allocs[j].tbtt_offset < b->allocs[i].tbtt_offset ||
+                (b->allocs[j].tbtt_offset == b->allocs[i].tbtt_offset && j < i))
+                k++;
+        pos[i] = (u8)k;
+    }
     if ((s32)n >= 1) {
         i = 0;
         rem = n;
@@ -1063,16 +1087,22 @@ static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi
             nib = seq_next_nibble(ssb, e);
             start = sched_slot_start_offset(ssb, e);
             if (tx != 0)
-                sched_build_alloc_entry(start + base, nib, e, (u8 *)(tx + 2 + i * 15u));
+                sched_build_alloc_entry(start + base, nib, e, (u8 *)(tx + 2 + pos[i] * 15u));
             if (cid_pair_matches(ssb_, e->src_aid, e->dest_aid) != 0)
                 sched_build_allocation_entry(ssb, start, nib, e);
             rem--;
             i++;
         } while (rem >= 1);
     }
-    if (tx != 0 && (b->flags & 8)) {
-        mid_apply_app_ies(ssb->mid, 0, (u16)(n * 15u + 2), tx);
-        add_bcon(ssb->mid);
+    /* исправлено (vendor): mid__apply_app_ies заменял весь блок IE маяка одним ESE — IE хоста (RSN и др.) пропадали;
+     * теперь ESE встаёт на место прежнего (mid_set_beacon_ese, как TDMA точки). TX-буфер без флага 3 vendor не
+     * освобождал (утечка) — освобождается всегда. */
+    if (tx != 0) {
+        if (b->flags & 8) {
+            mid_set_beacon_ese(ssb->mid, (const u8 *)tx, n * 15u + 2);
+            add_bcon(ssb->mid);
+        }
+        TX_API_free_memory(tx);
     }
     schedule_scheme_start_at_next_bi(ssb_);
     return 0;
@@ -1188,8 +1218,8 @@ static void sched_init_default_alloc_table(void)
 }
 
 /* ie__scan_buf_10 (0x8e27bc, 76 Б): MACQ-дескриптор типа 2 очереди [e+0xa]: прочитать
- * (16 Б), поле 4..7 слова 0 = 0 (bits__set32_s4_w4 0x8ed520), записать обратно. */
-static void macq_desc_type2_clear_bits4_7(const struct vring_tbl_entry *e)
+ * (16 Б), поле 4..7 слова 0 (packet_mode) = 0 (bits__set32_s4_w4 0x8ed520), записать обратно. */
+static void macq_desc_clear_pkt_mode(const struct vring_tbl_entry *e)
 {
     u32 d[4];                                      /* заполняется чтением целиком (4 слова) */
     macq_desc_read_typed(d, e->macq, 2, 0, 1, 1, 4);
@@ -1197,8 +1227,8 @@ static void macq_desc_type2_clear_bits4_7(const struct vring_tbl_entry *e)
     macq_desc_write(d, e->macq, 2, 0, 0, 0, 1, 1);
 }
 
-/* fixed_sched__start (0x8c9884, 192 Б): [0x800235] ([gp,177]) = 0; у всех TX-очередей
- * поле 4..7 дескриптора 2 = 0; таблица по умолчанию, если не настроена ([0xa2] = 0);
+/* fixed_sched__start (0x8c9884, 192 Б): txq_pkt_mode ([gp,177]) = 0; у всех TX-очередей
+ * поле 4..7 дескриптора 2 (сектора; packet_mode) = 0 — в SP кадры уходят без RTS; таблица по умолчанию, если не настроена ([0xa2] = 0);
  * [0x847ae1] = 1 («включено»), [0x857744] = 0x847a3c, [0x800236] = 1; при связи —
  * add_bcon(mid 0); таймауты 8..11 в 0x801448 = 10 000 000; LMAC 0x3e (4 Б — буфер vendor
  * не пишет: у vendor — остаток слота пула, у нас нули); ответ 0x1a03 (4 Б, пишется только [0] = 0), mid 0. */
@@ -1208,9 +1238,9 @@ static void fixed_sched_start(struct wmi_mbox *mb)
     void *c;
     struct wmi_status_event *p;
 
-    rf_chain_sector_desc_f4 = 0;                               /* stb [gp,177] */
+    txq_pkt_mode = 0;                               /* stb [gp,177] */
     for (i = 0; i < txq_get_count(); i++)
-        macq_desc_type2_clear_bits4_7(vring_tbl_entry_addr(i));
+        macq_desc_clear_pkt_mode(vring_tbl_entry_addr(i));
     if (FSCHED.virtual_slot_us == 0)
         sched_init_default_alloc_table();
     FSCHED.enabled = 1;

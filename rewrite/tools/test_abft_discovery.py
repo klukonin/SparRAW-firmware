@@ -31,7 +31,7 @@ def main():
     vecs = []
     for cc, disc, bt, ra, (role_ap, role_raw, role) in itertools.product(
             (0, 1), (0, 1), (0, 1, 2, 3), (OWN, OTHER, BCAST, MCAST),
-            ((0, 1, 1), (1, 2, 3), (1, 3, 2))):   # не-AP STA, AP, PCP (режим cmd 0x1b)
+            ((0, 1, 1), (1, 3, 3), (1, 2, 2))):   # не-AP STA, AP, PCP (режим cmd 0x1b = bss.mode: 3 — AP, 2 — PCP)
         f = bytearray(40)
         f[23] = cc | (disc << 1) | (2 << 2)    # + Next Beacon для вида
         f[29] = bt | 0x10

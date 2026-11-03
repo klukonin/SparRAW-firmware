@@ -224,7 +224,7 @@ void config_brp_rf(u32 a, u32 b);                               /* tail.c */
 void uc_irq_enable_e1_e2(void);                                /* boot.c */
 void fixed_sched_sta_tx_delayed(void);                                     /* util.c */
 void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b); /* tx.c */
-void direct_tx_init_grant_ack(struct dtx_ctrl_frame *a, u32 b, u32 c); /* tx.c */
+void direct_tx_init_grant_ack(struct dtx_ctrl_frame *a, u32 bf_ctl);   /* tx.c */
 void direct_tx_commit(void);                              /* tx.c */
 void direct_tx_program_desc(u32 a, u32 b);                     /* tx.c */
 void direct_tx_send_after_delay(u32 a, u32 b, u32 c);           /* tx.c */
@@ -269,7 +269,7 @@ u16 fixed_sched_slot_stop_vring_us(struct fsched_peer_ctx *p);      /* l1.c */
 void fixed_sched_slot_prepare(u32 a);                           /* l1.c */
 void fixed_sched_slot_setup(struct fsched_peer_ctx *p);         /* l1.c */
 u32 fixed_sched_slot_mac_buff_size(struct fsched_peer_ctx *p);          /* l1.c */
-void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 arg1, u32 arg2, const struct dtx_grant_req *src); /* misc.c */
+void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 bf_ctl, const struct dtx_grant_req *src); /* misc.c */
 void fsched_ap_init_slot_rd_counter(struct fsched_peer_ctx *p);      /* fsched.c */
 u32 fsched_ap_next_station(struct fsched_peer_ctx *p);          /* fsched.c */
 u32 fsched_ap_poll_station(struct fsched_peer_ctx *p);          /* fsched.c */
@@ -412,7 +412,7 @@ void mac_program_gp_timer0(u32 a, u32 b);                           /* mac.c */
 void mac_program_lmac0_timing(u32 a);                             /* tail.c */
 u32 mac_program_deadline_slack(u32 a, u32 b, u32 c);            /* mac.c */
 void mac_program_qset_slots(void);                              /* mac.c */
-void mac_program_rx_window(u32 a, u32 b, u32 c);                /* tail.c */
+void mac_program_tx_vector(u32 a, u32 tx_sel, u32 mcs);         /* tail.c */
 void mac_program_tx_beacon(void);                               /* mac.c */
 void mac_program_tx_common(void);                               /* mac.c */
 void mac_program_tx_result_ctx_uc(u32 a, u32 b, u32 c);         /* tx.c */

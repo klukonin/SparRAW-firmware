@@ -87,7 +87,7 @@ struct scan_peer {
             s8 rx_snr;                         /* 0x07: его SNR */
             u8 tx_omni;                        /* 0x08: omni последнего лучшего tx_sector_snr */
             s8 tx_snr;                         /* 0x09: tx_sector_snr */
-            u16 rssi;                          /* 0x0a */
+            u16 bcn_int_tu;                    /* 0x0a: Beacon Interval бикона/Probe Response, TU (у vendor-RE — «rssi») */
             u32 tx_bcon_time;                  /* 0x0c: bcon_systime для tx_omni */
             u32 bcon_time;                     /* 0x10: bcon_systime для rx_omni (mid__link_acquis_step) */
         };
@@ -99,6 +99,18 @@ _Static_assert(sizeof(struct scan_peer) == 0x14, "scan_peer");
 /* 0x800338: запись пира, к которой идёт connect_multi_omni (l2_mgr__connect_multi_omni
  * 0x8c71fc: st.as [gp,0x6d] результата l2_mgr__connect_next), 0 — нет. */
 extern struct scan_peer *volatile conn_multi_omni_target;
+
+/* Окно бикона цели connect_multi_omni: slot = Beacon Interval цели в мкс (TU = 1024 мкс), период = n × slot (n —
+ * число directed omni, conn_multi_omni_count). 0 — окна нет: BI = 0 в кадре пира или n × slot ≥ 2^32 (BI 32768 TU и
+ * n = 128 дают ровно 2^32 — деление на 0, иначе остаток по усечённому периоду). */
+static inline u32 multi_omni_period(const struct scan_peer *t, u32 n, u32 *slot)
+{
+    u32 s = (u32)t->bcn_int_tu * 1024u;
+    *slot = s;
+    if (s == 0 || n == 0 || n > 0xffffffffu / s)
+        return 0;
+    return n * s;
+}
 
 #define SCAN_PEER_CH   4                       /* каналов в peer_info_array */
 #define SCAN_PEER_N    4                       /* записей на канал */

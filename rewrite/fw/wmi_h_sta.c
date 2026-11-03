@@ -91,7 +91,7 @@ static u32 link_stats_calc_throughput_mbps(u32 total, u32 bad, u32 mcs)
 
 /* link_stats__fill_sta_entry (0x8ca554, 148 Б): тело WMI_NOTIFY_REQ_DONE_EVENT (0x2c Б)
  * из lm_if соединения:
- *   +0 статус снимка BF; +4/+8 TSF (0x886eb8 / 0x886ebc); +0x26 range = 0;
+ *   +0 статус снимка BF; +4/+8 TSF (mac_read_tsf64); +0x26 range = 0;
  *   статус 0 или 2 — нули, секторы 0xff; иначе +0xc rssi = snap.rssi − 72 (байт),
  *   +0x10 tx_tpt (mcs, счётчики mcs_total[mcs] / mcs_bad[mcs]),
  *   +0x14/+0x18 слова +0x58/+0x64 записи lm_sm (link_stats__get_sta_word58/64,
@@ -118,8 +118,14 @@ static void link_stats_fill_sta_entry(struct lm_if *lm, struct wmi_notify_req_do
     volatile struct wmi_notify_req_done_event *e = ev;
     u32 st;
     e->status = lm->snap.status;
-    e->tsf[1] = MMIO32(HW_MAC_TSF_HI);
-    e->tsf[0] = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5);
+    /* исправлено (vendor): старшее и младшее слово TSF читались по разу — перенос младшего между чтениями давал TSF
+     * на 2^32 мкс меньше; mac_read_tsf64 — старшее, младшее, старшее снова до совпадения. */
+    {
+        u32 tsf[2];
+        mac_read_tsf64(0, tsf, 0);
+        e->tsf[1] = tsf[1];
+        e->tsf[0] = tsf[0];
+    }
     e->range = 0;
     st = lm->snap.status;
     if (st == 0 || st == 2) {

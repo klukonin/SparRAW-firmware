@@ -817,7 +817,11 @@ void mac_program_lmac0_timing(u32 a)
     uc_mac_cmd(0x4e00000d);
 }
 
-void mac_program_rx_window(u32 a, u32 b, u32 c)
+/* Программа передачи перед пуском TX (0x19000001): TX-сектор/цепи tx_sel (команда 0x3f),
+ * MCS (0x3e), счётчик uc_stats.tx_start, набор RF на TX (rf_set_tx → HW_ABIF_DVS_RF_CTRL
+ * б24/б25). Прежнее имя «rx_window» (из RE) смыслу не отвечало: все вызовы — сразу перед
+ * пуском передачи, сектор — sta_tab[].tx_sel. a — режим (5 — после CCA/слота, 1 — ответ). */
+void mac_program_tx_vector(u32 a, u32 tx_sel, u32 mcs)
 {
     uc_mac_cmd(0x1f006000u);
     uc_mac_cmd(0x38000300);
@@ -825,8 +829,8 @@ void mac_program_rx_window(u32 a, u32 b, u32 c)
     uc_mac_cmd(a | (1u << 8) | (1u << 25) | (1u << 26));
     uc_mac_cmd(0x37000005);
     uc_mac_cmd(0x37000002);
-    uc_mac_cmd(b | 0x3f000000);
-    uc_mac_cmd((c << 4) | 0x3e000000);
+    uc_mac_cmd(tx_sel | 0x3f000000);
+    uc_mac_cmd((mcs << 4) | 0x3e000000);
     uc_mac_cmd(0x37000020);
     uc_stats.tx_start += 1;
     u32 r0 = abif_dvs_rf_ctrl_shadow;
@@ -964,7 +968,7 @@ void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a)
              * −0/+0.49 мкс) после SSW ответчика (802.11-2020 10.42.5.2, 10.3.2.3.10). Vendor-
              * защита ниже: SIFS_CNT (r55 после 0x4d000000) ≥ 0x700 (7 мкс) — не отвечать; значит
              * от чтения r55 до старта передачи остаётся ≤ ~2 мкс (~330 тактов) минус задержка
-             * PHY. Путь чтение r55 → 0x19000001 (direct_tx_ssw_feedback: mac_program_rx_window(1),
+             * PHY. Путь чтение r55 → 0x19000001 (direct_tx_ssw_feedback: mac_program_tx_vector(1),
              * 0x15/0x14, direct_tx_build_desc, cmd34, mac_program_tx_common, 0x2008000)
              * ~169 инструкций (vendor 0x92c25a.. ~191); запас: десятки инструкций при r55 у
              * порога. Срыв: Feedback вне окна aSSFBDuration — ответчик его не ждёт, A-BFT-
@@ -1028,6 +1032,7 @@ void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a)
             a->peer_mac[1] = cfg->ta.h[1];
             a->peer_mac[2] = cfg->ta.h[2];
             a->rx_metric = (s32)r0b;
+            a->rx_snr_rep = snr_report_phy();
             first = 1;
             if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) {
                 a->sta = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());          /* L_92c0d0 */
@@ -1058,6 +1063,7 @@ void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a)
             if (((u8 *)a->peer_mac)[5] != cfg->ta.b[5]) continue;
             if (a->rx_metric >= (s32)r0b) continue; /* brge */
             a->rx_metric = (s32)r0b;
+            a->rx_snr_rep = snr_report_phy();
             a->rx_antenna = rx_buf_bcn_ssw & 3u;
             a->rx_sector = rx_buf_ssw >> 10;
             continue;
@@ -1548,7 +1554,7 @@ void direct_tx_ssw_feedback(struct sls_peer_rec *a)
     UC_STAMP(STAMP_ABFT_FDBK_CMD, 0, 0);
     u32 r9 = rf_chain_cfg;
     u8 r10 = a->fb_sector;
-    mac_program_rx_window(1, r9 | 0x30 | (r10 << 8), 0);
+    mac_program_tx_vector(1, r9 | 0x30 | (r10 << 8), 0);
     uc_mac_cmd(0x15000000);
     uc_mac_cmd(0x14000007);
 
@@ -1934,7 +1940,7 @@ void tx_bcast_flow(u32 a) {
     } else {
         v0 = (sta_tab[r15].tx_sel >> 8) & 0x7fff;   /* bmsk_s 0xe */
     }
-    bcast.rx_sector = v0;
+    bcast.tx_sector = v0;
     if (macq_probe_empty(fsched_peer_id) == 0) {
         bcast.x0c = 0;
         tx_bcast_desc_id = 0;
@@ -1971,7 +1977,7 @@ void tx_bcast_flow(u32 a) {
         txrx_state2 = 0x800;
         return;
     }
-    mac_program_rx_window(5, (rf_chain_cfg | 0x30) | (bcast.rx_sector << 8), 0);
+    mac_program_tx_vector(5, (rf_chain_cfg | 0x30) | (bcast.tx_sector << 8), 0);
     r13v = (r13v + 3) | (1u << 24) | (1u << 26) | (1u << 28);
     uc_mac_cmd(r13v);
     uc_mac_cmd(0x14000007);
@@ -1998,7 +2004,7 @@ void tx_bcast_flow(u32 a) {
     /* СРОК: широковещательные данные (0x19000001 ниже) через SIFS (3 мкс, допуск −0/+0.49 мкс)
      * после CTS-to-self (802.11-2020 10.3.2.3.3, 10.23.2.8). Путь от выхода из ожидания
      * события 6 (конец CTS-to-self, точный смысл события не установлен): 0x14000000, запрос MTP
-     * (0x1b/0x16/0x17 + 3 nop), r43, mac_program_rx_window(1), 0x2008000 → 0x19000001
+     * (0x1b/0x16/0x17 + 3 nop), r43, mac_program_tx_vector(1), 0x2008000 → 0x19000001
      * ~109 инструкций + ответ MTP (vendor ~ так же); запас: десятки–сотни тактов (не измерен).
      * Срыв: пауза > SIFS — среду может занять сосед, NAV из CTS-to-self (r47-длительность + 3)
      * кончится раньше конца данных. */
@@ -2018,7 +2024,7 @@ void tx_bcast_flow(u32 a) {
     u32 r2 = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());
     if (r2 == 0)
         r2 = 1;
-    mac_program_rx_window(1, (rf_chain_cfg | 0x30) | (bcast.rx_sector << 8), r2);
+    mac_program_tx_vector(1, (rf_chain_cfg | 0x30) | (bcast.tx_sector << 8), r2);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
@@ -2358,6 +2364,7 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
         /* L_93a314 */
         /* mov_s r14,1; mov.eq r14,[r13+0x28]&3 — при сброшенном бите станции в 0x802948 */
         u32 r14v = (qid_agg_mask & (1u << r13->qid)) ? 1 : (r13->chan_access & 3u);
+        UC_STAMP(STAMP_TXOP_OPEN, r13->qid | r14v << 8 | ((qid_agg_mask >> r13->qid) & 1u) << 12, mac_mtp_resp());
         if (r14v == 0) {
             /* L_93a458 */
             if ((mac_mtp_resp() & MAC_MTP_RESP_ACK_POLICY) && !(mac_mtp_resp() & MAC_MTP_RESP_RD_SUPP))
@@ -2607,7 +2614,7 @@ u32 bcon_txss_sweep_step(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
                 ;
             return 0;
         }
-        mac_program_rx_window(b, (rf_chain_cfg | 0x30) | ((u32)ss_plan_rf_sector << 8), rxw0);
+        mac_program_tx_vector(b, (rf_chain_cfg | 0x30) | ((u32)ss_plan_rf_sector << 8), rxw0);
         (void)rxw1;
         mac_evt_enable_bit_sync_b(6);
         if (f == 0) {
@@ -3471,7 +3478,7 @@ void bap_q_avail_check(u32 a, u32 b, u32 c) {
 void dti_worker_scheduled_dti_allocation_event(u32 *wake)
 {
     /* 6.2 asm 0x934854.  sp[0x10]: событие ps_awake_peer = sp[0..0xb], код 6 в sp+8. */
-    u32 r17 = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5); /* ld.as [0x887000,-0x52] */
+    u32 r17 = MMIO32(HW_MAC_TSF_LO); /* ld.as [0x887000,-0x52] */
     struct {
         struct ps_evt_body ev;              /* sp+0 событие ps_awake_peer */
         union {                             /* sp+0xc тело события 0x29 / слово 0x886f8c */

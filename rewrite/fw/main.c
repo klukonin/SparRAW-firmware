@@ -102,7 +102,7 @@ void fw_main(void)
     fw_log_emit0(0x20, 0x100082c);                    /* MAIN() Enable ARC interrupts */
     irq_enable_all();
     fw_log_emit0(0x20, 0x100084c);                    /* MAIN() Configurre MAC counters */
-    boot_fill_addr_tables();
+    boot_config_mac_counters();
     cnt_handler_clear_all();
     fw_log_emit0(0x20, 0x100086c);                    /* MAIN() RADIO_MGR::init() */
     radio_mgr_init_global();

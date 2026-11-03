@@ -35,11 +35,14 @@ NAMES = ('NOP LD_DCCM LDUSE_DCCM ST_DCCM LD_FW LDUSE_FW ST_FW LD_MAC LD_RGF ST_M
 OPS = 16
 SET2_FIRST = NAMES.index('MOVF_BEQ_NT')                    # uc/bench.c: B_SET2_FIRST, набор UC_BENCH_SET=2
 SET3_FIRST = NAMES.index('BREQ_NT_BK8')                    # B_SET3_FIRST, набор 3
-SETS = (1, 2, 3)
+SET4 = ('ST_MAC_N11', 'LD_MAC_N11', 'CMP_N3_BLEQ_NT', 'LD_TSF_N4_LD', 'LD_TSF2_USE_N4')   # uc/bench.c SET4: не помещались
+SETS = (1, 2, 3, 4)
 
 
 def bench_set(i):
     """Набор (UC_BENCH_SET) теста с номером i; NOP (0) — во всех."""
+    if i and NAMES[i] in SET4:
+        return 4
     return 1 if i < SET2_FIRST else 2 if i < SET3_FIRST else 3
 
 

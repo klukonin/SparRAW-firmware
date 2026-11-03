@@ -281,12 +281,16 @@ void bi_cfg_pack_bcon_cfg(u32 a, u32 b)
     u32 r7 = (r2 >> 2) & 1;
     u32 r14 = r2 & 1;
     u32 r2c = (r2 >> 3) & 1;
-    u32 r13 = bcn_bi.next_beacon;
-    u32 r4 = bi_cfg.abft_len;
-    u32 r8 = bi_cfg.fss;
-    u32 r5 = bi_cfg.x9;
-    u32 r6 = bi_cfg.n_bi_abft;
-    u32 r9 = bi_cfg.abft_cnt_mod;
+    /* Поля — по ширине рис. 9-77 (9.3.4.2): Next Beacon B2..B5 (4), A-BFT Length B7..B9 (3), FSS B10..B13 (4), TXSS Span
+     * B20..B26 (7), N BIs A-BFT B27..B30 (4), N A-BFT in Ant B37..B42 (6). исправлено (vendor): байты из LMAC 0x0b шли
+     * без маски — значение шире поля заходило в соседние (TXSS Span 128 → N BIs A-BFT + 1), а из w0 б20..23 — в
+     * Reserved B44..B47, из w1 б24.. — в код команды MAC 0x2b. */
+    u32 r13 = bcn_bi.next_beacon & 0xfu;
+    u32 r4 = bi_cfg.abft_len & 7u;
+    u32 r8 = bi_cfg.fss & 0xfu;
+    u32 r5 = bi_cfg.x9 & 0x7fu;
+    u32 r6 = bi_cfg.n_bi_abft & 0xfu;
+    u32 r9 = bi_cfg.abft_cnt_mod & 0x3fu;
 
     /* PCP Association Ready (flags б3) — только в w1 б23 = B43. исправлено (vendor): тот же флаг ставил и w0 б20 —
      * в эфире Reserved B44 = 1 (9.3.4.2, рис. 9-77: B44–B47 Reserved) */
@@ -305,8 +309,11 @@ void bi_cfg_pack_bcon_cfg(u32 a, u32 b)
 void bi_ctrl_program_mac_bcon(void)
 {
     u32 r2 = ((VOL(bcn_bi.x5_cdown) == 0) ? 0x40u : 0) | (1u << 25) | (1u << 27) | (1u << 29);
-    u32 r1 = ((u32)VOL(bcn_bi.x2) << 14) | r2 | ((u32)VOL(bcn_bi.abft_bi_left) << 15);
-    u32 r13 = VOL(bcn_bi.abft_idx);
+    /* IsResponderTXSS B14 (1 бит), Next A-BFT B15..B18 (4), A-BFT Count B31..B36 (6) — по ширине (рис. 9-77).
+     * исправлено (vendor): без маски — при N BIs A-BFT = 0 счётчик abft_bi_left = 0xff уходил в Next A-BFT = 15,
+     * Fragmented TXSS = 1 и Reserved B44..B46 = 1. */
+    u32 r1 = (((u32)VOL(bcn_bi.x2) & 1u) << 14) | r2 | (((u32)VOL(bcn_bi.abft_bi_left) & 0xfu) << 15);
+    u32 r13 = VOL(bcn_bi.abft_idx) & 0x3fu;
     uc_mac_cmd(bi_bcon_cfg_w0 | r1);                    /* ld_s [gp,120] */
     uc_mac_cmd(bi_bcon_cfg_w1 | (r13 << 11) | 0x2b000000);   /* ld_s [gp,124] */
 }
@@ -377,7 +384,7 @@ void bi_rx_send_response(u32 a, u32 rate, u32 b, u32 flag)
         ;
     v = mac_mtp_desc();
     mtp_desc_lo = v & 0xf;
-    mtp_desc_hi = v >> 4;
+    mtp_desc_hi = MTP_DESC_HI_OF(v);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd(flag ? 0x18000000 : 0x18002100);
@@ -491,7 +498,7 @@ void bi_bti_end_update_counters(struct bi_ctx_s *c)
             r9->cid[0] = 0;
             r9->cid[3] = 0;
         }
-        MMIO32(HW_PRS_OWN_ADDR_HI) |= (1u << 31);
+        MMIO32(HW_PRS_BSSID_HI) |= (1u << 31);
     }
     if (uc_read_bi_sync() != 0 && fsched_enabled == 0)
         rx_nav_arm_flag_if_enabled();

@@ -228,11 +228,13 @@ void bss_set_mode(struct mid_bss *o, u32 mode)
     fw_log_emit2(0x2b, 0x100c3a4, o->mode, priv);
 }
 
-/* mid__reset_10b_at_248 (0x8c4e04, 28 Б). */
+/* mid__reset_10b_at_248 (0x8c4e04, 28 Б): тело DMG Operation (9.4.2.128): DMG Operation Information (2) и DMG BSS
+ * Parameter Configuration (8, рис. 9-557), последний октет — MaxLostBeacons. исправлено (vendor: 20 — Tguard
+ * псевдостатических выделений считается с dot11MaxLostBeacons, fw/tdma.c). */
 static void mid_reset_dmg_operation(struct mid_bss *o)
 {
     memset0_words(o->blk_f8, 10);
-    o->blk_f8[9] = 0x14;
+    o->blk_f8[9] = DOT11_MAX_LOST_BEACONS;
 }
 
 /* mid__reset_ie_area (0x8c4e20, 44 Б): 0x8ed2d4 — поле [0..1] полуслова (ldw/stw). */
@@ -318,6 +320,10 @@ void mid_reset_bss_defaults(struct mid_bss *o, const u8 *mac, const u8 *ssid, u3
     l2mgr_set_edca_defaults(o);
     bss_set_state_idle(o);
     caps.h[1] &= (u16)~0x30u;                     /* побайтно у vendor: [sp+2], [sp+3] */
+    /* Supported MCS Set B21 Code Rate 13/16 = 1: MCS 5 и 9 (табл. 20-15) поддерживаются; при 0 они не поддерживаются
+     * независимо от Maximum SC MCS (802.11-2020 9.4.2.127.2, рис. 9-552). исправлено (vendor: 0 — поля нет в
+     * 802.11ad-2012). B20 Low-Power SC — 0. */
+    caps.h[1] |= 0x20u;
     bf_set32_lo_hi(c, 5, 5, 0);                         /* mid__bits_set32_s5_w5 (0x8ed538) */
     bf_set16_unaligned(c + 1, 7, 5, 0);           /* bits__set16_s7_w5 (0x8ed1fc) */
     bf_set32_lo_hi(c, 0, 5, 0xc);                       /* bits__set32_s0_w5 (0x8ed37c) */
@@ -370,7 +376,7 @@ u32 l2mgr_mac_started_log(u32 mid, const u8 *mac, const u8 *ssid, u32 ssid_len)
     struct mid *e = mid_open(mid);
     if (e == 0)
         return 0;
-    mac_apply_multicast_addr(e, mac);
+    mac_apply_own_addr(e, mac);
     mid_reset_bss_defaults(&e->bss, mac, ssid, ssid_len, 1);
     mid_list_insert(e);
     fw_log_emit3(0x2b, 0x100e5f8, mid, ((const union mac_addr *)mac)->h[2],

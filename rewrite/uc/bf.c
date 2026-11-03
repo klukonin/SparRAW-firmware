@@ -511,8 +511,8 @@ void bf_clear_all_sta(void)
 void bf_init_globals(void)
 {
     sls_reset_sweep_results();
-    bf_tx_sector = 0x21;                    /* sth.as [gp,-93] */
-    bf_rx_sector = 0x21;                    /* sth.as [gp,-94] */
+    bf_sta_rx_sector = 0x21;                /* sth.as [gp,-93] */
+    bf_sta_tx_sector = 0x21;                /* sth.as [gp,-94] */
     bf_ctrl.snr_samples = 0x80;
     memset0_words_uc((void *)link_stat, SPARRAW_MAX_STA * sizeof(struct link_stat_s));
 }

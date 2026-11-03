@@ -95,7 +95,7 @@ u32 mac_read_tsf64(u32 unused, u32 *out, u32 wait)
     u32 hi, lo;
     do {
         hi = MMIO32(HW_MAC_TSF_HI);
-        lo = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5);
+        lo = MMIO32(HW_MAC_TSF_LO);
     } while (hi != MMIO32(HW_MAC_TSF_HI));
 
     out[1] = hi;

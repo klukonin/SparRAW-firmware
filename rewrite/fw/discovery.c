@@ -565,8 +565,8 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_resp(struct mid
     u32 ret;
     if (rx->active != 0) {
         u32 chan = pkt->info.channel;
-        u32 rssi2 = *(u16 *)meta->bcn_int;
-        ret = probe_resp_ind(rx, &frame->addr1, &frame->addr3, chan, rssi2, (u32)(s32)snr);
+        u32 bi_tu = *(u16 *)meta->bcn_int;
+        ret = probe_resp_ind(rx, &frame->addr1, &frame->addr3, chan, bi_tu, (u32)(s32)snr);
         if (ret != 0 && meta->vs_wil.body != 0) {
             fw_log_emit1(0x2c, 0x1016b44,
                          parse_wilocity_vs_get_flag3((u32)&bss_ctx->bss, &meta->vs_wil));
@@ -589,14 +589,14 @@ __attribute__((section(".textlate"))) u32 discovery_handle_probe_resp(struct mid
  * dband_info_find_by_bssid → scan_peer_find_by_bssid → обновление peer_info →
  * scan_mngr__prob_done. Включает колбэк 0x8f7cac (probe_resp_ind_done_cb). */
 
-__attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan, const void *bssid, const void *sa,
-                                                         u32 channel, u32 rssi, u32 snr)
+__attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan, const void *da, const void *bssid,
+                                                         u32 channel, u32 bcn_int_tu, u32 snr)
 {
-    (void)bssid;                       /* vendor работает по SA, не по BSSID */
-    const u8 *r15 = sa;
-    const union mac_addr *sa_mac = sa;
+    (void)da;                          /* addr1 Probe Response — DA (наш адрес); поиск — по BSSID (addr3) */
+    const u8 *r15 = bssid;
+    const union mac_addr *bssid_mac = bssid;
     u32 r16 = channel;
-    u16 r18 = (u16)rssi;
+    u16 r18 = (u16)bcn_int_tu;
     s32 r20 = (s32)snr;                /* snr приходит знаково-расширенным */
 
     fw_log_emit1(0x29, 0x1015fac, scan->active_probs);
@@ -626,14 +626,14 @@ __attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan,
             if (count >= 4) {
                 fw_log_emit1(0x19, 0x10160a0, r16);   /* peer_info_array full */
             } else {
-                fw_log_emit2(0x29, 0x101605c, sa_mac->h[2], mac_lo32(sa_mac));
+                fw_log_emit2(0x29, 0x101605c, bssid_mac->h[2], mac_lo32(bssid_mac));
                 struct scan_peer *row = scan->peers[r16];
                 struct scan_peer *peer = &row[count];
                 u32 bcon = conn->bcon_time;
                 peer->rx_omni = omni;
                 peer->rx_snr = (s8)r20;
                 peer->bcon_time = bcon;
-                peer->rssi = r18;
+                peer->bcn_int_tu = r18;
                 peer->tx_snr = r23;
                 peer->tx_omni = omni;
                 peer->tx_bcon_time = bcon;
@@ -659,7 +659,7 @@ __attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan,
             }
             if (r20 >= (s32)r14->rx_snr) {
                 if (omni != r14->rx_omni) {
-                    fw_log_emit2(0x29, 0x101616c, sa_mac->h[2], mac_lo32(sa_mac));
+                    fw_log_emit2(0x29, 0x101616c, bssid_mac->h[2], mac_lo32(bssid_mac));
                     r14->rx_omni = r14->tx_omni;
                 }
                 u32 bcon2 = r14->tx_bcon_time;
@@ -674,7 +674,7 @@ __attribute__((section(".textlate"))) u32 probe_resp_ind(struct scan_mngr *scan,
         u8 probs = scan->active_probs;
         u8 r4 = (u8)(probs - 1);
         scan->active_probs = r4;
-        fw_log_emit3(0x29, 0x10161a8, sa_mac->h[2], mac_lo32(sa_mac), r4);
+        fw_log_emit3(0x29, 0x10161a8, bssid_mac->h[2], mac_lo32(bssid_mac), r4);
     }
     scan_mngr_prob_done(scan, 0, r13);
     return 1;
@@ -874,7 +874,7 @@ __attribute__((section(".textlate"))) void mid_list_remove_entry(struct mid *obj
     if (mid_list_find_by_kind(obj, 1) == 0) {
         u32 mode = entry->mid->bss.mode;
         if (mode != 2 && mode != 3) {
-            bss_set_state_idle(&obj->bss);   /* add3 r0,r14,0x9 → obj+0x48 */
+            sta_bss_set_idle(obj);           /* vendor: только bss_set_state_idle (obj+0x48) — BSSID оставался */
             /* исправлено (vendor): AID прошлой ассоциации и таблица SP из ESE (общая с uc) жили после разрыва —
              * новая ассоциация с другим AID по тому же маяку (отпечаток ESE совпал) таблицу не пересобирала, и STA
              * инициировала в SP прежнего AID, т. е. чужой станции (10.36.6). */

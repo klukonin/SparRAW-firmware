@@ -321,7 +321,9 @@ void rx_send_grant_ack(void)
     u32 d = rx_buf_duration;
     u32 r1 = d > DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) ? d - DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) : 0u;
     tx_send_imm_response(ctrl_frame_mcs, r1, 0x17);  /* [gp,-0xec] = [0x80043c] */
-    direct_tx_init_grant_ack(&sp, 1, 1);
+    /* Beamforming Training — копия из Grant (10.39.4); при 0 остальные подполя BF Control зарезервированы (9.5.5).
+     * исправлено (vendor): всегда 7 — Beamforming Training = 1 и TXSS обеих сторон, даже на Grant без обучения */
+    direct_tx_init_grant_ack(&sp, (rx_buf_grant_bf & 1u) ? 7u : 0u);
     arc_core_wr(33, sp.fc);
     tx_fifo_free -= 0x10;
     uc_mac_cmd(0x33000063);
@@ -696,6 +698,7 @@ noframe:                                        /* 0x931244 */
             UC_STAMP(STAMP_RESP_WAIT, mac_rx_misc(), mac_bap_if());
         } else {
             txop_sent = rx_flow_handle_frame(ctx);
+            UC_STAMP(STAMP_RX_DUR, rx_buf_fc | (u32)rx_buf_duration << 16, rx_buf_ta[0] | (u32)rx_buf_ta[1] << 16);
             if (!txop_sent && (txrx_state2 & 0x3001000)) {
                 busy_acct.busy_start_tsf = 0;
                 return 0;
@@ -930,6 +933,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
                     local = r11;
                     r11 = MAC_BF_METRIC_OF(r11);
                     ss->metric = (r11 > 1023) ? r11 - 0x800 : r11;
+                    ss->snr_rep = snr_report_phy();
                     ss->sector = (u8)(rx_buf_bcn_ssw >> 10);
                     ss->antenna = rx_buf_bcn_ssw_hi & 3;
                     r2 = ss->my_bss;
@@ -1146,9 +1150,16 @@ chk:                                            /* 0x93215c */
     } else {
         /* 0x932910 */
         rx_mac_prepare();
+        /* DMG CTS-to-self нам (type_index 0x33 — DMG CTS; TA — наш адрес, 802.11-2020 9.3.1.13): ждать кадров TXOP
+         * отправителя (RA); NAV не ставить (10.3.2.4). исправлено (vendor): TA сравнивался с копией адреса
+         * prs_own_addr_boot, снятой один раз по LMAC 0x00 при загрузке fw — до WMI_SET_MAC_ADDRESS хоста; при адресе
+         * интерфейса, отличном от адреса phy, ветка не срабатывала (стенд 2026-10-31: копия 24:18:1d:26:d4:7b,
+         * интерфейс 26:18:1d:26:d4:7b). Сравнение — с регистром парсера 0x886018/0x88601c: в нём свой адрес записи
+         * (mid->mac, WMI_SET_MAC_ADDRESS; имя vendor-карты «mcast» неточно), в 0x886020 — BSSID (WMI_CONNECT). Два
+         * чтения — только у DMG CTS. */
         if ((mac_rx_rep3() & MAC_RX_REP3_FCS_OK_FULL) && MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 0x33 &&
-            prs_mcast_addr[0] == f[10] && prs_mcast_addr[1] == f[11] && prs_mcast_addr[2] == f[12] &&
-            prs_mcast_addr[3] == f[13] && prs_mcast_addr[4] == f[14] && prs_mcast_addr[5] == f[15]) {
+            MMIO32(HW_PRS_OWN_ADDR_LO) == (rx_buf_ta[0] | (u32)rx_buf_ta[1] << 16) &&
+            (u16)MMIO32(HW_PRS_OWN_ADDR_HI) == rx_buf_ta[2]) {
             u32 s = sta_tbl_find_by_mac((u32)rx_buf_ra);
             if (s >= SPARRAW_MAX_STA) {
                 uc_stats.ra_unknown += 1;

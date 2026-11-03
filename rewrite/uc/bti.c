@@ -225,7 +225,7 @@ void bti_measure_frame_duration(u32 a)
     do { r43 = mac_mtp_resp(); } while (!(r43 & MAC_MTP_RESP_VALID));
     r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;                     /* bmsk 0x3 */
-    mtp_desc_hi = r51 >> 4;
+    mtp_desc_hi = MTP_DESC_HI_OF(r51);
     u32 r13 = MMIO32(HW_MAC_IFS_RIFS_SBIFS) >> 24;
     do { r45 = mac_mtp_perm(); } while (!(r45 & MAC_MTP_PERM_VALID));
     u32 cfg = mac_sel_shadow & 0xfff0ffff;
@@ -261,6 +261,11 @@ u32 abft_resp_parse_fdbk(struct sls_peer_rec *dst)
     const u8 *a = (const u8 *)bcn_rx.bssid, *b = rx_buf;
     if (a[0] != b[0xa] || a[1] != b[0xb] || a[2] != b[0xc] ||
         a[3] != b[0xd] || a[4] != b[0xe] || a[5] != b[0xf])
+        return 0;
+    /* исправлено (vendor): RA (+4, рис. 9-55) не сверялся — SSW-Feedback инициатора другому ответчику того же слота
+     * (коллизия RSS в A-BFT) станция принимала как свой: сектор чужой SLS и пропуск A-BFT. 9.3.1.16: RA — адресат
+     * кадра; 10.42.5.2: Feedback — ответ конкретному ответчику. Срока здесь нет (ответа на Feedback в A-BFT нет). */
+    if (!abft_bcn_ra_is_own(b + 4))
         return 0;
     u32 r2 = *(u32 *)&rx_buf_ssw & 0x3f;           /* SSW-Feedback словом */
     if (fwsh_n_sets >= 2) {
@@ -665,7 +670,7 @@ static void abft_ssw_prep_sw(struct abft_ssw_st *s, u32 a)
     s->r15 = (u32)(((u64)abft_slot_clk(s->fss) * ABFT_CLK2FX_MUL) >> 10) - ABFT_SSW_TXTIME_FX;
     ssw_tpl_fc = 0x864;
     ssw_tpl_fb_sector = (r18->antenna << 6) | r18->sector;
-    ssw_tpl_fb_snr = r18->metric;
+    ssw_tpl_fb_snr = r18->snr_rep;                            /* SNR Report (9.5.3), snr_report_phy */
     ssw_tpl_fb_b2 = 0;
     ssw_tpl_ra[0] = r18->bssid[0];
     ssw_tpl_ra[1] = r18->bssid[1];
@@ -734,6 +739,7 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
             ;
         u32 aux51 = mac_mtp_desc();
         mtp_desc_lo = aux51 & 0xf;
+        /* ХРУПКО: без маски MTP_DESC_HI_OF — запас цикла 0…2 такта до SBIFS; r51 [31:14] на стенде 0 (dccm.h) */
         mtp_desc_hi = aux51 >> 4;
         mac_evt_enable_bit_sync_b(6);
         if (r17 != 0) {
@@ -777,7 +783,7 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
         UC_STAMP(STAMP_SSW_TX_EVT, r14, 0);
         ssw_tpl_fc = 0x864;
         ssw_tpl_fb_sector = (r18->antenna << 6) | r18->sector;
-        ssw_tpl_fb_snr = r18->metric;
+        ssw_tpl_fb_snr = r18->snr_rep;                        /* SNR Report (9.5.3), snr_report_phy */
         ssw_tpl_fb_b2 = 0;
         ssw_tpl_ra[0] = r18->bssid[0];
         ssw_tpl_ra[1] = r18->bssid[1];
@@ -1054,6 +1060,7 @@ sweep_body:                                            /* L_936f54 */
         metric = r11;                                  /* sp[0] = сырое */
         u32 r11s = MAC_BF_METRIC_OF(r11);
         bcn_rx.metric = (r11s <= 0x3ff) ? r11s : (r11s - 0x800);
+        bcn_rx.snr_rep = snr_report_phy();
         bcn_rx.sector = (u8)(rx_buf_bcn_ssw >> 10);
         bcn_rx.antenna = (u8)(rx_buf_bcn_ssw_hi & 3);
     }
@@ -1063,7 +1070,7 @@ sweep_body:                                            /* L_936f54 */
     bcn_rx.bssid[2] = rx_buf_ra[2];
 
 post:                                                  /* L_936fe8 */
-    MMIO32(HW_PRS_OWN_ADDR_HI) &= 0x7fffffffu;
+    MMIO32(HW_PRS_BSSID_HI) &= 0x7fffffffu;
     {
         u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = r0 | MAC_SEL_BF_METRIC;
@@ -1074,6 +1081,7 @@ post:                                                  /* L_936fe8 */
         u32 r8 = MAC_BF_METRIC_OF(mac_status_sel());
         metric = (r8 <= 0x3ff) ? r8 : (r8 - 0x800);    /* sp[0] = знаковое */
     }
+    UC_STAMP(STAMP_BCN_SNR, metric, MMIO32(HW_PHY_RX_SNR_883AEC));
 
     if (rx_meas.state == 2) {
         u32 kind = rx_meas.kind;
@@ -1273,6 +1281,7 @@ void bti_beacon_track_best_metric(struct bi_ctx_s *c)
             if (bcn_rx.abft_go == 1) {        /* breq r9,0x1 */
                 if ((s32)bcn_rx.metric < (s32)metric) {   /* brge r0,r7 */
                     bcn_rx.metric = metric;
+                    bcn_rx.snr_rep = snr_report_phy();
                     bcn_rx.sector = (u8)(rx_buf_bcn_ssw >> 10);
                     bcn_rx.antenna = (u8)(rx_buf_bcn_ssw_hi & 3);
                 }

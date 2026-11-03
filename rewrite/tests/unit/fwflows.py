@@ -212,7 +212,7 @@ def settle(fw, uc=True, tx=True, limit=50):
 
 # ---- пир пропал: с какого-то шага пир молчит (tests/unit/test_fw_peer_vanish.py) ----
 
-HW_MAC_TSF_LO, HW_MAC_TSF_HI = 0x886eb8, 0x886ebc   # include/hw.h: HW_MAC_TIMING_INDIRECT_REG_5, HW_MAC_TSF_HI
+HW_MAC_TSF_LO, HW_MAC_TSF_HI = 0x886eb8, 0x886ebc   # include/hw.h: HW_MAC_TSF_LO, HW_MAC_TSF_HI
 HW_DMA_RINGS_WITH_DATA, HW_TXQ_PTP_AVAIL = 0x881c84, 0x886a24
 TX_NO_ACK = 1               # код ошибки дескриптора TX [2:0]; fw различает только 0 / не 0 (fwq_tx_long_retry_failures)
 LL_TRAFFIC, LL_PENDING_MASK = 0x120, 0x160                  # struct ll_ctx (include/fwsh.h)
@@ -442,6 +442,12 @@ def idle_state(fw, cid=0, max_sta=None):
     s['mid.cid_mask'] = fw.r8(mid + 0x24)
     s['mid.conns.count'] = fw.r32(mid + 0x18)
     s['mid.connect_busy'] = fw.r32(mid + 0x2ac)
+    # BSSID BSS записи и регистры BSSID (парсер, MAC, L2; include/hw_regs.h) — после загрузки свой адрес записи
+    # (mid_reset_bss_defaults): разорванная станция не должна считать прежнюю точку своей BSS
+    s['mid.bss.bssid'] = fw.rbytes(mid + MID_BSS + 0x0c, 6)
+    s['HW_PRS_BSSID'] = (fw.mmio_get(0x886020), fw.mmio_get(0x886024))
+    s['HW_MAC_BSSID'] = (fw.mmio_get(0x886df0), fw.mmio_get(0x886df4))
+    s['HW_L2_BSSID'] = (fw.mmio_get(0x881b28), fw.mmio_get(0x881b2c))
     s['mid.pcp_ready_tmr'] = fw.r32(mid + 0x2a8)
     cm = a('conn_mgr')
     s['conn_mgr.cid_db.used'] = tuple(fw.r32(cm + CM_CID_DB + 8 * i) for i in range(max_sta))

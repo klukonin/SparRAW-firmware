@@ -157,7 +157,11 @@ def _ba_agreed(w, peer, own, bssid):
     fw.wmi(F.WMI_VRING_BA_EN, struct.pack('<BBHB3x', 0, 32, 0, 0))
     F.settle(fw)
     req = [f for _, f in fw.tx_frames if f[0] == 0xd0 and f[0x18:0x1a] == b'\x03\x00'][-1]
-    body = bytes([3, 1, req[0x1a]]) + struct.pack('<HHH', 0, 32 << 6, 0)
+    # ADDBA Request в эфире (9.6.4.2): Block Ack Parameter Set (рис. 9-96) — B0 A-MSDU, B1 Policy = 1 (immediate,
+    # 9.4.1.13), B2..B5 TID 0, B6..B15 Buffer Size 32
+    p = int.from_bytes(req[0x1b:0x1d], 'little')
+    assert (p >> 1) & 1 == 1 and (p >> 2) & 0xf == 0 and p >> 6 == 32, hex(p)
+    body = bytes([3, 1, req[0x1a]]) + struct.pack('<HHH', 0, 32 << 6 | 2, 0)
     fw.call('stream_mgr_action', fw.rx_pkt(fw.mgmt_frame(13, own, peer, bssid, body), cid=CID))
     fw.run_tasks()
     F.settle(fw)

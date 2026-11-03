@@ -18,6 +18,7 @@
  * 10.39.5 может начинать обмен в любом; при N ≥ 3 таблица переполнилась бы (фатал 0x11bb).
  * ESE добавляется в блок IE маяка (тип 0) к IE хоста, а не вместо них (vendor-сборщик блок заменял). */
 #include "../include/types.h"
+#include "../include/ieee80211.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
 #include "../include/mid.h"
@@ -41,14 +42,13 @@
 #define TDMA_MAX_STA       SPARRAW_MAX_STA  /* CONN_MAX */
 #define EID_EXT_SCHED_IE   0x90u
 #define ESE_FIELD_LEN      15u
-#define MAX_LOST_BEACONS   4u               /* dot11MaxLostBeacons, DEFVAL (Annex C) */
 #define TSF_ACC_PPM        20u              /* aDMGTSFAccuracy (Table 20-30) */
 
 /* Tguard (10.39.6.5) для двух соседних псевдостатических окон, мкс (вверх). */
 static u32 tdma_guard_us(u32 bi_us)
 {
     /* ⌈2·(A+1)·C·D·10^-6⌉ (10.39.6.5); целая часть D в секундах отдельно — без переполнения u32 при больших BI */
-    const u32 k = 2u * (MAX_LOST_BEACONS + 1u) * TSF_ACC_PPM;
+    const u32 k = 2u * (DOT11_MAX_LOST_BEACONS + 1u) * TSF_ACC_PPM;
     u32 us = (bi_us / 1000000u) * k + ((bi_us % 1000000u) * k + 999999u) / 1000000u;
     return us + 3u /* SIFS */ + 1u /* T_P 0,1 → вверх */ + 1u /* T_TR */;
 }
@@ -77,6 +77,20 @@ static u32 tdma_dti_start_us(const struct mid *mid, u32 ese_len)
     return (bti_clk + abft_clk + DMG_MBIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US;
 }
 
+/* MinBHIDuration (DMG BSS Parameter Configuration, рис. 9-557): наименьшая длительность BHI, мкс (вниз). A-BFT есть не в
+ * каждом BI (N BIs A-BFT), ATI нет — наименьший BHI — один BTI: n маяков развёртки (секторы × RX-антенны) через SBIFS,
+ * TXTIME — Control PHY от длины текущего маяка (как tdma_dti_start_us). */
+u32 bss_min_bhi_us(const struct mid *mid)
+{
+    (void)mid;
+    u32 n = fwsh_total_sectors != 0 ? fwsh_total_sectors : 1u;
+    u32 ant = fwsh_n_rx_ant > 1 ? fwsh_n_rx_ant : 1u;
+    u32 L = FWSH(fwsh_diag, bcn_psdu_len);
+    if (L < 6u)
+        L = 6u;
+    return (n * ant * (DMG_CTRL_TXTIME_CLK(L) + DMG_SBIFS_CLK) - DMG_SBIFS_CLK) / DMG_CLK_PER_US;
+}
+
 static void tdma_fill_ese_alloc_field(u8 *f, u32 id, u32 src, u32 dst, u32 start, u32 dur)
 {
     for (u32 i = 0; i < ESE_FIELD_LEN; i++)
@@ -96,8 +110,9 @@ static void tdma_fill_ese_alloc_field(u8 *f, u32 id, u32 src, u32 dst, u32 start
     f[12] = 1;                              /* Number of Blocks */
 }
 
-/* Блок IE маяка (тип 0): все IE, кроме прежнего ESE, плюс ese (len 0 — только убрать ESE). */
-static void tdma_set_beacon_ese(struct mid *mid, const u8 *ese, u32 len)
+/* Блок IE маяка (тип 0): все IE, кроме прежнего ESE, плюс ese (len 0 — только убрать ESE). Порядок в кадре —
+ * tx_mgmt_srvs_build_dmg_beacon (табл. 9-45). Общий для TDMA точки и расписания хоста (fw/wmi_h_bf.c). */
+void mid_set_beacon_ese(struct mid *mid, const u8 *ese, u32 len)
 {
     struct app_ies *blk = mid_app_ie_block(&mid->bss, 0);
     const u8 *old = (const u8 *)blk->buf;
@@ -139,7 +154,7 @@ static void tdma_arm(struct mid *mid)
     if (ss->tdma_armed != 0)
         return;
     u32 bi = mac_get_beacon_interval_us();
-    u32 off = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5) - mac_get_bi_start_tsf();
+    u32 off = MMIO32(HW_MAC_TSF_LO) - mac_get_bi_start_tsf();
     u32 mid_bi = bi / 2u;
     u32 delay = off < mid_bi ? mid_bi - off : bi - off + mid_bi;
     if (delay < 0x20u)
@@ -157,7 +172,7 @@ static void tdma_clear(struct mid *mid)
     ss->tdma_owned = 0;
     fw_log_emit0(0x2b, 0x1014510);          /* «Clearing scheme» */
     ss->built = 0;                          /* CBAP Only = 1 (builder_push_dmg_parameters) */
-    tdma_set_beacon_ese(mid, 0, 0);
+    mid_set_beacon_ese(mid, 0, 0);
     add_bcon(mid);
 }
 
@@ -215,7 +230,7 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     }
     ss->built = 1;                          /* CBAP Only = 0 */
     ss->tdma_owned = 1;
-    tdma_set_beacon_ese(mid, ie, ese_len);
+    mid_set_beacon_ese(mid, ie, ese_len);
     add_bcon(mid);
     tdma_arm(mid);
     fw_log_emit1(0x2b, 0x1014450, n + 1u); /* «Number of slots in cmd» */

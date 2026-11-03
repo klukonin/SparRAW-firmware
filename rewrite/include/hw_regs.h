@@ -110,8 +110,8 @@
 #define HW_L2_OFFLOAD_CFG_B18      0x881b18u  /* REGS-KNOWN l2_offload_cfg_b18 (по использованию: mac_bringup__prog_881b00) */
 #define HW_L2_OFFLOAD_CFG_B1C      0x881b1cu  /* REGS-KNOWN l2_offload_cfg_b1c (то же) */
 #define HW_L2_OFFLOAD_CFG_B20      0x881b20u  /* REGS-KNOWN l2_offload_cfg_b20 (то же) */
-#define HW_L2_OWN_MAC_LO           0x881b28u  /* REGS-KNOWN l2_own_mac_lo (по использованию: l2_offload__set_own_mac_addr) */
-#define HW_L2_OWN_MAC_HI           0x881b2cu  /* REGS-KNOWN l2_own_mac_hi (то же) */
+#define HW_L2_BSSID_LO             0x881b28u  /* REGS-KNOWN l2_own_mac_lo; пишется BSSID (l2mgr_apply_mac_address, l2_offload_set_bssid) */
+#define HW_L2_BSSID_HI             0x881b2cu  /* REGS-KNOWN l2_own_mac_hi (то же) */
 #define HW_L2_RX_DECAP_CFG         0x881b30u  /* REGS-KNOWN l2_rx_decap_cfg (по использованию: l2_offload__set_rx_decap_cfg) */
 #define HW_L2_OFFLOAD_ETHERTYPES   0x881b34u  /* REGS-KNOWN l2_offload_ethertypes (по использованию: mac_bringup__prog_881b00) */
 #define HW_DMA_OFFLOAD_DECAP_CFG   0x881b88u  /* REGS-KNOWN dma_offload_decap_cfg (по использованию: dma_offload__pack_decap_cfg) */
@@ -306,7 +306,7 @@
 #define PHY_ONLINE_GAIN_MEAS        0x885130u  /* таблица по sar_index, шаг 4 (REGS-KNOWN; UT 0x41f hwd_phy_online_gain_measurement_read) */
 #define PHY_RAM_READ_SEL            0x885178u  /* [2:0] селектор чтения ОЗУ PHY (REGS-KNOWN, по использованию: hwd_phy_rx_read_and_parse_brp_ram) */
 #define PHY_RX_POSTDIST_DC_PER_SAR  0x8851a0u  /* бит 0 postdist_dc_per_sar_mode (REGS-KNOWN; UT 0x417) */
-#define HW_PRS_OWN_ADDR_LO         0x886020u  /* REGS-KNOWN prs_own_addr_lo (по использованию: l2mgr__apply_mac_address) */
+#define HW_PRS_BSSID_LO            0x886020u  /* REGS-KNOWN prs_own_addr_lo; пишется BSSID (l2mgr_apply_mac_address; include/hw.h) */
 #define HW_MAC_IRQ_CTL_886028             0x886028u  /* по использованию: isr_mac_886028_fw, mac_bringup__ack_and_unmask_irqs */
 #define HW_RX_KEY_TBL_CTRL         0x88602cu  /* REGS-KNOWN rx_key_tbl_ctrl (по использованию: mac_rx_key_write) */
 #define HW_RX_KEY_TBL_CMD          0x886030u  /* REGS-KNOWN rx_key_tbl_cmd (по использованию: mac_rx_key_write) */
@@ -361,10 +361,10 @@
 #define HW_MAC_EDCA_AIFS           0x886d68u  /* по AC i (4 регистра, шаг 4, 0x886d68..0x886d74): [31:28] AIFSN, младшие — 0x201ff (uc txrx_api_program_edca_ac, LMAC EDCA); нет в REGS-KNOWN */
 #define HW_MAC_EDCA_SEED           0x886d78u  /* по AC i (4 регистра, шаг 4, 0x886d78..0x886d84): 0xc0adc0ad << i (uc txrx_api_program_edca_ac); вероятно затравка ГПСЧ отсрочки; нет в REGS-KNOWN */
 #define HW_FW2UC_ICS                      0x886dd8u  /* драйвер struct RGF_ICR; по использованию: lmac_if__post_cmd, fw2uc__signal_wa… */
-#define HW_MAC_OWN_ADDR_LO         0x886df0u  /* REGS-KNOWN mac_own_addr_lo (по использованию: mac__set_own_addr) */
-#define HW_MAC_OWN_ADDR_HI         0x886df4u  /* REGS-KNOWN mac_own_addr_hi (то же) */
-#define HW_MAC_MCAST_ADDR_LO       0x886df8u  /* REGS-KNOWN mac_mcast_addr_lo (лог «!!! Multicast MAC address is now applied !!!») */
-#define HW_MAC_MCAST_ADDR_HI       0x886dfcu  /* REGS-KNOWN mac_mcast_addr_hi (по использованию: mac__set_mcast_addr) */
+#define HW_MAC_BSSID_LO            0x886df0u  /* REGS-KNOWN mac_own_addr_lo; пишется BSSID (vendor mac__set_own_addr из l2mgr__apply_mac_address) */
+#define HW_MAC_BSSID_HI            0x886df4u  /* REGS-KNOWN mac_own_addr_hi (то же) */
+#define HW_MAC_OWN_ADDR_LO         0x886df8u  /* REGS-KNOWN mac_mcast_addr_lo; пишется свой адрес записи (vendor mac__set_mcast_addr из mac__apply_multicast_addr: журнал «Multicast…» — только если адрес групповой) */
+#define HW_MAC_OWN_ADDR_HI         0x886dfcu  /* REGS-KNOWN mac_mcast_addr_hi (то же) */
 #define HW_MAC_HW_ICR_ICS                 0x886e2cu  /* драйвер struct RGF_ICR +0xc; по использованию: isr_mac_886028_fw */
 #define HW_MAC_SXD_ERRORS_ICM             0x886e44u  /* драйвер struct RGF_ICR +8; по использованию: fw_vector_06 */
 #define HW_MAC_SXD_ERRORS_IMS             0x886e50u  /* драйвер struct RGF_ICR +0x14; по использованию: mac_icr__mask_awake_tsf, fw_v… */
@@ -388,8 +388,10 @@
 #define HW_MAC_CNT_ICM                    0x887014u  /* по использованию: mac_icr__read_cause_887014; драйвер struct RGF_ICR +8 */
 #define HW_MAC_CNT2_ICR                   0x88702cu  /* по использованию: isr_vec11__ack_mac_icr2; драйвер struct RGF_ICR +4 */
 #define HW_MAC_CNT2_ICM                   0x887030u  /* по использованию: mac_icr__read_cause_887030; драйвер struct RGF_ICR +8 */
-#define HW_MAC_CNT_CFG_A_17        0x887144u  /* REGS-KNOWN mac_cnt_cfg_a_17: настройка счётчиков MAC a[17..] (53 слова, шаг 4; лог-строка «MAIN() Configurre MAC counters», boot_fill_addr_tables) */
+#define HW_MAC_CNT_CFG_A_17        0x887144u  /* REGS-KNOWN mac_cnt_cfg_a_17: настройка счётчиков MAC a[17..] (53 слова, шаг 4; лог-строка «MAIN() Configurre MAC counters», boot_config_mac_counters) */
 #define HW_MAC_CNT_SEL_A_17        0x8873c4u  /* REGS-KNOWN mac_cnt_sel_a_17: номер события счётчиков MAC a[17..] (53 слова, шаг 4; в паре с HW_MAC_CNT_CFG_A_17) */
+#define HW_MAC_CNT_CFG_B_17        0x887644u  /* REGS-KNOWN mac_cnt_cfg_b_17: настройка счётчиков MAC b[17..] (43 слова, шаг 4; прежде HW_ADDR_TBL_LO + 0x44 «таблица адресов» — неверно) */
+#define HW_MAC_CNT_SEL_B_17        0x887844u  /* REGS-KNOWN mac_cnt_sel_b_17: номер события счётчиков MAC b[17..] (43 слова, шаг 4; в паре с HW_MAC_CNT_CFG_B_17) */
 #define RFC_CTRL_F8                 0x8890f8u  /* старшая половина 0xc8 при активации RFC; смысл не установлен (REGS-KNOWN rfc_ctrl_f8) */
 #define ABIF_SENSOR_COMP_VALUE      0x889368u  /* код компаратора датчика (REGS-KNOWN; 6.2/docs/UT-DRIVERS.md hwd_abif_sensor_set_comp_value) */
 #define ABIF_SENSOR_COMP_OUT        0x889390u  /* бит 0 выход компаратора датчика (REGS-KNOWN; UT 0x127 hwd_abif_sensor_get_comp_out) */

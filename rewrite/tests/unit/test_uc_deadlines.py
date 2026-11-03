@@ -671,7 +671,7 @@ def test_beacon_sweep_sbifs(uc, monkeypatch):
     конец кадра в эфире или MAC держит кадр; фактический срок не установлен."""
     import test_uc_beacon_tx as btx
     on_path = {'mac_program_tx_beacon', 'mac_evt_enable_bit_sync_b', 'bcon_tx_ack_cmds', 'uc_spin_until_event',
-               'mac_evt_enable_bit_sync', 'mac_program_rx_window', 'mac_evt_select_timer_group',
+               'mac_evt_enable_bit_sync', 'mac_program_tx_vector', 'mac_evt_select_timer_group',
                'mac_set_rf_chain_state_with_sta_sector', 'bcon_txss_program_sector'}
     monkeypatch.setattr(btx, 'SWEEP_WAITS', [x for x in btx.SWEEP_WAITS if x not in on_path])
 

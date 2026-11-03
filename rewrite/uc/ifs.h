@@ -97,7 +97,7 @@ static inline __attribute__((always_inline)) u32 dmg_ctrl_txtime_clk_rt(u32 L)
  * AckTimeout = CTSTimeout = aSIFSTime + aSlotTime + aRxPHYStartDelay (Table 20-30: aRxPHYStartDelay — 10 мкс в DMG
  * control mode, 3,6 мкс в SC; берётся худший — control: ответ может прийти в control mode) = 3 + 5 + 10 = 18 мкс.
  * Ожидание ответа в uc (sxd_hal_wait_slot2_busy2 / _busy) считает события slot2 — по одному на aSlotTime (слот MAC
- * HW_MAC_IFS_SLOT = ifs_cfg_us[2] = 825 тактов, гипотеза H-SLOT2, проверяется опытом lat1) — до занятости эфира
+ * HW_MAC_IFS_SLOT = ifs_cfg_clk[2] = 825 тактов, гипотеза H-SLOT2, проверяется опытом lat1) — до занятости эфира
  * (начало приёма). Число слотов = ⌈тайм-аут / aSlotTime⌉ = 4 (vendor 2 = 10 мкс — меньше AckTimeout: при позднем
  * ответе — ложный повтор). Long range — vendor 10, отдельно (не меняется). */
 #define DMG_SLOT_US              5u
@@ -147,7 +147,7 @@ _Static_assert(DMG_RESP_FDBK_WAIT_CLK == 79461u && DMG_RESP_FDBK_WAIT_CLK < (1u 
  * Срок для uc — последняя выдача команд direct_tx_ssw_feedback, которую MAC ещё принимает. Замер (стенд, развёртка задержки
  * перед direct_tx_ssw_feedback, отсчёт по SIFS_CNT у проверки; 6 проходов, шаг 0,25 и 0,1): естественный путь — 2,58–2,68;
  * при SIFS_CNT до 6,91–7,85 Feedback уходит в свою точку (сдвиг ≤ 0,06), станция принимает его через 275,3 мкс после
- * события слота; дальше — поздняя команда в direct_tx_ssw_feedback / mac_program_rx_window (MAC_HW_ICR б4/б5, assert 0x26) или
+ * события слота; дальше — поздняя команда в direct_tx_ssw_feedback / mac_program_tx_vector (MAC_HW_ICR б4/б5, assert 0x26) или
  * потеря Feedback у станции, граница от прохода к проходу 7,0…7,9. Худший проход: последняя удачная — SIFS_CNT 6,91.
  * Порог = последняя удачная − шаг = 6,91 − 0,10 = 6,81 мкс → [15:8] 6, [7:0] ⌊0,81 × 165⌋ = 133 такта. SIFS_CNT
  * считается от события GP1, а точка Feedback = GP1 + MBIFS + 0,55: при смене длины слота (формула aSSDuration,

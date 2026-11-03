@@ -303,7 +303,7 @@ uc 6.2 не проверяет. Отсутствие ожидания `tsf_event
 | 16..20 | `mcs` | MCS → `0x3e000000 \| mcs<<4`, в контекст | 8 мест: `rx__program_mac_and_wait` 0x938c6a, `rx_flow__handle_frame` 0x932aac/0x932baa/0x932c94, `rx_flow__run` 0x9315ce, `tx_bcast_flow` 0x937ab0, `fsched_ap__poll_station` 0x93d274, `mtp_queue__release_mgmt` 0x93ead6 |
 | 14..15 | `ack_policy` | 0 → ждать ответ (ACK/BA); 1 → `ctx[0xc] \|= 0xe`; 2, 3 → ничего | `txop_initiator_open_txop_flow` 0x93a458/0x93a4da, `tx_mtp_queue_gate` 0x939bdc, `rx__program_mac_and_wait` 0x938d34 |
 | 8..11 | `dest_id` | индекс станции (≥8 → ассерт 8) | `mtp_queue__release_mgmt` 0x93eb6c |
-| 4..7 | `packet_mode` | → `ctx[0x28]` | `mtp_queue__release_mgmt` 0x93eba6 |
+| 4..7 | `packet_mode` | → `ctx[0x28]` (0 сразу, 1 RTS, 2 self-CTS); стенд 2026-10-30: очередь данных — 1 при любой длине, очередь 0x1a — 0; источник — поле `[7:4]` дескриптора сектора очереди (fw `txq_pkt_mode`, стенд 2026-10-31; rewrite/docs/MAC-STAND.md, H-PKTMODE) | `mtp_queue__release_mgmt` 0x93eba6 |
 
 ### 2.10. r45 — разрешение MTP на передачу (MTP_TX_PERMISSION_RESP) **[пак+код]**
 

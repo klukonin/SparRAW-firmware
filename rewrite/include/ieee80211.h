@@ -71,6 +71,47 @@ IEEE_OFF(struct ieee80211_dmg_beacon, bcn_int, 0x15);
 IEEE_OFF(struct ieee80211_dmg_beacon, dmg_params, 0x1d);
 _Static_assert(sizeof(struct ieee80211_dmg_beacon) == 0x1e, "ieee80211_dmg_beacon");
 
+/* dot11MaxLostBeacons (Annex C, DEFVAL 4): поле MaxLostBeacons DMG Operation (9.4.2.128, рис. 9-557) и A в Tguard
+ * псевдостатических выделений (10.39.6.5, fw/tdma.c) — одно значение. */
+#define DOT11_MAX_LOST_BEACONS 4u
+
+/* Beacon Interval Control (802.11-2020 9.3.4.2, рис. 9-77): 48 бит, B0 — младший бит первого октета. Поле в эфир
+ * собирает MAC из команд uc 0x2a/0x2b (uc/bi.c bi_cfg_pack_bcon_cfg); шаблон записи mid (bss.bi_ctrl) и копия в теле
+ * кадра — в той же раскладке (стенд 2026-10-31: принятый маяк точки — TXSS Span 1 в B20, N BIs A-BFT 4 в B27). */
+#define BIC_CC_PRESENT        0, 1
+#define BIC_DISCOVERY_MODE    1, 1
+#define BIC_NEXT_BEACON       2, 4
+#define BIC_ATI_PRESENT       6, 1
+#define BIC_ABFT_LENGTH       7, 3
+#define BIC_FSS              10, 4
+#define BIC_IS_RESP_TXSS     14, 1
+#define BIC_NEXT_ABFT        15, 4
+#define BIC_FRAGMENTED_TXSS  19, 1
+#define BIC_TXSS_SPAN        20, 7
+#define BIC_N_BIS_ABFT       27, 4
+#define BIC_ABFT_COUNT       31, 6
+#define BIC_N_ABFT_IN_ANT    37, 6
+#define BIC_PCP_ASSOC_READY  43, 1
+
+/* Поле (start, width) BI Control p[0..5] побайтно (адрес нечётный — поле в теле кадра). */
+static inline u32 bic_get_(const u8 *p, u32 start, u32 width)
+{
+    u32 v = 0, i;
+    for (i = 0; i < width; i++)
+        v |= (u32)((p[(start + i) >> 3] >> ((start + i) & 7)) & 1u) << i;
+    return v;
+}
+static inline void bic_set_(u8 *p, u32 start, u32 width, u32 v)
+{
+    u32 i;
+    for (i = 0; i < width; i++) {
+        u32 b = start + i;
+        p[b >> 3] = (u8)((p[b >> 3] & ~(1u << (b & 7))) | (((v >> i) & 1u) << (b & 7)));
+    }
+}
+#define bic_get(p, f)     bic_get_((p), f)
+#define bic_set(p, f, v)  bic_set_((p), f, (v))
+
 /* Заголовок QoS Data (0x1a Б; тестовый кадр FW2FW, tx_build_fw2fw_test_hdr). */
 struct ieee80211_qos_hdr {
     struct ieee80211_hdr h;                    /* 0x00 */
@@ -95,6 +136,10 @@ struct ieee80211_assoc_resp {
 };
 IEEE_OFF(struct ieee80211_assoc_resp, status, 0x1a);
 IEEE_OFF(struct ieee80211_assoc_resp, aid, 0x1c);
+
+/* Поле AID DMG-станции (9.4.1.8): AID 1..254 (0 — AP/PCP, 255 — широковещательный) в младшем октете, старшие 8 бит —
+ * резерв (не 14 бит с B14..B15 = 1, как у не-DMG). */
+#define DMG_AID(v) ((u32)(v) & 0xffu)
 
 /* Status Code + AID Association Response (после Capability Info). */
 struct ieee80211_status_aid {

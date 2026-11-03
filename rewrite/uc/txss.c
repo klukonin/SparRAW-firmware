@@ -312,8 +312,8 @@ void sta_apply_bf_result(u32 a, u32 b)
     u32 flag = (b >= SPARRAW_MAX_STA || (VOL(link_stat[b].bf_reasons) & 0x40) == 0) ? 1 : 0; /* bic -0x41 = & 0x40; пир 8 — без link_stat */
     sta_reset_link_state(b, 1, flag);
     if (a == 1) {
-        bf_tx_sector = bf_res.rx_sector;
-        bf_rx_sector = bf_res.tx_sector;
+        bf_sta_rx_sector = bf_res.rx_sector;
+        bf_sta_tx_sector = bf_res.tx_sector;
         if (sta_tab[b].fixed_link != 0 || flag == 0)
             return;
         u32 r1 = rs_internal_trigger_disabled(b);
@@ -327,8 +327,8 @@ void sta_apply_bf_result(u32 a, u32 b)
             return;
         u32 r2 = rf_chain_cfg;
         struct sta_entry *r14 = &sta_tab[b];
-        r14->rx_sel = (r2 | (1u << 5)) | (bf_tx_sector << 8);
-        r14->tx_sel = (r2 | 0x30) | (bf_rx_sector << 8);
+        r14->rx_sel = (r2 | (1u << 5)) | (bf_sta_rx_sector << 8);
+        r14->tx_sel = (r2 | 0x30) | (bf_sta_tx_sector << 8);
     }
 }
 
@@ -989,7 +989,7 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     (void)a;
     /* СРОК: проба CCA (0x29000001 + mac_cca_ok) → пуск TX (0x19000001 … итоговая 0x18…|б27|б28)
      * должен уложиться в окно, где проба ещё верна (aCCATime/aSlotTime = 5 мкс, 802.11-2020
-     * 10.3.2.3, Table 20-30). Путь ~40 инструкций (mac_program_rx_window, 2 команды, чтение r43),
+     * 10.3.2.3, Table 20-30). Путь ~40 инструкций (mac_program_tx_vector, 2 команды, чтение r43),
      * при dti_qset_mode ≠ 0 ещё fsched_slot_rd_counter_nonzero и декремент счётчика RD — между 0x19 и
      * 0x18 (vendor так же); запас: десятки–сотни. Срыв: TX в уже занятую среду (коллизия
      * RTS/CTS-обмена TXOP). */
@@ -1007,7 +1007,7 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
         return 0;
     }
     const struct mtp_resp_info *ri = (const void *)b;
-    mac_program_rx_window(5, ri->tx_sel, ri->mcs);
+    mac_program_tx_vector(5, ri->tx_sel, ri->mcs);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
     u32 r13 = MAC_MTP_RESP_RD_SUPP_OF(mac_mtp_resp());

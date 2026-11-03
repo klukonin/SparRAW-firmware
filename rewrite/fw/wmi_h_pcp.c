@@ -445,7 +445,10 @@ void l2mgr_stop_discovery(u32 mid)
     struct mid *e = mid_list_by_mid_fw(mid);
 
     stop_find_session(&e->disc);
-    mid_reset_bss_defaults(&e->bss, dev_mac_addr, dashboard.ssid,
+    /* исправлено (vendor): BSS — к своему адресу записи (WMI_SET_MAC_ADDRESS), не к адресу phy из flash (vendor:
+     * dev_mac_addr — BSSID и регистры BSSID становились адресом phy, отличным от адреса интерфейса). До первого
+     * WMI_SET_MAC_ADDRESS mid->mac — адрес phy (l2mgr_mac_started_log). */
+    mid_reset_bss_defaults(&e->bss, e->mac, dashboard.ssid,
                            dashboard.ssid_len, 1);
 }
 
@@ -541,19 +544,17 @@ static void send_pcp_start_status_evt(u32 status, u32 mid)
     l2mgr_pending_op_clear(3);
 }
 
-/* pcp_start (0x8f7110, 80 Б): объект discovery записи. Снять бит 1 байта bi_ctrl[0]
- * (+0x14f записи mid, discovery-бикон), поставить бикон PCP (add_bcon), счётчик mgmt_stats.bcon_set
+/* pcp_start (0x8f7110, 80 Б): объект discovery записи. Снять Discovery Mode шаблона BI Control
+ * (bss.bi_ctrl B1, discovery-бикон), поставить бикон PCP (add_bcon), счётчик mgmt_stats.bcon_set
  * +1, LMAC 0x23 (1). */
 static void pcp_start(struct mid_disc *o)
 {
     u8 *b;
-    u32 v;
 
     fw_log_emit0(0x2c, 0x1016d24);
     b = o->mid->bss.bi_ctrl;
-    v = b[0] & ~2u;
-    b[0] = (u8)v;
-    fw_log_emit2(0x2c, 0x1016d30, (v >> 1) & 1u, ((u32)b[5] >> 4) & 3u);
+    bic_set(b, BIC_DISCOVERY_MODE, 0);
+    fw_log_emit2(0x2c, 0x1016d30, bic_get(b, BIC_DISCOVERY_MODE), bic_get(b, BIC_PCP_ASSOC_READY));
     add_bcon(o->mid);
     mgmt_stats.bcon_set = mgmt_stats.bcon_set + 1;
     lmac_if_send_abft_cfg(1);
@@ -588,6 +589,11 @@ static u32 l2mgr_pcp_start_flow(struct mid *e, u32 nettype, u32 abft, u32 hidden
         fw_log_emit3(0xb, 0x100ce08, o->mode, 2, ch);
         return 1;
     }
+    /* исправлено (vendor): BSSID AP/PCP — его собственный адрес (802.11-2020 3.1 «BSSID»); vendor его здесь не ставил —
+     * оставался от последнего WMI_SET_MAC_ADDRESS / WMI_CONNECT (адрес прошлого AP) / WMI_DISCOVERY_STOP. Заодно DMG
+     * Capabilities пересобирается с max_assoc, заданным выше (поле Max Associated STA Number, 9.4.2.127.3: прежде —
+     * значение до PCP_START). До смены канала: rm_ch_switch_program_mac пишет регистры из bss.bssid. */
+    l2mgr_apply_mac_address(o, e->mac);
     fw_log_emit3(0x2b, 0x100cd6c, ch, BCON_INTERVAL, nettype);
     radio_mgr_set_primary_channel(ch, 0, 0, BCON_INTERVAL, 0, e->id);
     o->channel = (u8)ch;
@@ -663,6 +669,15 @@ void wmi_bcon_ctrl(const struct wmi_bcon_ctrl_cmd *cmd, u32 mid)
     fw_log_emit3(0x20, 0x100b448, cmd->bcon_interval, ABFT_SECTORS, sec);
     fw_log_emit1(0x20, 0x100b488, cmd->is_go);
     BCON_INTERVAL = cmd->bcon_interval;
+    /* Beacon Interval Probe Response / WMI_CONNECT_EVENT — поле записи BSS (bss.bcon_int). исправлено (vendor): оставалось
+     * прежнее pcp_bcon_interval (сброс записи — до этой команды) — маяк с BI хоста, Probe Response со 100 TU. */
+    {
+        struct mid *pe = mid_list_by_mid_fw(mid);
+        if (pe != 0) {
+            pe->bss.bcon_int = (u16)cmd->bcon_interval;
+            pe->bss.bcon_int2 = (u16)cmd->bcon_interval;
+        }
+    }
     fw_log_emit3(0x20, 0x100b49c, mid, cmd->bcon_interval, cmd->network_type);
     offload = (cmd->disable_sec_offload == 0) ? 1u : 0u;
     dashboard.pcp_security_en = sec;
@@ -925,7 +940,7 @@ static u32 mgmt_tx_probe_resp_ies_sm(u8 *dst, struct mid *e, u8 *src, u32 len)
     (void)sm_copy_host_ie(&dst, src, len8, 0x9e, &ielen, &total, 0x100fe10);
     sm_add_own_ie(&dst, ie_push_dmg_capabilities(dst, (u8 *)&mobj->dmg_cap, 0), &ielen, &total,
                   0x100fe50);
-    sm_add_own_ie(&dst, ie_push_dmg_operation(dst, mobj->blk_f8), &ielen, &total,
+    sm_add_own_ie(&dst, ie_push_dmg_operation(dst, mobj), &ielen, &total,
                   0x100fe90);
     sm_copy_host_vendor_ie(&dst, src, len8, len, 0, &ielen, &total, 0x100fed0);
     sm_copy_host_vendor_ie(&dst, src, len8, len, 1, &ielen, &total, 0x100ff1c);
@@ -991,7 +1006,7 @@ static u32 mgmt_tx_build_assoc_resp_sm(u8 *dst, struct mid *e, u8 *src, u32 len)
     u32 dstp = (u32)dst;
     u32 n, hdr, aid, m, w;
 
-    n = push_cap_info(dst, mobj->capinfo_b) & 0xffu;
+    n = push_cap_info_resp(dst, mobj) & 0xffu;
     dstp += n;
     hdr = n;
     src += n;

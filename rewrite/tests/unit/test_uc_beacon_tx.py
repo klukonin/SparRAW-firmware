@@ -8,8 +8,12 @@
 bcon_txss_sweep_step, bi_cfg_tick_counters, программирование сетки A-BFT). Ожидания MAC и передача в эфир — заглушки.
 
 Факты о MAC (не о стандарте), на которые опираются разборы команд:
-  * 0x2a / 0x2b — поле BI Control маяка: 0x2a [19:0] → B0..B19, [23:20] → B44..B47; 0x2b [23:0] → B20..B43 (uc/bi.c,
-    bi_cfg_pack_bcon_cfg: «w1 б23 = B43», «w0 б20 → в эфире B44»);
+  * 0x2a / 0x2b — поле BI Control маяка (MAC пишет его в кадр сам, шаблон fw не используется): слово 0x2a w0 бит k →
+    Bk (k < 20), w0 [23:20] → B44..B47; слово 0x2b w1 бит k → B(k + 20) (B20..B43). Источник — эфир стенда, не код uc:
+    vendor-uc ставил флаг готовности PCP в w0 б20 и w1 б23 — в эфире байт 5 BI Control 0x18 (B43 и B44,
+    FUNCTIONALITY-GAPS.md); сетка A-BFT станций (Next A-BFT B15..B18, A-BFT Length B7..B9, FSS B10..B13) по маякам
+    нашего AP на стенде совпадает со сеткой AP. Собранные 48 бит разбираются по рис. 9-77 (bic_decode), ожидания —
+    по смыслу полей 9.3.4.2 и по поведению AP в том же BI (есть ли A-BFT, его сетка), а не по именам полей uc;
   * 0x2d — поле SSW кадра развёртки в раскладке рис. 9-846 (б0 Direction, б1..9 CDOWN, б10..15 Sector ID);
   * 0x15 — Duration: в буквальном режиме маяка (0x14000007) Duration = значение 0x15 − d, d = ⌈TXTIME/1 мкс⌉
     (uc/abft.h, H-DUR/H-LIT2); у SSW вне BTI — значение 0x15 буквально.
@@ -79,7 +83,7 @@ TX_CTX = 0x807e00
 BI_CTX = 0x807f00
 
 SWEEP_WAITS = ['bi_remaining_time_us', 'rx_nav_arm_flag_if_enabled', 'mac_program_tx_beacon', 'uc_wait_event_busy',
-               'mac_select_all_sectors_and_wait', 'mac_cmd_29000001', 'mac_program_rx_window', 'mac_evt_enable_bit_sync_b',
+               'mac_select_all_sectors_and_wait', 'mac_cmd_29000001', 'mac_program_tx_vector', 'mac_evt_enable_bit_sync_b',
                'bcon_tx_ack_cmds', 'uc_spin_until_event', 'mac_evt_enable_bit_sync', 'mac_set_rf_chain_state_with_sta_sector',
                'mac_evt_select_timer_group', 'uc_assert', 'uc_wait_two_events', 'uc_read_tsf_lo', 'uc_spin_until_event4',
                'bcon_txss_program_sector', 'rf_store_last_set_index', 'bcn_queue_mtp_request', 'macq_probe_empty']
@@ -121,7 +125,9 @@ class MacTimeline:
     пришёл» перед ожиданием, assert 0x75), б14 (событие слота A-BFT) — после пуска сетки 0x5400030c."""
 
     def __init__(self, uc):
-        self.uc, self.pos, self.seen, self.after = uc, 0, set(), None
+        # история — с этого вызова: трасса эмулятора общая на тест, команды прошлого BI (0x5400030c сетки A-BFT) иначе
+        # давали б14 с начала следующей развёртки — она снималась как занятая (BUSY2) до маяков
+        self.uc, self.pos, self.seen, self.after = uc, len(uc.cpu.trace), set(), None
 
     def __call__(self, n, k):
         t = self.uc.cpu.trace
@@ -270,6 +276,66 @@ def test_abft_count_modulo_n_abft_in_ant(uc, m):
     assert cnt == [(i % m) if m else 0 for i in range(7)]
 
 
+@pytest.mark.parametrize('n_bi', [1, 2, 3, 4, 7])
+def test_next_abft_announces_actual_abft(uc, n_bi):
+    """Next A-BFT (9.3.4.2) — число BI, в которых A-BFT нет: 0 — A-BFT сразу после этого BTI; 10.42.5.1 — AP
+    выделяет A-BFT через MBIFS после BTI с маяком Next A-BFT = 0. N BIs A-BFT — период A-BFT в BI. Проверяется по
+    поведению AP в тех же BI (полная развёртка BTI подряд, без вызова счётчиков отдельно): сетка A-BFT (GP0..GP2)
+    программируется ровно в BI с Next A-BFT = 0, в BI i объявлено число BI до ближайшего A-BFT, A-BFT — каждые
+    N BIs A-BFT BI. В каждом BTI — одно значение BI Control на все маяки (10.42.4: поля не меняются в TXSS)."""
+    lmac_0x0b(uc, n_frames=4, order=perm(4), n_bi_abft=n_bi)
+    ann, abft = [], []
+    for _ in range(3 * n_bi + 1):
+        cmds, _ = bti_sweep(uc)
+        f = bic_of(cmds)
+        assert f['n_bis_abft'] == n_bi
+        ann.append(f['next_abft'])
+        abft.append(any(c >> 24 in (0x4f, 0x50, 0x51) for c in cmds))
+    assert [a == 0 for a in ann] == abft, (ann, abft)
+    at = [i for i, x in enumerate(abft) if x]
+    assert len(at) >= 3 and all(b - a == n_bi for a, b in zip(at, at[1:])), (ann, abft)
+    for i, a in enumerate(ann):
+        nxt = min(j for j in at + [10 ** 6] if j >= i)
+        if nxt < len(ann):
+            assert a == nxt - i, (i, ann, abft)
+
+
+@pytest.mark.parametrize('field, kw, width, base', [
+    ('txss_span', dict(txss_span=0xff), 7, dict(n_bi_abft=2)),        # B26 → B27 (N BIs A-BFT б0)
+    ('n_bis_abft', dict(n_bi_abft=0x1f), 4, {}),                       # B30 → B31 (A-BFT Count)
+    ('n_abft_in_ant', dict(abft_cnt_mod=0xc1), 6, {}),                 # B42 → B43 (PCP Association Ready)
+    ('abft_len', dict(abft_len=0x0f), 3, dict(fss=4)),                 # B9 → B10 (FSS б0)
+    ('fss', dict(fss=0x34), 4, {}),                                    # B13 → B14, B15 (Next A-BFT б0)
+])
+def test_bic_field_wider_than_subfield(uc, field, kw, width, base):
+    """Рис. 9-77: у каждого подполя своя ширина. Значение из LMAC 0x0b шире подполя не задевает соседние подполя и
+    Reserved B44..B47: в подполе — младшие биты, остальные подполя — как при допустимых значениях."""
+    cfg = dict(dict(abft_len=1, fss=15, n_bi_abft=1, abft_cnt_mod=0, txss_span=1), **base)
+    lmac_0x0b(uc, **dict(cfg, **kw))
+    f = program_bic(uc)
+    v = list(kw.values())[0]
+    assert f[field] == v & ((1 << width) - 1)
+    ref = dict(abft_len=cfg['abft_len'], fss=cfg['fss'], n_bis_abft=cfg['n_bi_abft'], n_abft_in_ant=0, txss_span=1,
+               cc_present=0, discovery=0, next_beacon=0, is_resp_txss=1, frag_txss=0, abft_count=0, pcp_assoc_ready=0,
+               reserved=0)
+    if field != 'n_bis_abft':
+        ref['next_abft'] = cfg['n_bi_abft'] - 1
+    for k, e in ref.items():
+        if k != field:
+            assert f[k] == e, (k, f)
+
+
+def test_bic_counters_masked(uc):
+    """N BIs A-BFT = 0 (нет в стандарте: 1 — A-BFT в каждом BI) даёт счётчик BI до A-BFT 0xff; в маяке — только 4 бита
+    Next A-BFT (B15..B18), Fragmented TXSS B19 и Reserved B44..B47 — 0. A-BFT Count — 6 бит B31..B36."""
+    lmac_0x0b(uc, n_bi_abft=0)
+    f = program_bic(uc)
+    assert (f['next_abft'], f['frag_txss'], f['reserved']) == (0xf, 0, 0), f
+    uc.w8(BCN_BI + 1, 0x7f)                     # bcn_bi.abft_idx шире поля
+    f = program_bic(uc)
+    assert (f['abft_count'], f['n_abft_in_ant'], f['pcp_assoc_ready']) == (0x3f, 0, 0), f
+
+
 # ---------------- развёртка маяков BTI ----------------
 
 def perm(n):
@@ -292,20 +358,48 @@ def test_sweep_one_beacon_per_sector_cdown(uc, n):
 
 @pytest.mark.parametrize('n,psdu', [(1, 34), (2, 38), (16, 34), (32, 60), (64, 34), (64, 38), (64, 60)])
 def test_sweep_duration_to_end_of_bti(uc, n, psdu):
-    """10.42.4: Duration каждого маяка — время до конца BTI; 9.2.5.1: дробные мкс — вверх. Маяки идут через SBIFS
-    (10.3.2.3.8), поэтому маяк с CDOWN j объявляет конец BTI на ⌈j·(TXTIME + SBIFS)⌉ позже своего конца, чем
-    маяк с CDOWN 0: Duration(j) − Duration(0) = ⌈j·P + Duration(0)⌉ − Duration(0), P = TXTIME(маяк) + SBIFS."""
+    """9.3.4.2: Duration маяка — время до конца BTI; 9.2.5.1: дробные мкс — вверх; 10.42.5.1: станция считает BTI
+    законченным по Duration последнего принятого маяка — значит, конец BTI E один на все маяки. Время эфира — по
+    стандарту: маяки через SBIFS (10.3.2.3.8), TXTIME — Control PHY (20.11.3) от длины PSDU; маяк с CDOWN j
+    кончается на j·(TXTIME + SBIFS) раньше последнего. Проверка — существование одного E ≥ конца последнего маяка:
+    для каждого маяка E ∈ (конец + Duration − 1, конец + Duration] (⌈E − конец⌉ = Duration), без формулы uc.
+    Duration в эфире = значение 0x15 − ⌈TXTIME⌉ (H-LIT2, факт о MAC, docstring модуля)."""
     lmac_0x0b(uc, n_frames=n, order=perm(n), n_bi_abft=2)
     uc.w8(BCN_BI, 1)
     cmds, d = bti_sweep(uc, psdu)
     b = beacons(cmds)
     assert len(b) == n
+    assert sorted(x['cdown'] for x, _ in b) == list(range(n))
     p = ctrl_txtime(psdu) + SBIFS
-    dur = {x['cdown']: v - d for x, v in b}
-    d0 = dur[0]
-    assert d0 >= 0
-    for j, v in dur.items():
-        assert v == math.ceil(j * p + d0), (j, v, float(j * p + d0))
+    for x, v in b:
+        assert 0 <= v - d < 0x8000, (x, v - d)   # Table 9-9: Duration 0..32767
+    e = common_bti_end([(x['cdown'], v - d) for x, v in b], p)
+    assert e is not None, 'нет общего конца BTI: %s' % [(x['cdown'], v - d) for x, v in b]
+
+
+def common_bti_end(cd_dur, p):
+    """Интервал концов BTI E (мкс от конца маяка с CDOWN 0), при которых каждый Duration = ⌈E − конец маяка⌉
+    (9.2.5.1), маяк с CDOWN j кончается в −j·p; E ≥ 0 (Duration последнего не отрицателен). None — такого E нет."""
+    lo, hi = None, None                          # E ∈ (lo, hi]
+    for j, dur in cd_dur:
+        end = -j * p
+        lo = end + dur - 1 if lo is None else max(lo, end + dur - 1)
+        hi = end + dur if hi is None else min(hi, end + dur)
+    if hi < 0 or lo >= hi:
+        return None
+    return lo, hi
+
+
+def test_common_bti_end_rejects_wrong_rounding():
+    """Самопроверка разбора: ошибка на 2 мкс у одного маяка (конец BTI у него другой) общего E не даёт; точные ⌈⌉ —
+    дают. Округление вниз по одной развёртке от ⌈⌉ с другим E не отличить — положение E относительно A-BFT AP
+    (MBIFS, 10.42.5.1) проверяет эфир двух узлов (test_air.py test_two_nodes_abft_sls)."""
+    p = ctrl_txtime(34) + SBIFS
+    e = F(7, 3)
+    ceil_ = [(j, math.ceil(e + j * p)) for j in range(16)]
+    assert common_bti_end(ceil_, p) is not None
+    assert common_bti_end(ceil_[:5] + [(5, ceil_[5][1] + 2)] + ceil_[6:], p) is None
+    assert common_bti_end(ceil_[:5] + [(5, ceil_[5][1] - 2)] + ceil_[6:], p) is None
 
 
 @pytest.mark.parametrize('n,abft_len,fss', [(1, 0, 4), (2, 7, 15), (16, 1, 15), (32, 3, 9), (64, 7, 4), (64, 1, 15)])

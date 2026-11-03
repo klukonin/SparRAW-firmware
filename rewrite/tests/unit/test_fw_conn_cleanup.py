@@ -323,7 +323,7 @@ def _ba_en(w, wsize=32):
 
 def _addba_resp(w, token, wsize=32, status=0):
     fw = w.fw
-    body = bytes([3, 1, token]) + struct.pack('<HHH', status, wsize << 6, 0)   # 9.6.4.3
+    body = bytes([3, 1, token]) + struct.pack('<HHH', status, wsize << 6 | 2, 0)   # 9.6.4.3; B1 immediate (9.4.1.13)
     fw.call('stream_mgr_action', fw.rx_pkt(fw.mgmt_frame(13, F.OWN_MAC, F.AP_MAC, F.AP_MAC, body), cid=CID))
     fw.run_tasks()
     F.settle(fw)

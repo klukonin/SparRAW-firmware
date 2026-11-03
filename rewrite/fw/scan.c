@@ -412,18 +412,19 @@ void scan_mngr_update_connected_scan_time(struct scan_mngr *scan)
 }
 
 /* l2mgr: WMI_ACS_PASSIVE_SCAN_COMPLETE_EVENTID (0x9005), vendor 0x8e5a5c (184 Б; в
- * NAMES-EXTRA l2mgr__send_scan_complete_evt): {dwell_time u32, starting_channel u16 = 3,
- * filled u8, status u8, scan_acs_info[filled] по 12 Б: channel, beacon_found,
- * busy_time u16}. info — 5 записей scan_mngr.passive (по номеру канала); заполненных
- * должно быть ровно filled (ассерт 0x1340). */
+ * NAMES-EXTRA l2mgr__send_scan_complete_evt): {dwell_time u32, filled u16 — маска полей = 3 (beacon_found, busy_time —
+ * только они и заполняются), num_scanned_channels u8, status u8, scan_acs_info[n] по 12 Б: channel, beacon_found,
+ * busy_time u16}. info — 5 записей scan_mngr.passive (по номеру канала); заполненных должно быть ровно n
+ * (ассерт 0x1340). Значения — как у vendor; прежние имена полей (starting_channel = 3, filled = n) — RE vendor,
+ * у драйвера (wil6210 wmi.h) по смещению 4 маска filled, по 6 — число каналов. */
 void l2mgr_send_acs_scan_complete_evt(u32 status, u32 mid, u32 dwell_ms, u32 filled,
                                       const struct scan_passive_info *info)
 {
     struct wmi_scan_acs_info tmp[5];
     struct wmi_acs_passive_scan_complete_event *p = host_if_send_pair();
     p->dwell_time = dwell_ms;
-    p->filled = (u8)filled;
-    p->starting_channel = 3;
+    p->num_scanned_channels = (u8)filled;
+    p->filled = WMI_ACS_INFO_BITMASK_BEACON_FOUND | WMI_ACS_INFO_BITMASK_BUSY_TIME;
     p->status = (u8)status;
     memset0_words(tmp, sizeof(tmp));
     u32 n = 0;
@@ -441,7 +442,7 @@ void l2mgr_send_acs_scan_complete_evt(u32 status, u32 mid, u32 dwell_ms, u32 fil
         fw_sysassert_fatal((void *)0, 0x1340);
     u32 len = (u8)(filled * sizeof(struct wmi_scan_acs_info));
     memcpy_fw(p->scan_info, tmp, len);
-    fw_log_emit3(0x2b, 0x100eb68, p->dwell_time, p->filled, p->starting_channel);
+    fw_log_emit3(0x2b, 0x100eb68, p->dwell_time, p->num_scanned_channels, p->filled);
     host_if_send_event(p, 0x9005, (u16)(len + 8), mid, 0, 0, 0);
     l2mgr_pending_op_clear(0);
 }

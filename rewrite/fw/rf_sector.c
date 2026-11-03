@@ -153,6 +153,16 @@ void hwd_rfc_sector_x16_state_set(u32 rf, u32 sector, u32 tx, u32 idx, u32 val, 
 
 /* ===================== Модули RF ===================== */
 
+/* Вернуть набор активных модулей RF, бывший до обхода модулей (диагностика WMI_UNIT_TEST 0x516/0x517). исправлено
+ * (vendor): обход оставлял активным последний модуль из mask — набор расходился с тенью регистра abif_dvs_rf_ctrl у uc
+ * (abif_dvs_rf_ctrl_shadow, uc перечитывает её только при LMAC 0x00, BRP и TXSS), и запись uc по тени откатывала выбор
+ * модулей. Тень uc из fw не пишется (DCCM другого ядра) — восстанавливается состояние, которому она соответствует. */
+static void rf_modules_restore(u32 act)
+{
+    if (act != 0 && rf_obj_get_rf_mask(&rf_obj) != act)
+        hwm_analog_select_active_rf_module(act);
+}
+
 /* rfc__probe_modules (0x8d3fb4, 90 Б): для каждого из 8 RF-модулей, который подключён и
  * есть в mask: сделать активным, импульс бита 15 RFC 0x3e0 (rfc_pulse_probe_bit — vendor
  * передаёт RF-объект в r0, функция его не читает), обнулить счётчик команд модуля
@@ -160,6 +170,7 @@ void hwd_rfc_sector_x16_state_set(u32 rf, u32 sector, u32 tx, u32 idx, u32 val, 
 void rfc_probe_modules(u32 mask, u8 *out)
 {
     u32 conn = rf_get_connected_mask(&rf_obj);
+    u32 act = rf_obj_get_rf_mask(&rf_obj);
     u32 i;
 
     *out = 0;
@@ -172,6 +183,7 @@ void rfc_probe_modules(u32 mask, u8 *out)
             *out = (u8)(*out | m);
         }
     }
+    rf_modules_restore(act);
 }
 
 /* rfc__collect_rx_crc_stats (0x8d4010, 84 Б): для каждого подключённого модуля из mask:
@@ -180,6 +192,7 @@ void rfc_probe_modules(u32 mask, u8 *out)
 void rfc_collect_rx_crc_stats(u32 mask, u32 *out)
 {
     u32 conn = rf_get_connected_mask(&rf_obj);
+    u32 act = rf_obj_get_rf_mask(&rf_obj);
     u32 i;
 
     for (i = 0; i < 8; i++) {
@@ -190,6 +203,7 @@ void rfc_collect_rx_crc_stats(u32 mask, u32 *out)
             out[i * 2 + 1] = mdm_stt_rx_crc_ok();
         }
     }
+    rf_modules_restore(act);
 }
 
 /* hwf_rf_config (0x8d6f30, 56 Б): журнал «HWF_RF_CONFIG ch» (0x21, 0x101b3c4), роль/мощность

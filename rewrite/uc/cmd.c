@@ -378,17 +378,17 @@ void ucode_cmd_0x00_handler(const struct lmac_cmd_mac_cfg *c)
 {
     rf_chain_cfg = c->rf_chain;                     /* st.as [gp,-3] */
     ucode_cmd_apply_mac_cfg((u32)c);
-    memcpy_uc(ifs_cfg_us, c->ifs_us, sizeof(c->ifs_us));
-    txrx_api_program_ifs_timing((u32)ifs_cfg_us);
+    memcpy_uc(ifs_cfg_clk, c->ifs_clk, sizeof(c->ifs_clk));
+    txrx_api_program_ifs_timing((u32)ifs_cfg_clk);
     u16 v = (fwsh_long_range != 0) ? 10 : DMG_RESP_TIMEOUT_SLOTS;   /* AckTimeout/CTSTimeout в слотах (ifs.h); long range — 10 */
     resp_wait_slots = v;                               /* sth.as [gp,-16] */
     busy_wait_slots = v;                               /* sth.as [gp,-15] */
     mac_install_rf_gain_cb();
-    u32 r0 = MMIO32(HW_PRS_MCAST_ADDR_LO);
-    u32 r1 = MMIO32(HW_PRS_MCAST_ADDR_HI);
-    ((u16 *)prs_mcast_addr)[0] = (u16)r0;                         /* sth.as [gp,94] */
-    ((u16 *)prs_mcast_addr)[1] = (u16)(r0 >> 16);                 /* sth.as [gp,95] */
-    ((u16 *)prs_mcast_addr)[2] = (u16)r1;                         /* sth.as [gp,96] (слот bl.d) */
+    u32 r0 = MMIO32(HW_PRS_OWN_ADDR_LO);
+    u32 r1 = MMIO32(HW_PRS_OWN_ADDR_HI);
+    ((u16 *)prs_own_addr_boot)[0] = (u16)r0;                         /* sth.as [gp,94] */
+    ((u16 *)prs_own_addr_boot)[1] = (u16)(r0 >> 16);                 /* sth.as [gp,95] */
+    ((u16 *)prs_own_addr_boot)[2] = (u16)r1;                         /* sth.as [gp,96] (слот bl.d) */
     mac_set_phy_mode();
     sta_tab[SPARRAW_PEER_UNKNOWN].peer_n_ant = 1;
     sta_tab[SPARRAW_PEER_UNKNOWN].peer_n_sectors = 0x40;
@@ -1007,7 +1007,7 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
             ;
         u32 r51 = mac_mtp_desc();
         mtp_desc_lo = r51 & 0xf;
-        mtp_desc_hi = r51 >> 4;
+        mtp_desc_hi = MTP_DESC_HI_OF(r51);
         while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
         if (mac_mtp_resp() & MAC_MTP_RESP_AGG_EN)
@@ -1020,7 +1020,7 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
             ;
         u32 r51 = mac_mtp_desc();
         mtp_desc_lo = r51 & 0xf;
-        mtp_desc_hi = r51 >> 4;
+        mtp_desc_hi = MTP_DESC_HI_OF(r51);
         while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
         if (c->qset == 3 && (mac_mtp_resp() & MAC_MTP_RESP_AGG_EN)) {
@@ -1040,7 +1040,7 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
                 ;
             u32 r51 = mac_mtp_desc();
             mtp_desc_lo = r51 & 0xf;
-            mtp_desc_hi = r51 >> 4;
+            mtp_desc_hi = MTP_DESC_HI_OF(r51);
             while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
                 ;
         }
@@ -1150,7 +1150,7 @@ static void bcn_queue_mtp_request(void)
         ;
     u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
-    mtp_desc_hi = r51 >> 4;
+    mtp_desc_hi = MTP_DESC_HI_OF(r51);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
 }

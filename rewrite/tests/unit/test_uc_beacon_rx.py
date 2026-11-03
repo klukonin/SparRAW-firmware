@@ -16,14 +16,15 @@ RX_BUF = 0x804010
 BCN_RX = 0x802f14                  # bcn_rx: +1 abft_here, +2 bi_ctrl[6], +8 bss_type, +0x1f abft_go
 ABFT_CFG = 0x803124                # +0 relax_cnt u16, +4 responder_mode, +8 beacon_type
 UC_ROLE_AP, UC_ROLE = 0x8014c0, 0x8014c4
-HW_MAC_OWN_ADDR_LO, HW_MAC_OWN_ADDR_HI = 0x886df0, 0x886df4
+HW_MAC_BSSID_LO, HW_MAC_BSSID_HI = 0x886df0, 0x886df4      # BSSID (у станции после WMI_CONNECT — адрес AP)
+HW_MAC_OWN_ADDR_LO, HW_MAC_OWN_ADDR_HI = 0x886df8, 0x886dfc  # свой адрес (include/hw_regs.h)
 MAINT_STA_MASK = 0x802194
 OWN = bytes.fromhex('24181d243b0b')
 AP = bytes.fromhex('26181d26d47b')
 OTHER = bytes.fromhex('26181d26aa01')
 BCAST = b'\xff' * 6
 MCAST = bytes.fromhex('01005e000001')
-ROLES = {'sta': (0, 1, 1), 'ap': (1, 2, 3), 'pcp': (1, 3, 2)}     # (uc_role_ap, режим cmd 0x1b, роль табл. 9-69)
+ROLES = {'sta': (0, 1, 1), 'ap': (1, 3, 3), 'pcp': (1, 2, 2)}     # (uc_role_ap, режим cmd 0x1b = bss.mode, роль табл. 9-69)
 
 RX_STUBS = ['rx_mac_prepare', 'rx_update_nav_from_frame', 'uc_wait_event_busy', 'rx_end_switch_to_tx',
             'sta_tbl_find_by_mac', 'uc_log_emit_snapshot', 'uc_assert']
@@ -74,6 +75,8 @@ def sta(uc):
     set_role(uc, 'sta')
     uc.w32(HW_MAC_OWN_ADDR_LO, int.from_bytes(OWN[:4], 'little'))
     uc.w32(HW_MAC_OWN_ADDR_HI, int.from_bytes(OWN[4:], 'little'))
+    uc.w32(HW_MAC_BSSID_LO, int.from_bytes(AP[:4], 'little'))   # станция после WMI_CONNECT: BSSID — адрес AP
+    uc.w32(HW_MAC_BSSID_HI, int.from_bytes(AP[4:], 'little'))
     uc.w32(0x8005f4, 0)                                 # txrx_state1
     uc.w32(0x8005f8, 0)                                 # txrx_state2
     return uc

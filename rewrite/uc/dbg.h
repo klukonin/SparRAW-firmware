@@ -110,6 +110,12 @@
                                   * a1 = такты ожидания [15:0] | r36 << 16 */
 #define STAMP_BUSY_LOST     41   /* rx_flow_main: busy_event (r42 б19) уже поднят перед его сбросом — 0x02080002 в начале итерации
                                   * (a0 = 1) или 0x02080000 в sxd_hal_wait_slot2_busy (a0 = 2); a1 = r42. Только при поднятом б19 (стенд: б19 обычно защёлкнут от уже обработанного кадра) */
+#define STAMP_TXOP_OPEN     42   /* txop_initiator_open_txop_flow: выбор доступа (до пуска, до ожидания слота): a0 = qid |
+                                  * режим (0 немедленно, 1 RTS, …) << 8 | бит qid_agg_mask << 12, a1 = r43 (packet_mode [7:4]) */
+#define STAMP_BCN_SNR       43   /* bti (post:), каждый принятый маяк: a0 = метрика BF r40 [19:9] со знаком, a1 = HW_PHY_RX_SNR_883AEC
+                                  * (сырое; [17:9] — SNR в четвертях дБ со знаком) — калибровка SNR Report (9.5.3) по метрике */
+#define STAMP_RX_DUR        44   /* rx_flow_main, после rx_flow_handle_frame (ответ уже запрошен): a0 = Frame Control | Duration << 16
+                                  * принятого кадра (rx_buf), a1 = TA [31:0] — поле Duration в эфире (эталон tests/ref/duration) */
 #define STAMP_TXOP_CONT     36   /* mtp_get_tx_permission (продолжение TXOP / пуск по разрешению): SIFS_CNT перед
                                   * 0x19000001 (защёлка сдвигает команду на ~8 тактов); после r45: a0 = SIFS_CNT | r36 [15:0] << 16,
                                   * a1 = r43 (ответ MTP: MCS [20:16]) */

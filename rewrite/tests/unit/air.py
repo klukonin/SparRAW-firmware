@@ -19,7 +19,7 @@
   одинаковые): r36 0x80, r37 0, r38 0xe0001009, r39 0x08000040; SSW — ssw_report (метка STAMP_SSW_REP); отчёт готов
   на rx_frame_event (H-RXREP-HDR);
 - канал идеальный: каждый кадр каждого сектора принимается (модели антенн/секторов нет)."""
-from machw import ctrl_txtime_clk, BA_LEN, RESP_CMD_DEADLINE_CLK, RESP_CMD_DEADLINE_CTS_CLK
+from machw import ctrl_txtime_clk, sc_txtime_clk, BA_LEN, RESP_CMD_DEADLINE_CLK, RESP_CMD_DEADLINE_CTS_CLK
 
 RX_BUF = 0x804010
 BCN_REP = {36: 0x80, 37: 0, 38: 0xe0001009, 39: 0x08000040}
@@ -63,6 +63,62 @@ def rx_report(fc, idx, cdown):
             39: 0x08000041 | tidx << 8 | (0x8000 if fc == FC_SSW and cdown == 0 else 0)}
 
 
+def qos_tid(f):
+    """TID QoS Data (9.2.4.5.2: QoS Control B0..B3; в DMG QoS Control сразу после Sequence Control, A4 нет). None —
+    не QoS Data (тип 2, б7 подтипа = 1 — QoS, 9.2.4.1.3 Table 9-1)."""
+    fc = int.from_bytes(f[:2], 'little')
+    if (fc >> 2) & 3 != 2 or not fc & 0x80 or len(f) < 26:
+        return None
+    return f[24] & 0xf
+
+
+def blockack_frame(ra, ta, tid, ssn, sns):
+    """Compressed BlockAck (9.3.1.8.2, рис. 9-41): FC (Control, подтип 9), Duration (в модели 0: MAC собирает
+    ответ сам, значение не снято), RA, TA, BA Control (рис. 9-42: Multi-TID B1 = 0, Compressed Bitmap B2 = 1,
+    GCR Mode B3..B4 = 0 — Compressed BlockAck по Table 9-28; TID_INFO B12..B15 = TID), BA Information (рис. 9-43):
+    Block Ack Starting Sequence Control (рис. 9-37: Fragment Number B0..B3 = 0, Starting Sequence Number B4..B15),
+    Block Ack Bitmap 8 октетов — бит (SN − SSN) mod 4096 на каждый принятый MSDU (9.3.1.8.2)."""
+    ctrl = (1 << 2) | (tid & 0xf) << 12
+    bm = 0
+    for sn in sns:
+        d = (sn - ssn) & 0xfff
+        if d < 64:
+            bm |= 1 << d
+    return ((0x0094).to_bytes(2, 'little') + bytes(2) + bytes(ra) + bytes(ta) + ctrl.to_bytes(2, 'little') +
+            ((ssn & 0xfff) << 4).to_bytes(2, 'little') + bm.to_bytes(8, 'little'))
+
+
+def rx_dup_cache_key(f):
+    """Кэш обнаружения дубликатов приёмника (802.11-2020 10.3.2.14.3, Table 10-6) для кадра Data/Management:
+    QoS Data — RC2, индекс <Address 2, TID>; QoS (+)Null — RC3, кэша нет (None); прочие Data — RC1, <Address 2>;
+    Management — RC4, <Address 2>. Запись кэша — <sequence number, fragment number> (Sequence Control целиком)."""
+    fc = int.from_bytes(f[:2], 'little')
+    typ, sub = (fc >> 2) & 3, (fc >> 4) & 0xf
+    a2 = bytes(f[10:16])
+    if typ == 2 and sub & 0x8:
+        if sub & 0x4:
+            return None                                     # QoS Null / QoS CF-Poll и т. п. без данных — RC3
+        return ('qos', a2, qos_tid(f))
+    if typ == 2:
+        return ('data', a2)
+    if typ == 0:
+        return ('mgmt', a2)
+    return None
+
+
+def rx_is_duplicate(cache, f):
+    """10.3.2.14.3: запись принятого кадра вносится в кэш; при Retry = 1 (FC B11) кадр с той же записью
+    <SN, FN> в своём кэше — дубликат (отбрасывается). True — дубликат."""
+    key = rx_dup_cache_key(f)
+    if key is None:
+        return False
+    fc = int.from_bytes(f[:2], 'little')
+    sc = int.from_bytes(f[22:24], 'little')                 # Sequence Control: FN B0..B3, SN B4..B15 (9.2.4.4)
+    dup = bool(fc & 0x0800) and cache.get(key) == sc
+    cache[key] = sc
+    return dup
+
+
 class ModelGapAir(RuntimeError):
     pass
 
@@ -71,6 +127,9 @@ class Air:
     def __init__(self, nodes):
         self.nodes = list(nodes)
         self.log = []                                       # (такт, отправитель, приёмник, описание)
+        # кадры в эфире для эталона (tests/ref): начало и конец PPDU в тактах, отправитель, байты кадра (A-MPDU — список),
+        # Duration (мкс), MCS, описание MAC
+        self.frames = []
         for n in self.nodes:
             n.hw.on_tx = (lambda src: lambda rec: self._tx(src, rec))(n)
             n.hw.collisions = []
@@ -86,19 +145,26 @@ class Air:
           6 — TA): SSW 13 + 9 = 22 (9.3.1.15), SSW-Feedback 18 + 6 = 24 (9.3.1.16). Duration — 0x15 (H-DUR)."""
         ssw = (rec['ssw'] & 0xffffff).to_bytes(3, 'little')
         if isinstance(rec.get('qframe'), list):
-            # H-AMPDU: A-MPDU — в буфер приёма первый MPDU, хосту — все
+            # H-AMPDU: A-MPDU — в буфер приёма первый MPDU, хосту — все; Duration — MAC (H-DURQ, machw._dur_field)
             f = bytes(rec['qframe'][0])
+            f = f[:2] + (rec['dur_us'] & 0xffff).to_bytes(2, 'little') + f[4:]
             mcs = rec.get('mcs', 0) & 0x1f
             return f, (lambda dst: {**AMPDU_REP, 38: AMPDU_REP[38] | self._r38(dst, src) | mcs << 20})
         if rec['what'].startswith('ответ на queue') and 'A-MPDU' in rec['what']:
-            # BlockAck (9.3.1.8, Compressed): FC 0x0094, Duration, RA, TA, BA Control, SSC, битовая карта 8 Б
-            f = (0x0094).to_bytes(2, 'little') + bytes(2) + bytes(getattr(src, 'resp_ra', bytes(6))) + bytes(src.mac) + \
-                bytes(2) + bytes(2) + b'\xff' * 8
+            # BlockAck на A-MPDU — Compressed (9.3.1.8.2): TID и номера MPDU — из принятого A-MPDU (resp_ba, _tx)
+            tid, ssn, sns = getattr(src, 'resp_ba', (0, 0, ()))
             m = rec.get('mcs', 1) & 0x1f
+            # Duration ответа — Duration A-MPDU − SIFS − TXTIME(BlockAck) (9.2.5.7; стенд: 519…1914 при данных ~1952)
+            t_ba = -(-(sc_txtime_clk(BA_LEN, m) if m else ctrl_txtime_clk(BA_LEN)) // 165)
+            d = max(0, getattr(src, 'resp_dur', 0) - 3 - t_ba)
+            f = blockack_frame(getattr(src, 'resp_ra', bytes(6)), src.mac, tid, ssn, sns)
+            f = f[:2] + d.to_bytes(2, 'little') + f[4:]
             return f, (lambda dst: {**BA_REP, 38: BA_REP[38] | self._r38(dst, src) | m << 20})
         if rec.get('qframe') is not None:
-            # H-MACQ2: кадр очереди MAC — MPDU, собранный fw; отчёт приёма — по именам полей (не снят со стенда)
+            # H-MACQ2: кадр очереди MAC — MPDU, собранный fw; отчёт приёма — по именам полей (не снят со стенда);
+            # Duration — MAC (H-DURQ, machw._dur_field)
             f = bytes(rec['qframe'])
+            f = f[:2] + (rec['dur_us'] & 0xffff).to_bytes(2, 'little') + f[4:]
             if (f[0] >> 2) & 3 == 2:
                 mcs = rec.get('mcs', 0) & 0x1f
                 return f, (lambda dst: {**DATA_REP, 38: self._r38(dst, src) | mcs << 20})
@@ -165,6 +231,10 @@ class Air:
         if not hasattr(src.hw, 'air_dur_log'):
             src.hw.air_dur_log = {}
         src.hw.air_dur_log[rec['start']] = rec['dur_us']    # Duration в эфире — для разборов
+        qf = rec.get('qframe')
+        self.frames.append(dict(start=rec['start'], end=rec['start'] + rec['dur'], src=src, frame=bytes(frame),
+                                mpdus=[bytes(x) for x in qf] if isinstance(qf, list) else None,
+                                dur_us=rec['dur_us'], mcs=rec.get('mcs', 0), what=rec['what']))
         for dst in self.nodes:
             if dst is src:
                 continue
@@ -183,6 +253,11 @@ class Air:
                 dst.resp_ra = bytes(src.mac)                # Ack — тому, кто прислал
                 dst.resp_kind = 'cts' if rts else 'ack'
                 dst.resp_dur = rec['dur_us'] & 0xffff
+                if isinstance(rec.get('qframe'), list):
+                    # BlockAck: TID A-MPDU (одного TID, 10.12.2) и номера MPDU; SSN — наименьший (окно с первого)
+                    fs = [bytes(x) for x in rec['qframe']]
+                    sns = [int.from_bytes(x[22:24], 'little') >> 4 for x in fs]
+                    dst.resp_ba = (qos_tid(fs[0]) or 0, sns[0], sns)
             if fc == 0x00d4 and frame[4:10] == bytes(dst.mac):
                 dst.hw.at(rec['start'] + rec['dur'], dst.hw.ack_rx, 'ack_rx')
             if fc == 0x0094 and frame[4:10] == bytes(dst.mac):
@@ -244,12 +319,9 @@ class Air:
             return
         fc = int.from_bytes(f[:2], 'little')
         if (fc >> 2) & 3 in (0, 2) and f[4:10] == bytes(dst.mac) and len(f) >= 24:
-            # 802.11-2020 10.3.2.14: повтор (Retry = 1) с тем же номером последовательности от того же отправителя — дубликат
-            key, seq = bytes(f[10:16]), int.from_bytes(f[22:24], 'little') >> 4
-            seen = dst.__dict__.setdefault('rx_seq', {})
-            if fc & 0x0800 and seen.get((key, (fc >> 2) & 3)) == seq:
+            # 802.11-2020 10.3.2.14.3, Table 10-6: кэш по <A2, TID> у QoS Data, по <A2> у прочих; запись <SN, FN>
+            if rx_is_duplicate(dst.__dict__.setdefault('rx_seq', {}), f):
                 return
-            seen[(key, (fc >> 2) & 3)] = seq
         if (fc >> 2) & 3 == 2 and f[4:10] == bytes(dst.mac):
             dst.host_rx.append((dst.hw.now, f))
             return

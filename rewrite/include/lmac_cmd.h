@@ -48,12 +48,12 @@ _Static_assert(sizeof(struct lmac_mac_regs) == 0x30, "lmac_mac_regs");
 /* LMAC 0x00 — конфигурация MAC (lmac_if_send_mac_cfg → ucode_cmd_0x00_handler), 0x44 Б. */
 struct lmac_cmd_mac_cfg {
     struct lmac_mac_regs regs;          /* 0x00 → mac_cfg (ucode_cmd_apply_mac_cfg) */
-    u16  ifs_us[6];                     /* 0x30 → ifs_cfg_us (txrx_api_program_ifs_timing): SIFS, …, slot, … */
+    u16  ifs_clk[6];                    /* 0x30 → ifs_cfg_clk (txrx_api_program_ifs_timing): SIFS, …, slot, … — в тактах 165 МГц (slot 825 = 5 мкс), не в мкс */
     u16  x3c;                           /* 0x3c fw: 4; ucode не читает */
     u16  x3e;                           /* 0x3e fw: 2; ucode не читает */
     u32  rf_chain;                      /* 0x40 байт rf_obj.rf_idx → rf_chain_cfg */
 };
-LMAC_OFF(struct lmac_cmd_mac_cfg, ifs_us, 0x30);
+LMAC_OFF(struct lmac_cmd_mac_cfg, ifs_clk, 0x30);
 LMAC_OFF(struct lmac_cmd_mac_cfg, rf_chain, 0x40);
 _Static_assert(sizeof(struct lmac_cmd_mac_cfg) == 0x44, "lmac_cmd_mac_cfg");
 
@@ -172,16 +172,16 @@ _Static_assert(sizeof(struct lmac_cmd_trigger_bf) == 0xc, "lmac_cmd_trigger_bf")
  * lmac_if_send_bcon_mgt (fw/pcp_ext.c), tx_bcon_del (fw/discovery.c). */
 struct lmac_bi_params {
     u32  bi_mode;                       /* 0x00 a1 lmac_if_send_bcon_mgt; 0 — снять маяк */
-    u8   n_bi_abft;                     /* 0x04 s[3] >> 5 */
-    u8   abft_cnt_mod;                  /* 0x05 (u16 s[4..5] >> 6) & 0x3f */
+    u8   n_bi_abft;                     /* 0x04 N BIs A-BFT (BI Control B27..B30, рис. 9-77) */
+    u8   abft_cnt_mod;                  /* 0x05 N A-BFT in Ant (B37..B42) */
     u8   rsv06;
-    u8   fss;                           /* 0x07 (s[1] >> 2) & 0xf */
+    u8   fss;                           /* 0x07 FSS (B10..B13) */
     u8   x8;                            /* 0x08 fw: 0 */
-    u8   x9;                            /* 0x09 (u16 s[2..3] >> 6) & 0x7f */
-    u8   abft_len;                      /* 0x0a (u16 s[0..1] >> 7) & 7 */
+    u8   x9;                            /* 0x09 TXSS Span (B20..B26) */
+    u8   abft_len;                      /* 0x0a A-BFT Length (B7..B9) */
     u8   mac[6];                        /* 0x0b MAC (если задан) */
     u8   rsv11[3];
-    u32  flags;                         /* 0x14 б0 CC present, б1 discovery, б2, б3 */
+    u32  flags;                         /* 0x14 б0 CC Present, б1 Discovery Mode, б2 — 0, б3 PCP Association Ready */
     u8   rsv18[8];
 };
 LMAC_OFF(struct lmac_bi_params, mac, 0x0b);
@@ -349,7 +349,7 @@ _Static_assert(sizeof(struct lmac_cmd_calib_gain) == 4, "lmac_cmd_calib_gain");
 
 /* LMAC 0x1b — роль (lmac_if_send_role → ucode_cmd_0x1b_handler), 3 Б. */
 struct lmac_cmd_role {
-    u8   mode;                          /* 0x00 bss.mode записи mid (2/3 — AP/PCP) → uc_role */
+    u8   mode;                          /* 0x00 bss.mode записи mid (2 — PCP, 3 — AP; include/mid.h) → uc_role */
     u8   pm_cfg;                        /* 0x01 → pm_cfg_flag */
     u8   rsv02;
 };
@@ -391,7 +391,7 @@ struct lmac_cmd_bi_tbl {
     u32  beacon_type;                   /* 0x04 → abft_cfg.beacon_type; OOB: 2, иначе 1 + (a == 0) */
     union {                             /* 0x08 → abft_cfg.relax_period */
         u16  relax_period;              /*      fw пишет полуслово: 1 */
-        u32  relax_word;                /*      ucode читает словом: [31:16] — что было в буфере пула */
+        u32  relax_word;                /*      ucode читает словом: [31:16] — 0 (буфер пула обнулён, mem_pool_alloc_locked) */
     };
 };
 LMAC_OFF(struct lmac_cmd_bi_tbl, relax_word, 0x08);

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* Заполнение таблиц трансляции адресов — boot_fill_addr_tables (0x8f6584, 1330 Б).
+/* Начальная настройка счётчиков MAC — boot_config_mac_counters (vendor boot_fill_addr_tables,
+ * 0x8f6584, 1330 Б; лог-строка «MAIN() Configurre MAC counters»). Имя RE «таблицы трансляции
+ * адресов» смыслу не отвечало: пишутся регистры счётчиков mac_cnt_sel_* / mac_cnt_cfg_* (REGS-KNOWN).
  *
- * Дословный порт vendor: две таблицы, у каждой — регистр индекса/атрибутов (0x887844..,
- * 0x8873c4..) и регистр адреса (0x887644.., 0x887144..), шаг 4. Vendor пишет попарно:
+ * Дословный порт vendor: два банка счётчиков, у каждого — регистр номера события (0x887844..,
+ * 0x8873c4..) и регистр настройки (0x887644.., 0x887144..), шаг 4. Vendor пишет попарно:
  * сначала индекс, затем адрес; порядок записей сохранён. Значения сняты с дизасма прогоном
  * всех записей (st/st.aw; константы и регистры r0..r25, часть — через стек), 96 пар.
  * Прежде здесь был no-op («BL уже заполнил»): vendor fw_main зовёт функцию безусловно и
@@ -20,8 +22,8 @@ struct mac_cnt_ent {
     u32 cfg;                                   /* → регистр cfg: настройка (не адрес) */
 };
 
-/* Таблица 1: индекс → 0x887844 + 4k, адрес → 0x887644 + 4k (43 записи). */
-static const struct mac_cnt_ent addr_tbl1[43] = {
+/* Банк 1 (REGS-KNOWN b[17..]): событие → 0x887844 + 4k, настройка → 0x887644 + 4k (43 записи). */
+static const struct mac_cnt_ent mac_cnt_bank1_init[43] = {
     {0x1, 0x80000}, {0x4, 0x300000}, {0x7, 0x640000}, {0x2, 0x880000},
     {0x5, 0xb00000}, {0x8, 0xe40000}, {0x3, 0x1080000}, {0x6, 0x1300000},
     {0x9, 0x1640000}, {0xa, 0x1840000}, {0xb, 0x1a40000}, {0xc, 0x1c40000},
@@ -35,8 +37,8 @@ static const struct mac_cnt_ent addr_tbl1[43] = {
     {0x20029, 0x5642200}, {0x2002a, 0x5843200}, {0x2002b, 0x5a44200},
 };
 
-/* Таблица 2: индекс → 0x8873c4 + 4k, адрес → 0x887144 + 4k (53 записи). */
-static const struct mac_cnt_ent addr_tbl2[53] = {
+/* Банк 2 (REGS-KNOWN a[17..]): событие → 0x8873c4 + 4k, настройка → 0x887144 + 4k (53 записи). */
+static const struct mac_cnt_ent mac_cnt_bank2_init[53] = {
     {0x1, 0x40000}, {0x4, 0x240000}, {0x5, 0x440000}, {0x7, 0x640000},
     {0x9, 0x840000}, {0xa, 0xa40000}, {0xb, 0xc40000}, {0xc, 0xe40000},
     {0xd, 0x1040000}, {0xe, 0x1240000}, {0xf, 0x1440000}, {0x10, 0x1640000},
@@ -53,16 +55,16 @@ static const struct mac_cnt_ent addr_tbl2[53] = {
     {0x45, 0x6c40000},
 };
 
-void boot_fill_addr_tables(void)
+void boot_config_mac_counters(void)
 {
     u32 k;
 
     for (k = 0; k < 43; k++) {
-        MMIO32(HW_ADDR_TBL_HI + 0x44 + k * 4) = addr_tbl1[k].sel;
-        MMIO32(HW_ADDR_TBL_LO + 0x44 + k * 4) = addr_tbl1[k].cfg;
+        MMIO32(HW_MAC_CNT_SEL_B_17 + k * 4) = mac_cnt_bank1_init[k].sel;
+        MMIO32(HW_MAC_CNT_CFG_B_17 + k * 4) = mac_cnt_bank1_init[k].cfg;
     }
     for (k = 0; k < 53; k++) {
-        MMIO32(HW_MAC_CNT_SEL_A_17 + k * 4) = addr_tbl2[k].sel;
-        MMIO32(HW_MAC_CNT_CFG_A_17 + k * 4) = addr_tbl2[k].cfg;
+        MMIO32(HW_MAC_CNT_SEL_A_17 + k * 4) = mac_cnt_bank2_init[k].sel;
+        MMIO32(HW_MAC_CNT_CFG_A_17 + k * 4) = mac_cnt_bank2_init[k].cfg;
     }
 }

@@ -50,19 +50,22 @@ void fsched_peer_deactivate(struct fsched_peer_ctx *p, u32 idx)
 
 /* frame_hdr bits-примитивы — thunk'и к bf_set_field_word, 2-арг. */
 
-/* Инициализация заголовка кадра (0x9246fc): dst,arg1,arg2,src (4 рег. арг.). */
-void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 arg1, u32 arg2, const struct dtx_grant_req *src)
+/* Кадр Grant (0x9246fc): bf_ctl — младший октет BF Control (9.5.5, рис. 9-851/9-852; 0 — без обучения). */
+void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 bf_ctl, const struct dtx_grant_req *src)
 {
     dst->fc = 0x464;                               /* stw_s r0,[r14] */
-    dst->duration = src->alloc_dur;                /* ldw_s r0,[r3]; stw_s [r14,0x2] */
+    dst->duration = src->dur;
     dst->alloc = 0;                                /* st_s r0,[r14,0x10] */
+    dst->alloc_hi = 0;                             /* исправлено (vendor): байт +0x14 не обнулялся — резервный B39 из буфера */
     dst->bf_ctl0 = 0;                              /* stb_s r0,[r14,0x15] */
     dst->bf_ctl1 = 0;                              /* stb_s r0,[r14,0x16] */
 
-    /* alloc [23,32) = длительность >> 7 */
-    bf_set32_lo_hi((u32)&dst->alloc, 23, 9, src->alloc_dur >> 7);
-    /* w14 [0,7) = длительность & 0x7f */
-    bf_set32_lo_hi((u32)&dst->w14, 0, 7, src->alloc_dur & 0x7f);
+    /* Allocation Duration — B23..B38 Dynamic Allocation Info, младший бит в B23 (802.11-2020 9.5.2, рис. 9-847):
+     * alloc [23,32) = длительность [8:0], w14 [0,7) = длительность [15:9]. исправлено (vendor frame_hdr__init
+     * 0x9246fc: B23..B31 = длительность >> 7, B32..B38 = длительность & 0x7f — половины переставлены; 1000 мкс уходили
+     * в эфир как 53255). */
+    bf_set32_lo_hi((u32)&dst->alloc, 23, 9, src->alloc_dur & 0x1ff);
+    bf_set32_lo_hi((u32)&dst->w14, 0, 7, src->alloc_dur >> 9);
     /* alloc [4,7) = (alloc_type == 1) */
     bf_set32_lo_hi((u32)&dst->alloc, 4, 3, (src->alloc_type == 1) ? 1 : 0);
     /* alloc [15,23) = dst AID */
@@ -70,8 +73,7 @@ void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 arg1, u32 arg2, const struct
     /* alloc [7,15) = src AID */
     bf_set32_lo_hi((u32)&dst->alloc, 7, 8, src->src_aid);
 
-    /* bf_ctl0 = 1 | (arg1&1)<<1 | (arg2&1)<<2 */
-    dst->bf_ctl0 = (u8)(1u | ((arg1 & 1) << 1) | ((arg2 & 1) << 2));
+    dst->bf_ctl0 = (u8)bf_ctl;
 }
 
 /* СРОК: импульс сброса указателей TXQ (|=3, sync, &=~3, sync — ~6 инструкций, vendor 0x925a48 так
@@ -105,7 +107,7 @@ void macq_kick_queue_tx(u32 q, u32 b, u32 c)
         ;
     u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
-    mtp_desc_hi = r51 >> 4;
+    mtp_desc_hi = MTP_DESC_HI_OF(r51);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
 
@@ -123,7 +125,7 @@ void macq_kick_queue_tx(u32 q, u32 b, u32 c)
         ;
     r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
-    mtp_desc_hi = r51 >> 4;
+    mtp_desc_hi = MTP_DESC_HI_OF(r51);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
 }
@@ -635,7 +637,7 @@ void uc_sysassert_snapshot_mac(u32 a, u32 b, u32 wait)
     }
     for (;;) {
         u32 hi = MMIO32(HW_MAC_TSF_HI);
-        u32 lo = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5);
+        u32 lo = MMIO32(HW_MAC_TSF_LO);
         if (MMIO32(HW_MAC_TSF_HI) == hi) {
             out[0] = lo;
             out[1] = hi;

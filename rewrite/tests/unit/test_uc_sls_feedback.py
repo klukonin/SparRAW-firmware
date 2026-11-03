@@ -24,7 +24,7 @@ HW_PHY_RX_SIGNAL_GAIN_ADC_DB, HW_PHY_RX_SNR_883AEC = 0x883830, 0x883aec
 SCRATCH = 0x803000                         # struct sls_peer_rec для direct_tx_ssw_feedback (свободная DCCM)
 
 TX_STUBS = {n: 0 for n in ('mac_evt_enable_bit_sync_b', 'mac_set_rf_chain_state_with_sta_sector', 'uc_spin_until_event',
-                           'mac_program_rx_window')}
+                           'mac_program_tx_vector')}
 RX_STUBS = {'uc_wait_event_busy': 0, 'rx_end_switch_to_tx': 0, 'bf_rep_record_snr_level': 0,
             'sta_set_tx_sector': 0, 'sta_tbl_find_by_mac': 0, 'ucode_pm_set_busy_flag': 0}
 
@@ -411,3 +411,56 @@ def test_abft_responder_rxss_length_reserved(uc, rf_chain):
     за 2 бита DMG Antenna ID."""
     _, ssw, _ = abft_respond(uc, 4, rf_chain=rf_chain)
     assert all(s['rxss_len'] == 0 for s in ssw)
+
+
+# ---------------------------------------------------------------- A-BFT: приём SSW-Feedback станцией-ответчиком
+
+HW_MAC_OWN_ADDR_LO, HW_MAC_OWN_ADDR_HI = 0x886df8, 0x886dfc   # свой адрес (include/hw_regs.h)
+OWN = bytes.fromhex('26181d26d401')                       # своя станция; PEER — AP (BSSID)
+OTHER = bytes.fromhex('26181d26d402')
+
+
+def ssw_feedback_rx(ra, ta, sector=21, antenna=2, snr=7):
+    """SSW-Feedback (9.3.1.16, рис. 9-55): FC 2, Duration 2 (0 в A-BFT), RA 6, TA 6, SSW Feedback 3 (рис. 9-849:
+    Sector Select B0..B5, DMG Antenna Select B6..B7, SNR Report B8..B15), BRP Request 4, BF Link Maintenance 1."""
+    f = bytearray(28)
+    f[0:2] = bytes([0x64, 0x09])          # 9.2.4.1.3: Type 1 (B2..B3), Subtype 6 (B4..B7), Control Frame Extension 9 (B8..B11)
+    f[4:10] = ra
+    f[10:16] = ta
+    f[16:19] = (sector | (antenna << 6) | (snr << 8)).to_bytes(3, 'little')
+    return bytes(f)
+
+
+def parse_abft_feedback(uc, frame, sta_idx=3):
+    one_rf_set(uc)
+    uc.wbytes(BCN_RX + 0x14, PEER)                            # BSSID AP — TA маяка BTI
+    uc.w32(HW_MAC_OWN_ADDR_LO, int.from_bytes(OWN[:4], 'little'))
+    uc.w32(HW_MAC_OWN_ADDR_HI, int.from_bytes(OWN[4:], 'little'))
+    uc.wbytes(RX_BUF, frame)
+    uc.wbytes(SCRATCH, bytes(0x18))
+    uc.ext.update({37: 1 << 25, 38: (1 << 11) | (sta_idx << 8)})   # ss_bitmap: SSW-Feedback; TA — станция sta_idx
+    ok = uc.call('abft_resp_parse_fdbk', SCRATCH, stub={'uc_wait_event_busy': 0})
+    return ok, dict(sta=uc.r8(SCRATCH + 0xd), sector=uc.r8(SCRATCH + 0xe), antenna=uc.r8(SCRATCH + 0xf))
+
+
+def test_abft_feedback_to_us_accepted(uc):
+    """10.42.5.2: SSW-Feedback инициатора (TA — AP, RA — наш адрес) в слоте после RSS — результат SLS ответчика:
+    Sector Select и DMG Antenna Select (рис. 9-849)."""
+    ok, r = parse_abft_feedback(uc, ssw_feedback_rx(OWN, PEER, sector=21, antenna=2))
+    assert ok == 1
+    assert (r['sector'], r['antenna'], r['sta']) == (21, 2, 3)
+
+
+@pytest.mark.parametrize('ra', [OTHER, b'\xff' * 6], ids=['other_sta', 'bcast'])
+def test_abft_feedback_to_other_sta_ignored(uc, ra):
+    """9.3.1.16: RA SSW-Feedback — адрес адресата кадра; в A-BFT несколько ответчиков могут выбрать один слот
+    (10.42.5.2, отсрочка) — Feedback, адресованный другой станции, не результат нашей RSS: не принимать."""
+    ok, r = parse_abft_feedback(uc, ssw_feedback_rx(ra, PEER))
+    assert ok == 0
+    assert (r['sector'], r['antenna']) == (0, 0)
+
+
+def test_abft_feedback_from_other_bss_ignored(uc):
+    """10.42.5.2: Feedback — от инициатора (AP маяка BTI): TA ≠ BSSID — не наш A-BFT."""
+    ok, _ = parse_abft_feedback(uc, ssw_feedback_rx(OWN, OTHER))
+    assert ok == 0

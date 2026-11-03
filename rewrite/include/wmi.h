@@ -103,11 +103,16 @@ struct wmi_scan_acs_info {
     u8  reserved[3];
 };
 WMI_SIZE(struct wmi_scan_acs_info, 0xc);
+/* Поля — по wil6210 wmi.h: filled — маска заполненных полей scan_acs_info (enum wmi_acs_info_bitmask: 1 beacon_found,
+ * 2 busy_time, 4 tx_time, 8 rx_time, 0x10 noise), num_scanned_channels — число записей. Байт 0x07 у драйвера —
+ * reserved; fw кладёт туда статус скана (vendor). */
+#define WMI_ACS_INFO_BITMASK_BEACON_FOUND 0x01u
+#define WMI_ACS_INFO_BITMASK_BUSY_TIME    0x02u
 struct wmi_acs_passive_scan_complete_event {
     u32 dwell_time;                            /* 0x00 */
-    u16 starting_channel;                      /* 0x04 */
-    u8  filled;                                /* 0x06 */
-    u8  status;                                /* 0x07 */
+    u16 filled;                                /* 0x04 */
+    u8  num_scanned_channels;                  /* 0x06 */
+    u8  status;                                /* 0x07: reserved драйвера */
     struct wmi_scan_acs_info scan_info[];      /* 0x08 */
 };
 WMI_OFF(struct wmi_acs_passive_scan_complete_event, scan_info, 0x08);
@@ -297,16 +302,16 @@ struct wmi_cfg_rx_chain_cmd {
     u8  l3_l4_ctrl;                            /* 0x16 */
     u8  ring_ctrl;                             /* 0x17 */
     u16 prefetch_thrsh;                        /* 0x18 */
-    s16 wb_thrsh;                              /* 0x1a: vendor берёт со знаком (ldh.x) */
+    /* Пороги и max_rx_pl_per_desc — __le16 драйвера (wil6210 wmi.h). исправлено (vendor): брал их со знаком (ldh.x) —
+     * значение хоста ≥ 0x8000 становилось отрицательным: max_rx_pl_per_desc 0x8001 (не степень двойки) проходил
+     * проверку как «< 3». */
+    u16 wb_thrsh;                              /* 0x1a */
     u32 itr_value;                             /* 0x1c */
-    s16 host_thrsh;                            /* 0x20: со знаком */
+    u16 host_thrsh;                            /* 0x20 */
     u8  reorder_type;                          /* 0x22 */
     u8  reserved;                              /* 0x23 */
     struct wmi_sniffer_cfg sniffer_cfg;        /* 0x24 */
-    union {
-        s16 max_rx_pl_per_desc;                /* 0x34: со знаком (проверка) */
-        u16 max_rx_pl_per_desc_u;              /* 0x34: без знака (журнал) */
-    };
+    u16 max_rx_pl_per_desc;                    /* 0x34 */
     u8  rsv_36[2];                             /* 0x36: хвост выравнивания (драйвер: 0x36 Б) */
 };
 WMI_OFF(struct wmi_cfg_rx_chain_cmd, rx_sw_ring, 0x04);

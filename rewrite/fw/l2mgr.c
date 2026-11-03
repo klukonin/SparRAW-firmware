@@ -69,10 +69,10 @@ __attribute__((section(".textlate"))) void lmac_if_send_qset_ranges(void)
 
 /* lmac_if_send_mac_cfg (0x8db8cc, 124 Б): LMAC-команда 0x00 (0x44 Б) — конфигурация MAC
  * (ucode_cmd_0x00_handler): 0xc Б cfg, cfg w0c/w10 → regs.w0c/w10 (@0xc/@0x10), cfg w[0..3] →
- * regs.w14[2..5] (@0x1c..@0x28), regs.qset_mode (@0x2c) бит 0..3 = 8, ifs_us[0] = a1,
- * ifs_us[1] = a2, ifs_us[2] = 825, ifs_us[3]/[4] = 0xa5, x3c = 4, x3e = 2, rf_chain — байт
- * rf_obj.rf_idx (0x8042c8). regs.w14[0..1] и прочие биты qset_mode — как в буфере пула (vendor
- * их не пишет). Нет буфера — команды нет. */
+ * regs.w14[2..5] (@0x1c..@0x28), regs.qset_mode (@0x2c) бит 0..3 = 8, ifs_clk[0] = a1,
+ * ifs_clk[1] = a2, ifs_clk[2] = 825, ifs_clk[3]/[4] = 0xa5, x3c = 4, x3e = 2, rf_chain — байт
+ * rf_obj.rf_idx (0x8042c8). regs.w14[0..1] и прочие биты qset_mode vendor не пишет (у vendor — остаток слота
+ * пула, у нас 0: mem_pool_alloc_locked обнуляет). Нет буфера — команды нет. */
 __attribute__((section(".textlate"))) void lmac_if_send_mac_cfg(const struct lmac_mac_cfg_src *cfg, u32 a1, u32 a2)
 {
     /* volatile: с полями struct gcc сливает пары sth (+0x34/+0x36, +0x3c/+0x3e) в одно st —
@@ -80,12 +80,12 @@ __attribute__((section(".textlate"))) void lmac_if_send_mac_cfg(const struct lma
     volatile struct lmac_cmd_mac_cfg *b = mem_pool_alloc_locked(&lmac_mbox.mb);
     if (b == 0)
         return;
-    b->ifs_us[0] = (u16)a1;
+    b->ifs_clk[0] = (u16)a1;
     b->rf_chain = *(volatile u8 *)&rf_obj.rf_idx;
-    b->ifs_us[3] = 0xa5;
-    b->ifs_us[4] = 0xa5;
-    b->ifs_us[2] = 825;
-    b->ifs_us[1] = (u16)a2;
+    b->ifs_clk[3] = 0xa5;
+    b->ifs_clk[4] = 0xa5;
+    b->ifs_clk[2] = 825;
+    b->ifs_clk[1] = (u16)a2;
     memcpy_fw((void *)b->regs.b0, cfg->b0, 0xc);
     b->regs.w10 = cfg->w10;
     b->regs.w0c = cfg->w0c;

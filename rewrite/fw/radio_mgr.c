@@ -743,17 +743,17 @@ static void rm_ch_switch_resume_tx_queue(u32 ch)
     fwq_tx_enable_queue(&tx_api_2, ch);
 }
 
-/* rm_ch_switch__program_mac (0x8c3ac0, 48 Б): MAC-адреса записи mid в регистры MAC:
- * BSSID (bss.bssid, mid+0x54) — свой адрес, свой MAC записи — групповой фильтр. */
+/* rm_ch_switch__program_mac (0x8c3ac0, 48 Б): MAC-адреса записи mid в регистры MAC: BSSID (bss.bssid, mid+0x54) —
+ * в регистры BSSID, свой MAC записи (mid->mac) — в регистры своего адреса. */
 static void rm_ch_switch_program_mac(const struct mid *mid)
 {
-    const u8 *own = mid->bss.bssid;             /* add2 r14,r0,0x15 */
-    const u8 *peer = mid->mac;
+    const u8 *bssid = mid->bss.bssid;           /* add2 r14,r0,0x15 */
+    const u8 *own = mid->mac;
+    mac_parser_set_bssid(bssid);
+    mac_set_bssid(bssid);
+    l2_offload_set_bssid(bssid);
     mac_parser_set_own_addr(own);
     mac_set_own_addr(own);
-    l2_offload_set_own_mac_addr(own);
-    mac_parser_set_mcast_addr(peer);
-    mac_set_mcast_addr(peer);
 }
 
 /* ======================= LMAC-команды смены канала ======================= */
@@ -951,7 +951,7 @@ void rm_ch_switch_sm_on_fwtx_stopped(struct rm_ch_switch_sm *cs)
     if ((cs->expect & RM_CS_FWTX_STOPPED) == 0)
         fw_sysassert_fatal(caller(), 0x116c);
     cs->got |= RM_CS_FWTX_STOPPED;
-    tsf = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5);
+    tsf = MMIO32(HW_MAC_TSF_LO);
     if (cs->hdr.trace != 0)
         fw_log_emit1(0x28, 0x1019424, tsf);
     lmac_if_send_rx_off();
@@ -1000,7 +1000,7 @@ void rm_ch_switch_sm_switch_on(struct rm_ch_switch_sm *cs)
     if (chsw_skip_calib_state == 0)
         calib_mngr_system_state_evt_handler(1, p->ch);
     cs->got |= RM_CS_MAC_SET;
-    tsf = MMIO32(HW_MAC_TIMING_INDIRECT_REG_5);
+    tsf = MMIO32(HW_MAC_TSF_LO);
     p = cs->params;
     if (cs->hdr.trace != 0)
         fw_log_emit3(0x28, 0x10194fc, p->changed, p->sta_role, tsf);

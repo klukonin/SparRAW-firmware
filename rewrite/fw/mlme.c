@@ -170,14 +170,16 @@ void TX_API_post_tx_payload(u32 payload, u32 mid)
     host_if_send_event((void *)payload, 0x1841, len, mid, 0, 1, 0);
 }
 
-/* frame_builder: Assoc Request — фиксированные поля (0x8f4e9c, 34 Б): Capability Info
- * (mobj+0x5c) и Listen Interval ([mobj+0x4e]). */
+/* frame_builder: Assoc Request — фиксированные поля (0x8f4e9c, 34 Б): Capability Info (mobj+0x5c) и Listen Interval.
+ * Listen Interval (9.4.1.6) — в единицах BI, как часто станция в энергосбережении слушает маяки; энергосбережения нет
+ * (fw/action.c psc_req_reject) — 0 («NOTE—The value 0 might be used by a STA that never enters power save mode»).
+ * исправлено (vendor): Beacon Interval в TU ([mobj+0x4e]) — 100 «интервалов» при BI 100 TU. */
 static u32 mgmt_tx_assoc_req_fixed_fields(u8 *dst, const struct mid_bss *mobj, struct conn *conn)
 {
     u32 n;
     (void)conn;
-    n = push_cap_info(dst, mobj->capinfo_b) & 0xffffu;
-    *(u16 *)(dst + n) = mobj->bcon_int;
+    n = push_cap_info_req(dst, mobj) & 0xffffu;
+    *(u16 *)(dst + n) = 0;
     return (n + 2) & 0xffffu;
 }
 
@@ -251,7 +253,7 @@ static u32 assoc_resp_fix_fields(u8 *dst, const struct mid_bss *mobj, struct con
     u8 *p;
 
     fw_log_emit0(0x2d, 0x1010120);
-    n = push_cap_info(dst, mobj->capinfo_b) & 0xffffu;
+    n = push_cap_info_resp(dst, mobj) & 0xffffu;
     p = dst + n;
     v[0] = conn->mlme.status;
     memcpy_fw(p, &v[0], 2);
@@ -263,18 +265,20 @@ static u32 assoc_resp_fix_fields(u8 *dst, const struct mid_bss *mobj, struct con
     return len;
 }
 
-/* mgmt_tx__assoc_resp_tlv (0x8f4fa0, 100 Б): EDCA (из mobj), DMG Capabilities (mobj+0x5e,
- * флаг aid), элемент 0x97 (mobj+0xf8). */
+/* mgmt_tx__assoc_resp_tlv (0x8f4fa0, 100 Б): EDCA (из mobj), DMG Capabilities (mobj+0x5e), элемент 0x97 (mobj+0xf8).
+ * DMG Capabilities описывает передающую станцию (STA Address — адрес точки, 9.4.2.127): AID = 0 — AP/PCP (9.4.1.8).
+ * исправлено (vendor): AID станции из ответа — элемент противоречил своему STA Address; AID станции — в поле AID
+ * кадра (9.3.3.6). */
 u32 mgmt_tx_assoc_resp_tlv(u8 *dst, struct mid_bss *mobj, u32 aid)
 {
     u32 n0, n1, n2, n;
 
     n0 = ie_push_edca(dst, mobj) & 0xffffu;
     dst += n0;
-    n1 = ie_push_dmg_capabilities(dst, (u8 *)&mobj->dmg_cap, aid & 0xffu) & 0xffffu;
+    n1 = ie_push_dmg_capabilities(dst, (u8 *)&mobj->dmg_cap, 0) & 0xffffu;
     fw_log_emit3(0x2d, 0x100fffc, 0x94, n1, aid);
     n = (n1 + n0) & 0xffffu;
-    n2 = ie_push_dmg_operation(dst + n1, mobj->blk_f8) & 0xffffu;
+    n2 = ie_push_dmg_operation(dst + n1, mobj) & 0xffffu;
     n = (n + n2) & 0xffffu;
     fw_log_emit2(0x2d, 0x1010018, 0xdd, n2);
     return n;
@@ -560,7 +564,7 @@ static u32 parse_wilocity_vs_get_test_mode(u32 a0, const struct ie_ref *buf)
 }
 
 /* lmac_if__send_sta_cfg_05_c (0x8dc3c4, 44 Б): LMAC-команда 5 (0x28 Б) — RX-сектор
- * станции; остальные поля буфера пула vendor не пишет. */
+ * станции; остальные поля vendor не пишет (у vendor — остаток слота пула, у нас нули: mem_pool_alloc_locked). */
 static void lmac_if_send_sta_omni_sector_cfg(u32 cid, u32 sector, u32 x)
 {
     struct lmac_cmd_sta_cfg *b = mem_pool_alloc_locked(&lmac_mbox.mb);
@@ -789,7 +793,7 @@ void mlme_sm_on_assoc_response(struct mlme_sm *sm, struct rx_pkt *pkt)
             fw_log_emit0(0x2a, 0x1011658);
         }
         sm->rx_pkt = pkt;
-        sm->conn->mid->aid = (u8)(pkt->ei->aid & 0x3fffu);   /* B14–B15 — не AID (rx_pkt_handler отсеял > 254) */
+        sm->conn->mid->aid = (u8)DMG_AID(pkt->ei->aid);       /* B8..B15 — резерв (rx_pkt_handler отсеял 0 и 255) */
         sm->conn->aid = 0;
         mgmt_pkt_release(pkt);
     }
@@ -807,7 +811,7 @@ void mlme_sm_on_assoc_reject(struct mlme_sm *sm, struct rx_pkt *pkt)
     /* Пакет в a0 — только у станции (rx_pkt_handler, Assoc Response); у AP событие шлёт mlme_assoc_tx_done_cb с кодом
      * TX-статуса в a0 — не указатель (было: разыменование status + 0xc, хосту уходил мусор вместо причины 1). */
     if (sm->conn->mid->bss.mode == 1 && pkt != 0)
-        proto = (pkt->ei->status != 0) ? pkt->ei->status : (pkt->ei->aid & 0x3fffu);
+        proto = (pkt->ei->status != 0) ? pkt->ei->status : DMG_AID(pkt->ei->aid);
     fw_log_emit0(0x2a, 0x101168c);
     if (sm->assoc_timer != 0) {
         u_schd_cancel(sm->assoc_timer);
@@ -1377,8 +1381,9 @@ void rx_pkt_handler(struct rx_pkt *pkt)
             goto drop;
         /* AID DMG-станции — 1..254 (9.4.1.8; 0 — AP/PCP, 255 — широковещательный). vendor брал любой: с AID 0/255
          * станция считала SP точки / широковещательные аллокации ESE своими (rx.c ese_may_initiate). Успех с
-         * недопустимым AID — как отказ. */
-        if (pkt->ei->status != 0 || (pkt->ei->aid & 0x3fffu) == 0 || (pkt->ei->aid & 0x3fffu) > 254) {
+         * недопустимым AID — как отказ. исправлено (vendor/порт): AID — младший октет (DMG_AID), старшие 8 бит — резерв
+         * и не учитываются; маска 0x3fff (не-DMG) отвергала AID с битами резерва B8..B13. */
+        if (pkt->ei->status != 0 || DMG_AID(pkt->ei->aid) == 0 || DMG_AID(pkt->ei->aid) > 254) {
             if (pkt->ei->status == 0) {
                 fw_log_emit1(0x1a, 0x10110f4, pkt->ei->aid);
                 conn_disc_detail_set(conn->cid, WMI_SPARRAW_DISC_ASSOC_BAD_AID);

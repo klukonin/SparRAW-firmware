@@ -75,7 +75,7 @@ def call_events(uc, name):
 
 def lmac_mac_cfg(uc, sifs=A_SIFS_US * CLK_PER_US, slot=A_SLOT_US * CLK_PER_US,
                  rifs=A_RIFS_US * CLK_PER_US, sbifs=A_SBIFS_US * CLK_PER_US, rf_chain=0, long_range=0):
-    """LMAC 0x00 (include/lmac_cmd.h struct lmac_cmd_mac_cfg, 0x44 Б): ifs_us[] @0x30 — значения в тактах 165 МГц
+    """LMAC 0x00 (include/lmac_cmd.h struct lmac_cmd_mac_cfg, 0x44 Б): ifs_clk[] @0x30 — значения в тактах 165 МГц
     (SIFS, предел добавки, slot, RIFS, SBIFS); регистровая часть 0x00..0x2f — нули."""
     for i in range(0, 0x44, 4):
         uc.w32(SCRATCH + i, 0)

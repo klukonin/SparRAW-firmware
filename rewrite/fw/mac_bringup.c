@@ -215,7 +215,7 @@ __attribute__((section(".textlate"))) void rf_chain_program_sector_desc(struct m
         w0 = bf_insert_field(w0, v29, 29, 2);
         w0 = bf_insert_field(w0, 0, 24, 2);
         w0 = bf_insert_field(w0, 1, 16, 5);
-        w0 = bf_insert_field(w0, rf_chain_sector_desc_f4 & 0xf, 4, 4);
+        w0 = bf_insert_field(w0, txq_pkt_mode & 0xf, 4, 4);
         w0 = bf_insert_field(w0, 2, 22, 2);
         w0 = bf_insert_field(w0, 0, 0, 4);
         w0 |= 1u << 31;
@@ -233,7 +233,7 @@ __attribute__((section(".textlate"))) void rf_chain_program_sector_desc(struct m
         w0 = bf_insert_field(w0, v29, 29, 2);
         w0 = bf_insert_field(w0, 0, 24, 2);
         w0 = bf_insert_field(w0, 1, 16, 5);
-        w0 = bf_insert_field(w0, rf_chain_sector_desc_f4 & 0xf, 4, 4);
+        w0 = bf_insert_field(w0, txq_pkt_mode & 0xf, 4, 4);
         w0 = bf_insert_field(w0, 0, 0, 4);
         w0 |= 1u << 31;
         w1 &= ~(1u << 1);

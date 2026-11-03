@@ -16,6 +16,7 @@
 #include "../include/mbox.h"
 #include "../include/conn.h"
 #include "../include/lmac_cmd.h"
+#include "../include/ieee80211.h"
 
 
 /* Глобальные функции этого файла (прототипы — для порядка определения). */
@@ -39,29 +40,29 @@ static u8 bcn_param_byte(u32 w0, u32 w1, u32 i)
     return (u8)((i < 4 ? w0 : w1) >> ((i & 3) * 8));
 }
 
-/* bcn_tx_init_bi_cfg (0x8c45d4, 142 Б): поля интервала бикона из структуры s:
- * n_bi_abft (+0x54) = s[3] >> 5, abft_cnt_mod (+0x55) = (u16 s[4..5] >> 6) & 0x3f,
- * fss (+0x57) = (s[1] >> 2) & 0xf, x8 (+0x58) = 0, x9 (+0x59) = (u16 s[2..3] >> 6) & 0x7f,
- * abft_len (+0x5a) = (u16 s[0..1] >> 7) & 7; флаги bi.flags (+0x64): бит 0 = s[0] б0,
- * бит 1 = s[0] б1, бит 2 = 0, бит 3 = s[5] б4.
- * (add3 r2,r0,8 = cmd + 0x40, поля — от него +0x14..+0x1a.) Журнал discovery_mode = бит 1. */
+/* bcn_tx_init_bi_cfg (0x8c45d4, 142 Б): поля интервала бикона из шаблона BI Control (w0 — октеты 0..3, w1 — 4..5;
+ * рис. 9-77): n_bi_abft = N BIs A-BFT, abft_cnt_mod = N A-BFT in Ant, fss = FSS, x8 = 0, x9 = TXSS Span,
+ * abft_len = A-BFT Length; флаги bi.flags: бит 0 = CC Present, бит 1 = Discovery Mode, бит 2 = 0, бит 3 = PCP
+ * Association Ready. исправлено (vendor): поля читались из раскладки шаблона vendor (s[3] >> 5, (s[4..5] >> 6) & 0x3f,
+ * (s[2..3] >> 6) & 0x7f, s[5] б4), см. bcon_tx_build_step. Журнал discovery_mode = бит 1. */
 void bcn_tx_init_bi_cfg(volatile struct lmac_cmd_bcn_sweep *cmd, u32 w0, u32 w1)
 {
-    u8 s0 = bcn_param_byte(w0, w1, 0), s1 = bcn_param_byte(w0, w1, 1), s2 = bcn_param_byte(w0, w1, 2);
-    u8 s3 = bcn_param_byte(w0, w1, 3), s5 = bcn_param_byte(w0, w1, 5);
+    u8 s[6];
     u32 f;
-    cmd->bi.n_bi_abft = (u8)(s3 >> 5);
-    cmd->bi.abft_cnt_mod = (u8)(((w1 & 0xffffu) >> 6) & 0x3f);
-    cmd->bi.fss = (u8)((s1 >> 2) & 0xf);
+    for (u32 i = 0; i < 6; i++)
+        s[i] = bcn_param_byte(w0, w1, i);
+    cmd->bi.n_bi_abft = (u8)bic_get(s, BIC_N_BIS_ABFT);
+    cmd->bi.abft_cnt_mod = (u8)bic_get(s, BIC_N_ABFT_IN_ANT);
+    cmd->bi.fss = (u8)bic_get(s, BIC_FSS);
     cmd->bi.x8 = 0;
-    cmd->bi.x9 = (u8)((((u32)s3 << 8 | s2) >> 6) & 0x7f);
+    cmd->bi.x9 = (u8)bic_get(s, BIC_TXSS_SPAN);
     f = cmd->bi.flags;
-    f = (f & ~1u) | (s0 & 1u);
-    f = (f & ~2u) | (((s0 >> 1) & 1u) << 1);
-    f &= ~0xcu;                                     /* bic 0xc: бит 2 — 0 */
-    f |= ((s5 >> 4) & 1u) << 3;
+    f &= ~0xfu;
+    f |= bic_get(s, BIC_CC_PRESENT);
+    f |= bic_get(s, BIC_DISCOVERY_MODE) << 1;
+    f |= bic_get(s, BIC_PCP_ASSOC_READY) << 3;
     cmd->bi.flags = f;
-    cmd->bi.abft_len = (u8)((((u32)s1 << 8 | s0) >> 7) & 7);
+    cmd->bi.abft_len = (u8)bic_get(s, BIC_ABFT_LENGTH);
     fw_log_emit1(0x25, 0x1004ad8, (f >> 1) & 1);
 }
 

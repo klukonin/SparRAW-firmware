@@ -225,6 +225,27 @@ static inline __attribute__((always_inline)) u8 ssw_snr_report(s32 snr_db)
     return (u8)v;
 }
 
+static inline __attribute__((always_inline)) u8 ssw_snr_report_q4(s32 snr_q4)
+{
+    s32 v = snr_q4 - 76;
+    if (v < -128)
+        v = -128;
+    if (v > 127)
+        v = 127;
+    return (u8)v;
+}
+
+/* SNR Report (9.5.3) кадра, принятого последним: SNR оценки PHY (HW_PHY_RX_SNR_883AEC [17:9] — четверти дБ со знаком;
+ * тот же регистр меряет sls_meas.snr_db и fwsh_sect_snr) → 4·(SNR − 19) с насыщением. Читать там же, где метрика
+ * BF лучшего кадра (выбор лучшего — по метрике, 9.5.3: «implementation dependent»). исправлено (vendor): в SNR Report
+ * A-BFT (SSW станции, SSW-Feedback точки) и SLS DTI шёл младший байт метрики BF — единицы не дБ (стенд 2026-10-31,
+ * STAMP_BCN_SNR: метрика 197…299 при SNR PHY 10,8…14,8 дБ, корреляция 0,38). */
+static inline __attribute__((always_inline)) u8 snr_report_phy(void)
+{
+    u32 r = (MMIO32(HW_PHY_RX_SNR_883AEC) >> 9) & 0x1ffu;
+    return ssw_snr_report_q4((r > 0xffu) ? (s32)r - 0x200 : (s32)r);
+}
+
 /* ---- TXOP BTI (802.11-2020 10.42.4, 9.2.5.1): Duration маяков и конец BTI по эфиру ---- */
 /* TXTIME маяка — по формуле Control PHY (ifs.h) от длины PSDU, которую fw кладёт в fwsh_diag.bcn_psdu_len при
  * постановке шаблона (tx_api_send_dband_bcon); P = TXTIME + SBIFS; TXOP = ⌈((n − 1)·P + d·165) / 165⌉ мкс (d —
@@ -295,6 +316,9 @@ static inline __attribute__((always_inline)) u32 abft_gp_clk2(void)
  * не меньше +0x26 Б кадра (+0x24 читает BRP), +30..+35 в нём. */
 #define ABFT_BCN_RA_OFF  30u
 #define ABFT_MAX_ACCESS_PERIOD 2u        /* aMaxABFTAccessPeriod (802.11-2020 Table 11-22, DMG MAC sublayer attribute values: 2) */
+/* Свой адрес — регистр 0x886df8 (HW_MAC_OWN_ADDR). исправлено (наше, 2026-10-31): сравнение было с 0x886df0 — в нём
+ * BSSID (у станции после WMI_CONNECT — адрес AP), и маяк Discovery Mode с нашим адресом в A-BFT Responder Address
+ * станция не узнавала (10.42.5.2: проход aMaxABFTAccessPeriod). Общая сверка «адрес a — наш» (и RA SSW-Feedback, bti.c). */
 static inline __attribute__((always_inline)) u32 abft_bcn_ra_is_own(const u8 *a)
 {
     u32 lo = (u32)a[0] | ((u32)a[1] << 8) | ((u32)a[2] << 16) | ((u32)a[3] << 24);
@@ -322,7 +346,10 @@ static inline __attribute__((always_inline)) u32 abft_discovery_ok(void)
     u32 bt = bcn_rx.bss_type & 3u;                  /* широковещательный: все в группе — сверка роли (табл. 9-69) */
     if (bt == 0)
         return 1;
-    u32 role = uc_role_ap ? (uc_role == 3 ? 2u : 3u) : 1u;   /* cmd 0x1b: режим 2 — AP, 3 — PCP, иначе не-AP STA */
+    /* cmd 0x1b: uc_role = bss.mode записи (include/mid.h: 2 — PCP, 3 — AP; pcp_start_flow: AP — 3) — те же значения, что
+     * роль табл. 9-69 (3 — AP, 2 — PCP); не-AP STA — 1. исправлено (наше, 2026-10-31): было 3 → 2 и 2 → 3 (AP сверялся
+     * как PCP). */
+    u32 role = uc_role_ap ? (uc_role == 3 ? 3u : 2u) : 1u;
     return bt == role;
 }
 

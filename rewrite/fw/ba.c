@@ -822,7 +822,7 @@ u32 frame_build_addba_req(struct ieee80211_addba *d, u32 token, u32 win, u32 tid
     d->category = ACT_CAT_BA;
     d->action = WLAN_ACT_ADDBA_REQ;
     d->params[0] = (u8)((d->params[0] & ~1u) | (amsdu & 1u));
-    d->params[0] &= (u8)~2u;                      /* политика: немедленный BA */
+    d->params[0] |= 2u;                           /* Block Ack Policy B1 = 1 — immediate (802.11-2020 9.4.1.13); исправлено (vendor: 0) */
     d->token = (u8)token;
     bits_set8(&d->params[0], 2, 4, tid & 0xfu);
     bf16_le(d->params, 6, 10, win & 0x3ffu);
@@ -1284,7 +1284,7 @@ u32 frame_build_addba_resp(struct ieee80211_addba_resp *d, u32 token, u32 win, u
     d->token = (u8)token;
     d->status[0] = (u8)status;
     d->params[0] = (u8)((d->params[0] & ~1u) | (amsdu & 1u));
-    d->params[0] &= (u8)~2u;
+    d->params[0] |= 2u;                           /* Block Ack Policy B1 = 1 — immediate (9.4.1.13); исправлено (vendor: 0) */
     d->status[1] = (u8)(status >> 8);
     bits_set8(&d->params[0], 2, 4, tid & 0xfu);
     bf16_le(d->params, 6, 10, win & 0x3ffu);

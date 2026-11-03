@@ -281,15 +281,23 @@ u32 fsched_pick_ready_queue(u32 a)
 u32 fsched_tx_ctrl_frame(void)
 {
     gp0_timer_arm_usec(0x20);
-    /* struct dtx_grant_req байтами: с полями gcc сливает stb [sp,8]/[sp,9] в один sth
-     * (store merging) — код меняется (codecmp). */
-    u8 buf[12];
-    *(u16 *)&buf[0] = (u16)fsched_virtual_slot_us();   /* alloc_dur; r0 = 0x801be8 не используется */
-    buf[2] = fsched_get_cur_idx(&fsched_peers);         /* sta */
-    buf[9] = 1;                                         /* dst_aid */
-    *(u32 *)&buf[4] = 1;                                /* alloc_type */
-    buf[8] = 0;                                         /* src_aid */
-    u32 r0 = direct_tx_send_ctrl_frame((const struct dtx_grant_req *)buf);
+    /* Grant станции текущего слота — AP занимает среду (Duration — слот) и отдаёт TXOP станции: после Grant AP слушает.
+     * По 802.11-2020 10.39.7.3 (передача остатка TXOP ответчику): Source AID — AID ответчика (станции; fwsh_peer_aid,
+     * пишет fw при ассоциации), Destination AID — AID держателя TXOP (AP/PCP = 0, 9.4.1.8), AllocationType — CBAP,
+     * Allocation Duration — 32768 («в текущем TXOP», 9.5.2 b), Beamforming Training = 0 (смена ролей — только при 0).
+     * исправлено (vendor): Source AID 0, Destination AID 1 (AID произвольной станции), Allocation Duration = длине слота
+     * (по 9.5.2 a — «AP начнёт доступ через столько-то», не то), BF Control = 7.
+     * TID 0: опрос не привязан к TS, станция шлёт из любой своей очереди. */
+    struct dtx_grant_req req;
+    u32 sta = fsched_get_cur_idx(&fsched_peers);
+    req.dur = (u16)fsched_virtual_slot_us();            /* r0 = 0x801be8 не используется */
+    req.sta = (u8)sta;
+    req.rsv03 = 0;
+    req.alloc_type = 1;
+    req.src_aid = FWSH_AT(fwsh_peer_aid, aid, sta % SPARRAW_MAX_STA);
+    req.dst_aid = 0;
+    req.alloc_dur = DMG_ALLOC_DUR_IN_TXOP;
+    u32 r0 = direct_tx_send_ctrl_frame(&req);
     if (r0 == 0)
         return 0;
     uc_spin_until_event(MAC_EVT1_TX_END);
@@ -345,7 +353,7 @@ u32 fsched_ap_poll_station(struct fsched_peer_ctx *p)
         ;
     u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
-    mtp_desc_hi = r51 >> 4;
+    mtp_desc_hi = MTP_DESC_HI_OF(r51);
     u32 r1b = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());
     /* исправлено (vendor): MCS из MAC 5-битный (0..31), таблица fixed_sched.mcs — MCS 0..12; вне её (OFDM / LP SC)
      * vendor читал за массивом. Берём запись MCS 1 — самую медленную SC, самые длинные сроки */

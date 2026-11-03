@@ -95,3 +95,21 @@ def test_unused_fields_zero(uc):
     r, e = run(uc, peer_l_rx=16)
     assert (r['tx_trn_req'], r['mid_req'], r['bc_req'], r['mid_grant'], r['bc_grant']) == (0, 0, 0, 0, 0)
     assert (e['tx_train_response'], e['txss_fbck_req'], e['fbck_req']) == (0, 0, 0)
+
+
+def test_capability_request_bit53(uc):
+    """init_flags б9 — запрос возможностей пира: Capability Request — B53 элемента DMG Beam Refinement (802.11-2020
+    рис. 9-558: FBCK-TYPE B34..B51, MID Extension B52); FBCK-TYPE при этом нулевой (vendor ставил B50 — бит Number of
+    Beams в FBCK-TYPE)."""
+    uc.w8(INIT_STA, 0)
+    uc.w32(INIT_FLAGS, 1 | (1 << 9))
+    uc.w32(INIT_PEER_REQ, 0)
+    e = STA_TAB
+    uc.w32(e + 0x08, 0x21 << 8)
+    for i, w in enumerate((0x1824, 0x241d, 0x0b3b)):
+        uc.w16(e + 0x30 + 2 * i, w)
+    uc.call('brp_init_tx_request', stub=WAITS)
+    d = dmg_br(uc.rbytes(BR_ELEM, 7))
+    v = int.from_bytes(uc.rbytes(BR_ELEM, 7), 'little')
+    assert d['capability_request'] == 1, hex(v)
+    assert bits(v, 34, 18) == 0 and d['mid_extension'] == 0, hex(v)

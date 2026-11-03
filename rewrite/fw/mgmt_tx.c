@@ -85,26 +85,67 @@ __attribute__((section(".textlate"))) u32 ie_push_edca(u8 *dst, const struct mid
     return 0x14;
 }
 
-/* ie__push_qos_capability (0x8e1f4c, 36 Б): QoS Capability IE (eid 0x2e, len 1),
- * бит 3 = QoS. Возврат 3.
+/* ie__push_qos_capability (0x8e1f4c, 36 Б): QoS Capability IE (eid 0x2e, len 1) — только Association Request станции
+ * (табл. 9-34, порядок 9). Возврат 3.
  * Баг vendor (исправлен 2026-10-20): vendor делает ldb.a r2,[r0,2]; bset_s r2,r2,3 — ИЛИ с байтом
- * буфера, который никто не писал (вызывающие mlme/mgmt_tx его не задают): в эфир уходит остаток
- * памяти | 0x08 (стенд: маяк AP vendor — IE 46 = b8, наш с тем же кодом — 88). Пишем ровно 0x08. */
+ * буфера, который никто не писал (вызывающие mlme/mgmt_tx его не задают): в эфир уходил остаток
+ * памяти | 0x08 (стенд: маяк AP vendor — IE 46 = b8, наш с тем же кодом — 88).
+ * исправлено (vendor): тело — QoS Info станции (9.4.1.17, рис. 9-101), B3 там — AC_BE U-APSD Flag: 0x08 объявлял
+ * U-APSD для AC_BE, а энергосбережения нет (fw/action.c psc_req_reject) — все флаги U-APSD, Q-Ack, Max SP Length,
+ * More Data Ack — 0. */
 __attribute__((section(".textlate"))) u32 ie_push_qos_capability(u8 *dst)
 {
     dst[0] = 0x2e;
     dst[1] = 0x01;
-    dst[2] = 0x08;
+    dst[2] = 0x00;
     fw_log_emit1(0x2d, 0x100fb10, dst[2]);
     return 0x03;
 }
 
-/* ie__push_eid151_len10 (0x8e1fbc, 24 Б): eid 0x97, len 10. Возврат 0xc. */
-__attribute__((section(".textlate"))) u32 ie_push_dmg_operation(u8 *dst, const u8 *src)
+/* DMG Operation Information (рис. 9-556) по расписанию, которое точка объявляет в маяке: TDDTI (B0) = 1, если DTI
+ * распределён Extended Schedule (10.39.6 — доступ по расписанию: ESE TDMA точки fw/tdma.c или расписание хоста
+ * WMI_SCHEDULING_SCHEME, оба — в блоке IE маяка), Pseudo-static allocations (B1) = 1, если хоть одна аллокация ESE
+ * псевдостатическая (B7 Allocation Control, рис. 9-564; 10.39.6.4); при TDDTI = 0 B1 — резерв, 0. */
+static u32 dmg_oper_info_sched_bits(struct mid_bss *bss)
+{
+    const struct app_ies *blk = mid_app_ie_block(bss, 0);
+    const u8 *ie = (const u8 *)blk->buf;
+    u32 n = ie != 0 ? blk->len : 0u;
+    for (u32 i = 0; i + 2u <= n && i + 2u + ie[i + 1] <= n; i += 2u + ie[i + 1]) {
+        if (ie[i] != EID_EXT_SCHED || ie[i + 1] < sizeof(struct ese_alloc))
+            continue;
+        u32 bits = 1u;
+        for (u32 k = 0; k + sizeof(struct ese_alloc) <= ie[i + 1]; k += sizeof(struct ese_alloc))
+            if (ie[i + 2 + k] & 0x80u)
+                bits |= 2u;
+        return bits;
+    }
+    return 0;
+}
+
+/* ie__push_eid151_len10 (0x8e1fbc, 24 Б): DMG Operation (eid 0x97, len 10; 9.4.2.128) из bss->blk_f8. Возврат 0xc.
+ * исправлено (vendor): TDDTI и Pseudo-static allocations (рис. 9-556) всегда 0 — и при ESE TDMA точки с
+ * псевдостатическими аллокациями; теперь — по расписанию маяка (dmg_oper_info_sched_bits). */
+__attribute__((section(".textlate"))) u32 ie_push_dmg_operation(u8 *dst, struct mid_bss *bss)
 {
     dst[0] = 0x97;
     dst[1] = 0x0a;
-    memcpy_fw(dst + 2, src, 0x0a);
+    memcpy_fw(dst + 2, bss->blk_f8, 0x0a);
+    dst[2] = (u8)((dst[2] & ~3u) | dmg_oper_info_sched_bits(bss));
+    /* DMG BSS Parameter Configuration (рис. 9-557), октеты 2..9 тела. исправлено (vendor: все 0, кроме MaxLostBeacons):
+     * MinBHIDuration — наименьший BHI этой точки (bss_min_bhi_us, fw/tdma.c); AssocRespConfirmTime (в 50 мс) — точка
+     * отвечает на Association Request в ближайшем DTI, не позже одного BI: ⌈BI / 50 мс⌉ (станция может взять его в
+     * dot11AssociationResponseTimeOut). PSRequestSuspensionInterval, MinPPDuration, SPIdleTimeout — 0: энергосбережения
+     * и динамических выделений (PP/GP, 10.39.7) нет; BroadcastSTAInfoDuration — 0: сведения о станциях (STA
+     * Availability) точка не рассылает. */
+    {
+        u32 bhi = bss_min_bhi_us(bss->owner);
+        u32 bi_us = (u32)bss->bcon_int * 1024u;
+        u32 arct = (bi_us + 49999u) / 50000u;
+        dst[2 + 3] = (u8)bhi;
+        dst[2 + 4] = (u8)(bhi >> 8);
+        dst[2 + 6] = (u8)(arct != 0 ? (arct > 0xffu ? 0xffu : arct) : 1u);
+    }
     return 0x0c;
 }
 
@@ -135,6 +176,26 @@ __attribute__((section(".textlate"))) u32 push_cap_info(u8 *dst, const u8 *src)
     fw_log_emit2(0x2d, 0x100faac, privacy, bss_type);
     memcpy_fw(dst, src, 2);
     return 2;
+}
+
+/* Capability Information Probe Response / (Re)Association Response точки (9.4.1.4, рис. 9-86): B0..B7 — DMG Parameters
+ * (9.4.1.46). исправлено (vendor): CBAP Only (B2) всегда 1 (bss_set_mode_capinfo) — и при DTI, распределённом ESE, когда
+ * маяк несёт 0; по 9.4.1.46 поле в этих кадрах — то же «весь DTI — CBAP», что в DMG Parameters маяка (dmg_cbap_only). */
+__attribute__((section(".textlate"))) u32 push_cap_info_resp(u8 *dst, const struct mid_bss *bss)
+{
+    u32 n = push_cap_info(dst, bss->capinfo_b);
+    dst[0] = (u8)((dst[0] & ~(1u << 2)) | (dmg_cbap_only(bss->owner) << 2));
+    return n;
+}
+
+/* Capability Information (Re)Association Request станции (рис. 9-86): по 9.4.1.46 BSS Type (B0..B1) — резерв вне DMG
+ * Beacon / Probe Response / (Re)Association Response, CBAP Only, CBAP Source, ECAPC Policy Enforced (B2, B3, B5) —
+ * только в них же; резерв передаётся нулём. исправлено (vendor: BSS Type 1 и CBAP Only 1 из bss_set_mode_capinfo). */
+__attribute__((section(".textlate"))) u32 push_cap_info_req(u8 *dst, const struct mid_bss *bss)
+{
+    u32 n = push_cap_info(dst, bss->capinfo_b);
+    dst[0] &= (u8)~0x2fu;
+    return n;
 }
 
 /* 0x8023c8: таблица переходов switch vendor mid__get_bcon_additional_ies (0x8cb844;
@@ -220,8 +281,59 @@ __attribute__((section(".textlate"), noinline)) void app_ies_set_buffer(struct a
 /* ies_block__merge (0x8ddfd0, 300 Б): слияние двух сортированных списков IE
  * в dest_block[0] (курсор), дедупликация по eid (vendor по OUI), исключение
  * P2P IE (OUI 50:6f:9a type 0x09) при frame_type==1. Возврат суммарной длины. */
+/* Ключ порядка элементов при слиянии: vendor — сам Element ID (списки отсортированы по eid). */
+static u32 ie_rank_eid(u32 eid)
+{
+    return eid;
+}
+
+/* Порядковый номер элемента в теле Probe Response (табл. 9-39) — те, что могут прийти от fw или хоста в DMG BSS;
+ * неизвестный — перед Vendor Specific (Last−1). Порядок 9-39 не совпадает с порядком eid: RSN (16, eid 48) идёт до
+ * EDCA (18, eid 12), Multi-band (53, eid 158) — до DMG Capabilities (54, eid 148). */
+static u32 ie_rank_probe_resp(u32 eid)
+{
+    switch (eid) {
+    case 0:   return 4;                 /* SSID */
+    case 7:   return 8;                 /* Country */
+    case 32:  return 9;                 /* Power Constraint */
+    case 40:  return 11;                /* Quiet */
+    case 35:  return 13;                /* TPC Report */
+    case 48:  return 16;                /* RSN */
+    case 11:  return 17;                /* BSS Load */
+    case 12:  return 18;                /* EDCA Parameter Set */
+    case 70:  return 21;                /* RM Enabled Capabilities */
+    case 54:  return 27;                /* Mobility Domain */
+    case 60:  return 29;                /* Extended Channel Switch Announcement */
+    case 59:  return 30;                /* Supported Operating Classes */
+    case 127: return 35;                /* Extended Capabilities */
+    case 107: return 40;                /* Interworking */
+    case 108: return 41;                /* Advertisement Protocol */
+    case 111: return 42;                /* Roaming Consortium */
+    case 158: return 53;                /* Multi-band */
+    case 148: return 54;                /* DMG Capabilities */
+    case 151: return 55;                /* DMG Operation */
+    case 170: return 56;                /* Multiple MAC Sublayers */
+    case 190: return 57;                /* Antenna Sector ID Pattern */
+    case 167: return 68;                /* Relay Capabilities */
+    case 244: return 92;                /* RSN Extension */
+    case 221: return 0x101;             /* Vendor Specific — после всех */
+    default:  return 0x100;
+    }
+}
+
+static u32 ies_block_merge_ranked(u32 *dest_block, struct app_ies *internal_block, struct app_ies *external_block,
+                                  u32 (*rank)(u32 eid));
+
 __attribute__((section(".textlate"))) u32 ies_block_merge(u32 *dest_block, struct app_ies *internal_block,
                                                           struct app_ies *external_block)
+{
+    return ies_block_merge_ranked(dest_block, internal_block, external_block, ie_rank_eid);
+}
+
+/* Слияние по ключу rank: меньший ключ — раньше; равный ключ при разных eid (неизвестные элементы) — элемент хоста
+ * (internal_block), затем свой, без дедупликации. */
+static u32 ies_block_merge_ranked(u32 *dest_block, struct app_ies *internal_block, struct app_ies *external_block,
+                                  u32 (*rank)(u32 eid))
 {
     struct ie_iter it1, it2;
     u8 *dest = *(u8 **)dest_block;
@@ -245,12 +357,12 @@ __attribute__((section(".textlate"))) u32 ies_block_merge(u32 *dest_block, struc
             cur = ie2;
             ie2 = app_ie_walk_list(&it2);
         } else {
-            u8 e1 = ie1[0];           /* vendor: ldb_s (без знака) + brlt по 0..255 */
-            u8 e2 = ie2[0];
-            if (e1 < e2) {
+            u32 r1 = rank(ie1[0]);    /* vendor: ldb_s (без знака) + brlt по 0..255 — rank = eid */
+            u32 r2 = rank(ie2[0]);
+            if (r1 < r2 || (r1 == r2 && ie1[0] != ie2[0])) {
                 cur = ie1;
                 ie1 = app_ie_walk_list(&it1);
-            } else if (e1 > e2) {
+            } else if (r1 > r2) {
                 cur = ie2;
                 ie2 = app_ie_walk_list(&it2);
             } else if (ie1[0] == 0xdd) {
@@ -300,27 +412,29 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_copy_ie_hdr(u8 *dst, const str
 {
     memset0_words(dst, 8);
     ((struct ieee80211_probe_resp_fixed *)dst)->bcn_int = mid->bcon_int;
-    return push_cap_info(dst + 0xa, mid->capinfo_b) + 0xa;
+    return push_cap_info_resp(dst + 0xa, mid) + 0xa;
 }
 
 /* mgmt_tx__probe_resp_ies (0x8d7f78, 92 Б): набор IE для probe REQ/scan
- * (SSID + RSN + DMG capabilities + vendor-специфика). Возврат длины. */
+ * (SSID + DMG capabilities + vendor-специфика; табл. 9-38). Возврат длины. */
 __attribute__((section(".textlate"))) u32 mgmt_tx_build_probe_req_ies(u8 *dst, struct mid_bss *mid, const u8 *ssid,
                                                                 u32 ssid_len)
 {
     u32 total = 0, n;
 
     n = ie_push_ssid(dst, ssid, ssid_len);            dst += n; total += n;
-    n = ie_push_raw(dst, mid->rsn_ie);                dst += n; total += n;  /* RSN */
+    /* исправлено (vendor): RSN (mid->rsn_ie) в Probe Request не входит — табл. 9-38 его не содержит */
     n = ie_push_dmg_capabilities(dst, (u8 *)&mid->dmg_cap, 0); dst += n; total += n;
     n = mgmt_tx_copy_ie_bounded(dst, mid->vs_ie, mid->vs_ie_len); dst += n; total += n;
 
     return total;
 }
 
-/* mgmt_tx__append_probe_resp_ies (0x8d8000, 244 Б): полный набор IE для probe
- * resp (SSID + RSN + DMG cap + vendor + dband oper + dband ANT + EDCA + QoS).
- * Третий аргумент в этой сборке не используется. Возврат длины. */
+/* mgmt_tx__append_probe_resp_ies (0x8d8000, 244 Б): свои элементы Probe Response в порядке табл. 9-39: SSID (4),
+ * RSN (16), EDCA Parameter Set (18), DMG Capabilities (54), DMG Operation (55), Antenna Sector ID Pattern (57), Vendor
+ * Specific Wilocity (последние). Третий аргумент в этой сборке не используется. Возврат длины.
+ * исправлено (vendor): порядок SSID, RSN, DMG Capabilities, Vendor Specific, DMG Operation, Antenna Sector ID, EDCA,
+ * QoS Capability — Vendor Specific в середине, EDCA после DMG; QoS Capability в Probe Response не входит (табл. 9-39). */
 __attribute__((section(".textlate"))) u32 mgmt_tx_append_probe_resp_ies(u8 *dst, struct mid_bss *mid,
                                                                        u32 flag)
 {
@@ -335,20 +449,19 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_append_probe_resp_ies(u8 *dst,
     n = ie_push_raw(dst, mid->rsn_ie); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fb68, n, total);                    /* RSN */
 
+    n = ie_push_edca(dst, mid);   dst += n; total += n;
+
     n = ie_push_dmg_capabilities(dst, (u8 *)&mid->dmg_cap, 0); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fb98, n, total);                    /* dband cap */
 
-    n = mgmt_tx_copy_ie_bounded(dst, mid->vs_ie, mid->vs_ie_len); dst += n; total += n;
-    fw_log_emit2(0x2d, 0x100fbc8, n, total);                    /* vendor specific */
-
-    n = ie_push_dmg_operation(dst, mid->blk_f8); dst += n; total += n;
+    n = ie_push_dmg_operation(dst, mid); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fc00, n, total);                    /* dband oper */
 
     n = ie_push_antenna_sector_id_pattern(dst, mid->blk_103); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fc34, n, total);                    /* dband ANT */
 
-    n = ie_push_edca(dst, mid);   dst += n; total += n;
-    n = ie_push_qos_capability(dst); total += n;
+    n = mgmt_tx_copy_ie_bounded(dst, mid->vs_ie, mid->vs_ie_len); total += n;
+    fw_log_emit2(0x2d, 0x100fbc8, n, total);                    /* vendor specific */
 
     return total;
 }
@@ -426,7 +539,8 @@ __attribute__((section(".textlate"))) void mgmt_tx_build_probe_resp(u32 payload,
         app_ies_set_buffer(&app_block, iesbuf, n, frame_type);
         u32 dest_block[1];
         dest_block[0] = (u32)dest;
-        ies_len = ies_block_merge(dest_block, internal, &app_block);
+        /* исправлено (vendor): слияние по порядку табл. 9-39, а не по eid (RSN — до EDCA, Multi-band — до DMG) */
+        ies_len = ies_block_merge_ranked(dest_block, internal, &app_block, ie_rank_probe_resp);
         dest = (u8 *)dest_block[0];
     }
 

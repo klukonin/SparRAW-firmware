@@ -170,6 +170,16 @@ def live_data(fw_elf, build_dir, uc_fw):
         if mask() & 1:
             break
     q6 = mask()
+    # Данные — после серии BF станции после ассоциации (своя TXSS — SSW через SBIFS, SSW-Feedback, BRP; повтор через
+    # ~1,8 мс, 3–4 раза — число зависит от того, как она ложится относительно маяков точки). Кадр, вставший в очередь во
+    # время серии, в эмуляции уходит через ~1 BI; на стенде первый ping после переассоциации (wpa_cli reconnect) —
+    # 18–20 мс, дальше 0,7 мс (2026-10-31) — модель расходится с железом (busy2 и кольца TX во время своей TXSS не
+    # сняты) — пробел модели «данные во время своей TXSS».
+    for _ in range(80):
+        last = max((st for st, en, k, w in sta.hw.air_log if k == 'tx' and w.startswith('sweep')), default=0)
+        if sta.hw.now - last > 3000 * 165:              # серия BF после ассоциации — через ~1,8 мс; тишина 3 мс — конец
+            break
+        air.run_us(500)
     t0 = sta.hw.now
     payloads = [bytes([i]) * (1000 + 100 * i) for i in range(5)]     # как MSDU iperf (короткие кадры — см. notes)
     for p in payloads:
@@ -198,7 +208,7 @@ def live_data(fw_elf, build_dir, uc_fw):
         air.run_us(500)
         if len(ap.host_done) == len(payloads):
             break
-    return dict(ap=ap, sta=sta, done=done, q6=q6, t0=t0, payloads=payloads, log=log, data=data, ace=ace,
+    return dict(air=air, ap=ap, sta=sta, done=done, q6=q6, t0=t0, payloads=payloads, log=log, data=data, ace=ace,
                 ap_done=ap_done, t1=t1)
 
 
@@ -236,6 +246,9 @@ def test_live_data(live_data):
         acked += 1
     assert acked == len(payloads)
     assert log[-1][2] == 'direct 20 B', log[-1]                # CF-End в конце последнего TXOP
+    # H-PKTMODE (стенд): очередь данных — packet_mode 1, каждый TXOP открывают RTS → DMG CTS (10.3.2.9)
+    starts = [i for i in data if i < 2 or not log[i - 1][2].startswith('ответ на queue')]
+    assert starts and all(log[i - 2][2] == 'direct 20 B' and log[i - 1][2] == 'ответ на direct 20 B' for i in starts), log
 
 
 def test_live_data_ap_to_sta(live_data):
@@ -279,9 +292,8 @@ def test_live_data_sifs(live_data):
 @pytest.fixture(scope='module')
 def live_ampdu(fw_elf, build_dir, uc_fw):
     """Ассоциация, кольцо TX станции, соглашение BA (WMI_RING_BA_EN → ADDBA Request/Response → WMI_BA_STATUS_EVENT),
-    затем 8 кадров по 1400 Б станция → AP при qid_agg_mask с битом кольца — TXOP через RTS/CTS. На железе бит ставит
-    ucode_cmd_0x08_handler (тип 3, r43 AGG_EN), когда fw останавливает pring с непустой очередью MAC (sm_pring_timeout);
-    модель DMA очередь для fw держит пустой (H-QDESC) и этого не воспроизводит — бит ставится, как его ставит uc."""
+    затем 8 кадров по 1400 Б станция → AP — TXOP через RTS/CTS: очередь данных — packet_mode 1 (H-PKTMODE, стенд);
+    qid_agg_mask (команда 8 тип 3 при остановке pring) на стенде всегда 0 и здесь не нужен."""
     import os
     import fwemu
     import machw
@@ -327,7 +339,6 @@ def live_ampdu(fw_elf, build_dir, uc_fw):
         st = [e for e in sta.fw.wmi_evts[n_sta:] if e.id == F.WMI_BA_STATUS_EVENT]
         if st:
             break
-    sta.uc.cpu.write(0x802948, (1).to_bytes(4, 'little'))  # qid_agg_mask — бит кольца 0 (см. описание)
     t0 = sta.hw.now
     payloads = [bytes([0x40 + i]) * 1400 for i in range(8)]
     for p in payloads:
@@ -350,6 +361,8 @@ def test_live_ampdu(live_ampdu):
     r = live_ampdu
     ap, sta, log = r['ap'], r['sta'], r['log']
     assert r['req'] and ((int.from_bytes(r['req'][0].body[2:4], 'little') >> 6) & 0x3ff) == 32, r['req']
+    # Block Ack Parameter Set (802.11-2020 9.4.1.13, рис. 9-96): B1 Block Ack Policy = 1 — immediate block ack
+    assert (int.from_bytes(r['req'][0].body[2:4], 'little') >> 1) & 1 == 1, r['req'][0].body[2:4].hex()
     assert r['st'] and r['st'][0].body[0] == 0 and r['st'][0].body[5] == 32, r['st']
     assert [st for _, vr, st in sta.host_done] == [0] * len(r['payloads']), (sta.host_done, sta.hw.retry_log)
     got = [f for t, f in ap.host_rx if t >= r['t0']]
@@ -364,3 +377,28 @@ def test_live_ampdu(live_ampdu):
     # BlockAck на A-MPDU MCS 8 — MCS 4 (10.6.7.2: обязательный SC не быстрее запроса, кратчайший): явный MCS в 0x17
     rates = {(v >> 8) & 0x1f for t, v in ap.hw.cmd_log if t >= r['t0'] and v >> 24 == 0x17 and v & 3 == 3 and v & 0xff00}
     assert rates == {machw.resp_mcs(8)}, rates
+
+
+def _ref_report(ev, v):
+    return '\n'.join('%s %s @%.2f мкс: %s' % (x.rule, ev[x.idx][4], float(ev[x.idx][0]), x.msg) for x in v[:20])
+
+
+def test_live_data_reference_access_rules(live_data):
+    """Журнал эфира живых данных (станция → AP и AP → станция) — правила доступа к среде эталона (tests/ref/cbap.py):
+    AIFS/backoff (10.23.2.4), NAV (10.3.2.4), TXNAV (10.23.2.8), лимит TXOP — объявленный AP в EDCA Parameter Set
+    (AC_BE 0x40 × 32 мкс = 2048 мкс, 9.4.2.28), конец CBAP (10.39.4/10.39.5), CF-End (10.23.2.10). Допуск SIFS здесь
+    широкий (5 мкс) — срок ответа проверяет test_live_data_reference_sifs."""
+    import ref_bridge
+    from fractions import Fraction as Fr
+    ev, v = ref_bridge.check(live_data['air'], live_data['t0'], txop_limit=2048, sifs_tol=Fr(5), slot_tol=Fr(5))
+    assert not v, _ref_report(ev, v)
+
+
+@pytest.mark.xfail(strict=True, reason='ответ через SIFS и продолжение TXOP в эмуляции на 2,6–4,9 мкс позже SIFS '
+                                       '(10.3.2.3.3: +0,49 мкс) — тот же срок, что xfail test_live_data_sifs; на железе зазор '
+                                       'в эфире без сниффера не измерен')
+def test_live_data_reference_sifs(live_data):
+    """То же, со строгим допуском SIFS (10.3.2.3.3: −0 / +10 %·(aSlotTime − aAirPropagationTime))."""
+    import ref_bridge
+    ev, v = ref_bridge.check(live_data['air'], live_data['t0'], txop_limit=2048)
+    assert not v, _ref_report(ev, v)

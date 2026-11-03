@@ -513,6 +513,44 @@ __attribute__((section(".textlate"))) void conn_main_sm_inject_bcon_rx(struct co
 }
 
 
+/* Beacon Interval принятых DMG Beacon по BSSID (SparRAW): CONNECT задаёт MAC станции BI точки, к которой подключается
+ * (l2mgr_connect). Списки скана к CONNECT уже очищены (scan_mngr_scan_done), WMI_CONNECT BI не несёт; vendor брал
+ * pcp_bcon_interval — BI своей точки (по умолчанию 100 TU), при BI точки 200 TU станция вела сетку BI с шагом 100
+ * (стенд 2026-10-31: HW_MAC_BEACON_INTERVAL точки 0xc8, станции 0x64). Кольцо BSS_BI_CACHE_N записей, свежая — поверх
+ * той же BSSID. В промежутке 0x806920..0x8069ff (свои переменные fw). */
+#define BSS_BI_CACHE_N 4u
+struct bss_bi_rec {
+    u8  bssid[6];
+    u16 bi_tu;
+};
+FWDATA(806990) struct bss_bi_rec bss_bi_cache[BSS_BI_CACHE_N] = { { { 0 }, 0 } };
+FWDATA(8069f7) u8 bss_bi_cache_next = 0;
+
+static void bss_bi_cache_put(const u8 *bssid, u32 bi_tu)
+{
+    u32 i, k = bss_bi_cache_next % BSS_BI_CACHE_N;
+    if (bi_tu == 0)
+        return;
+    for (i = 0; i < BSS_BI_CACHE_N; i++)
+        if (memcmp_fw(bss_bi_cache[i].bssid, bssid, 6) == 0) {
+            k = i;
+            break;
+        }
+    if (i == BSS_BI_CACHE_N)
+        bss_bi_cache_next = (u8)((k + 1) % BSS_BI_CACHE_N);
+    memcpy_fw(bss_bi_cache[k].bssid, bssid, 6);
+    bss_bi_cache[k].bi_tu = (u16)bi_tu;
+}
+
+/* Beacon Interval (TU) последнего принятого маяка BSSID; 0 — не принимался. */
+u32 bss_bi_cache_get(const u8 *bssid)
+{
+    for (u32 i = 0; i < BSS_BI_CACHE_N; i++)
+        if (bss_bi_cache[i].bi_tu != 0 && memcmp_fw(bss_bi_cache[i].bssid, bssid, 6) == 0)
+            return bss_bi_cache[i].bi_tu;
+    return 0;
+}
+
 /* dmg_bcon__rx_handler (0x8c9404, 512 Б): DMG-бикон для объекта obj = e+0x234 записи mid
  * ([obj+4] — запись mid e, [obj+8] — scan_mngr, obj+0xc — find_mngr). Возвращает 1, если
  * кадр передать хосту. Поиск (find_mngr [obj+0x4c]) — detect_discovery_bcon; иначе скан:
@@ -521,7 +559,7 @@ __attribute__((section(".textlate"))) void conn_main_sm_inject_bcon_rx(struct co
  * [0x803c20] или [0x803c0c]). a2 = бикон с другим битом 2 DMG Parameters (ei->dmg_params)
  * чем у нас (0x847ae1).
  * Затем бикон своего BSS (e+0x48 в состоянии 2, BSSID e+0x54): проверка окна времени
- * ([0x800338]: BI ×1000 + 2400 мкс на RX-сектор), расписание, событие соединению,
+ * ([0x800338]: BI цели в мкс на RX-сектор, multi_omni_period), расписание, событие соединению,
  * PS-событие 5, перевзвод u_schd.
  * Прежний порт: obj вместо scan_mngr для dband_beacon_ind, obj+4 вместо [obj+4] для
  * записи mid, без инверсии бита dmg_params, без [0x803c0c] и проверки окна. */
@@ -536,6 +574,10 @@ __attribute__((section(".textlate"))) u32 dmg_bcon_rx_handler(struct mid_disc *o
     }
     struct mid *e = obj->mid;
     struct mid_bss *lm = &e->bss;
+    {
+        const struct ieee80211_dmg_beacon *bf = (const struct ieee80211_dmg_beacon *)pkt->hdr;
+        bss_bi_cache_put(pkt->hdr->addr1.b, (u32)bf->bcn_int[0] | (u32)bf->bcn_int[1] << 8);
+    }
     u8 fl = ei->bi_ctrl[5];
     /* PCP Association Ready, B43 (9.3.4.2); у AP (BSS Type 3) подполе зарезервировано — маяк AP годен всегда */
     u32 r1 = ((fl >> 3) & 1u) | (dmg_bss_type_is_ap(ei) ? 1u : 0u);
@@ -579,17 +621,11 @@ __attribute__((section(".textlate"))) u32 dmg_bcon_rx_handler(struct mid_disc *o
     struct scan_peer *tm = conn_multi_omni_target;
     if (tm != 0) {
         u32 now = u_schd_now();
-        /* vendor: [+0xa] × 1000 + 2400 — поле rssi записи (у vendor по смыслу BI бикона) */
-        u32 slot = tm->rssi * 1000 + 0x960;
-        u32 period = conn_multi_omni_count * slot;
+        u32 slot;
+        u32 period = multi_omni_period(tm, conn_multi_omni_count, &slot);   /* исправлено (vendor): slot × 1000 + 2400 */
         u32 t0 = tm->bcon_time;
         u32 el = (now >= t0) ? (now - t0) << 4 : ((0xffffffffu - t0 + now) << 4) + 0x10;
-        /* 0x8c02d4: остаток в r1. Делитель 0 у vendor — `j 0x64c` (вне образа), но он
-         * недостижим: [0x800231] пишет только 0x8ece34 (`mov.le r0,1` — не меньше 1;
-         * образ — 1), slot = BI × 1000 + 2400 ∈ [2400, 65537400] < 2^26, n ≤ 255 < 2^8;
-         * n × slot ≡ 0 (mod 2^32) требует v2(n) + v2(slot) ≥ 32 при n × slot < 2^34, т. е.
-         * n = 128 и slot = 2^25 (BI × 1000 = 33552032 — не делится на 1000) — невозможно. */
-        u32 rem = el % period;
+        u32 rem = period ? el % period : 0;           /* окна нет (BI = 0 / переполнение) — маяк принимается */
         if (rem < period - slot && rem > 0x7530) {
             fw_log_emit3(0x2b, 0x1016744, now, t0, rem);
             return r16;

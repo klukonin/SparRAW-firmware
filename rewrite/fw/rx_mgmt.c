@@ -234,7 +234,9 @@ __attribute__((section(".textlate"))) u32 rx_mgmt_parse_body(struct rx_pkt_srvs 
     ei->vs_wil_old.body = 0;
     ei->vs_wil.len = 0;
     ei->vs_wil.body = 0;
-    while (len >= 3) {
+    /* исправлено (vendor): условие было len >= 3 — последний элемент нулевой длины (2 октета: Element ID, Length 0;
+     * 9.4.2.1 — тело 0..255) не разбирался. */
+    while (len >= 2) {
         u32 eid = p[0];
         u32 elen = p[1];
         p += 2;

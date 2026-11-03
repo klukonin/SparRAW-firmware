@@ -55,8 +55,6 @@
 #define HW_CHIP_STEPPING_ID 0x880000u /* chip_stepping_id (REGS-KNOWN): JTAG ID Sparrow A0 0x0632072f / A1 0x1632072f (pcie bring-up); начало USER RGF (прежде — HW_SWITCH_BASE «AXI/коммутатор»: не использовался) */
 #define HW_PRING_BASE    0x881000u   /* PRING (packet ring) */
 #define HW_TXQ_REGS      0x886a00u   /* регистры очередей TX (не таймеры) */
-#define HW_ADDR_TBL_LO   0x887600u   /* таблица трансляции адресов, младшие */
-#define HW_ADDR_TBL_HI   0x887800u   /* ... старшие */
 
 
 /* Регистры MMIO, к которым обращается uc (имена — 6.2/ref/REGS-62.md из REGS-KNOWN.txt; смысл
@@ -98,9 +96,13 @@
 #define HW_PHY_RX_STATISTICS_CLEAR           0x883960u   /* phy_rx_statistics_clear */
 #define HW_PHY_TX_EN                         0x884008u   /* phy_tx_en */
 #define HW_UC_ASSERT_CODE                    0x884804u   /* uc_assert_code */
-#define HW_PRS_MCAST_ADDR_LO                 0x886018u   /* prs_mcast_addr_lo */
-#define HW_PRS_MCAST_ADDR_HI                 0x88601cu   /* prs_mcast_addr_hi */
-#define HW_PRS_OWN_ADDR_HI                   0x886024u   /* prs_own_addr_hi */
+/* Парсер MAC: свой адрес записи (mid->mac, WMI_SET_MAC_ADDRESS) и BSSID (у станции после WMI_CONNECT — адрес AP).
+ * Имена карты vendor (REGS-KNOWN) перепутаны по смыслу: 0x886018 там «prs_mcast_addr» (второй/групповой фильтр),
+ * 0x886020 — «prs_own_addr»; запись fw (mac_apply_own_addr / l2mgr_apply_mac_address) и стенд 2026-10-31 (копия uc —
+ * адрес phy, 0x886020 у станции — адрес AP) показывают обратное. [31] — адрес действителен. */
+#define HW_PRS_OWN_ADDR_LO                   0x886018u   /* vendor prs_mcast_addr_lo */
+#define HW_PRS_OWN_ADDR_HI                   0x88601cu   /* vendor prs_mcast_addr_hi */
+#define HW_PRS_BSSID_HI                      0x886024u   /* vendor prs_own_addr_hi */
 #define HW_TX_KEY_0                          0x88605cu   /* tx_key_0 */
 #define HW_TX_KEY_1                          0x886060u   /* tx_key_1 */
 #define HW_TX_KEY_2                          0x886064u   /* tx_key_2 */
@@ -185,7 +187,7 @@
 #define HW_MAC_SXD_ERRORS_IMC                0x886e54u   /* mac_sxd_errors_imc */
 #define HW_MAC_NAV_HW_VALUE                  0x886e84u   /* mac_nav_hw_value */
 #define HW_MAC_TIMING_STATUS                 0x886eb4u   /* mac_timing_status */
-#define HW_MAC_TIMING_INDIRECT_REG_5         0x886eb8u   /* MAC_SXD.TIMING_INDIRECT.TIMING_INDIRECT_REG_5 */
+#define HW_MAC_TSF_LO                        0x886eb8u   /* текущий TSF, младшее слово, мкс (REGS-KNOWN MAC_SXD.TIMING_INDIRECT.TIMING_INDIRECT_REG_5 = msrb_capture_ts_low); пара к HW_MAC_TSF_HI */
 #define HW_MAC_TSF_HI                        0x886ebcu   /* mac_tsf_hi */
 #define HW_MAC_USEC_TO_TBTT                  0x886ec0u   /* mac_usec_to_tbtt */
 #define HW_MRFC_SWITCH2TX_STATUS_BUS         0x886f3cu   /* mrfc_switch2tx_status_bus */

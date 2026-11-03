@@ -16,6 +16,10 @@ import fwflows as F
 from machw import HW
 
 SHARED = (0x857000, 0x858000)
+# Регистры адресов MAC (include/hw.h, hw_regs.h): у fw и uc один регистровый файл — fw пишет (WMI_SET_MAC_ADDRESS,
+# CONNECT, PCP_START), uc читает (свой адрес — A-BFT Responder Address маяка, RA SSW-Feedback, TA DMG CTS; BSSID).
+# Эмуляторы раздельные — копия fw → uc вместе с общей памятью.
+ADDR_REGS = (0x886018, 0x88601c, 0x886020, 0x886024, 0x886df0, 0x886df4, 0x886df8, 0x886dfc)
 FWSH_N_RX_ANT = 0x85728c                      # fwsh_n_rx_ant, fwsh_total_sectors, fwsh_long_range
 FWSH_SETS = 0x857730
 RF_SETS_STAND = bytes.fromhex(
@@ -46,6 +50,7 @@ def data_frame(sa, da, bssid, to_ds, seq, payload, ethertype=0x0800, tid=0):
 class CoSim:
     def __init__(self, fw, uc, boot_steps=20_000, cmd_steps=200_000, first_tbtt_us=None):
         self.fw, self.uc, self.cmd_steps = fw, uc, cmd_steps
+        self._addr_seen = {}
         for i, b in enumerate(RF_SETS_STAND):
             fw.cpu.mem[FWSH_SETS + i] = b
         for i, b in enumerate(ANT_STAND):
@@ -85,6 +90,11 @@ class CoSim:
         c = self.uc.cpu
         for a in range(*SHARED):
             c.write(a, bytes([self.fw.cpu.mem.get(a, 0)]))
+        for a in ADDR_REGS:                                     # только записанное fw: б31 0x886024 меняет и uc
+            v = self.fw.mmio_get(a)
+            if self._addr_seen.get(a) != v:
+                self._addr_seen[a] = v
+                self.uc.w32(a, v)
 
     def to_fw(self):
         c = self.uc.cpu

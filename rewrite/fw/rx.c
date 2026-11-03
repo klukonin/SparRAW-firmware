@@ -23,11 +23,13 @@ __attribute__((section(".textlate"))) u32 hwd_dma_read_rx_tx_status(void)
     return r;
 }
 
-/* hwd_dma__uses_rgf_881c00_8d0b44 (0x8d0b44): ack RX-ring [0x881c1c]. */
-__attribute__((section(".textlate"))) void hwd_dma_ack_rx_ring(u32 value, u32 sync_flag)
+/* hwd_dma__uses_rgf_881c00_8d0b44 (0x8d0b44): маскирует прерывания колец DMA — mask (бит на
+ * кольцо) в IMS [0x881c1c]; маску снимает vring_fw_ring_unmask_irq (IMC) после осушения кольца.
+ * Не «ack RX-ring»: пишется маска, кольца и RX, и TX. */
+__attribute__((section(".textlate"))) void vring_fw_ring_mask_irq(u32 mask, u32 sync_flag)
 {
     u32 s = arc_irq_disable();
-    MMIO32(HW_DMA_FW_ICR_C08_IMS) = value;
+    MMIO32(HW_DMA_FW_ICR_C08_IMS) = mask;
     if (sync_flag) arc_sync();
     arc_irq_restore(s);
 }
@@ -84,7 +86,7 @@ __attribute__((section(".textlate"))) void txrx_mgr_handle_dma_irq(void)
         u_schd_add(cb, idx, 0, 1);
         bits &= ~(1u << idx);
     }
-    hwd_dma_ack_rx_ring(status & 0xfffu, 1);
+    vring_fw_ring_mask_irq(status & 0xfffu, 1);
 }
 
 
@@ -462,13 +464,22 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
         u32 r17 = r16;
         do {
             if (ese_alloc_wanted(obj, r13) != 0) {
-                /* исправлено (vendor): 4-е подходящее поле из маяка (ESE до 17 полей, 9.4.2.131) упиралось в
-                 * fatal 0x11bb ese_slot_table_add — остановка fw кадром из эфира. Лишние поля пропускаются. */
-                if (obj->ese->tbl->count >= ESE_SLOTS_N) {
-                    fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
-                    break;
+                /* исправлено (vendor): бралось только первое окно поля. Аллокация — Number of Blocks окон по Allocation
+                 * Block Duration, начала через Allocation Block Period (9.4.2.131); каждое окно — запись таблицы.
+                 * Period 0 при нескольких блоках — окна совпали бы, берётся одно; 0 блоков — окон нет. */
+                u32 nblk = r13->n_blocks;
+                u32 per = r13->block_period[0] | ((u32)r13->block_period[1] << 8);
+                if (nblk > 1 && per == 0)
+                    nblk = 1;
+                for (u32 k = 0; k < nblk; k++) {
+                    /* исправлено (vendor): 4-е подходящее окно из маяка (ESE до 17 полей, 9.4.2.131) упиралось в
+                     * fatal 0x11bb ese_slot_table_add — остановка fw кадром из эфира. Лишние окна пропускаются. */
+                    if (obj->ese->tbl->count >= ESE_SLOTS_N) {
+                        fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
+                        goto table_full;
+                    }
+                    ese_alloc_to_slot(obj, r18, r13, k * per);
                 }
-                ese_alloc_to_slot(obj, r18, r13);
                 r15++;
             }
             r17--;
@@ -476,6 +487,7 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
         } while (r17 >= 1);
     }
     fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
+table_full:
     schedule_scheme_start_at_next_bi(obj);
 }
 /* Отпечаток ESE маяка (число полей и 24-битная свёртка всех байт полей): vendor замечал
@@ -543,7 +555,8 @@ __attribute__((section(".textlate"))) u32 cid_pair_matches(struct sched_scheme *
 /* ese__alloc_to_slot (0x8c7d4c, 138 Б): собрать слот ESE (2×bit-set + таблица).
  * Исправлено (порт): номер распределения брался по маске 7; vendor 0x8c7d5a bmsk_s
  * r1,r1,0x3 — биты 0..3 (Allocation ID — 4 бита). */
-__attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme *obj, u32 a, const struct ese_alloc *b)
+__attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme *obj, u32 a, const struct ese_alloc *b,
+                                                            u32 blk_off)
 {
     struct ese_slot sp;   /* vendor: стековый мусор в незаписанных битах слова 0 */
     sp.ctrl = 0;
@@ -557,7 +570,8 @@ __attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme
     sp.peer_cid = (u8)ese_peer_cid_by_aid(obj, b->src_aid, b->dst_aid);
     sp.src_aid = b->src_aid;
     sp.dst_aid = b->dst_aid;
-    u32 r = b->start[0] | ((u32)b->start[1] << 8) | ((u32)b->start[2] << 16) | ((u32)b->start[3] << 24);
+    /* blk_off — смещение окна (блока) аллокации от Allocation Start: k · Allocation Block Period (9.4.2.131) */
+    u32 r = (b->start[0] | ((u32)b->start[1] << 8) | ((u32)b->start[2] << 16) | ((u32)b->start[3] << 24)) + blk_off;
     /* Смещение окна от начала BI — по модулю BI: Allocation Start — абсолютный TSF (9.4.2.131), а ESE
      * разбирается и через несколько BI после того, как точка его собрала (новая станция, пропуск
      * маяков). Vendor брал r − a как есть: окно уходило в прошлое на k·BI. Аллокации псевдостатические
@@ -572,6 +586,19 @@ __attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme
     sp.start = (u32)d;
     sp.dur = (u16)(b->block_dur[0] | ((u32)b->block_dur[1] << 8));
     ese_slot_table_add(obj->ese, &sp);
+    /* Записи — по возрастанию начала в BI: lmac_if_evt_walk закладывает их в аппаратный массив SP подряд, а окна
+     * разных блоков и полей ESE в маяке по времени не упорядочены (9.4.2.131 порядка не задаёт). */
+    struct ese_slot_tbl *t = obj->ese->tbl;
+    for (u32 i = t->count - 1u; i > 0 && i < ESE_SLOTS_N && t->slot[i].start < t->slot[i - 1].start; i--) {
+        struct ese_slot *hi = &t->slot[i], *lo = &t->slot[i - 1];
+        u32 c = hi->ctrl, st = hi->start, d = hi->dur;
+        hi->ctrl = lo->ctrl;
+        hi->start = lo->start;
+        hi->dur = lo->dur;
+        lo->ctrl = c;
+        lo->start = st;
+        lo->dur = (u16)d;
+    }
 }
 /* ese__peer_cid_by_aid (0x8cc9c8, 85 Б): маска cid пира по aid (у PCP/AP wildcard-выбор
  * инвертирован); obj+0x10 — запись mid схемы расписания. Сначала vendor зовёт

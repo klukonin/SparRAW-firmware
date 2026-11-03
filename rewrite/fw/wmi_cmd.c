@@ -254,10 +254,10 @@ static void wmi_cfg_rx_chain(struct wmi_cfg_rx_chain_cmd *p, u32 mid)
     if (rsp == 0)
         fw_sysassert_fatal((void *)0, 0x1342);
     {
-        s32 pl = p->max_rx_pl_per_desc;
+        u32 pl = p->max_rx_pl_per_desc;
         u32 bad = 0;
         if (pl >= 3 && (pl & -pl) != pl) {
-            wmi_reject_param(0x820, (u32)pl, 0x34);
+            wmi_reject_param(0x820, pl, 0x34);
             bad = 1;
         } else if (rx_chain_configured) {
             wmi_reject_param(0x820, 1, 0);
@@ -294,7 +294,7 @@ static void wmi_cfg_rx_chain(struct wmi_cfg_rx_chain_cmd *p, u32 mid)
     }
     fw_log_emit3(0x2b, 0x100d86c, mpdu, cfg_mode, reorder);
 
-    s32 max_pl = p->max_rx_pl_per_desc;
+    u32 max_pl = p->max_rx_pl_per_desc;
     if (max_pl < 3) {
         max_pl = 0;
     }                                               /* не степень двойки — отказ выше */
@@ -308,13 +308,13 @@ static void wmi_cfg_rx_chain(struct wmi_cfg_rx_chain_cmd *p, u32 mid)
         ((struct rx_macq_cfg *)macq)->reorder = 1;
     rx_macq_bind_all_queues(macq, 2, 0);
     rx_chain_configure(macq, 0, 0, cfg_mode & 0xff, psize);
-    fw_log_emit1(0x2b, 0x100d8f0, p->max_rx_pl_per_desc_u);
+    fw_log_emit1(0x2b, 0x100d8f0, p->max_rx_pl_per_desc);
 
     const u8 *rb = p->rx_sw_ring.ring_mem_base;     /* vendor собирает u64 побайтно */
     u32 base_lo = rb[0] | (rb[1] << 8) | (rb[2] << 16) | ((u32)rb[3] << 24);
     u32 base_hi = rb[4] | (rb[5] << 8) | (rb[6] << 16) | ((u32)rb[7] << 24);
     dma_mgr_configure_ring(2, base_lo, base_hi, p->rx_sw_ring.ring_size, p->host_thrsh,
-                           p->wb_thrsh, 0, (u32)max_pl);
+                           p->wb_thrsh, 0, max_pl);
     l2_offload_cfg_rx_decap((const u8 *)p);
 
     rsp->rx_ring_tail_ptr = rx_chain_descq2_sw_tail_addr();
@@ -672,14 +672,6 @@ static u32 mac_hi16(const u8 *m)
 
 /* mac_parser__set_886000_8dfb84 (0x8dfb84, 28 Б): MAC в 0x886018/0x88601c; бит 31
  * старшего слова (действителен) — последней записью. */
-void mac_parser_set_mcast_addr(const u8 *m)
-{
-    MMIO32(HW_PRS_MCAST_ADDR_HI) = 0;
-    MMIO32(HW_PRS_MCAST_ADDR_LO) = mac_lo32_h(m);
-    MMIO32(HW_PRS_MCAST_ADDR_HI) = mac_hi16(m) | 0x80000000u;
-}
-
-/* mac_parser__set_886000_8dfb68 (0x8dfb68, 28 Б): то же в 0x886020/0x886024. */
 void mac_parser_set_own_addr(const u8 *m)
 {
     MMIO32(HW_PRS_OWN_ADDR_HI) = 0;
@@ -687,25 +679,33 @@ void mac_parser_set_own_addr(const u8 *m)
     MMIO32(HW_PRS_OWN_ADDR_HI) = mac_hi16(m) | 0x80000000u;
 }
 
-/* mac__set_mcast_addr (0x8e8560, 22 Б): 0x886df8/0x886dfc. */
-void mac_set_mcast_addr(const u8 *m)
+/* mac_parser__set_886000_8dfb68 (0x8dfb68, 28 Б): то же в 0x886020/0x886024. */
+void mac_parser_set_bssid(const u8 *m)
 {
-    MMIO32(HW_MAC_MCAST_ADDR_LO) = mac_lo32_h(m);
-    MMIO32(HW_MAC_MCAST_ADDR_HI) = mac_hi16(m);
+    MMIO32(HW_PRS_BSSID_HI) = 0;
+    MMIO32(HW_PRS_BSSID_LO) = mac_lo32_h(m);
+    MMIO32(HW_PRS_BSSID_HI) = mac_hi16(m) | 0x80000000u;
 }
 
-/* mac__set_own_addr (0x8e8548, 22 Б): 0x886df0/0x886df4. */
+/* mac__set_mcast_addr (0x8e8560, 22 Б): 0x886df8/0x886dfc. */
 void mac_set_own_addr(const u8 *m)
 {
     MMIO32(HW_MAC_OWN_ADDR_LO) = mac_lo32_h(m);
     MMIO32(HW_MAC_OWN_ADDR_HI) = mac_hi16(m);
 }
 
-/* l2_offload__set_own_mac_addr (0x8df518, 22 Б): 0x881b28/0x881b2c. */
-void l2_offload_set_own_mac_addr(const u8 *m)
+/* mac__set_own_addr (0x8e8548, 22 Б): 0x886df0/0x886df4. */
+void mac_set_bssid(const u8 *m)
 {
-    MMIO32(HW_L2_OWN_MAC_LO) = mac_lo32_h(m);
-    MMIO32(HW_L2_OWN_MAC_HI) = mac_hi16(m);
+    MMIO32(HW_MAC_BSSID_LO) = mac_lo32_h(m);
+    MMIO32(HW_MAC_BSSID_HI) = mac_hi16(m);
+}
+
+/* l2_offload__set_own_mac_addr (0x8df518, 22 Б): 0x881b28/0x881b2c. */
+void l2_offload_set_bssid(const u8 *m)
+{
+    MMIO32(HW_L2_BSSID_LO) = mac_lo32_h(m);
+    MMIO32(HW_L2_BSSID_HI) = mac_hi16(m);
 }
 
 /* Поле битов [shift, shift+width) little-endian значения из n байт по адресу p
@@ -759,6 +759,9 @@ void dmg_cap_build_sta_capability(struct mid_bss *obj, const u8 *sta_addr)
     c->pcp_cap[0] &= (u8)~7u;
     le_bits_set(&c->pcp_cap[0], 2, 3, 8, obj->owner->max_assoc); /* 0x8ed19c */
     c->pcp_cap[1] &= (u8)~0x38u;
+    /* исправлено (vendor): Power Source (B11 DMG AP Or PCP Capability Information, рис. 9-553) — 0 «питание от
+     * батареи» (9.4.2.127.3) при power_source = 1 (питание от сети, по умолчанию; WMI_POWER_MGMT_CFG); теперь — оно. */
+    c->pcp_cap[1] |= (u8)((power_source & 1u) << 3);
     le_bits_set(&c->pcp_cap[1], 1, 6, 2, 0);
     /* vendor читает sta_cap[0] дважды (до и после первой записи) — через volatile: иначе gcc,
      * зная, что fwsh_* не перекрывают c, читает один раз */
@@ -767,28 +770,39 @@ void dmg_cap_build_sta_capability(struct mid_bss *obj, const u8 *sta_addr)
         (u8)((((*(volatile const u8 *)&c->sta_cap[0] | (u32)c->sta_cap[1] << 8) >> 7) & 0x7fu) + 1);
 }
 
-/* mac__apply_multicast_addr (0x8e68b4, 60 Б): свой MAC записи mid и фильтры 0x886018 и
- * 0x886df8; для группового адреса — только журнал. */
-void mac_apply_multicast_addr(struct mid *e, const u8 *mac)
+/* mac__apply_multicast_addr (0x8e68b4, 60 Б; имя vendor неточно): свой MAC записи mid и регистры своего адреса
+ * парсера 0x886018 и MAC 0x886df8; для группового адреса — ещё журнал «Multicast MAC address is now applied». */
+void mac_apply_own_addr(struct mid *e, const u8 *mac)
 {
     u8 *a = e->mac;
     memcpy_fw(a, mac, 6);
     if (e->mac_h[0] & 1)
         fw_log_emit0(0xb, 0x100cf04);
-    mac_parser_set_mcast_addr(a);
-    mac_set_mcast_addr(a);
+    mac_parser_set_own_addr(a);
+    mac_set_own_addr(a);
 }
 
 /* l2mgr__apply_mac_address (0x8e6368, 52 Б): BSSID объекта BSS записи, DMG capability и
- * регистры своего адреса (парсер, MAC, L2 offload). */
+ * регистры BSSID (парсер 0x886020, MAC 0x886df0, L2 offload 0x881b28; у vendor — «own»). */
 void l2mgr_apply_mac_address(struct mid_bss *obj, const u8 *mac)
 {
     u8 *a = obj->bssid;
     memcpy_fw(a, mac, 6);
     dmg_cap_build_sta_capability(obj, obj->owner->mac);
-    mac_parser_set_own_addr(a);
-    mac_set_own_addr(a);
-    l2_offload_set_own_mac_addr(a);
+    mac_parser_set_bssid(a);
+    mac_set_bssid(a);
+    l2_offload_set_bssid(a);
+}
+
+/* НЕ vendor: BSS станции без соединения — в покой, BSSID и регистры BSSID — к своему адресу записи, как после загрузки
+ * (mid_reset_bss_defaults). исправлено (vendor): после разрыва регистры BSSID (парсер HW_PRS_BSSID с битом «действителен»,
+ * MAC, L2) держали адрес прежней точки — MAC помечал её маяки «своей BSS» (MAC_RX_REP3_MY_BSS_BEACON: uc входил в BTI
+ * её BI и ставил sls_rx «последний SSW своей BSS»), хотя станция с ней уже не ассоциирована (802.11-2020
+ * 11.3.5.6, 11.3.5.7: после разрыва — State 2 и ниже). Свои кадры fw уже брали свой адрес (mid_copy_bssid при state ≠ 2). */
+void sta_bss_set_idle(struct mid *e)
+{
+    bss_set_state_idle(&e->bss);
+    l2mgr_apply_mac_address(&e->bss, e->mac);
 }
 
 /* l2mgr__set_mac_address (0x8fbc64, 96 Б; переход из диспетчера 0x8ece1c):
@@ -800,7 +814,7 @@ void l2mgr_set_mac_address(const struct wmi_set_mac_address_cmd *cmd, u32 mid)
     struct mid *e = mid_list_by_mid_fw(mid);
     if (e == 0)
         fw_sysassert_fatal((void *)0, 0x16bf);
-    mac_apply_multicast_addr(e, cmd->mac);
+    mac_apply_own_addr(e, cmd->mac);
     l2mgr_apply_mac_address(&e->bss, cmd->mac);
     memcpy_fw(m, cmd->mac, 6);
     fw_log_emit3(0x2b, 0x100d690, mid, ((u8 *)m)[2], m[0]);
@@ -1009,8 +1023,7 @@ void l2mgr_config_security(struct mid_sec *obj, u32 dot11_auth, u32 auth, u32 gr
 
 /* mid__set_default_dmg_params (0x8cb728, 120 Б): RSN IE по умолчанию в bss.rsn_ie
  * (e+0x1c8) — eid 0x30, len 0x14, версия 1, групповой и парный шифр 00-0f-ac:8 (GCMP), AKM
- * 00-0f-ac:2 (PSK); у RSN Capabilities (e+0x1dc) vendor по одному гасит биты 0..13 —
- * итог тот же, что ниже. */
+ * 00-0f-ac:2 (PSK); у RSN Capabilities (e+0x1dc) vendor по одному гасит биты 0..13. */
 void mid_set_default_rsn_ie(struct mid *e)
 {
     struct rsn_ie_1x1 *r = (struct rsn_ie_1x1 *)e->bss.rsn_ie;
@@ -1022,8 +1035,11 @@ void mid_set_default_rsn_ie(struct mid *e)
     r->pairwise_cipher[0] = 0; r->pairwise_cipher[1] = 0xf; r->pairwise_cipher[2] = 0xac; r->pairwise_cipher[3] = 8;
     r->akm_count = 1;
     r->akm[0] = 0;             r->akm[1] = 0xf;             r->akm[2] = 0xac;             r->akm[3] = 2;
+    /* RSN Capabilities (9.4.2.24.4, рис. 9-289) — 0: preauthentication, MFP, PBAC, Extended Key ID, OCVC (B14) не
+     * поддерживаются, B15 — резерв. исправлено (vendor): B14..B15 не трогались (&= 0xc0) — оставался прежний байт
+     * буфера RSN IE (например, из IE хоста). */
     r->rsn_cap[0] = 0;
-    r->rsn_cap[1] &= 0xc0;
+    r->rsn_cap[1] = 0;
 }
 
 /* mid__clear_flag_1c9 (0x8c6948, 10 Б): длина RSN IE (e+0x1c9) = 0. */
@@ -1227,9 +1243,16 @@ void l2mgr_connect(const struct wmi_connect_cmd *cmd, u32 mid)
     if (cmd->dot11_auth_mode == 8)                  /* WMI_AUTH11_WSC */
         fw_log_emit0(0x2b, 0x100ea08);
     sys_state_broadcast(4, 0);
+    /* BI — точки, к которой подключаемся (маяк из скана, bss_bi_cache); нет — как vendor, pcp_bcon_interval.
+     * исправлено (vendor: всегда pcp_bcon_interval — BI своей точки). То же — в поле записи (WMI_CONNECT_EVENT,
+     * Listen Interval Association Request). */
+    u32 bi = bss_bi_cache_get(cmd->bssid);
+    if (bi == 0)
+        bi = pcp_bcon_interval;
+    obj->bcon_int = (u16)bi;
     radio_mgr_set_primary_channel(cmd->channel, ((volatile struct connect_req *)&connect_req)->chan_p1,
                                   ((volatile struct connect_req *)&connect_req)->chan_p2,
-                                  pcp_bcon_interval, 1, mid & 0xff);
+                                  bi, 1, mid & 0xff);
     l2mgr_connect_waiting_radio = 1;
     l2mgr_connect_request_radio(l2mgr_connect_radio_cb, 0, mid & 0xff);
 }
@@ -1259,10 +1282,10 @@ static void l2mgr_connect_multi_omni_deferred(u32 a0, u32 mid)
  * (n = [0x800231] > 1). Цель — запись скана с BSSID = dst_mac на канале команды
  * (l2_mgr__connect_next 0x8e4c24) → [0x800338]. Не найдена — «we don't know this ap» и
  * подключение сразу. Иначе подключение откладывается до начала следующего окна бикона цели:
- * slot = BI × 1000 + 2400 (поле +0xa), период = n × slot; t0 — время бикона цели (+0x10);
+ * slot = BI × 1024 мкс (поле +0xa, TU), период = n × slot; t0 — время бикона цели (+0x10);
  * прошло el = (now − t0) × 16; цель = t0 + ((el / период) + 1) × период / 16; до неё
  * d = (цель − now) × 16; задержка = (d > slot ? d : d + период) − slot (по модулю 2^32, как
- * vendor; делитель не 0 — доказательство в dmg_bcon_rx_handler, scan_mngr.c). Задача — в
+ * vendor; период 0 — BI = 0 или переполнение, multi_omni_period — подключение сразу). Задача — в
  * connect_busy записи mid ([e+0x2ac]).
  * Сознательное отличие: vendor передаёт задаче указатель на команду в кольце ящика хоста,
  * а mbox__consume_one (0x8e3764) сразу после разбора отдаёт запись хосту (hw->tail) —
@@ -1282,8 +1305,12 @@ void l2mgr_connect_multi_omni(const struct wmi_connect_cmd *cmd, u32 mid)
     }
     u32 t0 = t->bcon_time;
     u32 now = u_schd_now();
-    u32 slot = (u32)t->rssi * 1000u + 0x960u;          /* поле +0xa — BI бикона цели */
-    u32 period = (u32)conn_multi_omni_count * slot;
+    u32 slot;
+    u32 period = multi_omni_period(t, conn_multi_omni_count, &slot);   /* исправлено (vendor): slot × 1000 + 2400 */
+    if (period == 0) {
+        l2mgr_connect_multi_omni_cb((u32)cmd, mid);     /* окна нет — подключение сразу, как с неизвестной целью */
+        return;
+    }
     u32 el = (now - t0) << 4;
     u32 target = t0 + ((((el / period) + 1u) * period) >> 4);
     u32 d = (target - now) << 4;
@@ -1354,7 +1381,7 @@ void l2mgr_disconnect_mid(u32 mid, u32 reason, u32 protocol)
         l2mgr_connect_waiting_radio = 0;
         l2mgr_connect_cancelled++;
         if (e->bss.mode == 1)
-            bss_set_state_idle(&e->bss);
+            sta_bss_set_idle(e);
         l2mgr_send_disconnect_evt(connect_req.dst_mac.b, 1, reason, mid);
     }
     mid_list_disconnect_all(e, reason, protocol);

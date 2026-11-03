@@ -26,8 +26,9 @@
 #define BENCH_N1 2
 #define BENCH_N2 6
 
-/* Тесты не помещаются в память кода все сразу — наборы 1–3, сборка — один (UC_BENCH_SET, по умолчанию 1): тело теста
- * чужого набора — пустая заглушка, uc_bench_tick её пропускает. NOP (база) — в обоих. */
+/* Тесты не помещаются в память кода все сразу — наборы 1–4, сборка — один (UC_BENCH_SET, по умолчанию 1): тело теста
+ * чужого набора — пустая заглушка, uc_bench_tick её пропускает. NOP (база) — во всех. Набор 4 — тесты, перенесённые из
+ * наборов 1 и 2, когда код uc вырос (tools/hwdbg/bench.py SET4). */
 #ifndef UC_BENCH_SET
 #define UC_BENCH_SET 1
 #endif
@@ -36,6 +37,7 @@
 #define SET1(fn) (UC_BENCH_SET == 1 ? (fn) : bench_nop)
 #define SET2(fn) (UC_BENCH_SET == 2 ? (fn) : bench_nop)
 #define SET3(fn) (UC_BENCH_SET == 3 ? (fn) : bench_nop)
+#define SET4(fn) (UC_BENCH_SET == 4 ? (fn) : bench_nop)
 #define MAC_CMD_LOG_ADDR 0x800000u   /* uc/uc.ld mac_cmd_log — адрес-константа в ST_LIMM / STW_LIMM */
 
 #define BENCH_LOOP(op) \
@@ -76,12 +78,20 @@ BENCH_FN(bench_br_mis, "b 2f\n\tnop_s\n2:\n\tnop\n\tnop_s")
 BENCH_FN(bench_st_n1, "st %[v],[%[a]]\n\tnop")
 BENCH_FN(bench_st_n3, "st %[v],[%[a]]" NOP3)
 BENCH_FN(bench_st_n7, "st %[v],[%[a]]" NOP7)
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 */
 BENCH_FN(bench_st_n11, "st %[v],[%[a]]" NOP7 NOP3 "\n\tnop")
+#undef BENCH_SET
+#define BENCH_SET 1
 BENCH_FN(bench_st_n7_sync, "st %[v],[%[a]]" NOP7 "\n\tsync")
 BENCH_FN(bench_st_ld, "st %[v],[%[a]]\n\tld %[t],[%[b]]")
 BENCH_FN(bench_ld_n3, "ld %[t],[%[a]]" NOP3)
 BENCH_FN(bench_ld_n7, "ld %[t],[%[a]]" NOP7)
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 */
 BENCH_FN(bench_ld_n11, "ld %[t],[%[a]]" NOP7 NOP3 "\n\tnop")
+#undef BENCH_SET
+#define BENCH_SET 1
 /* Выборка команд: limm (8 Б) подряд, вперемешку с 16- и 32-битными. */
 BENCH_FN(bench_limm_nops2, "mov %[t],0x12345678\n\tnop_s\n\tnop_s")
 BENCH_FN(bench_limm_nop, "mov %[t],0x12345678\n\tnop")
@@ -156,7 +166,11 @@ BENCH_FN_CL(bench_cmp_bnes, "cmp %[a],0\n\tbne_s 2f\n\tnop_s\n2:", "cc")
 BENCH_FN_CL(bench_cmp_beqs_nt, "cmp %[a],0\n\tbeq_s 2f\n\tnop_s\n2:", "cc")
 BENCH_FN_CL(bench_cmp_beqd_nt, "cmp %[a],0\n\tbeq.d 2f\n\tnop\n\tnop\n2:", "cc")
 BENCH_FN_CL(bench_cmp_jeqs_nt, "cmp %[a],0\n\tjeq_s [blink]\n\tnop_s", "cc")
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 */
 BENCH_FN_CL(bench_cmp_n3_bleq_nt, "cmp %[a],0" NOP3 "\n\tbleq 2f\n\tnop\n2:", "cc", "blink")
+#undef BENCH_SET
+#define BENCH_SET 2
 /* готовность результата загрузки с limm (адрес или смещение), загрузка → brcc */
 BENCH_FN(bench_ld_limm_use, "ld %[t],[0x803234]\n\tadd %[v],%[v],%[t]")
 BENCH_FN(bench_ldoff_limm_use, "ld %[t],[%[a],0x800000]\n\tadd %[v],%[v],%[t]")
@@ -190,7 +204,11 @@ BENCH_FN(bench_ld_ld_ld, "ld %[t],[%[a]]\n\tld %[v],[%[b]]\n\tld %[t],[%[a]]")
 /* перекрытие чтений: интервал между началами, готовность результата второго, использование первого */
 BENCH_FN(bench_ld_ld_use1, "ld %[t],[%[a]]\n\tld %[v],[%[b]]\n\tadd %[t],%[t],%[t]")
 BENCH_FN(bench_ld_nop_ld, "ld %[t],[%[a]]\n\tnop\n\tld %[v],[%[b]]")
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 */
 BENCH_FN(bench_ld_n4_ld, "ld %[t],[%[a]]" NOP3 "\n\tnop\n\tld %[v],[%[b]]")
+#undef BENCH_SET
+#define BENCH_SET 2
 /* байтовые / полусловные загрузки с использованием, записи: две подряд, по адресу-константе (первое слово журнала
  * команд MAC, то же значение — запись ничего не меняет); вызов с push_s blink */
 BENCH_FN(bench_ldb_use, "ldb %[t],[%[a]]\n\tadd %[v],%[v],%[t]")
@@ -264,7 +282,11 @@ BENCH_FN_QIO(bench_limm_s, "add_s %[a],%[a],0x10000\n\tnop_s")
 BENCH_FN_QIO(bench_limm_s2, "add_s %[a],%[a],0x10000\n\tadd_s %[a],%[a],0x10000")
 #undef BENCH_SET
 #define BENCH_SET 2
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 */
 BENCH_FN(bench_ld_ld_use_n4, "ld %[t],[%[a]]\n\tld %[v],[%[b]]\n\tadd %[v],%[v],%[t]" NOP3 "\n\tnop")
+#undef BENCH_SET
+#define BENCH_SET 2
 
 enum {
     B_NOP, B_LD_DCCM, B_LDUSE_DCCM, B_ST_DCCM, B_LD_FW, B_LDUSE_FW, B_ST_FW, B_LD_MAC, B_LD_RGF, B_ST_MAC, B_ST_RGF,
@@ -327,12 +349,12 @@ u32 uc_bench_one(u32 id, u32 n)
     case B_MOVF_BEQ_NT: case B_ANDF_BNE: case B_TST_BNE: case B_CMP_BNES: case B_CMP_BEQS_NT: case B_CMP_BEQD_NT:
     case B_CMP_JEQS_NT: case B_CMP_N3_BLEQ_NT: case B_BREQS_NT: case B_BRNES: case B_BREQ_NT_N3: case B_CMP_N1_JEQS_NT:
     case B_CMP_JEQ_NT: a = 3; break;
-    case B_LD_TSFLO: a = HW_MAC_TIMING_INDIRECT_REG_5; break;
+    case B_LD_TSFLO: a = HW_MAC_TSF_LO; break;
     case B_LD_MAC_LD_MAC2: a = HW_MAC_TSF_HI; b = HW_UC_SLEEP_WAKE_MASK; break;
     case B_LD_MAC_LD_RGF: a = HW_MAC_TSF_HI; b = HW_RGF_USER_USAGE_3; break;
     case B_LD_RGF_LD_MAC: a = HW_RGF_USER_USAGE_3; b = HW_MAC_TSF_HI; break;
     case B_LD_TSF2_USE: case B_LD_TSF3: case B_LD_TSF2_USE1: case B_LD_TSF_NOP_LD: case B_LD_TSF_N4_LD:
-    case B_LD_TSF2_USE_N4: a = HW_MAC_TSF_HI; b = HW_MAC_TIMING_INDIRECT_REG_5; break;
+    case B_LD_TSF2_USE_N4: a = HW_MAC_TSF_HI; b = HW_MAC_TSF_LO; break;
     case B_LD_RGF_LD_RGF2: a = HW_RGF_USER_USAGE_3; b = HW_RGF_USER_USAGE_4; break;
     case B_LD_RGF_LD_MAC_USE: a = HW_RGF_USER_USAGE_3; b = HW_MAC_TSF_HI; break;
     case B_BREQ_NT_BACK: case B_BREQS_NT_BACK: case B_BTST_MOVEQ: case B_BREQ_NT_BK8: case B_BREQS_NT_BK4:
@@ -363,12 +385,12 @@ u32 uc_bench_one(u32 id, u32 n)
     case B_ST_MAC_N1: f = SET1(bench_st_n1); break;
     case B_ST_MAC_N3: f = SET1(bench_st_n3); break;
     case B_ST_MAC_N7: f = SET1(bench_st_n7); break;
-    case B_ST_MAC_N11: f = SET1(bench_st_n11); break;
+    case B_ST_MAC_N11: f = SET4(bench_st_n11); break;
     case B_ST_MAC_N7_SYNC: f = SET1(bench_st_n7_sync); break;
     case B_ST_MAC_LD_MAC: case B_ST_MAC_LD_FW: case B_ST_MAC_LD_DCCM: f = SET1(bench_st_ld); break;
     case B_LD_MAC_N3: case B_LD_FW_N3: f = SET1(bench_ld_n3); break;
     case B_LD_MAC_N7: f = SET1(bench_ld_n7); break;
-    case B_LD_MAC_N11: f = SET1(bench_ld_n11); break;
+    case B_LD_MAC_N11: f = SET4(bench_ld_n11); break;
     case B_LIMM_NOPS2: f = SET1(bench_limm_nops2); break;
     case B_LIMM_NOP: f = SET1(bench_limm_nop); break;
     case B_NOP_S: f = SET1(bench_nop_s); break;
@@ -404,7 +426,7 @@ u32 uc_bench_one(u32 id, u32 n)
     case B_CMP_BEQS_NT: f = SET2(bench_cmp_beqs_nt); break;
     case B_CMP_BEQD_NT: f = SET2(bench_cmp_beqd_nt); break;
     case B_CMP_JEQS_NT: f = SET2(bench_cmp_jeqs_nt); break;
-    case B_CMP_N3_BLEQ_NT: f = SET2(bench_cmp_n3_bleq_nt); break;
+    case B_CMP_N3_BLEQ_NT: f = SET4(bench_cmp_n3_bleq_nt); break;
     case B_LD_LIMM_USE: f = SET2(bench_ld_limm_use); break;
     case B_LDOFF_LIMM_USE: f = SET2(bench_ldoff_limm_use); break;
     case B_LD_BRNE_NT: f = SET2(bench_ld_brne_nt); break;
@@ -423,8 +445,8 @@ u32 uc_bench_one(u32 id, u32 n)
     case B_LD_RGF_LD_RGF2: f = SET2(bench_ld_ld); break;
     case B_LD_TSF2_USE1: f = SET2(bench_ld_ld_use1); break;
     case B_LD_TSF_NOP_LD: f = SET2(bench_ld_nop_ld); break;
-    case B_LD_TSF_N4_LD: f = SET2(bench_ld_n4_ld); break;
-    case B_LD_TSF2_USE_N4: f = SET2(bench_ld_ld_use_n4); break;
+    case B_LD_TSF_N4_LD: f = SET4(bench_ld_n4_ld); break;
+    case B_LD_TSF2_USE_N4: f = SET4(bench_ld_ld_use_n4); break;
     case B_LD_RGF_LD_MAC_USE: f = SET2(bench_ld_ld_use); break;
     case B_LDB_USE_DCCM: case B_LDB_USE_FW: f = SET2(bench_ldb_use); break;
     case B_LDW_USE_DCCM: f = SET2(bench_ldw_use); break;
@@ -484,7 +506,7 @@ u32 uc_bench_one(u32 id, u32 n)
 
 void uc_bench_tick(void)
 {
-    u32 ms = (MMIO32(HW_MAC_TIMING_INDIRECT_REG_5) >> 10) & 0xffff;
+    u32 ms = (MMIO32(HW_MAC_TSF_LO) >> 10) & 0xffff;
     u32 best = ~0u, id = ms % B_COUNT;
     for (u32 i = 0; i < 256; i++) {
         if (uc_log.ring[i] != BENCH_HDR)

@@ -42,7 +42,7 @@ SWEEP_STUBS = {n: 0 for n in (
     'direct_tx_program_desc', 'mac_program_tx_common', 'mac_evt_enable_bit_sync_b', 'mac_evt_enable_bit_sync',
     'uc_spin_until_event', 'uc_spin_until_event4', 'mac_set_rf_chain_state_with_sta_sector', 'bcon_tx_ack_cmds',
     'mac_evt_select_timer_group', 'uc_send_evt_ps_awake_peer', 'uc_wait_event_busy', 'mac_cmd_29000001',
-    'mac_select_all_sectors_and_wait', 'mac_program_rx_window', 'mac_program_tx_beacon')}
+    'mac_select_all_sectors_and_wait', 'mac_program_tx_vector', 'mac_program_tx_beacon')}
 
 
 def sweep(uc, n_sectors, peer_ant, mode, sta=0, alloc_left_us=None):
