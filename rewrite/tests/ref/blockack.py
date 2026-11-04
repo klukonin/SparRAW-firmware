@@ -7,11 +7,12 @@ BlockAck (10.25.6.5, 9.3.1.8), буфер переупорядочения (10.2
 from collections import deque, namedtuple
 from fractions import Fraction as Fr
 
+from .timing import TU     # 3.1: «time unit (TU): … equal to 1024 µs»
+
 # ---- 10.25.1 / 10.3.2.14.2: арифметика номеров последовательности ----
 SN_MOD = 4096           # 10.3.2.14.2: «each sequence number space is represented by a modulo 4096 counter»
 HALF = 1 << 11          # 2^11 из 10.25.6.3 b)2)
 BITMAP_LEN = 64         # 9.3.1.8.2: «received status of up to 64 entries»
-TU = Fr(1024)           # 3.1: «time unit (TU): … equal to 1024 µs»
 
 IN, AHEAD, BEHIND = 'in', 'ahead', 'behind'
 

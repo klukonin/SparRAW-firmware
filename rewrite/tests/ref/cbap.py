@@ -21,19 +21,15 @@ import random
 from fractions import Fraction as Fr
 from math import ceil, floor
 
-from .timing import (SIFS, aAirPropagationTime, aCWmax, aCWmin, aRxPHYStartDelay, aSlotTime, aifs,
-                     txtime, txtime_control)
+from .timing import (aAirPropagationTime, aCWmax, aCWmin, aifs, aRxPHYStartDelay, aSlotTime, BCAST, DIFS, PIFS, SIFS,
+                     SIFS_TOL, txtime, txtime_control)
 
 INF = float('inf')
-BCAST = 'ff:ff:ff:ff:ff:ff'
 
 # ---- 10.3.7 ----
-PIFS = SIFS + aSlotTime                     # (10-5)
-DIFS = SIFS + 2 * aSlotTime                 # (10-6)
+# PIFS (10-5), DIFS (10-6), SIFS_TOL (10.3.2.3.3), BCAST — timing.py
 # (10-7) EIFS = aSIFSTime + AckTxTime + DIFS; AckTxTime — Ack (14 октетов) на наименьшей обязательной MCS (MCS 0)
 EIFS = SIFS + txtime_control(14) + DIFS
-# 10.3.2.3.3: DMG — отклонение SIFS на эфире −0 % … +10 %·(aSlotTime − aAirPropagationTime)
-SIFS_TOL = Fr(1, 10) * (aSlotTime - aAirPropagationTime)
 
 # ---- длины кадров управления, октеты (9.3.1) ----
 LEN = {

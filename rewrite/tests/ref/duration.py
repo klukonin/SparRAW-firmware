@@ -8,12 +8,10 @@ from fractions import Fraction as Fr
 from math import ceil
 
 from . import timing as T
+from .timing import aDMGPPMinListeningTime, aTSFResolution, ceil_to, LEN_SSW, LEN_SSW_ACK, LEN_SSW_FB, SIFS_TOL
 
 DUR_MAX = 32767                 # табл. 9-9: «0–32 767 … Bit 15 = 0 … Duration value (in microseconds)»
-aTSFResolution = Fr(1)          # табл. 11-22: «aTSFResolution 1 µs»
-aDMGPPMinListeningTime = Fr(150)    # табл. 11-22: «aDMGPPMinListeningTime 150 µs»
-# 10.3.2.3.3: DMG — «–0% or +10% × (aSlotTime – aAirPropagationTime)» от номинального SIFS
-SIFS_TOL = Fr(1, 10) * (T.aSlotTime - T.aAirPropagationTime)
+# aTSFResolution, aDMGPPMinListeningTime (табл. 11-22), SIFS_TOL (10.3.2.3.3), длины SSW-кадров — timing.py
 
 # ---- длины MPDU (октеты, с FCS) по рисункам 9.3.1.x ----
 LEN = {
@@ -28,9 +26,9 @@ LEN = {
     'grant': 27,        # рис. 9-51
     'dmg_cts': 20,      # рис. 9-52: FC, Duration, RA, TA, FCS
     'dmg_dts': 26,      # рис. 9-53: RA, NAV-SA, NAV-DA
-    'ssw': 26,          # рис. 9-54: SSW 3 + SSW Feedback 3
-    'ssw_fb': 28,       # рис. 9-55: SSW Feedback 3 + BRP Request 4 + BLM 1
-    'ssw_ack': 28,      # рис. 9-56
+    'ssw': LEN_SSW,     # рис. 9-54: SSW 3 + SSW Feedback 3 (= 26, timing.py)
+    'ssw_fb': LEN_SSW_FB,   # рис. 9-55: SSW Feedback 3 + BRP Request 4 + BLM 1 (= 28)
+    'ssw_ack': LEN_SSW_ACK,     # рис. 9-56 (= 28)
     'grant_ack': 27,    # рис. 9-57: Reserved 5 + BF Control 2
 }
 
@@ -260,9 +258,7 @@ def cf_end_nonzero_allowed(remaining, cf_end_txtime=None):
 
 
 # ---- 9.3.1.10 / 9.3.1.11 / 10.39.7.2: Poll и SPR ----
-def ceil_to(x, y):
-    """Определение Ceil(x, y): «the smallest multiple of y larger than or equal to x»."""
-    return ceil(Fr(x) / y) * y
+# ceil_to (1.5 «Ceil (x, y)») — timing.py
 
 
 def pp_schedule(poll_txtimes, spr_txtimes, ant_switch=None, oj_spr='j'):
