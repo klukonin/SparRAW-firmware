@@ -437,7 +437,9 @@ void peer_slots_scan_by_masks(u32 a)
         mac_mon_report.slot[i] = ((u32 *)src)[i];
     memcpy_uc((void *)&mac_mon_pub, (void *)&mac_mon_report, 0x80);   /* add2 r1,r15,0x15 = 0x801084 */
     memset0_words_uc(src, sizeof(*src));
+    u16 busy_race = mac_mon_report.rx_busy_race;    /* SparRAW: накопительный счётчик стенда — публикация не сбрасывает */
     memset0_words_uc((void *)&mac_mon_report, 0x80);   /* add2 r0,r15,0x15 = 0x801084 */
+    mac_mon_report.rx_busy_race = busy_race;
     mac_mon_report.size = 0x80;
     src->detected = 0;
     src->rssi_valid = 0;

@@ -186,7 +186,15 @@ RESULT_GO_TX_END_CLK = 85                        # H-RESULTGO
 # H-AMPDU (стенд 2026-10-30, iperf, метки STAMP_RESP_WAIT/STAMP_TXOP_WAIT/STAMP_RESP_REP — docs/MAC-STAND.md): очередь
 # с соглашением BA (окно — из дескриптора очереди fw, H-QDESC) — ответ MTP с AGG_EN (r43 б27; на стенде 0x8c080010),
 # кадры очереди уходят одним A-MPDU (не больше окна; на стенде 1…32 MPDU на BlockAck), у отправителя r53 — число MPDU
-# [14:8]. RD не моделируется.
+# [14:8].
+# H-RD (reverse direction, 802.11-2020 10.29; стенд 2026-10-30/11-04 — docs/MAC-STAND.md): ответ MTP очереди с
+# соглашением BA — RD_SUPP (r43 б26; на стенде 0x8c080010), A-MPDU данных держателя TXOP несёт RDG — у приёмника r38
+# б15 (стенд 0xe2809800) — RDG ставит MAC по б11 команды пуска 0x18 (uc: б11 = RD_SUPP r43, vendor; с 2026-11-04
+# наш uc RDG не даёт — б11 = 0). Ответчик RD, которому uc запросил в MTP данные очереди вместе с ответом (0x16: qid ≠ 0x1f,
+# б1 — ответ BA/Ack, rx_txop_continue из rx_flow_handle_frame), шлёт через SIFS один PPDU: BlockAck + A-MPDU данных
+# (у держателя r36 0x203, без б15 — стенд, PMC: ответ RD r38 0xe2801800); держатель подтверждает данные BlockAck
+# (ответ через SIFS, как на A-MPDU). RDG в кадрах-ответах не ставится; включается полем узла rd_supp (по умолчанию
+# выкл.: прежние сценарии — без RD).
 # H-RESPMCS: MCS ответа через SIFS без явного MCS в 0x17 ([1:0] ≠ 3) — на кадр SC MCS 1 (стенд: BlockAck на A-MPDU
 # MCS 8 — r38 received_mcs 1, наш uc до 2026-10-30 и vendor-AP), на кадр control PHY — control; явный — из 0x17 [12:8].
 RESP_MCS_DEFAULT_SC = 1
@@ -616,6 +624,9 @@ class HW:
         c.io_hooks[0x880b58] = (None, lambda cpu, a, v: setattr(self, 'uc2fw', self.uc2fw | v))
 
     uc2fw = 0
+    rd_supp = False                   # H-RD: RD_SUPP у очередей с соглашением BA, RDG в A-MPDU
+    rdg_force = False                 # сценарий: RDG в A-MPDU при любом б11 0x18 — пир, дающий RD (vendor и др.)
+    mtp_resp_data = False             # H-RD: последний запрос MTP — данные очереди вместе с ответом через SIFS
     late_rx = ()
     rx_mode = None
     bap_rx = False
@@ -717,7 +728,8 @@ class HW:
             # qid_agg_mask на стенде всегда 0. Источник — поле [7:4] дескриптора сектора очереди (fw txq_pkt_mode = 1 для
             # режимов 5/6; у 0x1a дескриптор сектора не пишется — 0), стенд 2026-10-31 — docs/MAC-STAND.md
             pkt = (1 << 4) if self.mtp_qid is not None and self.mtp_qid < 0x18 else 0
-            return (1 << 31) | ((self.data_mcs << 16) if q else 0) | agg | pkt
+            rd = (1 << 26) if agg and self.rd_supp else 0                                   # H-RD: RD_SUPP
+            return (1 << 31) | ((self.data_mcs << 16) if q else 0) | agg | pkt | rd
         if n == 45:
             if not (self.perm_req_at is not None and self.now >= self.perm_req_at + MTP_PERM_LAT_CLK):
                 return 0
@@ -739,6 +751,12 @@ class HW:
         if n == 41 and self.sel41 == 0 and self.irqs and self.mac_q_model:
             q = self._qsel()
             return 0 if q is None else (q[0] << 16) | (q[1] << 8) | (1 << (q[1] - 1))
+        if n == 41 and self.sel41 == 1 and self.mac_q_model:
+            # H-QSET4 (по имени полей QUEUE_SEL_FOUND_SET1_4_R41, не снято): очередь с кадрами в маске 3 (QSET4 —
+            # очереди станции, которую rx_flow_main пишет в HW_QSET3_MASK_VECTOR): б31 valid, qid [28:24] — меньший.
+            # Нужен ответчику RD (rx_flow_main → rx_qset4_hit → ответ с данными, H-RD)
+            m = self.mac_q_pending & self._raw(HW_QSET0_MASK_VECTOR + 4 * 3) & 0x00ffffff
+            return 0 if not m else (1 << 31) | ((m & -m).bit_length() - 1) << 24
         if n == 41 and self.sel41 == 3 and self.mac_q_model:
             return self.mac_q_pending                     # H-MACQ: QSET_1_MASK_VECTOR — очереди с кадрами (б30 — маяк)
         return None
@@ -806,6 +824,7 @@ class HW:
         op, arg = v >> 24, v & 0xffffff
         if op == 0x18:                                    # H-DUR18: пуск кадра; б12 — Duration кадра буквально
             self.go18 = arg
+            self._rdg_from_go18(arg)
         elif op == 0x33 and arg == 1:                     # новый кадр FIFO: пуска 0x18 для него ещё не было
             self.go18 = None
         if op == 0x02:                                    # взвод (сброс) битов r42
@@ -826,6 +845,7 @@ class HW:
         elif op == 0x16:                                  # MTP: очередь кадра (qid [20:16]; 0x1f — FIFO прямой передачи)
             self.mtp_qid = (arg >> 16) & 0x1f
             self.mtp_result = bool(arg & 0x10)            # H-RESULTGO: б4 — запрос итога (mac_program_tx_result_ctx_uc)
+            self.mtp_resp_data = self.mtp_qid < 0x1e and bool(arg & 2)   # H-RD: данные очереди вместе с ответом
         elif op == 0x80 and (arg >> 16) == 0xd0:          # режим приёма (rx_mode_configure: 0x80d00000 | режим)
             self.rx_mode = arg & 0xff
         elif op == 0x27:                                  # H-E27: что поднимет busy2 (таблица E27)
@@ -1006,7 +1026,7 @@ class HW:
                 self.frame_ready = dict(what='queue %#x A-MPDU %d MPDU %d B MCS %d' % (
                     self.mtp_qid, len(fs), ampdu_psdu_len(fs), self.data_mcs),
                     dur=sc_txtime_clk(ampdu_psdu_len(fs), self.data_mcs), qframe=fs, qid=self.mtp_qid,
-                    mcs=self.data_mcs)
+                    mcs=self.data_mcs)                             # RDG — по пуску 0x18 б11 (H-RD, _cmd)
                 self._tx_try()
                 return
             if (f[0] >> 2) & 3 == 2:                      # данные — SC (H-DATAMCS)
@@ -1294,15 +1314,26 @@ class HW:
             return
         f, self.frame_ready, self.go = self.frame_ready, None, False
         self._tx_close(f['what'], f['dur'], f.get('fifo'), f.get('mpdu_len'), f.get('qframe'), f.get('qid'),
-                       f.get('mcs', 0))
+                       f.get('mcs', 0), f.get('rdg', False))
 
-    def _tx_close(self, what, dur, fifo=None, mpdu_len=None, qframe=None, qid=None, mcs=0):
+    def _rdg_from_go18(self, arg):
+        """H-RD: RDG/More PPDU в A-MPDU держателя — б11 команды пуска 0x18 (после 0x19, до начала кадра; позже — не
+        действует) при RD_SUPP очереди (rd_supp); у приёмника — r38 б15 в отчёте, который он прочтёт на заголовке."""
+        p = self.tx_pending
+        rec = p.get('rec') if p is not None and isinstance(p.get('qframe'), list) and not p.get('rd_resp') else None
+        if rec is None:
+            return
+        rec['rdg'] = bool(self.rd_supp and (arg & (1 << 11) or self.rdg_force))
+        for d in rec.get('reports', ()):
+            d[38] = (d[38] | (1 << 15)) if rec['rdg'] else (d[38] & ~(1 << 15))
+
+    def _tx_close(self, what, dur, fifo=None, mpdu_len=None, qframe=None, qid=None, mcs=0, rdg=False):
         """Кадр закрыт командой uc: старт — в точке ответа (после приёма/события GP) или сразу (инициатор)."""
         if self.ack_wait is not None and not what.startswith('sweep'):
             # H-TXAFTERACK: свой кадр ждёт Ack — следующий MAC выпускает после ответа (через IFS от его конца) или
             # тайм-аута; uc закрывает его раньше (стенд: slot_event во время своего кадра, запрос итога — 50–350
             # тактов, столкновений с ответом нет)
-            self.deferred_close = (what, dur, fifo, mpdu_len, qframe, qid, mcs)
+            self.deferred_close = (what, dur, fifo, mpdu_len, qframe, qid, mcs, rdg)
             return
         trn = 0 if what.startswith('sweep') else self.trn_tx
         dur += trn_clk(trn)                               # H-TRN: поле TRN-R — часть PPDU
@@ -1349,7 +1380,7 @@ class HW:
         else:
             start = self.now + TX_START_CLK
         self.tx_pending = dict(start=start, dur=dur, what=what, fifo=fifo, mpdu_len=mpdu_len, qframe=qframe, qid=qid,
-                                   trn=trn, mcs=mcs)
+                                   trn=trn, mcs=mcs, rdg=rdg)
         self.at(start, self._tx_start, 'tx_start')
         self._notify_tx()
 
@@ -1431,6 +1462,11 @@ class HW:
     def _ack_timeout(self):
         """H-RETRY (802.11-2020 10.23.2.12): нет Ack — кадр остаётся в очереди MAC с битом Retry (Frame Control б11)
         и счётчиком повторов; после RETRY_LIMIT неудач — завершение со статусом 1."""
+        if self.ack_wait is not None and self.rx is not None:
+            # 802.11-2020 10.23.2.2: PHY-RXSTART в пределах тайм-аута — ждать конца этого PPDU (ответ RD — BlockAck
+            # в одном PPDU с данными ответчика, длиннее одиночного BlockAck)
+            self.ack_wait['ev'] = self.at(self.rx['end'] + 1, self._ack_timeout, 'ack_wait')
+            return
         w, self.ack_wait = self.ack_wait, None
         if w is not None:
             q = self.mac_q.get(w['qid'])
@@ -1457,6 +1493,28 @@ class HW:
             for _ in range(w.get('n', 1)):
                 self._q_done(w['qid'], 0)
         self._resume_deferred(True)
+
+    rd_auto_ba = False                # H-RD-BA: ответ RD принят — MAC сам подтверждает его данные BlockAck
+    resume_after_tx = False           # H-RD-BA: отложенный кадр (CF-End держателя) — после своего BlockAck
+
+    def rd_resp_rx(self):
+        """Принят ответ RD (BlockAck на свой A-MPDU + данные ответчика, вызывает эфир в конце PPDU). H-RD-BA (стенд
+        2026-11-04, PMC обоих узлов, наш fw): после ответа RD держатель шлёт BlockAck на данные ответчика, через
+        ~16 мкс от него — CF-End (3335 TXOP станции с данными точки в RD, у точки-держателя — так же), хотя uc держателя
+        при пустой очереди закрывает CF-End ещё до ответа (H-TXAFTERACK) и команды ответа на данные RD не даёт. Модель:
+        BlockAck — MAC через SIFS после ответа RD (если uc не запросил ответ сам), отложенный кадр — через SIFS после него.
+        Не проверено и, вероятно, расходится с железом: на стенде этот BlockAck — на MCS 8/7 (MCS данных по выбору
+        скорости, т. е. запрос uc в MTP, а не ответ MAC по умолчанию — MCS 1, H-RESPMCS), Duration на 1–7 мкс короче
+        9.2.5.7 в 5069 из 11 774, CF-End — через 10,4 мкс после него, не через SIFS (ref.air_judge по тем же PMC). В модели
+        после ответного CF-End держатель отстаёт счётчиком PPDU (кадр RD uc не разбирал) и теряет следующий DMG CTS — на
+        стенде этого нет (после DMG CTS держатель шлёт данные: 6 повторов RTS из 17 989)."""
+        w, self.ack_wait = self.ack_wait, None
+        if w is not None:
+            self.cancel(w['ev'])
+            self.bap_tx = w.get('n', 1)
+            for _ in range(w.get('n', 1)):
+                self._q_done(w['qid'], 0)
+        self.rd_auto_ba = True
 
     def ack_rx(self):
         """Принят Ack на кадр очереди (вызывает эфир)."""
@@ -1494,9 +1552,11 @@ class HW:
         p = self.tx_pending
         p['dur_field'] = self._dur_field(p)
         if self.on_tx is not None:
-            self.on_tx(dict(start=p['start'], dur=p['dur'], what=p['what'], dur_us=p['dur_field'], fifo=p.get('fifo'), mpdu_len=p.get('mpdu_len'),
-                            ssw=getattr(self, 'ssw_raw', 0), bic=self.bic_bytes(), qframe=p.get('qframe'),
-                            trn=p.get('trn', 0), mcs=p.get('mcs', 0)))
+            p['rec'] = dict(start=p['start'], dur=p['dur'], what=p['what'], dur_us=p['dur_field'], fifo=p.get('fifo'),
+                            mpdu_len=p.get('mpdu_len'), ssw=getattr(self, 'ssw_raw', 0), bic=self.bic_bytes(),
+                            qframe=p.get('qframe'), trn=p.get('trn', 0), mcs=p.get('mcs', 0), rdg=p.get('rdg', False),
+                            rd_resp=p.get('rd_resp', False))
+            self.on_tx(p['rec'])
 
     dur_us = 0
 
@@ -1532,6 +1592,9 @@ class HW:
         self.perm_req_at = None
         self.ifs_ref, self.ifs_ref_kind = self.now, 'tx'     # SIFS_CNT = 0 после передачи (UC-REGISTERS §2.16)
         self._gp_trigger(0x04, self.now)                  # H-GP4: пуск по концу своей передачи
+        if self.resume_after_tx:                          # H-RD-BA: CF-End держателя — через SIFS после BlockAck
+            self.resume_after_tx = False
+            self._resume_deferred(True)
         self._backoff_kick()
         self._eng('tx_done')
         self._eng('tx_free')
@@ -1554,6 +1617,19 @@ class HW:
         mcs = r.get('mcs', 0)
         if self.mtp_rate is not None:
             mcs = self.mtp_rate                           # явный MCS ответа от uc (rx_frame_tx_resp_seq, 10.6.7.2)
+        q = self._q_avail(self.mtp_qid) if self.mtp_resp_data and self.q_agg.get(self.mtp_qid) else None
+        if q and r['resp_len'] == BA_LEN:
+            # H-RD: ответ RD — BlockAck + A-MPDU данных очереди (окно BA) одним PPDU на MCS данных
+            fs = list(q[:self.q_agg[self.mtp_qid]])
+            n = ampdu_psdu_len([bytes(BA_LEN - 4)] + fs)
+            self.tx_pending = dict(start=start, dur=sc_txtime_clk(n, self.data_mcs), qframe=fs, qid=self.mtp_qid,
+                                   what='ответ на %s + RD A-MPDU %d MPDU %d B MCS %d' % (r['what'], len(fs), n,
+                                                                                         self.data_mcs),
+                                   mcs=self.data_mcs, rd_resp=True)
+            self.mtp_resp_data = False
+            self.at(start, self._tx_start, 'tx_start')
+            self._notify_tx()
+            return
         dur = sc_txtime_clk(r['resp_len'], mcs) if mcs else ctrl_txtime_clk(r['resp_len'])
         self.tx_pending = dict(start=start, dur=dur, what='ответ на ' + r['what'], mcs=mcs)
         self.at(start, self._tx_start, 'tx_start')
@@ -1566,7 +1642,7 @@ class HW:
         dur = ctrl_txtime_clk(psdu_len) if dur is None else dur
         if report_at_hdr and report:
             # H-RXREP-HDR (стенд, метка STAMP_SSW_REP): отчёт r36..r39 готов уже на rx_frame_event
-            hdr0, rep = on_hdr, dict(report)
+            hdr0, rep = on_hdr, report                   # значения — на заголовке (RDG ставит пуск 0x18, H-RD)
 
             def on_hdr(hw, hdr0=hdr0, rep=rep):
                 if hdr0:
@@ -1645,6 +1721,22 @@ class HW:
         self.resp_due = dict(end=self.now, what=what, resp_len=resp_len, deadline=resp_deadline, mcs=rmcs) \
             if sifs_resp else None
         self.resp_cmd_at = None
+        if self.rd_auto_ba:
+            self.rd_auto_ba = False
+            if sifs_resp:                                 # H-RD-BA: BlockAck на данные ответа RD — MAC сам
+                r = self.resp_due
+
+                def auto_ba(r=r):
+                    if self.resp_due is r and self.tx is None and self.tx_pending is None:
+                        self.mtp_resp_data = False
+                        self.resume_after_tx = self.deferred_close is not None
+                        self.resp_cmd_at = self.now
+                        self._hw_response()
+                    elif self.deferred_close is not None and self.tx is None and self.tx_pending is None:
+                        self._resume_deferred(True)
+                self.at(self.now + self.ifs_clk() + MACLAT_CLK, auto_ba, 'rd_auto_ba')
+            else:
+                self._resume_deferred(True)
         for n, v in report.items():
             self.uc.ext[n] = v
         if on_end:

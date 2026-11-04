@@ -402,8 +402,9 @@ u32 rx_flow_ctrl_qid_empty(struct tx_ctx_s *a)
 /* --- Крупные функции RX (структурные порты: поток + stub подвызовов) --- */
 
 /* Продолжение TXOP (vendor 0x9314a0..0x931668, хвост rx_flow_run): запрос в MTP следующей передачи
- * (с ответом BA/ACK при RD), 0x37000020, разрешение на передачу. Копии: rx_flow_run (from_step 0),
- * RD-ветка rx_flow_handle_frame (0) и конец rx_flow_step (1 — с отложенными записями).
+ * (с ответом BA/ACK при RD), 0x37000020, разрешение на передачу. Копии: rx_flow_run (from_step 0) и конец
+ * rx_flow_step (1 — с отложенными записями); копию в rx_flow_handle_frame (ответ RD) убрали — RD отключён
+ * (rx_flow_handle_frame, «RD отключён»).
  * ХРУПКО: срок — SIFS от конца принятого кадра; запас у vendor и у нас — единицы инструкций
  * (P0.2 на железе 2026-10-21: +16 nop перед 0x1b001111 — норма, +20 — FWERR, коды assert 0/0; после
  * переделки rx_flow_step путь короче на 67 инструкций по эмулятору — запас заново мерить pad_sweep).
@@ -832,7 +833,6 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
     struct bcn_rx_s *ss = &bcn_rx;              /* r13 */
     volatile u32 *sta = (volatile u32 *)&rxf.sta;
     u32 local;                                  /* [sp] */
-    u32 r16 = 0, r18 = 0;
 
     UC_PAD(PAD_RESP_ENTRY);
     UC_STAMP_T0(STAMP_CTS_PATH, t_in);
@@ -992,14 +992,10 @@ chk:                                            /* 0x93215c */
     /* 0x9323d4 */
     uc_mac_cmd(0xeeee0c);
     ctx->mtp_state = 0;
-    {
-        u32 r1 = rxf.flags;
-        u32 r0 = 0;
-        if (rx_qset4_hit != 0 && (r1 & 8))
-            r0 = (txop_qid_mask & (1u << (ctx->qid & 31))) ? 1 : 0;
-        local = (u8)r0;
-        rxf.flags = (r1 & ~0x10u) | ((r0 & 1) << 4);
-    }
+    /* vendor: local / rxf.flags б4 = 1, если прошлый кадр был с RD от известной станции (rxf.flags б3) и есть кадр в
+     * очереди этой станции, — заготовка ответа RD. RD мы не принимаем (ниже, «RD отключён»): б3 не ставится, б4 — 0. */
+    local = 0;
+    rxf.flags &= ~0x10u;
     uc_nop3();
     uc_mac_sel(MAC_SEL_PLCP_RX);
     uc_nop3();
@@ -1061,8 +1057,6 @@ chk:                                            /* 0x93215c */
         u32 rate = rx_resp_rate(rx_last_mcs);   /* до ожидания BAP и rx_get_required_response — вне срока */
         ctx->mtp_state = rx_get_required_response(ctx, &local);
         u8 lvl = (u8)rx_last_mcs;
-        u8 sta0 = *(u8 *)ctx;
-        u32 r15 = 0;
         if ((mac_rx_rep1() & MAC_RX_REP1_BACK) && (mac_rx_rep3() & MAC_RX_REP3_BAP_EN)) {
             /* СРОК: ожидание r53.bap_tx_update_ind (таймаут — GP-таймер 0x23010003, единица не
              * установлена; при таймауте assert 0x3b) стоит до запроса ответа в MTP — каждый такт
@@ -1089,21 +1083,17 @@ chk:                                            /* 0x93215c */
             if ((s32)(u32)(u8)lvl >= 1)
                 ba_stats.active = 1;
         }
-        if ((mac_rx_rep3() & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_RD)) == (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_RD)) {
-            rxf.flags |= 8;
-            r15 = 1;
-        }
-        if (dti_qset_mode != 0 && rs_state[sta0].active != 0)
-            r15 = 0;
-        if (ctx->mtp_state == 0)
-            r15 = 0;
-        if (rx_flow_ctrl_qid_empty(ctx) == 0) {
-            r16 = local;
-            if ((r15 & rx_qset4_hit) && *sta == rxf.key_sta)
-                r16 |= 1;
-        }
+        /* RD (802.11-2020 10.29) отключён намеренно: RDG держателя (r38 б15 reverse_direction_detected) ответчик
+         * отклоняет — отвечает только BlockAck/Ack, своих данных в TXOP держателя не шлёт (10.29.4: «The recipient of an
+         * RDG may decline the RDG by … transmitting a control response frame with the RDG/More PPDU subfield set to 0»).
+         * Стенд 2026-11-04 (PMC обоих узлов, MAC-STAND «Ответчик RD глохнет»): после своего ответа RD ответчик
+         * ~200–275 мкс не принимал ничего — CF-End держателя без ответа в 11–50 % TXOP с RD у обоих узлов, RTS держателя
+         * без DMG CTS; PHY эти PPDU не считала (у точки rx_flow_noevt_cnt 1 за прогон), эмулятор это не воспроизводит.
+         * Без ответов RD (опыт exp/rd-decline): CF-End без ответа — 0 из 17 576 / 17 471, RTS без ответа —
+         * на уровне встречных коллизий, пропускная способность 897/923 против 913/924. vendor отвечал RD при б15 и
+         * данных в очереди станции (rx_txop_continue отсюда). */
         u32 r5 = ctx->mtp_state;
-        if (r5 == 0 && r16 != 1) {
+        if (r5 == 0) {
             rx_mac_prepare();
             if (mac_rx_rep2() & MAC_RX_REP2_CF_END) {
                 txrx_state2 |= (1u << 9);
@@ -1111,16 +1101,12 @@ chk:                                            /* 0x93215c */
             }
             rxf.flags |= 4;
         } else {
-            if (r5 == 1)
-                r16 = 0;
-            if (r5 != 0 && !(ctx->flags & (1u << 9)))
-                r16 = 0;
             u32 s1 = *sta;
             u32 m = sta_tab[s1].tx_sel;
             uc_mac_cmd(0x37000005);
             uc_mac_cmd(0x37000002);
             uc_mac_cmd(m | 0x3f000000);
-            if (r16 == 0 && r5 - 1 < 3) {
+            if (r5 - 1 < 3) {
                 /* Быстрый путь ответа ACK/BA (vendor 0x932a0c, случаи 1..3): запрос в MTP
                  * сразу, записи ctx->flags/ctx->sta/0x802298/0x802294 — после команды 0x19000001
                  * (rx_frame_tx_resp_seq). ХРУПКО: тайминг практически без запаса у vendor;
@@ -1133,7 +1119,7 @@ chk:                                            /* 0x93215c */
                 if (r5 == 3)
                     UC_STAMP(STAMP_CTS_PATH, (t_rep - t_in) | (t_sw - t_in) << 16,
                              (t_mtp - t_in) | (arc_lr(0x100) - t_in) << 16);
-                rx_resp_finish_restore_rx((u32)ctx, kind, r5 == 1 ? r18 : 0);
+                rx_resp_finish_restore_rx((u32)ctx, kind, 0);
                 if (r5 == 3)
                     mac_mon_report.tx_cts += 1;
                 uc_mac_cmd(0x14000000);
@@ -1143,9 +1129,9 @@ chk:                                            /* 0x93215c */
                     rx_resp_abort_t1 = 1;
                 return 0;
             }
-            ctx->flags = (ctx->flags & ~1u) | (r16 & 1);
+            ctx->flags &= ~1u;
             ctx->sta = s1;
-            rxf.flags = (((r16 & 1) << 1) | (rxf.flags & ~2u)) | 4;
+            rxf.flags = (rxf.flags & ~2u) | 4;
         }
     } else {
         /* 0x932910 */
@@ -1181,24 +1167,15 @@ chk:                                            /* 0x93215c */
                 mac_mon_report.rx_atim += 1;
             }
         }
-        r18 = r16;
     }
 
     /* 0x932a0c */
     {
         u32 r5 = ctx->mtp_state;
         rxf.resp_type = r5;
-        if (r16 != 0) {
-            /* Продолжение TXOP — сразу, без возврата в rx_flow_run (ХРУПКО, см. rx_txop_continue).
-             * Условия — те же, что rx_flow_run проверяет после возврата. */
-            if ((txrx_state2 & 0x3001000) || rx_ppdu_report_seen != 0 || !(ctx->flags & 1))
-                return 0;
-            rx_txop_continue(ctx, 0);
-            return 1;
-        }
         ctx->flags &= ~1u;
         /* СРОК: медленный путь ответа — тот же срок SIFS 3 мкс (802.11-2020 10.3.2.3.3), но без
-         * переноса записей. Случаи 1..3 уходят быстрым путём выше (при r16 ≠ 0 — в продолжение
+         * переноса записей. Случаи 1..3 уходят быстрым путём выше (прежде при ответе RD — в продолжение
          * TXOP), сюда по коду не доходят; 8 (CF-End), 9 (Grant Ack) — всегда здесь.
          * Путь длиннее быстрого на ~10 инструкций до switch + вызов; запас не замерен. См. rx_send_cf_end_response /
          * rx_send_grant_ack. */
@@ -1207,7 +1184,7 @@ chk:                                            /* 0x93215c */
             break;
         case 1:
             rx_frame_tx_resp(0, ctx);
-            rx_resp_finish_restore_rx((u32)ctx, 0, r18);
+            rx_resp_finish_restore_rx((u32)ctx, 0, 0);
             break;
         case 2:
             rx_frame_tx_resp(1, ctx);

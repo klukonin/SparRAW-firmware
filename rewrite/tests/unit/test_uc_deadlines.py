@@ -394,14 +394,14 @@ _SIFS_HW = 'B = vendor Ack 644 + 12: стенд vendor Ack + 12 тактов →
 
 
 @pytest.mark.parametrize('kind', [
-    pytest.param('ack', marks=risk('rx_flow_run → rx_frame_tx_resp_seq: r42.14 → 0x37000020 (Ack)', 602, 656, _SIFS_HW)),
-    pytest.param('ba', marks=risk('то же, BlockAck на A-MPDU', 558, 656, _SIFS_HW)),
-    pytest.param('bar', marks=risk('то же, BlockAck на BAR', 559, 656, _SIFS_HW)),
-    pytest.param('cts', marks=risk('то же, DMG CTS на RTS (rx_end_switch_to_tx + mac_switch_rx_to_tx на пути; у нас на 59 '
-                                   'инстр. и 59 тактов короче vendor)', 770, 829, VENDOR_PATH_SRC % ('DMG CTS', 546))),
-    pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_send_cf_end_response; на 9 инстр. короче '
-                                     'vendor, но на 1 такт длиннее)', 665, 664, VENDOR_PATH_SRC % ('CF-End', 436))),
-    'grant_ack'])                                           # медленный путь без запроса MTP: запас 143
+    pytest.param('ack', marks=risk('rx_flow_run → rx_frame_tx_resp_seq: r42.14 → 0x37000020 (Ack)', 532, 656, _SIFS_HW)),
+    'ba', 'bar',                                            # BlockAck на A-MPDU / BAR: запас 168 / 167 (с отказом от RD,
+                                                            # 2026-11-04: без rx_flow_ctrl_qid_empty и ветки ответа RD)
+    pytest.param('cts', marks=risk('то же, DMG CTS на RTS (rx_end_switch_to_tx + mac_switch_rx_to_tx на пути; у нас на '
+                                   '101 инстр. короче vendor)', 687, 829, VENDOR_PATH_SRC % ('DMG CTS', 546))),
+    pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_send_cf_end_response; на 53 инстр. короче '
+                                     'vendor)', 578, 664, VENDOR_PATH_SRC % ('CF-End', 436))),
+    'grant_ack'])                                           # медленный путь без запроса MTP: запас 217
 def test_sifs_response_command(uc, kind):
     """Принят кадр с немедленным ответом (Ack 10.3.2.11, BlockAck 10.25.3/10.25.6, DMG CTS 10.3.2.9, CF-End 10.39.8.1,
     Grant Ack 10.39.4) — от конца кадра (r42.14 в цикле ХРУПКО rx_flow_run) до 0x37000020: команды, которую MAC при

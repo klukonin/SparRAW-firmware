@@ -1010,14 +1010,12 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     mac_program_tx_vector(5, ri->tx_sel, ri->mcs);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
-    u32 r13 = MAC_MTP_RESP_RD_SUPP_OF(mac_mtp_resp());
-    if (dti_qset_mode != 0) {
-        u32 r = fsched_slot_rd_counter_nonzero(&fsched_peers);
-        r13 &= r;
-        if (r != 0)
-            fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
-    }
-    uc_mac_cmd((r13 << 11) | (1u << 14) | (1u << 27) | (1u << 28));
+    /* RDG не даём (б11 — RDG/More PPDU в QoS Control A-MPDU, при RD_SUPP r43): RD отключён намеренно — ответчик RD на
+     * железе глохнет (rx_flow_handle_frame, «RD отключён»; MAC-STAND «Ответчик RD глохнет»). Без RDG и вопроса AC
+     * Constraint (802.11-2020 10.29.3: при RDG в TXOP EDCA — 1, у нас было 0) нет. vendor: б11 = RD_SUPP. */
+    if (dti_qset_mode != 0 && fsched_slot_rd_counter_nonzero(&fsched_peers) != 0)
+        fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
+    uc_mac_cmd((1u << 14) | (1u << 27) | (1u << 28));
 #ifdef UC_STAMP_MASK
     if (UC_STAMP_ON(STAMP_TXOP_CTS)) {          /* после пуска: путь до него не меняется (три чтения выше) */
         uc_mac_cmd(0x4d000000);

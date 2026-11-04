@@ -41,7 +41,18 @@ u32 sxd_hal_wait_slot2_busy2(u32 n)
     return 0;
 }
 
-/* Ожидание занятости slot2 (0x936d64). */
+/* Ожидание занятости slot2 (0x936d64). Зовёт только rx_flow_main (ответчик в чужом TXOP: после своего ответа ждёт
+ * следующий кадр держателя или RTS нового TXOP).
+ *
+ * исправлено (vendor): 0x2080000 здесь и 0x2080002 в начале прохода rx_flow_main стирают busy_event (r42 б19) без
+ * проверки, не идёт ли уже приём. Ответчик RD после BlockAck держателя на свои данные приходит сюда, когда CF-End
+ * держателя (через SIFS после BlockAck) уже начался (эмулятор, test_air test_live_rd_responder_*: CF-End начался за
+ * 1,3 мкс до 0x2080002) — событие стёрто, ответного CF-End нет, счётчик PPDU uc отстаёт, и следующие RTS держателя
+ * rx_flow_run отбрасывает (ветка 0xeeee04); стенд 2026-11-04 — CF-End без ответа в 2679 из 3335 TXOP станции с RD
+ * (MAC-STAND «Ответчик RD глохнет»). После сброса — признак идущего приёма без гонки: счётчик начал CCA PHY опережает
+ * счётчик концов PPDU (PHY_SIGNALS [21:16] / [13:8]; тот же признак у rx_flow_run, assert 68 при разнице ≥ 2) и PHY
+ * занят (cca [2:0] / phy_rx_frame — против разницы от ложного CCA без конца PPDU). Тогда — сразу «занято»: rx_flow_run
+ * разберёт кадр (вход при состоянии 2/3/5); счётчик стенда mac_mon_report.rx_busy_race. */
 u32 sxd_hal_wait_slot2_busy(u32 n)
 {
     if (n == 0)
@@ -51,6 +62,18 @@ u32 sxd_hal_wait_slot2_busy(u32 n)
         UC_STAMP(STAMP_BUSY_LOST, 2, mac_evt1());
 #endif
     uc_mac_cmd(0x41u << 0x13);
+    {
+        u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
+        mac_sel_shadow = g | MAC_SEL_PHY_SIGNALS;
+        uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
+        arc_nops(3);
+        u32 s = mac_status_sel();
+        if (((MAC_PHYSIG_CCA_EVT_CNT_OF(s) - MAC_PHYSIG_PPDU_EVT_CNT_OF(s)) & 0x3f) &&
+            (s & (MAC_PHYSIG_CCA | MAC_PHYSIG_PHY_RX_FRAME))) {
+            mac_mon_report.rx_busy_race += 1;
+            return 1;
+        }
+    }
     while (n >= 1) {
         uc_mac_cmd(0x2000100u);
         arc_nops(3);
@@ -61,3 +84,4 @@ u32 sxd_hal_wait_slot2_busy(u32 n)
     }
     return 0;
 }
+

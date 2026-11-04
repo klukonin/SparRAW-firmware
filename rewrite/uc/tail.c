@@ -3229,7 +3229,6 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
     }
 #endif
     uc_mac_cmd(0x19000001);
-    u32 r13 = MAC_MTP_RESP_RD_SUPP_OF(mac_mtp_resp());
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
 #ifdef UC_STAMP_MASK
@@ -3280,13 +3279,11 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
     }
     /* L_93e9f6 */
     if (txrx_state1 & (1u << 1)) {
-        if (dti_qset_mode != 0) {
-            u32 f3 = fsched_slot_rd_counter_nonzero(&fsched_peers);
-            r13 &= f3;
-            if (f3 != 0)
-                fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
-        }
-        uc_mac_cmd((r13 << 11) | (1u << 14) | (1u << 27) | (1u << 28));
+        /* RDG не даём (б11 — RDG/More PPDU, vendor: RD_SUPP r43): RD отключён намеренно, см. txop_await_cts_ppdu и
+         * rx_flow_handle_frame («RD отключён»), MAC-STAND «Ответчик RD глохнет». */
+        if (dti_qset_mode != 0 && fsched_slot_rd_counter_nonzero(&fsched_peers) != 0)
+            fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
+        uc_mac_cmd((1u << 14) | (1u << 27) | (1u << 28));
     } else {
         uc_mac_cmd(0x18000000);
     }

@@ -92,7 +92,9 @@ struct mac_mon_report_s {
     u8   tx_atim_cnt;               /* +0x3b tx atim counter (+0x3b): bi.c 517 ++[0x8010b0+0xf] после bi_rx_send_response */
     u8   rx_atim;                   /* +0x3c rx atim (+0x3c): rx.c 1650 ++ при приёме ATIM (peer_masks_apply_op 0x802f80 op 3) */
     u8   bcons_atim_fail_vec;       /* +0x3d битовый вектор станций (+0x3d): публикатор сохраняет/пишет (misc.c 399/414/444); fw — запрос разрыва (link_loss.c) */
-    u8 _pad1[2];
+    u16  rx_busy_race;              /* +0x3e SparRAW: sxd_hal_wait_slot2_busy (rx_flow_main) — после сброса busy_event
+                                       (r42 б19) по счётчикам PHY идёт приём PPDU, начавшегося до сброса: его событие
+                                       стёрто (MAC-STAND «Ответчик RD глохнет») */
     u32  dti_start_lo;              /* +0x40 DTI start lo (+0x40): r7[0x25] (tail.c 1018). Комментарий в tail.c «0x8010d4» неверен: r7  */
     u32  dti_start_hi;              /* +0x44 DTI start hi (+0x44): r7[0x26]; комментарий «0x8010d8» в tail.c 1019 неверен */
     u32  dti_duration;              /* +0x48 длительность DTI (+0x48): r7[0x27]; комментарий «0x8010dc» в tail.c 1015 неверен */
@@ -129,6 +131,7 @@ _Static_assert(__builtin_offsetof(struct mac_mon_report_s, tx_atim_fail) == 0x3a
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, tx_atim_cnt) == 0x3b, "mac_mon_report.tx_atim_cnt");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, rx_atim) == 0x3c, "mac_mon_report.rx_atim");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, bcons_atim_fail_vec) == 0x3d, "mac_mon_report.bcons_atim_fail_vec");
+_Static_assert(__builtin_offsetof(struct mac_mon_report_s, rx_busy_race) == 0x3e, "mac_mon_report.rx_busy_race");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, dti_start_lo) == 0x40, "mac_mon_report.dti_start_lo");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, dti_start_hi) == 0x44, "mac_mon_report.dti_start_hi");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, dti_duration) == 0x48, "mac_mon_report.dti_duration");

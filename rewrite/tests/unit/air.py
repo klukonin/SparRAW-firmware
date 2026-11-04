@@ -37,10 +37,14 @@ ACK_REP = {36: 0x100, 37: 0, 38: 0xe0000000, 39: 0x08000040}
 # кадра не установлена)
 DATA_REP = {36: 0x2, 37: 0, 38: 0xe0000000, 39: 0x08002c50}
 # H-AMPDU (стенд 2026-10-30, iperf, метки STAMP_RESP_REP и STAMP_RESP_WAIT): A-MPDU данных у приёмника — r36 0x00110002,
-# r38 FCS + б25 mpdu_aggregation + б12 bap_enable + индекс отправителя + MCS (на стенде ещё б15 RD — не моделируется),
+# r38 FCS + б25 mpdu_aggregation + б12 bap_enable + индекс отправителя + MCS (+ б15 RD — RDG держателя, H-RD),
 # r39 0x08023e50; BlockAck у отправителя — r36 0x201 (б9 back), r38 FCS + б12 + индекс + MCS 1, r39 0x08001840
 AMPDU_REP = {36: 0x00110002, 37: 0, 38: 0xe2001000, 39: 0x08023e50}
 BA_REP = {36: 0x201, 37: 0, 38: 0xe0001000, 39: 0x08001840}
+# H-RD: ответ RD (BlockAck + A-MPDU данных ответчика) у держателя TXOP — r36 0x203 (стенд, MAC-STAND «бывает и BlockAck
+# вместе с данными встречной стороны»), r38 как у A-MPDU без б15 (стенд, PMC: 0xe2801800)
+RD_RESP_REP = {36: 0x203, 37: 0, 38: 0xe2001000, 39: 0x08023e50}
+R38_RD = 1 << 15
 # RTS у получателя и DMG CTS у отправителя RTS (стенд 2026-10-30, iperf: STAMP_RESP_REP, STAMP_TXOP_WAIT): r36 б3 у обоих,
 # r37 б0 rts / б1 mmWaveCTS, r38 FCS + индекс отправителя, r39 0x08001a40 / 0x0801b340
 RTS_REP = {36: 0x8, 37: 0x1, 38: 0xe0000000, 39: 0x08001a40}
@@ -151,8 +155,11 @@ class Air:
             f = bytes(rec['qframe'][0])
             f = f[:2] + (rec['dur_us'] & 0xffff).to_bytes(2, 'little') + f[4:]
             mcs = rec.get('mcs', 0) & 0x1f
-            return f, (lambda dst: {**AMPDU_REP, 38: AMPDU_REP[38] | self._r38(dst, src) | mcs << 20})
-        if rec['what'].startswith('ответ на queue') and 'A-MPDU' in rec['what']:
+            if rec.get('rd_resp'):
+                return f, (lambda dst: {**RD_RESP_REP, 38: RD_RESP_REP[38] | self._r38(dst, src) | mcs << 20})
+            rd = R38_RD if rec.get('rdg') else 0
+            return f, (lambda dst: {**AMPDU_REP, 38: AMPDU_REP[38] | self._r38(dst, src) | mcs << 20 | rd})
+        if rec['what'].startswith('ответ на') and 'A-MPDU' in rec['what']:
             # BlockAck на A-MPDU — Compressed (9.3.1.8.2): TID и номера MPDU — из принятого A-MPDU (resp_ba, _tx)
             tid, ssn, sns = getattr(src, 'resp_ba', (0, 0, ()))
             m = rec.get('mcs', 1) & 0x1f
@@ -234,7 +241,7 @@ class Air:
             src.hw.air_dur_log = {}
         src.hw.air_dur_log[rec['start']] = rec['dur_us']    # Duration в эфире — для разборов
         qf = rec.get('qframe')
-        self.frames.append(dict(start=rec['start'], end=rec['start'] + rec['dur'], src=src, frame=bytes(frame),
+        self.frames.append(dict(rec=rec, start=rec['start'], end=rec['start'] + rec['dur'], src=src, frame=bytes(frame),
                                 mpdus=[bytes(x) for x in qf] if isinstance(qf, list) else None,
                                 dur_us=rec['dur_us'], mcs=rec.get('mcs', 0), what=rec['what']))
         if self.drop is not None and self.drop(src, frame, rec):
@@ -268,8 +275,13 @@ class Air:
                 dst.hw.at(rec['start'] + rec['dur'], dst.hw.ack_rx, 'ack_rx')
             if fc == 0x0094 and frame[4:10] == bytes(dst.mac):
                 dst.hw.at(rec['start'] + rec['dur'], dst.hw.ba_rx, 'ba_rx')
+            if rec.get('rd_resp') and frame[4:10] == bytes(dst.mac):
+                dst.hw.at(rec['start'] + rec['dur'], dst.hw.rd_resp_rx, 'rd_resp_rx')   # BlockAck в ответе RD (H-RD)
             ampdu = isinstance(rec.get('qframe'), list)
-            dst.hw.air_rx(rec['start'], len(frame), rec['what'], on_hdr=hdr, report=report_of(dst), dur=rec['dur'],
+            report = report_of(dst)
+            if ampdu:
+                rec.setdefault('reports', []).append(report)   # RDG (r38 б15) — по пуску 0x18 передатчика (H-RD)
+            dst.hw.air_rx(rec['start'], len(frame), rec['what'], on_hdr=hdr, report=report, dur=rec['dur'],
                           sifs_resp=uni, resp_len=BA_LEN if ampdu else 20 if rts else 14,
                           resp_deadline=RESP_CMD_DEADLINE_CTS_CLK if rts else RESP_CMD_DEADLINE_CLK,
                           report_at_hdr=True, on_end=lambda hw, fs=(rec['qframe'] if ampdu else [frame]), d=dst, src=src: [

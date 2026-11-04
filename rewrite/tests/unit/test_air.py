@@ -484,3 +484,156 @@ def test_live_data_reference_sifs(live_data):
     import ref_bridge
     ev, v = ref_bridge.check(live_data['air'], live_data['t0'], txop_limit=2048)
     assert not v, _ref_report(ev, v)
+
+
+# ---- Reverse direction отключён (стенд 2026-11-04, PMC обоих узлов; MAC-STAND «Ответчик RD глохнет») -----------------
+
+FC_BA = b'\x94\x00'
+
+
+def _ba_agree(air, orig, resp):
+    """Соглашение BA orig → resp, как у драйвера (WMI_RING_BA_EN → ADDBA → WMI_RCP_ADDBA_RESP)."""
+    n_o, n_r = len(orig.fw.wmi_evts), len(resp.fw.wmi_evts)
+    orig.wmi(F.WMI_RING_BA_EN, F.ring_ba_en_cmd(0))
+    req = []
+    for _ in range(20):
+        air.run_us(500)
+        req = [e for e in resp.fw.wmi_evts[n_r:] if e.id == F.WMI_RCP_ADDBA_REQ_EVENT]
+        if req:
+            break
+    assert req, 'нет WMI_RCP_ADDBA_REQ_EVENT'
+    resp.wmi(F.WMI_RCP_ADDBA_RESP, F.rcp_addba_resp_cmd(req[0].body))
+    for _ in range(20):
+        air.run_us(500)
+        if any(e.id == F.WMI_BA_STATUS_EVENT for e in orig.fw.wmi_evts[n_o:]):
+            return
+    raise AssertionError('нет WMI_BA_STATUS_EVENT')
+
+
+def _live_rd(fw_elf, build_dir, uc_fw, peer_grants_rd):
+    """Встречные данные, соглашения BA в обе стороны, RD_SUPP у очередей обоих узлов (H-RD). Станция — держатель TXOP
+    (8 MPDU); данные точки (8 MPDU) встают в очередь, когда станция получила DMG CTS. peer_grants_rd — A-MPDU станции
+    несут RDG при любом решении её uc (rdg_force: так ведёт себя пир, дающий RD, — vendor и др.), иначе RDG — по uc
+    станции (б11 пуска 0x18). С CF-End станции хост станции даёт ещё 8 кадров — новый TXOP: RTS через AIFS + backoff."""
+    import os
+    import fwemu
+    import machw
+    import ucemu
+    mk = lambda mac: _node(lambda: fwemu.FW(fw_elf).boot(), lambda: ucemu.UC(os.path.join(build_dir, 'uc.elf'), uc_fw),
+                           mac)
+    ap, sta = mk(F.AP_MAC), mk(F.STA_MAC)
+    ap.bssid = sta.bssid = ap.mac
+    with ap:
+        F.Fw(ap.fw).set_mac(ap.mac)
+        F.Fw(ap.fw).set_ssid(b'test')
+        F.Fw(ap.fw).ap_start(bi=BI_TU)
+    with sta:
+        F.Fw(sta.fw).set_mac(sta.mac)
+    ap.hw.backoff_seed, sta.hw.backoff_seed = 1, 1001
+    ap.live()
+    sta.live()
+    sta.wmi(F.WMI_CONNECT, F.connect_cmd(bssid=ap.mac, ssid=b'test'))
+    air = Air([ap, sta])
+    ev = lambda n: [e for e in n.fw.wmi_evts if e.id == WMI_CONNECT_EVENT]
+    for _ in range(80):
+        air.run_us(500)
+        if ev(sta) and ev(ap):
+            break
+    assert ev(sta) and ev(ap), 'нет WMI_CONNECT_EVENT'
+    sta.wmi(F.WMI_VRING_CFG, F.vring_cfg_cmd(0, ev(sta)[0].body[0x13]))
+    ap.wmi(F.WMI_VRING_CFG, F.vring_cfg_cmd(0, ev(ap)[0].body[0x13]))
+    qmask = lambda n: n.hw._raw(machw.HW_QSET0_MASK_VECTOR + 4 * machw.QSET_DATA_MASK)
+    for _ in range(20):
+        air.run_us(500)
+        if qmask(sta) & 1 and qmask(ap) & 1:
+            break
+    _ba_agree(air, sta, ap)
+    _ba_agree(air, ap, sta)
+    ap.hw.rd_supp = sta.hw.rd_supp = True
+    sta.hw.rdg_force = peer_grants_rd
+    t0 = sta.hw.now
+    is_ = lambda f, src, fc: f['src'] is src and f['frame'][:2] == fc and f['start'] >= t0
+    for i in range(8):
+        sta.host_tx(0, ap.mac, bytes([0x40 + i]) * 1400)
+    sta.pump()
+    for _ in range(400):
+        air.run_us(10)
+        if any(is_(f, ap, FC_DMG_CTS) for f in air.frames):
+            break
+    for i in range(8):
+        ap.host_tx(0, sta.mac, bytes([0x80 + i]) * 1400)
+    ap.pump()
+    for _ in range(400):
+        air.run_us(5)
+        if any(is_(f, sta, FC_CF_END) for f in air.frames):
+            break
+    for i in range(8):
+        sta.host_tx(0, ap.mac, bytes([0x20 + i]) * 1400)
+    sta.pump()
+    for _ in range(8):
+        air.run_us(500)
+        if len(sta.host_done) == 16 and len(ap.host_done) == 8:
+            break
+    fr = sorted((f for f in air.frames if f['start'] >= t0 and not f['what'].startswith('sweep')),
+                key=lambda f: f['start'])
+    return dict(air=air, ap=ap, sta=sta, t0=t0, fr=fr)
+
+
+@pytest.fixture(scope='module')
+def live_rd_granted(fw_elf, build_dir, uc_fw):
+    return _live_rd(fw_elf, build_dir, uc_fw, peer_grants_rd=True)
+
+
+@pytest.fixture(scope='module')
+def live_rd_own(fw_elf, build_dir, uc_fw):
+    return _live_rd(fw_elf, build_dir, uc_fw, peer_grants_rd=False)
+
+
+def _log(r):
+    return '\n'.join('%9.2f %s %s' % ((f['start'] - r['t0']) / CLK, 'AP ' if f['src'] is r['ap'] else 'STA', f['what'])
+                     for f in r['fr'][:16])
+
+
+def test_live_rd_declined(live_rd_granted):
+    """802.11-2020 10.29.4: «The recipient of an RDG may decline the RDG by … transmitting a control response frame with
+    the RDG/More PPDU subfield set to 0». Наш ответчик RDG отклоняет всегда (намеренно, MAC-STAND «Ответчик RD
+    глохнет»): держатель с RDG, у точки свои данные в очереди — на A-MPDU станции одиночный BlockAck, без данных точки;
+    данные точки — в её собственном TXOP. Прежде (vendor) точка отвечала RD (BlockAck + A-MPDU) и после этого глохла."""
+    r = live_rd_granted
+    fr, ap, sta = r['fr'], r['ap'], r['sta']
+    amp = [i for i, f in enumerate(fr) if f['src'] is sta and f['what'].startswith('queue') and 'A-MPDU' in f['what']]
+    assert amp and all(fr[i]['rec'].get('rdg') for i in amp), _log(r)          # RDG у приёмника — r38 б15 (H-RD)
+    for i in amp:
+        nxt = fr[i + 1]
+        assert nxt['src'] is ap and nxt['frame'][:2] == FC_BA and 'RD A-MPDU' not in nxt['what'], _log(r)
+    assert len([f for t, f in sta.host_rx if t >= r['t0']]) == 8          # данные точки дошли — своим TXOP
+
+
+def test_live_rd_declined_cf_end_and_rts(live_rd_granted):
+    """CF-End держателя (Duration ≠ 0, RA ответчика) — ответный CF-End (10.23.2.10; наш uc отвечает всегда); первый RTS
+    следующего TXOP держателя — DMG CTS (10.3.2.9). Допуск ответа — 5 мкс, как test_live_data_reference_access_rules
+    (ответ uc через SIFS в эмуляции позже, xfail test_live_data_reference_sifs)."""
+    r = live_rd_granted
+    fr, ap, sta = r['fr'], r['ap'], r['sta']
+    cfe = [i for i, f in enumerate(fr) if f['src'] is sta and f['frame'][:2] == FC_CF_END and f['dur_us']]
+    assert cfe, _log(r)
+    for i in cfe:
+        nxt = fr[i + 1] if i + 1 < len(fr) else None
+        assert nxt is not None and nxt['src'] is ap and nxt['frame'][:2] == FC_CF_END and nxt['dur_us'] == 0, _log(r)
+        assert (nxt['start'] - fr[i]['end']) / CLK <= SIFS_US + 5.0
+    rts = [i for i, f in enumerate(fr) if i > cfe[0] and f['src'] is sta and f['frame'][:2] == FC_RTS]
+    assert rts and fr[rts[0] + 1]['src'] is ap and fr[rts[0] + 1]['frame'][:2] == FC_DMG_CTS, _log(r)
+    assert len(sta.host_done) == 16
+
+
+def test_live_holder_grants_no_rd(live_rd_own):
+    """Держатель RD не предоставляет (намеренно): в A-MPDU нашего uc RDG нет — б11 пуска 0x18 = 0 при RD_SUPP очереди
+    (txop_await_cts_ppdu, mtp_get_tx_permission; vendor ставил RD_SUPP). Нет RDG — нет и требования AC Constraint = 1
+    при RDG в TXOP EDCA (802.11-2020 10.29.3; стенд: точка ставила RDG с AC Constraint 0). Ответов RD нет."""
+    r = live_rd_own
+    fr, ap, sta = r['fr'], r['ap'], r['sta']
+    amp = [f for f in r['air'].frames if f['src'] in (ap, sta) and isinstance(f.get('mpdus'), list) and
+           f['what'].startswith('queue')]
+    assert amp, _log(r)
+    assert not [f['what'] for f in amp if f['rec'].get('rdg')]
+    assert not [f['what'] for f in fr if 'RD A-MPDU' in f['what']]
