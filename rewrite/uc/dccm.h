@@ -757,7 +757,7 @@ _Static_assert(__builtin_offsetof(struct sls_peer_rec, peer_mac) == 0x12, "sls_p
 /* Окно бодрствования (bi_ctx.aw, 0x802f68, 0x14 Б): пиры с отложенным трафиком и обход их по ATIM. */
 struct aw_win_s {
     union {
-        u32  pend;                      /* +0x00 биты 0..15 — пиры к обходу (bi_manager_eval_bcon_slot) */
+        u32  pend;                      /* +0x00 биты 0..15 — пиры с трафиком в окне (bi_rx_slot_handler) */
         u8   pend_b[4];                 /*       байт 0 — бодрствующие с трафиком, 1 — без сопоставления */
     };
     u8   cur_bit;                       /* +0x04 курсор обхода 0..15 */
@@ -1736,7 +1736,6 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define rx_buf_toggle_cnt            (*(u8 *)0x80042f)   /* [в] Счётчик чётности: MAC-команда 0x32000000|(b&1) (+бит 25/28/29 в bi_mode_init), затем ++ — переключение двух буферов приёма. 16 мест (rx_arm_window*... */
 #define brp_init_retry_cnt           (*(u8 *)0x800430)   /* [в] Счётчик повторов BRP-инициатора (bf_sm_brp_init_result: статус 0x31 → ++, ≥4 → отказ; статус 0 → 0). Комментарий в bf.c и vendor 0x922494. */
 #define bti_sweep_set                (*(u8 *)0x800431)   /* [в] Номер набора развёртки маяка BTI (= число RF-модулей−1 из 0x85773c, ++ в bti_prepare_sweep_set); индекс в таблице 0x8577b0 (×2) и аргумент txss_set... */
-#define bi_rx_tx_refused_cnt         (*(u8 *)0x800432)   /* [н] ++ в bi_rx_start_rx_window на ветке L_9212dc, где txrx_state2 = 0x800 (поток TX начат/отказ); читателей нет (диагностика). */
 #define mac_rx_to_tx_fast            (*(u8 *)0x800433)   /* [н] mac_switch_rx_to_tx: 1 — переход сразу (стадия r49[19:16] < 6), 0 — после ожидания стадии BRP. Только запись (vendor stb [gp,-245]). */
 #define brp_cfg_sel_mask             (*(u8 *)0x800434)   /* [н] config_brp_rf, фаза 3: итоговая маска r20 выбранных конфигураций; только запись (vendor 0x92536a). */
 #define brp_cfg_max_per_grp          (*(u8 *)0x800435)   /* [н] config_brp_rf, фаза 2: максимум числа конфигураций в 4-битной группе маски (по SNR); только запись (vendor 0x9251fa). */
@@ -1788,7 +1787,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define bf_done_cnt_pub              (*(u32 *)0x8004f8)   /* [с] bf_req_dequeue_head: копия счётчика завершённых BF-запросов 0x80211c. Только запись (вероятно, для хоста). NAMES-EXTRA про 0x8004f8/fc — fw-адреса. */
 #define rf_cur_sector_word           (*(u32 *)0x8004fc)   /* [с] Текущее слово RF/сектора (биты 3:0 — RF, 22:8 — сектор): rf_set_cur_sector_word, brp_program_and_measure (= rf_chain_word), mac_set_rf_chain_state; читают rx... */
 #define mac_mon_armed                (*(u32 *)0x800500)   /* [в] Флаг взвода MAC-монитора: ставит bi_sm_on_enter_dti, peer_slots_scan_by_masks работает только при ==1 и сбрасывает. MAC-MON.md (6.2: [gp-0x28]). */
-#define resp_wait_slots              (*(u16 *)0x800508)   /* [с] Число ожиданий слота для sxd_hal_wait_slot2_busy2 при ожидании ответа (bi_rx_start_rx_window, tx_sta_wait_slot_and_tx, txss_resp_wait_fdbk); = 2, и... */
+#define resp_wait_slots              (*(u16 *)0x800508)   /* [с] Число ожиданий слота для sxd_hal_wait_slot2_busy2 при ожидании ответа (tx_sta_wait_slot_and_tx, txss_resp_wait_fdbk); = 2, и... */
 #define busy_wait_slots              (*(u16 *)0x80050a)   /* [с] То же значение, второй набор мест: rx_flow_main (sxd_hal_wait_slot2_busy), rx_handle_status_flags, tx_sta_flow_loop. */
 #define edca_ac_en_shadow            (*(u32 *)0x80050c)   /* [с] txrx_api_program_edca_ac (LMAC 0x04 EDCA): тень битов (i+8) и (i+20) по AC; уходит в MAC-команду m|0x07000000. */
 #define txss_ifs_restore             (*(u32 *)0x800510)   /* [с] txss_init_flow/txss_resp_flow ставят 1 после смены IFS (0x802974); в конце потока при ≠0 восстанавливают IFS из 0x802968 и шлют 0x1f000601; txss_*_... */

@@ -326,34 +326,6 @@ void bi_ctx_clear_counters(struct pm_ctx_s *p)
 }
 
 
-u32 bi_manager_eval_bcon_slot(struct aw_win_s *w, u8 *out, u32 *out_word)
-{
-    u8 r3 = w->round;
-    if (r3 >= 5)
-        return 0;
-    u32 r8 = 0;
-    u8 r7 = w->cur_bit;
-    do {
-        u32 r6 = w->pend;
-        if (r6 & (1u << r7)) {
-            *out = r7 & 7;
-            *out_word = (w->cur_bit >= 8) ? 0 : 1;
-            r7 = w->cur_bit;
-            r8 = 1;
-        }
-        r7++;
-        w->cur_bit = r7;
-        if (r7 == 0x10) {
-            r7 = 0;                         /* L_927e2c: mov r7,0 — следующий круг с бита 0 */
-            w->cur_bit = 0;
-            w->round += 1;
-        }
-        if (r8 != 0)
-            break;
-    } while (w->round < 5);
-    return r8;
-}
-
 void bi_run_bti_cycle(struct bi_ctx_s *c)
 {
     if (mac_ifs_shadow != 0x300)
@@ -374,111 +346,6 @@ void bi_run_bti_cycle(struct bi_ctx_s *c)
     l1_task_dispatch(3, 0);
 }
 
-/* 0x939530: r0 = a, r1 = rate, r2 = b, r3 = flag. */
-void bi_rx_send_response(u32 a, u32 rate, u32 b, u32 flag)
-{
-    u32 v;
-    direct_tx_program_desc(0x16, 0x18);
-    mac_program_tx_with_rate(rate);
-    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
-        ;
-    v = mac_mtp_desc();
-    mtp_desc_lo = v & 0xf;
-    mtp_desc_hi = MTP_DESC_HI_OF(v);
-    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-        ;
-    uc_mac_cmd(flag ? 0x18000000 : 0x18002100);
-    direct_tx_send_with_seq(a, b, flag);
-}
-
-/* 0x9210b0: окно приёма BI. gp+204 = 0x8005f4, gp+208 = 0x8005f8. */
-u32 bi_rx_start_rx_window(u32 a, u32 b)
-{
-    u32 r14 = b;
-    u32 r13;
-    u32 limit = (r14 != 0) ? 0x1ef0 : 0x13fb;
-    if (mac_read_ext_window_remain() < limit) {
-        r13 = 0;
-        goto tail;
-    }
-    r13 = (r14 != 0) ? 0x26 : 0x15;
-    u32 r15 = sta_tab[a].tx_sel;
-    txrx_state2 = 0;                                   /* st.as [gp,52] */
-    txrx_state1 = (1u << 13) | 2;                      /* st.as [gp,51] */
-    u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
-    mac_sel_shadow = cfg | (1u << 13) | (1u << 15);
-    uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
-    mac_select_all_sectors_and_wait();
-    mac_cmd_29000001();
-    uc_mac_cmd(0x1f006000);
-    uc_mac_cmd(0x38000300);
-    uc_mac_cmd(0x3600003f);
-    uc_mac_cmd(0x6000105);
-    if (!mac_cca_ok()) {
-        uc_mac_cmd(0x29000002);
-        rx_mac_prepare();
-        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-            ;
-        /* L_9212dc */
-        txrx_state2 = 0x800;
-        bi_rx_tx_refused_cnt += 1;                               /* ldb [gp,-246] */
-        r13 = 0;
-        goto tail;
-    }
-    if (r14 != 0)
-        uc_mac_cmd(0x20000400);
-    uc_mac_cmd(0x37000005);
-    uc_mac_cmd(0x37000002);
-    uc_mac_cmd(r15 | 0x3f000000);
-    uc_mac_cmd(0x3e000000);
-    uc_mac_cmd(0x37000020);
-    uc_stats.tx_start += 1;
-    r13 |= 1u << 24;
-    u32 reg = abif_dvs_rf_ctrl_shadow & ~((1u << 24) | (1u << 25));
-    reg |= rf_set_tx << 24;
-    abif_dvs_rf_ctrl_shadow = reg;
-    MMIO32(HW_ABIF_DVS_RF_CTRL) = reg;
-    r13 |= (1u << 26) | (1u << 28);
-    uc_mac_cmd(r13);
-    uc_mac_cmd(0x14000007);
-    uc_mac_cmd(0x2008000);
-    uc_mac_cmd(0x19000001);
-    bi_rx_send_response(a, 0, 9, r14);
-    mac_evt_enable_bit_sync_b(6);
-    uc_spin_until_event(MAC_EVT1_TX_END);
-    mac_mon_report.tx_atim_cnt += 1;
-    uc_wait_one_event(6);
-    uc_mac_cmd(0x14000000);
-    mac_set_rf_chain_state(1, sta_tab[a].rx_sel);
-    reg = abif_dvs_rf_ctrl_shadow & ~((1u << 24) | (1u << 25));
-    reg |= rf_set_rx << 24;
-    abif_dvs_rf_ctrl_shadow = reg;
-    MMIO32(HW_ABIF_DVS_RF_CTRL) = reg;
-    if (r14 != 0) {
-        if (sxd_hal_wait_slot2_busy2(resp_wait_slots)) {
-            r13 = (rx_flow_run() != 0 && (mac_rx_rep1() & MAC_RX_REP1_IMM_ACK)) ? 1 : 0;
-        } else {
-            tx_pick_slot_for_peer(1, a, 0x1f);
-            r13 = 0;
-        }
-        uc_mac_cmd(1u << 29);
-    } else {
-        r13 = 1;
-    }
-tail:
-    uc_mac_cmd(0x14000100);
-    uc_mac_cmd(*(u16 *)&txrx_state1 | 0xdc0000);
-    uc_mac_cmd((txrx_state1 >> 16) | 0xdc0000);
-    uc_mac_cmd(*(u16 *)&txrx_state2 | 0xdc0000);
-    uc_mac_cmd((txrx_state2 >> 16) | 0xdc0000);
-    txrx_state1 = 0;
-    txrx_state2 = 0;
-    tx_ctx_pool.slot[0].flags = 0;
-    tx_ctx_pool.slot[1].flags = 0;
-    uc_mac_cmd(0x81u << 18);
-    mac_wait_mode_ack_if_idle();
-    return r13;
-}
 void bi_bti_end_update_counters(struct bi_ctx_s *c)
 {
     /* 0x92218c */
@@ -533,41 +400,22 @@ void bi_timing_snapshot(void)
     mac_mon_slot[r3].bti_start[0] = r6;
     mac_mon_slot[r3].bti_start[1] = bi_win.bti_tsf[1];
 }
+/* Окно бодрствования (Awake Window, BI_STATE_AW): обход пиров с отложенным трафиком (aw_collect_awake_peers).
+ * исправлено (vendor/энергосбережение): vendor слал каждому пиру ATIM (mgmt 9, Duration 0x15 38 − ⌈TXTIME⌉ = 19, ждал
+ * Ack) и по итогу помечал пира бодрствующим / без передачи (peer_masks_apply_op 1/2). ATIM в DMG BSS — только для
+ * станций в PS, в Awake Window, объявленном элементом Awake Window (802.11-2020 11.2.7.1, 11.2.8 a/c); энергосбережение
+ * вырезано (fw/action.c psc_req_reject), Awake Window никто не объявляет — ATIM не шлём (стенд 2026-11-04, PMC: ~6 ATIM
+ * в секунду с каждого узла). Все пиры бодрствуют: пиры с трафиком — сразу бодрствующие с передачей (op 1), как после
+ * успешного ATIM; обход окна закончен. */
 void bi_rx_slot_handler(struct aw_win_s *w)
 {
     mac_mon_report.aw_backoff += 1;
-    u32 sp0 = 0, sp1 = 0;
-    u32 r0 = bi_manager_eval_bcon_slot(w, (u8 *)&sp0, (u32 *)&sp1);
-    if (r0 == 0) {
-        mac_backoff_settle_set_chain_modes(2);
-        uc_mac_cmd(0x81u << 18);
-        internal_tx_clear_pending_bit(0);
-        return;
+    u32 m = w->pend & 0xffffu;
+    if (m != 0) {
+        peer_masks_apply_op(&pm_ctx, 1, m);
+        w->pend &= ~m;
     }
-    /* СРОК (выдержка): пауза перед первым запросом AP в окне — 4800 тактов ≈ 29,1 мкс (vendor
-     * L_92b51e..L_92b52e: lp 0x960 × 2×nop_s). Что она ждёт, не установлено: это не IFS 802.11-2020
-     * (ATI начинается не раньше Max(guard time, MBIFS) после конца A-BFT, 10.39.3, но вход сюда не
-     * привязан к концу A-BFT, а guard time 10.39.6.5 зависит от дрейфа часов); поэтому длительность
-     * та же, что у vendor, но по часам ядра (uc_delay_clk), а не по скорости цикла: прерывание внутри
-     * паузы её больше не удлиняет. Короче — запрос раньше готовности станции, длиннее — меньше
-     * времени окна (порог остатка в bi_rx_start_rx_window). */
-    if (uc_role_ap != 0 && w->atim_armed == 0) {   /* breq.d r10,0 → пропуск */
-        uc_delay_clk(0x960 * 2);
-        w->atim_armed = 1;
-    }
-    u32 r = bi_rx_start_rx_window(sp0, sp1);
-    if (r != 0) {
-        uc_read_tsf_lo();
-        u32 mask = (sp1 == 0) ? (1u << sp0) << 8 : (1u << sp0);   /* cmp r16,0; mov.eq r15,bit<<8 */
-        peer_masks_apply_op(&pm_ctx, 1, mask);
-        w->pend &= ~mask;
-        mac_mon_report.tx_atim_pass += 1;
-        sta_slot_ok_cnt[sp0] += 1;
-    } else {
-        uc_read_tsf_lo();
-        u32 mask = (sp1 == 0) ? (1u << sp0) << 8 : (1u << sp0);   /* cmp r16,0; mov.eq r2,bit<<8 */
-        peer_masks_apply_op(&pm_ctx, 2, mask);
-        mac_mon_report.tx_atim_fail += 1;
-        sta_slot_fail_cnt[sp0] += 1;
-    }
+    mac_backoff_settle_set_chain_modes(2);
+    uc_mac_cmd(0x81u << 18);
+    internal_tx_clear_pending_bit(0);
 }

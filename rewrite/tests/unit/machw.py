@@ -804,6 +804,10 @@ class HW:
         if self.profile:
             self.marks.append(('cmd %08x' % v, self.now, self.cnt.copy()))
         op, arg = v >> 24, v & 0xffffff
+        if op == 0x18:                                    # H-DUR18: пуск кадра; б12 — Duration кадра буквально
+            self.go18 = arg
+        elif op == 0x33 and arg == 1:                     # новый кадр FIFO: пуска 0x18 для него ещё не было
+            self.go18 = None
         if op == 0x02:                                    # взвод (сброс) битов r42
             self.r42 &= ~arg
             if arg & (1 << 8):                            # H-SLOT2: slot2_event — через SLOT2_CLK от взвода
@@ -1351,6 +1355,11 @@ class HW:
 
     dur_new = False
     dur_literal = True
+    go18 = None                       # H-DUR18: последний пуск 0x18 кадра (None — для кадра FIFO его ещё не было)
+
+    def _dur_minus_txtime(self):
+        """H-DUR18: в режиме 0x14000007 Duration = 0x15 − ⌈TXTIME⌉, если кадр пущен 0x18 без б12."""
+        return self.dur_literal and self.go18 is not None and not self.go18 & 0x1000
     txop_end = None
     bic_a = bic_b = 0
 
@@ -1365,11 +1374,14 @@ class HW:
         """Duration кадра в эфире и TXOP (H-DUR, H-TXOP, uc/abft.h). Кадр развёртки после записи 0x15 начинает TXOP
         заново за MACLAT до своего начала, длиной 0x15 (стенд bcn1: сдвиг txop_event 53 такта = δb − MACLAT). Duration
         маяка: буквальный режим (0x14000007) — 0x15 − ⌈TXTIME⌉; иначе (0x14000005) — ⌊остаток TXOP после кадра⌋.
-        Вне развёртки — 0x15 буквально."""
+        H-DUR18 (стенд 2026-11-04, PMC обоих узлов): в режиме 0x14000007 MAC вычитает из 0x15 ⌈TXTIME⌉ своего PPDU,
+        если кадр пущен 0x18 без б12 (CF-End держателя 34 → 19 и 18 → 3, ATIM 38 → 19, RTS keep-alive 40 → 25, маяки
+        BTI — 0x18000000, 0x15 − 20); с б12 (0x18001000 — SLS в DTI: SSW 1012, SSW-Feedback 37, SSW-Ack 10) — 0x15
+        буквально. Кадр FIFO без 0x18 (ответ uc через SIFS, tx_send_imm_response) — буквально (не снято)."""
         if not p['what'].startswith('sweep'):
             # H-DURQ (стенд 2026-10-31, STAMP_RX_DUR): Duration RTS и кадров очереди ставит MAC — остаток лимита TXOP
             # (HW_MAC_TXOP_LIMIT_0 [31:16], мкс) от начала TXOP − SIFS: RTS 2000 − SIFS − TXTIME(RTS) = 1982; запись 0x15
-            # на них не действует. Прочие кадры (FIFO uc: DMG CTS, CF-End, BRP …) — 0x15 буквально
+            # на них не действует. Прочие кадры FIFO uc (CF-End, ATIM, BRP …) — 0x15 по H-DUR18
             fifo = p.get('fifo')
             rts = fifo is not None and len(fifo) >= 2 and fifo[0] == 0xb4 and fifo[1] == 0
             lim = self._raw(HW_MAC_TXOP_LIMIT_0) >> 16
@@ -1377,12 +1389,16 @@ class HW:
                 if rts or self.txopq_end is None or p['start'] >= self.txopq_end:
                     self.txopq_end = p['start'] - SIFS_CLK + lim * CLK_PER_US
                 return max(0, (self.txopq_end - (p['start'] + p['dur'])) // CLK_PER_US)
+            if fifo is not None and self._dur_minus_txtime():
+                return max(0, self.dur_us - -(-p['dur'] // CLK_PER_US))      # H-DUR18
             return self.dur_us
         if self.dur_new or self.txop_end is None:
             self.txop_end = p['start'] - MACLAT_CLK + self.dur_us * CLK_PER_US
             self.dur_new = False
-        if self.dur_literal:
+        if self._dur_minus_txtime():
             return max(0, self.dur_us - -(-p['dur'] // CLK_PER_US))
+        if self.dur_literal:
+            return self.dur_us                            # H-DUR18: развёртка SSW в DTI (0x18001000) — буквально
         return max(0, (self.txop_end - (p['start'] + p['dur'])) // CLK_PER_US)
 
     ACK_WAIT_CLK = SIFS_CLK + ctrl_txtime_clk(14) + 2 * SLOT_CLK   # конец кадра → конец Ack (+ запас 2 слота)

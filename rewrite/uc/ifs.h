@@ -51,6 +51,39 @@ static inline __attribute__((always_inline)) u32 dmg_cf_end_resp_dur_us(u32 d)
     return k < 2u ? 0u
                   : (u32)(((u64)((k - 1u) * DMG_CF_END_X_CLK + DMG_CLK_PER_US - 1u) * 416481678u) >> 36);  /* ÷ 165 */
 }
+/* CF-End держателя TXOP (tx_send_and_await_rx_frame), 9.3.1.6: первый кадр усечения, на который отвечают CF-End
+ * (10.23.2.10, 10.39.8.1), — i = 2: Duration = ⌈TXTIME(CF-End) + SIFS⌉ = 18 мкс (9.2.5.1); ответный — i = 1, 0
+ * (dmg_cf_end_resp_dur_us). TXTIME — ответного CF-End (control PHY, tx_send_imm_response с rate 0).
+ * 10.23.2.10: ненулевой Duration — только при остатке ≥ 2·T(CF-End) + 2·SIFS, CF-End вообще — пока остатка хватает на
+ * сам кадр. Остаток (REMAINING_TIME_RD, мкс) читается до своего CF-End: к порогам — свой TXTIME(CF-End) и запас
+ * DMG_CF_END_PATH_US на путь от чтения до начала кадра (не измерен; vendor брал +4 к своему порогу). */
+#define DMG_TXTIME_CF_END_CLK       DMG_CTRL_TXTIME_CLK(DMG_CF_END_LEN)                           /* 2316 = 14,036 мкс */
+#define DMG_CF_END_HOLDER_DUR_US    ((DMG_CF_END_X_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)   /* i = 2: 18 */
+#define DMG_CF_END_PATH_US          4u
+#define DMG_CF_END_MIN_REM_US  ((DMG_TXTIME_CF_END_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US + DMG_CF_END_PATH_US)
+#define DMG_CF_END_NZ_REM_US   ((3u * DMG_TXTIME_CF_END_CLK + 2u * DMG_SIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US \
+                                + DMG_CF_END_PATH_US)
+_Static_assert(DMG_CF_END_HOLDER_DUR_US == 18u, "Duration CF-End i = 2");
+_Static_assert(DMG_CF_END_MIN_REM_US == 19u && DMG_CF_END_NZ_REM_US == 53u, "пороги CF-End по остатку");
+/* TXTIME кадра DMG SC MCS 1 длиной L байт (с FCS), 20.11.3 и 20.5.3.2.3.3 (Table 20-15: N_CBPS 1, ρ = 2, R = 1/2;
+ * L_CW 672, N_CBPB 448): N_CW = ⌈8·L / ((L_CW/ρ)·R)⌉ = ⌈L/21⌉, N_BLKS = ⌈N_CW·L_CW / N_CBPB⌉,
+ * TXTIME = T_STF 2176·Tc + T_CE 1152·Tc + T_header 1024·Tc + (N_BLKS·512 + 64)·Tc; такты вверх (·3/32). */
+#define DMG_SC1_NBLKS(L)        (((((L) + 20u) / 21u) * 672u + 447u) / 448u)
+#define DMG_SC1_TXTIME_CLK(L)   (((2176u + 1152u + 1024u + DMG_SC1_NBLKS(L) * 512u + 64u) * 3u + 31u) / 32u)
+_Static_assert(DMG_SC1_TXTIME_CLK(DMG_CF_END_LEN) == 510u, "TXTIME(CF-End, SC MCS 1) = 3,09 мкс");
+/* Запись Duration командой 0x15 (H-DUR18, стенд 2026-11-04, PMC обоих узлов, docs/MAC-STAND.md «Duration в эфире»):
+ * в режиме 0x14000007 у кадра FIFO, пущенного 0x18 без б12, MAC пишет в поле Duration 0x15 − ⌈TXTIME своего PPDU⌉
+ * (CF-End держателя: 0x15 34 → 19, 18 → 3; ATIM 38 → 19; RTS keep-alive 40 → 25), с б12 (0x18001000, SLS в DTI) —
+ * 0x15 буквально. Поэтому в 0x15 держателя — Duration плюс ⌈TXTIME⌉ своего CF-End на его MCS (rate tx_send_and_await_
+ * rx_frame: 0 — control PHY, 1 — SC MCS 1). vendor: 0x22 = 19 + 15 и 0x17 = 19 + 4 — то же правило, другой Duration. */
+#define DMG_CLK_TO_US_CEIL(c)            (((c) + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
+#define DMG_CF_END_HOLDER_CMD_CTRL  (DMG_CF_END_HOLDER_DUR_US + DMG_CLK_TO_US_CEIL(DMG_TXTIME_CF_END_CLK))
+#define DMG_CF_END_HOLDER_CMD_SC1   (DMG_CF_END_HOLDER_DUR_US + DMG_CLK_TO_US_CEIL(DMG_SC1_TXTIME_CLK(DMG_CF_END_LEN)))
+_Static_assert(DMG_CF_END_HOLDER_CMD_CTRL == 33u && DMG_CF_END_HOLDER_CMD_SC1 == 22u, "0x15 CF-End держателя");
+/* RTS keep-alive (internal_tx_keepalive_flow): FC, Duration, RA, TA, FCS = 20 Б (9.3.1.2); Duration 40 мкс — tx.c. */
+#define DMG_RTS_LEN         20u
+#define DMG_KA_RTS_DUR_US   40u
+_Static_assert(DMG_KA_RTS_DUR_US + DMG_CLK_TO_US_CEIL(DMG_CTRL_TXTIME_CLK(DMG_RTS_LEN)) == 55u, "0x15 RTS keep-alive");
 #define DMG_LBIFS_CLK    (DMG_TXTIME_SSW_CLK + 2u * DMG_SBIFS_CLK)     /* 2790 = 16,909 мкс */
 
 _Static_assert(DMG_TXTIME_SSW_CLK == 2460, "TXTIME(SSW)");

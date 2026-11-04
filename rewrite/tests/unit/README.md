@@ -42,6 +42,8 @@ docstring), а не наш код и не vendor. Тест проверяет и
 кода тест начинает проходить и strict-xfail падает — пометку снять.
 | `test_uc_liveness.py` | живучесть ожиданий ответа пира при его молчании (модель GP0..GP2 по командам 0x4f/0x52/0x49): CTS/Ack/ответ TXOP — CTSTimeout/AckTimeout (10.3.2.9, 10.3.2.11), BRP-запрос — BRPIFS (10.3.2.3.9), SLS в DTI — RSS, повторы Feedback ≤ dot11BFRetryLimit (10.42.2, 10.42.6.2), ожидание Feedback ответчиком, слот A-BFT AP |
 | `test_uc_bti_rx_entry.py` | живучесть: вход в BTI с пути приёма — ожидание следующего маяка не дольше конца BTI (Duration, 9.3.4.2), заворот Timer1 |
+| `test_uc_txop_recovery.py` | поток вверх встаёт (стенд 2026-11-03): RTS без DMG CTS — backoff без закрытия TXOP и CF-End (10.3.2.9, 10.23.2.10); ожидание txop_event — не дольше лимита TXOP (`uc_wait_txop_end`) |
+| `test_uc_no_atim.py` | окно бодрствования (BI_STATE_AW) без ATIM: энергосбережения нет, Awake Window не объявляется (802.11-2020 11.2.7.1, 11.2.8) — ни одной передачи, пиры с трафиком бодрствуют |
 
 Timer1 (COUNT1, AUX 0x100) в эмуляторе идёт: такт на инструкцию, заворот на 0x13ab6680 (`uc.t1()`, `uc.t1_base`).
 Цикл, читающий Timer1, считается ограниченным сроком; ожидание события пира без срока даёт `SpinError` — так
@@ -121,6 +123,7 @@ TX завершаются; `idle_state(fw)` — поля «покоя» (зап�
 | `test_fw_peer_vanish.py` | пир пропал в любой момент. AP: до Ack на Assoc Response, после ассоциации до порта, после SLS в A-BFT без Assoc Request, LINK_LOST во время BF, во время ADDBA, при согласованном BA, с данными хоста, без трафика, во время DISCONNECT_STA; `SPARRAW_MAX_STA` станций — пропала одна; PCP_STOP; станция вернулась раньше срока. STA: скан/SLS, после SLS до маяка, BF линк-апа, Assoc Request без Ack, нет Assoc Response, сразу после ассоциации, с данными, ADDBA, BA, во время WMI_DISCONNECT. Проверка: одно WMI_DISCONNECT_EVENT не позже срока из параметров fw, состояние «покоя», uc о станции ничего не держит, WMI_ECHO, следующее подключение — как первое |
 | `test_fw_wmi_validation.py` | значения хоста вне допустимых: стендовые случаи `tests/test_sta_robust.py`, кольцо ≥ `STREAM_VR_N`, tid, cid ≥ `SPARRAW_MAX_STA`, канал, длины — отказ с журналом / статусом, без записи за массивами и без передачи в uc |
 | `test_fw_wmi_fuzz.py` | каждая команда диспетчера с телом из нулей / 0xff / `SPARRAW_MAX_STA` после загрузки и при подключённой STA — без фатального ассерта, вечного опроса и обращений вне карты памяти |
+| `test_fw_pring_stop.py` | разрыв при застрявшем DMA очереди (MACQ пуст, указатели DMA не сходятся): остановка vring по команде — принудительная, без assert 0x12aa; состояние «после загрузки», повторное подключение |
 | `test_fw_ese.py` | Extended Schedule в маяке точки (9.4.2.131, рис. 9-563/9-564, Table 9-257): WMI_SCHEDULING_SCHEME — тип SP/CBAP, Allocation ID (0 только у CBAP 255→255, уникальность), PCP Active = 1, Allocation Start = TSF окна; порядок по началу — strict xfail; TDMA точки при 2–3 станциях — окна после BTI и A-BFT, Tguard (10.39.6.5), не за концом BI, Destination AID точки 0 (9.4.1.8) |
 
 Найденный остаток или отказ — `xfail(strict=True)`: в reason — поле/путь, последствие и место в коде, где надо

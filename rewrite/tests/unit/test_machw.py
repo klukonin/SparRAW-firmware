@@ -381,3 +381,23 @@ def test_abft_sta_burst_sbifs_apart(uc, fss):
     sb = hw.sbifs_clk()
     gaps = [q[0] - p[1] for p, q in zip(tx, tx[1:])]
     assert all(sb <= g <= sb + MODEL_TOL_CLK for g in gaps), gaps
+
+
+def test_dur18_fifo_frame_duration(uc):
+    """H-DUR18 (стенд 2026-11-04, PMC обоих узлов): кадр FIFO после 0x15 + 0x14000007, пущенный 0x18 без б12, несёт в
+    эфире 0x15 − ⌈TXTIME своего PPDU⌉ (CF-End держателя: 34 → 19, 18 → 3; ATIM 38 → 19); пущенный 0x18001000 (SLS в
+    DTI: SSW-Feedback 37, SSW-Ack 10) — 0x15 буквально; без 0x18 (ответ uc через SIFS) — буквально (не снято)."""
+    hw = HW(uc)
+    cf_end = dict(what='direct 20 B', dur=ctrl_txtime_clk(20), fifo=b'\xe4\x00' + bytes(8), start=hw.now)
+    atim = dict(what='direct 28 B', dur=ctrl_txtime_clk(28), fifo=b'\x90\x00' + bytes(10), start=hw.now)
+    for frame, d15, go, want in ((cf_end, 34, 0x18000000, 19), (cf_end, 18, 0x18000000, 3), (cf_end, 33, 0x18000000, 18),
+                                 (atim, 38, 0x18000000, 19), (cf_end, 37, 0x18001000, 37), (cf_end, 10, 0x18001000, 10),
+                                 (cf_end, 5, 0x18000000, 0)):
+        hw._cmd(0x15000000 | d15)
+        hw._cmd(0x14000007)
+        hw._cmd(0x33000001)
+        hw._cmd(go)
+        assert hw._dur_field(dict(frame)) == want, (frame['what'], d15, hex(go))
+    hw._cmd(0x15000000 | 33)
+    hw._cmd(0x33000001)
+    assert hw._dur_field(dict(cf_end)) == 33

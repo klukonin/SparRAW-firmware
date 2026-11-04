@@ -109,7 +109,8 @@ struct mac_mon_report_s {
     u16  cf_end;                    /* +0x66 cf end (+0x66): tx.c 869 (tx__send_and_await_rx_frame) */
     u8   ka_pass;                   /* +0x68 keep-alive pass (+0x68): internal_tx_keepalive_flow, ACK получен (tx.c 1194) */
     u8   ka_fail;                   /* +0x69 keep-alive fail (+0x69): tx.c 1197/1203 */
-    u8 _pad2[1];
+    u8   txop_end_tmo;              /* +0x6a SparRAW: txop_event (r42 б7) не пришёл за лимит TXOP — ожидание конца TXOP
+                                       прервано (uc_wait_txop_end); прежде — вечное ожидание uc */
     u8   itx_rf_fail;               /* +0x6b +0x6b, в MAC-MON.md нет: internal_tx_flow_sm4 ++ при неудаче itx_wait_cts_rf / itx_wait_ac */
     u32  rx_off_duration;           /* +0x6c rx off duration (+0x6c): ucode_cmd_0x01 += TSF − [0x800540] (cmd.c 974) */
     u32  fs_evt14_cnt;              /* +0x70 +0x70 (fixed scheduling, MAC-MON.md): ++ когда после mac_select_all_sectors_and_wait пришл */

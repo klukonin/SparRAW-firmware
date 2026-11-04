@@ -748,3 +748,34 @@ u32 uc_spin_until_event(u32 mask)
     } while (!(v & mask));
     return mask;                                /* r0 не меняется */
 }
+
+/* Ожидание конца TXOP у MAC (txop_event, r42 б7) после своего обмена: tx_send_and_await_rx_frame (после CF-End)
+ * и fixed_sched_run_tx_slot (после TXOP с ответом). Прежде — uc_spin_until_event(MAC_EVT1_TXOP) без срока (vendor
+ * так же). Событие поднимает MAC, когда кончается его TXOP (H-TXOPEVT-CFEND, по коду uc, на стенде не снято); если
+ * TXOP у MAC нет (не открыт или уже кончился, а защёлка события снята сбросом r42 в rx_flow_main), события нет —
+ * основной поток uc висел навсегда: команды LMAC (прерывание) ещё обслуживались, а приём, Ack, TXOP и сброс очередей
+ * — нет (стенд 2026-11-03: поток станции → AP встаёт через ~1 с, MAC idle, через 5 с потеря связи по старению TX,
+ * «DMA is not Empty» и assert fw 0x12aa — очередь MAC некому опустошить).
+ * Срок — лимит TXOP MAC (txop_limit_cur, мкс; 0 — без лимита, берём наибольший 0xffff) + DMG_TXOP_END_SLACK_US: TXOP
+ * не бывает длиннее лимита, ожидание начинается не раньше его начала. Время — по часам ядра (uc_clk_since: сброс и
+ * заворот COUNT1 только удлиняют выдержку); число проходов тоже ограничено (Timer1 стоит — выход не позже ~10·clk
+ * тактов). Истёк — mac_mon_report.txop_end_tmo + 1 (диагностика стенда), возврат 0; дальше uc идёт, как после
+ * события. Не на пути SIFS: зовут после конца своего обмена. */
+#define DMG_TXOP_END_SLACK_US   100u
+u32 uc_wait_txop_end(void)
+{
+    u32 lim = txop_limit_cur;
+    if (lim == 0 || lim > 0xffffu)
+        lim = 0xffffu;
+    u32 clk = (lim + DMG_TXOP_END_SLACK_US) * 165u;
+    u32 last = uc_clk_now(), el = 0;
+    for (u32 n = clk; n != 0; n--) {
+        if (mac_evt1() & MAC_EVT1_TXOP)
+            return 1;
+        el += uc_clk_since(&last);
+        if (el >= clk)
+            break;
+    }
+    mac_mon_report.txop_end_tmo += 1;
+    return 0;
+}

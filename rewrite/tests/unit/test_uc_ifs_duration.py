@@ -233,3 +233,98 @@ def test_cf_end_response_last_in_sequence_is_zero(uc):
 def test_cf_end_response_middle_of_sequence(uc):
     d, ret = cf_end_response(uc, cf_end_seq_duration(3))
     assert d == [cf_end_seq_duration(2)]
+
+
+# ---- CF-End держателя TXOP (tx_send_and_await_rx_frame) -----------------------------------------------------
+
+HOLDER_STUBS = {n: 0 for n in (
+    'cf_end_send_frame', 'uc_sleep_until_event', 'gp0_timer_arm_usec', 'uc_spin_until_event', 'mac_set_rf_chain_state',
+    'uc_wait_one_event', 'tx_await_rx_or_timeout', 'rx_mode_configure', 'mac_program_tx_vector', 'uc_wait_txop_end')}
+TX_CTX0 = 0x802978
+DTI_QSET_MODE = 0x8004f4
+ITX_KA_PENDING = 0x800570
+
+
+def sc1_txtime_us(length):
+    """TXTIME DMG SC MCS 1 (20.11.3, 20.5.3.2.3.3; Table 20-15: N_CBPS 1, ρ 2, R 1/2, L_CW 672, N_CBPB 448)."""
+    ncw = -(-(length * 8) // (336 // 2))                  # ⌈8·L / ((L_CW/ρ)·R)⌉
+    nblks = -(-(ncw * 672) // 448)
+    return Fraction(2176 + 1152 + 1024 + nblks * 512 + 64, 1760)
+
+
+def air_duration(cmd, txtime_us):
+    """H-DUR18 (docs/MAC-STAND.md, стенд 2026-11-04): кадр FIFO, пущенный 0x18 без б12 (cf_end_send_frame:
+    0x18000000), после 0x15 + 0x14000007 несёт в эфире 0x15 − ⌈TXTIME своего PPDU⌉, не меньше 0."""
+    return max(0, cmd - ceil_us(txtime_us))
+
+
+def holder_cf_end(uc, rem_us, peer_flags=0, qset_mode=0):
+    """CF-End после TXOP в CBAP: остаток REMAINING_TIME_RD (r40) rem_us. Возвращает (значения 0x15, MCS CF-End —
+    аргумент rate cf_end_send_frame, срок ответа GP0 в мкс или None, если CF-End не ушёл)."""
+    lmac_mac_cfg(uc)
+    uc.w32(TX_CTX0, 0)                          # tx_ctx_s.sta = 0
+    uc.w16(STA_TAB + 2, peer_flags)             # sta_tab[0].flags: б1 = 0 — CF-End на SC MCS 1, б1 = 1 — control
+    uc.w32(DTI_QSET_MODE, qset_mode)
+    uc.ext.update({40: rem_us, 42: 1 << 14})    # busy2 (подтверждение передачи), txop_event не поднят
+    k = len(uc.calls)                           # журнал вызовов заглушек копится между вызовами
+    uc.call('tx_send_and_await_rx_frame', TX_CTX0, 0, 0, 0, stub=HOLDER_STUBS)
+    sent = [a for n, a in uc.calls[k:] if n == 'cf_end_send_frame']
+    gp0 = [a[0] for n, a in uc.calls[k:] if n == 'gp0_timer_arm_usec']
+    return durations(uc), (sent[0][1] if sent else None), (gp0[-1] if sent else None)
+
+
+def t_cf_end(mcs=0):
+    return ctrl_txtime_us(CF_END_LEN) if mcs == 0 else sc1_txtime_us(CF_END_LEN)
+
+
+@pytest.mark.parametrize('peer_flags,mcs', [(0, 1), (2, 0)])
+@pytest.mark.parametrize('rem', [100, 1000, 0xffff])
+def test_cf_end_holder_duration_is_i2(uc, rem, peer_flags, mcs):
+    """9.3.1.6: CF-End держателя TXOP — первый в последовательности усечения из двух (ответный CF-End пира — i = 1):
+    i = 2, Duration в эфире = ⌈TXTIME(CF-End) + SIFS⌉ = 18 (было 34/23 в 0x15 — 19 в эфире; затем 18 в 0x15 — 3 в
+    эфире, стенд 2026-11-04). В 0x15 — Duration + ⌈TXTIME своего CF-End⌉ на его MCS (H-DUR18); ответ ждём."""
+    d, rate, gp0 = holder_cf_end(uc, rem, peer_flags)
+    assert rate == mcs
+    assert [air_duration(x, t_cf_end(mcs)) for x in d] == [cf_end_seq_duration(2)] == [18]
+    assert gp0 == 0x12
+    # ответ пира на этот CF-End — последний (i = 1), Duration 0
+    assert cf_end_response(uc, 18) == ([0], 0)
+
+
+def test_cf_end_holder_nonzero_needs_room_for_response(uc):
+    """10.23.2.10: ненулевой Duration — только если после CF-End остаётся ≥ 2·T(CF-End) + 2·SIFS; меньше — Duration 0
+    и ответа не ждём; не хватает на сам кадр — CF-End не шлём. Остаток читается до своего CF-End (+ его TXTIME)."""
+    nz = t_cf_end() + 2 * t_cf_end() + 2 * A_SIFS_US        # 48,1 мкс до начала своего CF-End
+    for rem in range(0, 80):
+        d, rate, gp0 = holder_cf_end(uc, rem, 2)
+        if gp0 is None:                           # CF-End не ушёл: только если не хватает на кадр (+ путь ≤ 4 мкс)
+            assert rem < t_cf_end() + 5, rem
+        elif d == [0]:                            # Duration 0 — ответа нет: остаток мал для ответного CF-End
+            assert t_cf_end() <= rem < nz + 5 and gp0 == 1, rem
+        else:
+            assert [air_duration(x, t_cf_end()) for x in d] == [18] and rem >= nz and gp0 == 0x12, rem
+    assert holder_cf_end(uc, 60, 2)[0] != [0] and holder_cf_end(uc, 40, 2)[0] == [0]
+    assert holder_cf_end(uc, 10, 2)[2] is None
+
+
+def test_cf_end_fixed_schedule_zero(uc):
+    """Усечение SP (фиксированное расписание): CF-End с Duration 0 (i = 1, ответа нет)."""
+    assert holder_cf_end(uc, 1000, qset_mode=1) == ([0], 1, 1)
+
+
+# ---- RTS keep-alive (internal_tx_keepalive_flow) ---------------------------------------------------------------
+
+def test_keepalive_rts_duration_on_air(uc):
+    """RTS keep-alive — кадр FIFO, пущенный 0x18000000: MAC кладёт в Duration 0x15 − ⌈TXTIME(RTS)⌉ (H-DUR18; стенд
+    2026-11-04: 0x15 40 → в эфире 25, 11 RTS точки за 30 с). Duration в эфире — 40 мкс (выбор uc, tx.c: кадр
+    keep-alive SC + DMG CTS + Ack + 3·SIFS), в 0x15 — 40 + ⌈TXTIME(RTS 20 Б, control PHY)⌉."""
+    lmac_mac_cfg(uc)
+    uc.w8(0x800442, 8)                  # itx_rr_b — обход с 8
+    uc.w32(ITX_KA_PENDING, 1)           # keep-alive ждёт станция 0
+    uc.w32(STA_TAB + 0x18, 1)           # sta_tab[0].qid_mask_q6
+    uc.w32(DTI_QSET_MODE, 0)
+    uc.ext.update({40: 0, 42: 0, 43: 1 << 31, 45: 1 << 31})       # CCA занят — RTS не пускается, 0x15 уже записан
+    uc.call('internal_tx_keepalive_flow', 0, stub={n: 0 for n in (
+        'direct_tx_send_after_delay', 'mac_select_all_sectors_and_wait', 'mac_cmd_29000001', 'gp0_timer_arm_usec')})
+    d = durations(uc)
+    assert [air_duration(x, ctrl_txtime_us(20)) for x in d] == [40], d

@@ -700,7 +700,7 @@ void fixed_sched_run_tx_slot(void)
     else
         tx_initiator_flow_fixed_scheduling(dti_qset_mode);
     if (tx_resp_sent != 0) {
-        uc_spin_until_event(MAC_EVT1_TXOP);
+        uc_wait_txop_end();                     /* исправлено (vendor): без срока — см. uc_wait_txop_end (mac.c) */
         if (rx_resp_wait_en == 1 && fsched_rx_resp_seen == 0)
             uc_mac_cmd(0x1f000601);
     }

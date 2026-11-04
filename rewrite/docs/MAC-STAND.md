@@ -187,6 +187,27 @@ RTS с метками 30/38/42 под TCP — FWERR 2 (не разобрано).
 MTP больше не предлагает — следующий кадр TXOP (закрытый до Ack, H-TXAFTERACK) берётся за ним, а без остальных r45
 отвечает «очередь пуста» и uc закрывает TXOP CF-End (прежде модель повторяла неподтверждённый кадр).
 
+### Поток станция → наша точка встаёт (2026-11-03)
+
+Стенд (оба узла — наш образ): TCP вверх ~1 с, затем станция не передаёт ничего, MAC станции idle, CCA 0; через 5 с
+старение TX → разрыв → остановка vring → «DMA is not Empty» ×5 → assert fw 0x12aa. Цепочка: точка теряет RTS станции
+(сброс busy_event в `rx_flow_main`, раздел выше; ~0,1 % RTS); станция после RTS без DMG CTS шла в закрытие TXOP
+(`tx_cca_check_and_send` → `tx_send_and_await_rx_frame`): запрос итога несостоявшейся передачи, CF-End без TXOP
+(10.23.2.10: «A non-AP STA that is not the TXOP holder shall not transmit a CF-End frame»; 10.3.2.9 — только backoff) и
+`uc_spin_until_event(MAC_EVT1_TXOP)` без срока — TXOP у MAC нет, защёлку события снимает `rx_flow_main`, основной поток
+uc висит (команды LMAC прерыванием ещё обслуживаются), очередь MAC некому опустошить.
+
+Исправлено: RTS без DMG CTS — `tx_sta_wait_slot_and_tx` возвращает 2, `tx_sta_run_txop` TXOP не закрывает; ожидания
+txop_event (`tx_send_and_await_rx_frame`, `fixed_sched_run_tx_slot`) — `uc_wait_txop_end` (uc/mac.c): не дольше лимита
+TXOP (`txop_limit_cur`) + 100 мкс, счётчик `mac_mon_report.txop_end_tmo` (+0x6a). Гонка busy_event у точки здесь не
+исправлена. На стенде: поток вверх наш STA → наш AP ≥ 60 с; `txop_end_tmo` — 0 (иначе событие MAC действительно не
+приходит и uc выходит по сроку); `tx_rts − rx_cts` у станции — RTS без CTS, после них поток продолжается.
+
+fw: остановка vring по команде (suspend_vring — разрыв, смена потока; enabled = 0) с пустым MACQ и несошедшимися
+указателями DMA очереди после всех проверок (`sm_pring_timeout`) — принудительная (`sm_pring_stop_done`, журнал
+PRING_STOP_FORCED) вместо assert 0x12aa: кадры уходящего пира хосту не нужны. Переключение pring между живыми vring
+(enabled = 1) — прежний assert. На стенде: при разрыве с застрявшей очередью — PRING_STOP_FORCED в журнале, без FwAssert.
+
 ### DMG CTS-to-self держателя TXOP — опыт (не принят, ветка exp/cts-self)
 
 Опыт 2026-10-31: переключатель защиты TXOP RTS/CTS ↔ DMG CTS-to-self (WMI_SPARRAW_TXOP_PROTECT, режим — общим байтом
@@ -249,6 +270,44 @@ N BIs A-BFT 4 (B27..B30), PCP Association Ready 0; шаблон vendor держ�
 эталон (tests/ref) видел RTS с Duration 10 и данные с 0. Кадры, которые собирает uc (DMG CTS, CF-End, FIFO), несут
 значение uc.
 
+H-DUR18 (стенд 2026-11-04, three.fw, PMC-запись своих кадров на обоих узлах, iperf вверх/вниз 30 с): в режиме
+`0x14000007` у кадра FIFO, пущенного `0x18` без б12, MAC кладёт в Duration **0x15 − ⌈TXTIME своего PPDU⌉**; с б12
+(`0x18001000` — SLS в DTI) — 0x15 буквально. Данные:
+
+| кадр | пуск | 0x15 | в эфире | разность |
+|---|---|---|---|---|
+| CF-End держателя (control PHY, 20 Б, TXTIME 14,04) | `0x18000000` | 34 (vendor, прежний uc) / 18 (Duration по 9.3.1.6, 2026-11-03) | 19 / 3 | 15 |
+| ATIM (28 Б, TXTIME 18,25) | `0x18000000` | 38 | 19 | 19 |
+| RTS keep-alive (20 Б) | `0x19000001` → `0x18000000` | 40 | 25 (11 за 30 с) | 15 |
+| маяки BTI (H-LIT2, abft.h) | `0x18000000` (`txrx_state1` б4) | Duration + d | Duration | d = 20 |
+| SSW ISS/RSS, SSW-Feedback, SSW-Ack в DTI | `0x18001000` | 1012…, 37, 10 | те же | 0 |
+
+vendor считал так же: 0x22 = 19 + 15 (control PHY) и 0x17 = 19 + ⌈TXTIME(CF-End, SC MCS 1) = 3,09⌉ = 19 + 4 — в эфире 19
+на обоих MCS (на 1 мкс больше ⌈TXTIME + SIFS⌉ = 18 по 9.3.1.6; ответный CF-End пира был 0 и прежде). Кадр FIFO без
+`0x18` (ответ uc через SIFS, `tx_send_imm_response`: ответный CF-End, Grant Ack) — не снят, в модели буквально.
+
+CF-End держателя TXOP (`tx_send_and_await_rx_frame`): в эфире — i = 2, ⌈TXTIME(CF-End) + SIFS⌉ = 18 мкс
+(`DMG_CF_END_HOLDER_DUR_US`), ответный — 0, усечение SP — 0. В 0x15 — 18 + ⌈TXTIME своего CF-End⌉ на его MCS: 33
+(control PHY) или 22 (SC MCS 1) — `DMG_CF_END_HOLDER_CMD_*`, uc/ifs.h. По остатку TXOP (`REMAINING_TIME_RD`): < 19 мкс
+— CF-End не шлём, < 53 мкс — Duration 0 и ответа не ждём (10.23.2.10). RTS keep-alive: в 0x15 — 40 + 15 = 55 (в эфире
+40; прежде 25 — NAV короче обмена keep-alive). Модель machw применяет H-DUR18 (`_dur_field`); test_air
+`test_live_data_cf_end_duration_on_air` (держатель 18, ответный 0), test_machw `test_dur18_fifo_frame_duration`,
+test_uc_ifs_duration. На стенде проверить: CF-End держателя — 18 у обоих узлов, ответный — 0, RTS keep-alive — 40.
+
+Точка (three_11) на том же образе дала CF-End держателя 19 и CF-End после своего RTS без DMG CTS (320 из 15 653) —
+как прежний uc (synth_11: 19 и 321), хотя путь точки — тот же `tx_sta_run_txop` (эмулятор: точка с этим uc после
+потерянного RTS повторяет RTS, CF-End не шлёт, в 0x15 — 18; test_air `test_live_ap_rts_lost_no_cf_end`). Похоже, на
+точке работал прежний uc — проверить загруженный образ (md5) перед повтором.
+
+### Окно бодрствования без ATIM
+
+Стенд 2026-11-04: оба узла слали ATIM (mgmt 9, Duration 19) ~6 в секунду — обход пиров с трафиком в окне
+бодрствования (BI_STATE_AW, `bi_rx_slot_handler` → `bi_rx_start_rx_window` → `bi_rx_send_response`), путь vendor
+энергосбережения. ATIM в DMG BSS — только для станций в PS, в Awake Window, объявленном элементом Awake Window
+(802.11-2020 11.2.7.1, 11.2.8 a/c); энергосбережение вырезано, Awake Window никто не объявляет. Теперь окно ATIM не
+шлёт: пиры с трафиком — сразу бодрствующие с передачей (`peer_masks_apply_op` 1, как после успешного ATIM), обход
+закончен; функции ATIM удалены (uc −1,5 КБ). Тест — test_uc_no_atim. На стенде: ATIM в PMC-записи нет.
+
 ### FIFO прямой передачи
 
 Запись r34 с б24 кладёт в FIFO полуслово (RA RTS — `tx.c`, Sequence Control кадра BRP — `mac.c`), без б24 — байт
@@ -301,6 +360,7 @@ Ack при ассоциации — 703–710, запас 44–51, со стен
 - Предел повторов MAC; повтор MPDU внутри окна BA (неподтверждённые в битовой карте); reverse direction.
 - DMG CTS-to-self вместо RTS/CTS в начале TXOP (`packet_mode` 2): наводит ли наш ответчик приём по TA принятого
   DMG CTS-to-self; FWERR образа без RTS с метками.
-- txop_event в конце TXOP с CF-End (H-TXOPEVT-CFEND) — по коду uc, не снято.
+- txop_event в конце TXOP с CF-End (H-TXOPEVT-CFEND) — по коду uc, не снято; счётчик `mac_mon_report.txop_end_tmo`
+  (uc_wait_txop_end) покажет, приходит ли событие.
 - Указатели очередей MAC в окне дескрипторов (H-QDESC) — эмулятор их не двигает.
 - data_frame_qid и requested_ack_policy в отчёте о приёме данных — связь с TID и Ack Policy кадра.

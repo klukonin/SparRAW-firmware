@@ -135,6 +135,11 @@ MACLAT_US = 0.55                                           # machw H-ORIGIN: с�
 @pytest.fixture(scope='module')
 def live_data(fw_elf, build_dir, uc_fw):
     """Ассоциация в живом эфире, затем кольцо TX хоста станции (WMI_VRING_CFG) и 5 кадров данных станция → AP."""
+    return _live_data(fw_elf, build_dir, uc_fw)
+
+
+def _live_data(fw_elf, build_dir, uc_fw, drop=None):
+    """live_data; drop(src, кадр, rec) — потеря кадра в эфире (Air.drop)."""
     import os
     import fwemu
     import machw
@@ -155,6 +160,7 @@ def live_data(fw_elf, build_dir, uc_fw):
     sta.live()
     sta.wmi(F.WMI_CONNECT, F.connect_cmd(bssid=ap.mac, ssid=b'test'))
     air = Air([ap, sta])
+    air.drop = drop
     for _ in range(80):
         air.run_us(500)
         if any(e.id == WMI_CONNECT_EVENT for e in sta.fw.wmi_evts):
@@ -379,6 +385,9 @@ def test_live_ampdu(live_ampdu):
     assert rates == {machw.resp_mcs(8)}, rates
 
 
+FC_RTS, FC_DMG_CTS, FC_CF_END = b'\xb4\x00', b'\x64\x05', b'\xe4\x00'
+
+
 def _ref_report(ev, v):
     return '\n'.join('%s %s @%.2f мкс: %s' % (x.rule, ev[x.idx][4], float(ev[x.idx][0]), x.msg) for x in v[:20])
 
@@ -388,9 +397,82 @@ def test_live_data_reference_access_rules(live_data):
     AIFS/backoff (10.23.2.4), NAV (10.3.2.4), TXNAV (10.23.2.8), лимит TXOP — объявленный AP в EDCA Parameter Set
     (AC_BE 0x40 × 32 мкс = 2048 мкс, 9.4.2.28), конец CBAP (10.39.4/10.39.5), CF-End (10.23.2.10). Допуск SIFS здесь
     широкий (5 мкс) — срок ответа проверяет test_live_data_reference_sifs."""
+    ev, v = _ref_access(live_data)
+    v = [x for x in v if x.rule not in CF_END_RULES]
+    assert not v, _ref_report(ev, v)
+
+
+CF_END_RULES = ('cf_end', 'cf_end_dur')
+
+
+def _ref_access(live_data):
     import ref_bridge
     from fractions import Fraction as Fr
-    ev, v = ref_bridge.check(live_data['air'], live_data['t0'], txop_limit=2048, sifs_tol=Fr(5), slot_tol=Fr(5))
+    return ref_bridge.check(live_data['air'], live_data['t0'], txop_limit=2048, sifs_tol=Fr(5), slot_tol=Fr(5))
+
+
+def test_live_data_cf_end_duration_on_air(live_data):
+    """9.3.1.6: Duration CF-End в эфире — держатель TXOP (первый кадр усечения, i = 2) ⌈TXTIME(CF-End) + SIFS⌉ = 18,
+    ответный (i = 1) — 0. В эфир Duration кладёт MAC по H-DUR18 (0x15 − ⌈TXTIME⌉, machw): прежде uc писал 18 в 0x15 —
+    в эфире было 3 (стенд 2026-11-04, PMC: 18 172 CF-End станции с Duration 3)."""
+    import machw
+    fr = sorted(live_data['air'].frames, key=lambda f: f['start'])
+    cfe = [(i, f) for i, f in enumerate(fr) if f['frame'][:2] == b'\xe4\x00']
+    assert cfe, 'CF-End в эфире нет'
+    want = -(-(machw.ctrl_txtime_clk(20) + machw.SIFS_CLK) // machw.CLK_PER_US)
+    for i, f in cfe:
+        prev = fr[i - 1] if i else None
+        resp = prev is not None and prev['frame'][:2] == b'\xe4\x00' and prev['src'] is not f['src']
+        assert f['dur_us'] == (0 if resp else want), (i, f['what'], f['dur_us'], resp)
+
+
+@pytest.fixture(scope='module')
+def live_data_ap_rts_lost(fw_elf, build_dir, uc_fw):
+    """live_data, но два первых RTS точки (данные AP → станция) станция не принимает (потеря в эфире)."""
+    lost = []
+
+    def drop(src, frame, rec):
+        if frame[:2] == FC_RTS and bytes(src.mac) == bytes(F.AP_MAC) and len(lost) < 2:
+            lost.append(rec['start'])
+            return True
+        return False
+    r = _live_data(fw_elf, build_dir, uc_fw, drop)
+    r['lost'] = lost
+    return r
+
+
+def test_live_ap_rts_lost_no_cf_end(live_data_ap_rts_lost):
+    """Стенд 2026-11-04 (PMC точки): после своего RTS без DMG CTS точка слала CF-End (320 из 15 653 RTS). 10.3.2.9: RTS
+    без DMG CTS — передача RTS не удалась, только backoff; TXOP не получен — CF-End не слать (10.23.2.10: «A STA that
+    is not the TXOP holder shall not transmit a CF-End frame»). Путь точки — тот же tx_sta_run_txop: после потери RTS
+    точка повторяет RTS, получает DMG CTS, данные доходят; CF-End точки — только в TXOP, открытом принятым DMG CTS."""
+    r = live_data_ap_rts_lost
+    ap, sta = r['ap'], r['sta']
+    assert len(r['lost']) == 2, r['lost']
+    assert [st for _, vr, st in ap.host_done] == [0] * len(r['payloads']), ap.host_done
+    fr = sorted((f for f in r['air'].frames if f['start'] >= r['t1']), key=lambda f: f['start'])
+    holder = False
+    for f in fr:
+        if f['src'] is ap and f['frame'][:2] == FC_RTS:
+            holder = False
+            nxt = next((g for g in fr if g['start'] > f['start'] and g['src'] is ap), None)
+            if f['start'] in r['lost']:
+                assert nxt is not None and nxt['frame'][:2] == FC_RTS, 'после потерянного RTS точка шлёт %s' % (
+                    nxt['what'] if nxt else None)
+        elif f['src'] is sta and f['frame'][:2] == FC_DMG_CTS and f['frame'][4:10] == bytes(ap.mac):
+            holder = True
+        elif f['src'] is ap and f['frame'][:2] == FC_CF_END:
+            prev = fr[fr.index(f) - 1]
+            if not (prev['src'] is sta and prev['frame'][:2] == FC_CF_END):      # ответный CF-End — не держатель
+                assert holder, 'CF-End точки в %.1f мкс без TXOP' % ((f['start'] - r['t1']) / CLK)
+                holder = False
+
+
+def test_live_data_reference_cf_end_holder(live_data):
+    """CF-End — только держателем TXOP, ненулевой Duration — при остатке ≥ 2×TCF-End + 2×SIFS (10.23.2.10). Прежде (xfail):
+    станция после RTS без DMG CTS закрывала не полученный TXOP кадром CF-End (tx_sta_run_txop)."""
+    ev, v = _ref_access(live_data)
+    v = [x for x in v if x.rule in CF_END_RULES]
     assert not v, _ref_report(ev, v)
 
 

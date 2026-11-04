@@ -124,6 +124,8 @@ class ModelGapAir(RuntimeError):
 
 
 class Air:
+    drop = None                                             # callable(src, кадр, rec) → True: кадр не принял никто
+
     def __init__(self, nodes):
         self.nodes = list(nodes)
         self.log = []                                       # (такт, отправитель, приёмник, описание)
@@ -235,6 +237,10 @@ class Air:
         self.frames.append(dict(start=rec['start'], end=rec['start'] + rec['dur'], src=src, frame=bytes(frame),
                                 mpdus=[bytes(x) for x in qf] if isinstance(qf, list) else None,
                                 dur_us=rec['dur_us'], mcs=rec.get('mcs', 0), what=rec['what']))
+        if self.drop is not None and self.drop(src, frame, rec):
+            # потеря кадра в эфире (тесты живучести): в эфире был (журнал передатчика, frames), не принял никто
+            self.frames[-1]['dropped'] = True
+            return
         for dst in self.nodes:
             if dst is src:
                 continue

@@ -648,6 +648,24 @@ void sm_pring_timeout(struct pring *p)
         p->polls += 1;
         if (vring_pring_stop_max_polls < p->polls) {
             fw_log_emit1(7, 0x100d178, p->vr);
+            /* исправлено (vendor): ассерт 0x12aa — сброс всего устройства — и тогда, когда vring остановлен по команде
+             * (suspend_vring: разрыв, удаление/смена потока — enabled = 0): дескриптор очереди MAC пуст, а указатели DMA
+             * очереди (dma_is_idle) за (max_polls + 1) × pring_stop_timeout (≈ 2,5 с) так и не сошлись — кадры,
+             * которые DMA уже перенёс, MAC не отправит (стенд 2026-11-03: основной поток uc станции висел в ожидании
+             * txop_event, MAC idle — «DMA is not Empty» ×5, assert 0x12aa). Кадры пира, который уходит, не нужны:
+             * хост при разрыве освобождает кольцо целиком, завершений по ним не ждёт. Остановка — та же, что при
+             * пустом DMA (sm_pring_stop_done: синхронизация указателя записи, mac_ring_disable, hwd_dma_reset_ring —
+             * очередь DMA выключена; следующая привязка сбрасывает указатели TXQ и окно MACQ). Переключение pring
+             * между живыми vring (enabled = 1) так не завершается: хост ждёт завершений перенесённых кадров —
+             * прежний ассерт. */
+            if (p->bound != 0 && p->bound->enabled == 0) {
+                dma_is_idle(p->id, 1);
+                fw_log_emit2(7, LS_FW(PRING_STOP_FORCED), p->vr, p->polls);
+                hwd_pcie_exit_l1(0);
+                p->l1_hold = 0;
+                sm_pring_stop_done(p);
+                return;
+            }
             fw_sysassert_fatal((void *)0, 0x12aa);
             return;
         }

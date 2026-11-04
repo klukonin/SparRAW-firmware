@@ -130,7 +130,6 @@ void bi_dispatch_by_role(struct bi_ctx_s *c);                   /* bi.c */
 void bi_dti_step(void);                                         /* bi.c */
 void bi_init_set_mac_arg_pair(u32 a, u32 b);                    /* bi.c */
 void bi_latch_tsf_and_reset(u32 a);                             /* cmd.c */
-u32 bi_manager_eval_bcon_slot(struct aw_win_s *w, u8 *out, u32 *out_word); /* bi.c */
 void bi_dti_start_tx_slot(void);                    /* bi.c */
 void bi_bti_end_update_counters(struct bi_ctx_s *c);                     /* bi.c */
 void bi_bti_end_reset_timers(struct sls_peer_rec *r);                 /* bi.c */
@@ -142,9 +141,7 @@ void bi_mode_program_mac_timing(void);                          /* stubs.c */
 void bi_aw_set_qset_1ms(struct aw_win_s *w);             /* bi.c */
 u32 bi_remaining_time_us(void);                                 /* bi.c */
 void bi_run_bti_cycle(struct bi_ctx_s *c);                      /* bi.c */
-void bi_rx_send_response(u32 a, u32 rate, u32 b, u32 flag);     /* bi.c */
 void bi_rx_slot_handler(struct aw_win_s *w);                    /* bi.c */
-u32 bi_rx_start_rx_window(u32 a, u32 b);                        /* bi.c */
 void bi_sm_on_bhi_to_aw_in_aw(u32 obj);                              /* bi.c */
 void bi_sm_on_bhi_to_dti_in_aw(u32 obj);                              /* bi.c */
 void bi_sm_on_dti_to_bti_in_aw(void);                                 /* bi.c */
@@ -231,7 +228,6 @@ void direct_tx_send_after_delay(u32 a, u32 b, u32 c);           /* tx.c */
 u32 direct_tx_send_ctrl_frame(const struct dtx_grant_req *a);   /* tx.c */
 u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_cfg, u32 rate, u32 len); /* tx.c */
 void direct_tx_send_short_frame(u32 a);                         /* tx.c */
-void direct_tx_send_with_seq(u32 a, u32 b, u32 c);              /* tx.c */
 void direct_tx_short_frame0_cb(void);                           /* cmd.c */
 void direct_tx_short_frame2_cb(void);                           /* cmd.c */
 void direct_tx_ssw_feedback(struct sls_peer_rec *a);                    /* tail.c */
@@ -734,6 +730,7 @@ u64 uc_shl64(u32 lo, u32 hi, u32 shift);                        /* mem.c */
 void uc_sleep_until_event(u32 a, u32 b);                        /* uutil.c */
 u32 uc_sm_handle_event(struct sm_obj *obj, u32 ev, u32 a2);     /* uutil.c */
 u32 uc_spin_until_event(u32 mask);                              /* mac.c */
+u32 uc_wait_txop_end(void);                                      /* mac.c */
 void uc_spin_until_event4(u32 a);                               /* uutil.c */
 void uc_spin_until_gp2_end(void);                         /* bf.c */
 void uc_sysassert_emit_mac_trace(u32 a);                        /* misc.c */

@@ -370,27 +370,6 @@ void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b)   /* 6.2 asm 0x9
     fr->ra[2] = s->peer_mac[2];
 }
 
-void direct_tx_send_with_seq(u32 a, u32 b, u32 c)
-{
-    arc_core_wr(33, b << 4);
-    tx_fifo_free -= 4;
-    const u16 *r1 = (c != 0) ? sta_tab[a].mac : bcast_mac;
-    arc_core_wr(34, r1[0] | (1u << 24));
-    arc_core_wr(34, r1[1] | (1u << 24));
-    arc_core_wr(34, r1[2] | (1u << 24));
-    tx_fifo_free -= 0xc;
-    uc_mac_cmd(0x33000443);
-    uc_wait_direct_tx_ready();
-    tx_fifo_free -= 6;
-    uc_mac_cmd(0x33000123);
-    uc_wait_direct_tx_ready();
-    u32 r0 = *(volatile u32 *)HW_MAC_MGMT_SEQ_NUM & 0xfff;
-    *(volatile u32 *)HW_MAC_MGMT_SEQ_NUM = (((r0 + 1) << 16) & 0xfff0000) | (1u << 28);
-    arc_core_wr(34, (r0 << 4) | (1u << 24));
-    tx_fifo_free -= 2;
-    direct_tx_commit();
-}
-
 /* СРОК: команда передачи ответа 0x19000001 (а за ней кадр в FIFO у вызывающего) до SIFS
  * (3 мкс, допуск −0/+0.49 мкс) от конца принятого кадра — DMG CTS на RTS, Grant Ack, немедленный
  * ответ (802.11-2020 10.3.2.3.3, 10.3.2.9). Зовут rx_send_grant_ack /
@@ -656,23 +635,30 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
         UC_STAMP(STAMP_MTP_RESULT, arc_lr(0x100) - t_go, a->qid | sta << 8);
     }
     u32 v = ((sta_tab[sta].flags >> 1) & 1) ^ 1;   /* ldw; lsr; bxor bit0 */
-    u32 r16 = (v ? 0x17 : 0x22) + 4;
     u32 r14 = (dti_qset_mode == 0) ? v : 1;
+    /* Duration CF-End (9.3.1.6): CBAP — i = 2, ⌈TXTIME(CF-End) + SIFS⌉ = 18 (ответный CF-End пира — i = 1, последний).
+     * Фиксированное расписание (усечение SP) — 0. исправлено (vendor): 0x22 = 34 или 0x17 = 23 по MCS CF-End
+     * (sta_tab[].flags б1) — в эфире 19 на обоих MCS (H-DUR18), на 1 мкс больше 9.3.1.6.
+     * 10.23.2.10: при остатке < 2·T(CF-End) + 2·SIFS после кадра — Duration 0; CF-End не шлём, если не хватает на сам
+     * кадр (vendor не слал при остатке ≤ 27/38 мкс — пороги от своих Duration). Пороги — ifs.h.
+     * В 0x15 — Duration + ⌈TXTIME⌉ своего CF-End на его MCS (r14): MAC вычитает его сам (H-DUR18, ifs.h); прежде
+     * писали 18 — в эфире было 3. */
+    u32 r17 = (dti_qset_mode == 0) ? (r14 ? DMG_CF_END_HOLDER_CMD_SC1 : DMG_CF_END_HOLDER_CMD_CTRL) : 0;
     if (c == 0) {
         u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = r0 | (1u << 12) | (1u << 13);
         uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
         arc_nops(3);
-        if ((u32)(u16)(u16)mac_status_sel() <= r16 || (mac_evt1() & MAC_EVT1_TXOP))
+        u32 rem = (u16)mac_status_sel();
+        if (rem < DMG_CF_END_MIN_REM_US || (mac_evt1() & MAC_EVT1_TXOP))
             goto cf_end_done;
+        if (rem < DMG_CF_END_NZ_REM_US)
+            r17 = 0;
     }
     txr.awaiting = 1;
-    u32 r1 = (r14 != 0) ? 0x17 : 0x22;
-    /* Срок ответа (GP0, мкс): CBAP — CF-End с Duration ≠ 0, ответный CF-End ждём AckTimeout 18 мкс. Фиксированное
-     * расписание (усечение SP) — Duration 0 (r17), ответ получатель шлёт только при Duration ≠ 0 (10.39.8.1): ответа
-     * нет, 1 мкс — сразу дальше. */
-    u32 r18 = (dti_qset_mode == 0) ? 0x12 : 1;
-    u32 r17 = (dti_qset_mode == 0) ? r1 : 0;
+    /* Срок ответа (GP0, мкс): CF-End с Duration ≠ 0 — ответный CF-End ждём AckTimeout 18 мкс. Duration 0 (усечение
+     * SP, малый остаток TXOP) — ответ получатель не шлёт (10.23.2.10, 10.39.8.1): 1 мкс — сразу дальше. */
+    u32 r18 = r17 ? 0x12 : 1;
     if (b != 0) {
         uc_wait_one_event(6);
         mac_program_tx_vector(1, sta_tab[sta].tx_sel, r14);
@@ -710,7 +696,7 @@ cf_end_done:   /* L_924ba4 */
         u32 r = tx_await_rx_or_timeout();
         rx_mode_configure(2, 0xff);
         if (r != 0) {
-            uc_spin_until_event(MAC_EVT1_TXOP);
+            uc_wait_txop_end();                 /* исправлено (vendor): ожидание без срока — см. uc_wait_txop_end */
             if (rx_resp_wait_en != 0) {
                 uc_mac_cmd(0x1f000601);
                 fsched_rx_resp_seen = 1;
@@ -757,10 +743,19 @@ void tx_sta_run_txop(struct tx_ctx_s *ctx)
     *(volatile u32 *)HW_MAC_TX_QID_ENABLE_MASK = mac_tx_qid_en_shadow;
     u8 sp_buf[4] = {0, 0, 0, 0};                /* stb.a r15(=0),[sp,-4]; дальше ldb_s [sp] */
     u32 r20 = tx_sta_wait_slot_and_tx(ctx, (u32)sp_buf);
-    if (rst->active != 0)
-        tx_sta_flow_loop(ctx);
-    else
-        rx_handle_status_flags(ctx);
+    /* исправлено (vendor): RTS без DMG CTS (r20 == 2) — TXOP не получен (802.11-2020 10.3.2.9: передача RTS не удалась,
+     * backoff — tx_pick_slot_for_peer(1) в tx_sta_wait_slot_and_tx). vendor шёл дальше в поток TXOP: циклы сразу
+     * выходили (б8 снят), а закрытие TXOP (tx_cca_check_and_send → tx_send_and_await_rx_frame) делало запрос итога
+     * передачи, которой не было, слало CF-End — «A non-AP STA that is not the TXOP holder shall not transmit a CF-End
+     * frame» (10.23.2.10) — и ждало событий MAC (tx_end, txop_event) о TXOP, которого MAC не открывал. С нашей точкой
+     * (теряла ~0,1 % RTS, sxd_hal_wait_slot2_busy) стенд 2026-11-03: поток станции → AP вставал через ~1 с. Закрытия
+     * нет — как у vendor при rx_mode_flags б1 = 0 и без причин BF. */
+    if (r20 != 2) {
+        if (rst->active != 0)
+            tx_sta_flow_loop(ctx);
+        else
+            rx_handle_status_flags(ctx);
+    }
     struct link_stat_s *r15 = &link_stat[r13];
     if ((u8)r15->cts_fail >= (u8)r16) {
         if (bf_ctrl.triggers & (1u << 2))
@@ -923,10 +918,10 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
         r0 = txrx_state2;
         r0 &= ~(1u << 8);
         txrx_state2 = r0;
-        if (r0 & (1u << 2)) {
+        if (r0 & (1u << 2)) {                       /* RTS, ответа нет (CTSTimeout) — TXOP не получен */
             tx_pick_slot_for_peer(1, *(u8 *)&a->sta, *(u8 *)&a->qid);
             VOL(link_stat[sta].cts_fail) += 1;
-            return 1;
+            return 2;
         }
         if (a->flags & (1u << 1)) {
             mac_select_rf_module_cmd31(0, 0);
@@ -943,10 +938,10 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
         /* L_93a648 */
         u32 r1 = r0 & ~(1u << 8);
         txrx_state2 = r1;
-        if (r1 & (1u << 2)) {
+        if (r1 & (1u << 2)) {                       /* RTS, принят не DMG CTS — передача RTS не удалась (10.3.2.9) */
             tx_pick_slot_for_peer(1, *(u8 *)&a->sta, *(u8 *)&a->qid);
             VOL(link_stat[sta].cts_fail) += 1;
-            return 1;
+            return 2;
         }
         if (r0 & 0x5) {   /* bic -0x6 = &0x5 */
             VOL(link_stat[sta].cts_fail) = 0;
@@ -969,7 +964,7 @@ u32 tx_sta_wait_slot_and_tx(struct tx_ctx_s *a, u32 b)   /* 6.2 asm 0x93a5fc */
  * mac_program_tx_vector(1) → tx_submit_frame (0x1b/0x16/0x17, r43, r45) → 0x20000400 →
  * gp0_timer_arm_usec(0xc) → 0x2008000 → 0x19000001: ~208 инструкций + задержки ppdu_report и MTP
  * (vendor ~218). Запас: десятки инструкций (не измерен; ~300 тактов пути из 495). Срыв: данные
- * позже SIFS — сосед может занять среду; NAV из Duration RTS (0x15000028 = 40 мкс, фиксирован)
+ * позже SIFS — сосед может занять среду; NAV из Duration RTS (40 мкс в эфире, фиксирован)
  * может кончиться до ACK — keep-alive считается неудачным (ka_noack, рост CW).
  * Участок слот → CCA → RTS (0x19000001) ~78 инструкций — см. tx_cca_check_and_send.
  * Переход TX→RX после RTS/данных (событие 5 → rf_set_rx, ~12 инструкций) — запас большой. */
@@ -1006,8 +1001,10 @@ void internal_tx_keepalive_flow(u32 a)
      * Итого 40 мкс покрывают кадр до 13,87 мкс в эфире (≈ 540 Б на MCS1; QoS Null 30 Б — 3,38 мкс,
      * тогда по стандарту было бы 30 мкс). Считать по TXTIME можно, только узнав кадр до RTS
      * (поставить его в MTP раньше и прочитать длительность PPDU из r47, как bti_measure_frame_duration)
-     * — это перестройка пути CTS → данные (СРОК выше), без стенда не делается. */
-    uc_mac_cmd(0x15000028);
+     * — это перестройка пути CTS → данные (СРОК выше), без стенда не делается.
+     * исправлено: RTS пускается 0x18000000 — MAC вычитает из 0x15 ⌈TXTIME(RTS)⌉ (H-DUR18, ifs.h; стенд 2026-11-04:
+     * 0x15 40 → в эфире 25), поэтому в 0x15 — 40 + ⌈TXTIME(RTS, control PHY)⌉ = 55. */
+    uc_mac_cmd(0x15000000u | (DMG_KA_RTS_DUR_US + DMG_CLK_TO_US_CEIL(DMG_CTRL_TXTIME_CLK(DMG_RTS_LEN))));
     uc_mac_cmd(0x14000007);
     direct_tx_program_desc(0x10, 0x10);
     mac_program_tx_with_rate(0);
