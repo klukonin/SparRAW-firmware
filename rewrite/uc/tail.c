@@ -60,6 +60,13 @@ void internal_tx_isr(void)
                     ok = 0;
                 }
             }
+            /* исправлено: станция — инициатор SLS только в DTI (10.42.2); в A-BFT она лишь ответчик в слоте
+             * (10.42.5.2). NAV маяков кончается с концом BTI, и без синхронизации BI (до ассоциации) MAC давал доступ
+             * в A-BFT — развёртка TxSS ждёт её конца (abft_sta_in_abft, bti.c); бит 3 остаётся, доступ — заново. */
+            if (ok != 0 && uc_role_ap == 0 && abft_sta_in_abft()) {
+                FWSH(fwsh_sta_abft, txss_defer_cnt) += 1;
+                ok = 0;
+            }
             if (ok != 0) {
                 bf_sm_run_sta(bf_cur_sta);
                 internal_tx_clear_pending_bit(3);

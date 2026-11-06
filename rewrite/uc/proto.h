@@ -44,6 +44,8 @@ struct uc_mbox_ctx;
 struct uc_ring;
 
 u32 abft_arm_response_window(void);                             /* bti.c */
+void abft_sta_note_abft_end(void);                               /* bti.c */
+u32 abft_sta_in_abft(void);                                      /* bti.c */
 u32 abft_resp_parse_fdbk(struct sls_peer_rec *dst);             /* bti.c */
 void abft_responder_fast(struct sls_peer_rec *r, u32 pre, u32 slot);   /* bti.c */
 u32 abft_discovery_ok_call(void);                               /* bti.c — 10.42.5.1 (не встраивается) */

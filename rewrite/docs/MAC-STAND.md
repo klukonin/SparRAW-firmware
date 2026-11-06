@@ -743,3 +743,35 @@ recipients of the frame that the DMG STA intends to transmit after the DMG CTS-t
 Проверка на стенде: PMC обоих узлов (rx,tx,rxqos,txqos), широковещательный ping точки в 10.60.0.255 и простой
 ≥ 1 с перед ним — судья `cts_self`: TA = ff:ff:ff:ff:ff:ff у всех CTS-to-self, в том числе первого серии; ping
 проходит без потерь (станция принимает групповые кадры без ветки наведения по TA).
+
+
+## Станция в A-BFT, где не отвечает (судья эфира, захваты assoc 2026-11-04)
+
+Захваты assoc / assoc3 (ассоциация с нуля, PMC обоих узлов, `ref.air_judge`, правило abft): в BI с Next A-BFT = 0
+(2 слота × FSS 16) станция через 39–49 мкс после конца BTI шлёт развёртку ISS — 33–34 SSW с Direction = 0 и Duration
+DTI (до конца своей развёртки + MBIFS) — внутри A-BFT. 802.11-2020 10.42.5.2: в A-BFT станция — только ответчик RSS
+(Direction = 1, с начала выбранного слота, ≤ FSS кадров); DTI начинается после A-BFT (10.39.2), конец BTI — по Duration
+последнего маяка (10.42.5.1).
+
+Путь: станция до ассоциации входит в BTI с пути приёма (kind 1, маяк уже разобран `rx_flow_handle_frame`), GP0 конца
+BTI взводится поздно — статус 4 (`bcn_rx.abft_gp0_late_cnt`), `bti_dispatch_sweep_step` сразу переводит автомат BI в
+DTI. Ожидание конца A-BFT (`uc_spin_until_gp2_end` в `bf_ctx_dispatch_by_role`) есть только у пути статуса 1, и то
+лишь при `abft_here` (A-BFT «для нас»: FSS ≥ aSSFramesPerSlot, TXSS ответчика). NAV маяков кончается с концом BTI,
+MAC даёт внутренней передаче (qid 0x1f, бит 3 — BF станции) доступ через AIFS + backoff, `internal_tx_isr` запускает
+TxSS без проверки фазы BI (проверка «успеет ли до конца BI» — только у AP и ассоциированной станции).
+
+Исправление: маяк (статус 4, или статус 1 без `abft_here`) записывает конец A-BFT в `fwsh_sta_abft` (0x85796c,
+include/fwsh.h): TSF после отчёта PPDU маяка + Duration + MBIFS + (A-BFT Length + 1)·aSSSlotTime(FSS), вверх, + 1 мкс
+(усечение TSF) — не раньше истинного конца; `internal_tx_isr` станции откладывает TxSS до него (бит 3 остаётся, MAC
+даёт доступ снова), счётчик `fwsh_sta_abft.txss_defer_cnt` (0x857974). Окно действительности — `span_us`: скачок TSF
+(синхронизация с точкой) — вне окна, не откладывает. Ответ в A-BFT по пути kind 1 не включён (прежний опыт: портил
+связь, см. комментарий `bti_sta_beacon_abft_flow`). Кадры очередей MAC (Probe/Association Request, данные) этим не
+закрыты — в захватах их в A-BFT нет; закрывать — в пути доступа очередей (tx.c), отдельно. Тест —
+`tests/unit/test_uc_sta_abft_quiet.py` (на прежнем uc 17 из 22 падают).
+
+Проверка на стенде: захват ассоциации с нуля (как assoc, маска rx,tx,rxqos,txqos, wpa_cli disconnect/reconnect,
+несколько раз), `ref.air_judge`: правило abft — 0 нарушений `ours` (SSW станции с Direction = 0 в A-BFT нет), развёртки
+станции в BI с A-BFT — не раньше конца A-BFT; `txss_defer_cnt` (fw DCCM-окно 0x857974) > 0 после ассоциаций.
+
+Стенд 2026-11-06 (PMC точки с начала входа станции, судья abft): open без правки — SSW станции в
+A-BFT в 2 записях из 4, open + правка — в 0 из 4; наборы стенда STA/AP чистые, FWERR 0.

@@ -315,6 +315,34 @@ u32 bti_beacon_rx_match_bss(u32 a, u32 b)
     return match;   /* extb_s r0,r0 */
 }
 
+/* Конец A-BFT этого BI по принятому маяку (rx_buf) — для станции, которая в A-BFT не отвечает (fwsh_sta_abft,
+ * include/fwsh.h). A-BFT есть, если Next A-BFT = 0 (9.3.4.2, рис. 9-77), независимо от участия станции (FSS,
+ * IsResponderTXSS, Discovery Mode, пропуски): начинается через MBIFS после конца BTI и длится A-BFT Length + 1 слотов
+ * aSSSlotTime (10.42.5.1, 10.42.5.2); конец BTI — Duration маяка от конца его PPDU (9.3.4.2). Сюда приходят после
+ * отчёта PPDU маяка (конец PPDU уже прошёл): TSF сейчас ≥ конца маяка, поэтому TSF + Duration + MBIFS + n·aSSSlotTime
+ * (вверх, + 1 мкс на усечение TSF) — не раньше истинного конца A-BFT. Не путь ответа: вызывается после взвода таймеров
+ * A-BFT (bti_sta_beacon_abft_flow). */
+__attribute__((noinline)) void abft_sta_note_abft_end(void)
+{
+    u32 bic = rx_buf_bcn_bi_ctrl0 | ((u32)rx_buf_body18 << 8) | ((u32)rx_buf_body19 << 16);
+    if (bic & BCN_BIC_NEXT_ABFT_MASK)
+        return;
+    u32 n = ((bic >> 7) & 7u) + 1u;                           /* A-BFT Length + 1 слотов */
+    u32 span = rx_buf_duration + clk_to_us_floor(ABFT_MBIFS_CLK + n * abft_slot_clk((bic >> 10) & 0xfu)
+                                                + ABFT_CLK_PER_US - 1u) + 1u;
+    FWSH(fwsh_sta_abft, end_tsf) = uc_read_tsf_lo() + span;
+    FWSH(fwsh_sta_abft, span_us) = span;
+}
+
+/* 1 — станция сейчас в A-BFT, объявленной последним маяком (abft_sta_note_abft_end): передавать в ней можно только
+ * ответчиком A-BFT (10.42.5.2), не инициатором SLS в DTI. Вне окна [запись, end_tsf) — 0 (скачок TSF при синхронизации
+ * — тоже вне окна). */
+u32 abft_sta_in_abft(void)
+{
+    u32 left = FWSH(fwsh_sta_abft, end_tsf) - uc_read_tsf_lo();
+    return (left - 1u < FWSH(fwsh_sta_abft, span_us)) ? 1u : 0u;
+}
+
 void bti_sta_beacon_abft_flow(struct bi_ctx_s *c)
 {
     if (c->kind == 1) {
@@ -346,6 +374,12 @@ void bti_sta_beacon_abft_flow(struct bi_ctx_s *c)
     if (st != 1) {
         bcn_rx.abft_gp0_late_cnt += 1;
         c->status = 4;
+        /* исправлено: статус 4 — автомат BI сразу в DTI (bti_dispatch_sweep_step → l1_task_dispatch(1)), без ожидания
+         * конца A-BFT, которое у пути статуса 1 даёт uc_spin_until_gp2_end (bf_ctx_dispatch_by_role). Станция без
+         * синхронизации BI (вход kind 1 — до ассоциации, сканирование) начинала развёртку TxSS инициатора через
+         * AIFS + backoff после конца BTI — внутри A-BFT (захват assoc 2026-11-04: 33 SSW Direction = 0, Duration DTI
+         * через 39 мкс после конца BTI, BI с Next A-BFT = 0). Конец A-BFT — для internal_tx_isr. */
+        abft_sta_note_abft_end();
         return;
     }
     if (bcn_rx.abft_here != 0) {
@@ -358,6 +392,10 @@ void bti_sta_beacon_abft_flow(struct bi_ctx_s *c)
             bti_sta_arm_abft_first_slot(off);
         if (bti_gp0_end_flag())
             uc_assert((u32)__builtin_return_address(0), 0x86);
+    } else {
+        /* A-BFT без нас (FSS < aSSFramesPerSlot, RXSS ответчика) — GP2 конца A-BFT не взводится и bi_run_bti_cycle
+         * её не ждёт, но A-BFT при Next A-BFT = 0 всё равно идёт (10.42.5.1) */
+        abft_sta_note_abft_end();
     }
     bti_beacon_track_best_metric(c);
 }

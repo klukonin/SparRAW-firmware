@@ -726,6 +726,8 @@ _Static_assert(__builtin_offsetof(struct bcn_rx_s, abft_skip_mode) == 0x24, "bcn
 static inline u32 bcn_rx_fss(const struct bcn_rx_s *b) { return (b->bi_ctrl[1] >> 2) & 0xf; }
 /* IsResponderTXSS (BI Control B14 = байт 1 бит 6, 9.3.4.2): 1 — A-BFT для TXSS ответчика; 0 — RXSS ответчика. */
 #define BCN_BIC1_IS_RESP_TXSS 0x40u
+/* Next A-BFT (BI Control B15–B18, рис. 9-77) в первых трёх байтах BI Control как u24: 0 — A-BFT в этом BI (10.42.5.1). */
+#define BCN_BIC_NEXT_ABFT_MASK 0x78000u
 /* Первые два байта BI Control как u16. */
 static inline u32 bcn_rx_bic16(const struct bcn_rx_s *b) { return b->bi_ctrl[0] | ((u32)b->bi_ctrl[1] << 8); }
 
