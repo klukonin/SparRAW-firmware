@@ -344,15 +344,18 @@ class Air:
     def _to_fw(self, dst, src, f):
         """H-FWRX — какие принятые кадры MAC отдаёт в кольцо fw: DMG Beacon — первый за BTI (стенд: после ассоциации
         1 маяк за BI, CDOWN первого; при подключении больше — механизм не найден, не моделируется); кадр управления
-        (тип 0) на свой адрес; данные (тип 2) на свой адрес — хосту (кольцо RX, host_rx); прочее — нет."""
+        (тип 0) на свой адрес; данные (тип 2) на свой адрес и групповые данные своего BSS (A1 — групповой, A2 — BSSID:
+        стенд — широковещательный ping и ARP точки станция принимает) — хосту (кольцо RX, host_rx); прочее — нет."""
         if getattr(dst, 'fw_tick0', None) is None:
             return
         fc = int.from_bytes(f[:2], 'little')
-        if (fc >> 2) & 3 in (0, 2) and f[4:10] == bytes(dst.mac) and len(f) >= 24:
+        mine = f[4:10] == bytes(dst.mac) or (len(f) >= 16 and f[4] & 1 and (fc >> 2) & 3 == 2 and
+                                              f[10:16] == bytes(getattr(dst, 'bssid', b'')))
+        if (fc >> 2) & 3 in (0, 2) and mine and len(f) >= 24:
             # 802.11-2020 10.3.2.14.3, Table 10-6: кэш по <A2, TID> у QoS Data, по <A2> у прочих; запись <SN, FN>
             if rx_is_duplicate(dst.__dict__.setdefault('rx_seq', {}), f):
                 return
-        if (fc >> 2) & 3 == 2 and f[4:10] == bytes(dst.mac):
+        if (fc >> 2) & 3 == 2 and mine:
             if (fc >> 4) & 0xc == 0xc:
                 # QoS Null (подтип 12) — данных нет, MAC в очередь не отдаёт (стенд, PMC: w0 б16 у принятого QoS Null)
                 dst.rx_qos_null.append((dst.hw.now, bytes(f)))

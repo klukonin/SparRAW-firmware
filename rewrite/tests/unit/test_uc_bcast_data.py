@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Групповые данные точки (tx_bcast_flow — широковещательное кольцо, очередь fsched_peer_id) без DMG CTS-to-self.
+
+802.11-2020 защиты группового кадра не требует: NAV distribution (10.3.2.15) — «the node may first transmit … DMG
+CTS-to-self», в TXOP — «any frames required for protection» (10.23.2.8 c); групповой кадр без ответа (Ack Policy —
+No Ack у групповых, 10.3.2.11) уходит по доступу к среде (CBAP, 10.39.5; EDCA 10.23.2). vendor перед каждым групповым
+кадром слал DMG CTS-to-self с TA = MAC станции (9.3.1.13 требует адрес группы следующего кадра, его uc до пуска не
+знает); стенд 2026-11-04…06 (PMC): TA станции или 06:00:00:00:00:00 — CTS-to-self убран.
+
+Слой 1 — tx_bcast_flow отдельно (команды MAC, кадры FIFO): ни одного кадра FIFO, один пуск 0x19000001 — групповой кадр
+из очереди, режим доступа 5 (первый кадр после CCA), сектор станции из обхода x0c (sta_tab[].tx_sel), пустая маска —
+сектор 1. Слой 2 — два узла в живом эфире (fw + uc, air.Air): AP шлёт групповые кадры кольца WMI_BCAST_VRING_CFG,
+станция одновременно шлёт данные точке — групповые кадры у станции приняты, перед ними нет DMG CTS-to-self точки."""
+import struct
+
+import pytest
+
+import fwflows as F
+
+STA_TAB = 0x801104                     # struct sta_entry[SPARRAW_STA_SLOTS], 0x50 Б: tx_sel +0x08, MAC +0x30
+MAINT_STA_MASK = 0x80212c + 0x68       # sls.maint_sta_mask
+FSCHED_PEER_ID = 0x800468
+BCAST_X0C = 0x802eac + 0xc
+BCAST_TX1 = 0x802eac + 3
+TX_BCAST_DESC_ID = 0x8005b0
+RF_CHAIN_CFG = 0x80051c
+BCAST_QID = 0x1a                       # широковещательное кольцо (любое qid ≠ 0x1f/0xff)
+
+STA = [bytes.fromhex('24181d26d47b'), bytes.fromhex('26181d2600aa'), bytes.fromhex('02aabbccdd03')]
+SECTOR = [0x12, 0x07, 0x2c]            # TX-сектор станции: tx_sel [22:8]
+
+STUBS = {n: 0 for n in ('mac_select_all_sectors_and_wait', 'mac_set_rf_chain_state',
+                        'uc_spin_until_event', 'uc_wait_one_event', 'mac_evt_enable_bit_sync_b',
+                        'uc_log_emit_snapshot', 'mac_program_tx_with_qid', 'qh_read_desc_window', 'macq_desc_read_uc',
+                        'macq_desc_write_uc', 'tx_ctx_alloc_next', 'uc_assert', 'uc_wait_direct_tx_ready')}
+STUBS.update(macq_probe_empty=1)
+
+
+def run(uc, mask, x0c=0):
+    """Один вызов tx_bcast_flow: команды MAC (r32) и записи портов FIFO (r33/r34)."""
+    uc.ext.update({47: 1 << 31, 43: (1 << 31) | (1 << 8), 53: 1 << 2})   # MTP_AGGREGATION, ответ MTP (MCS 1), BAP
+    for i, mac in enumerate(STA):
+        uc.wbytes(STA_TAB + i * 0x50 + 0x30, mac)
+        uc.w32(STA_TAB + i * 0x50 + 8, 0x30 | SECTOR[i] << 8)
+    uc.w32(RF_CHAIN_CFG, 0)
+    uc.w8(MAINT_STA_MASK, mask)
+    uc.w32(FSCHED_PEER_ID, BCAST_QID)
+    uc.w32(BCAST_X0C, x0c)
+    uc.w8(BCAST_TX1, 0)
+    uc.w16(TX_BCAST_DESC_ID, 0)
+    start = len(uc.cpu.trace)
+    uc.call('tx_bcast_flow', 0, stub=STUBS, max_steps=400_000)
+    tr = [e for e in uc.cpu.trace[start:] if e[0] == 'extreg' and e[1] == 'w']
+    cmds = [e[4] for e in tr if e[2] == 32]
+    fifo = [(e[2], e[4]) for e in tr if e[2] in (33, 34)]
+    return cmds, fifo
+
+
+def check_group_tx(cmds, fifo, sector):
+    """Групповой кадр — без кадра FIFO (DMG CTS-to-self): FIFO не открывался (0x33000001), портов r33/r34 нет; один
+    пуск 0x19000001 после программы TX режимом 5 (команда 0x06 режима: a | б8 | б25 | б26) на сектор sector."""
+    assert 0x33000001 not in cmds and 0x33000002 not in cmds and not fifo, \
+        'кадр FIFO перед групповым кадром (DMG CTS-to-self): %s' % [hex(c) for c in cmds if c >> 24 == 0x33]
+    go = [i for i, c in enumerate(cmds) if c == 0x19000001]
+    assert len(go) == 1, [hex(c) for c in cmds]
+    mode = [c for c in cmds[:go[0]] if c & ~0xff == (1 << 8) | (1 << 25) | (1 << 26)]
+    assert mode and mode[-1] & 0xff == 5, 'режим пуска %s — не 5 (первый кадр после CCA)' % [hex(c) for c in mode]
+    sel = [c & 0xffffff for c in cmds[:go[0]] if c >> 24 == 0x3f]
+    assert sel and (sel[-1] >> 8) & 0x7fff == sector, (hex(sel[-1]) if sel else None, sector)
+    # H-TXVEC5 (стенд 2026-11-06: ключ и запрос MTP между CCA и программой TX — uc assert 0x26): программа TX
+    # (mac_program_tx_vector: 0x1f006000 … команда режима) — сразу после проверки CCA 0x29000001
+    cca = cmds.index(0x29000001)
+    assert cmds[cca + 1] == 0x1f006000 and cmds[cca + 4] & 0xff0001ff == 0x06000105, \
+        'после CCA до программы TX: %s' % [hex(c) for c in cmds[cca + 1:cca + 8]]
+
+
+@pytest.mark.parametrize('mask,idx', [(0x1, 0), (0x2, 1), (0x5, 2), (0x7, 2)])
+def test_group_data_without_cts_to_self(uc, mask, idx):
+    """Копия группового кадра — на TX-сектор старшей станции обхода (x0c = maint_sta_mask), без DMG CTS-to-self."""
+    cmds, fifo = run(uc, mask)
+    check_group_tx(cmds, fifo, SECTOR[idx])
+    assert uc.r8(BCAST_TX1) == 0
+    assert uc.r32(BCAST_X0C) == mask & ~(1 << idx)
+
+
+def test_group_data_copy_per_station(uc):
+    """Две станции — две копии кадра (два вызова), каждая на сектор своей станции, ни перед одной CTS-to-self нет."""
+    cmds, fifo = run(uc, 0x3)
+    check_group_tx(cmds, fifo, SECTOR[1])
+    cmds, fifo = run(uc, 0x3, uc.r32(BCAST_X0C))
+    check_group_tx(cmds, fifo, SECTOR[0])
+    assert uc.r32(BCAST_X0C) == 0
+
+
+def test_group_data_empty_mask(uc):
+    """Станций в обходе нет (maint_sta_mask = 0): один пуск на сектор 1, без CTS-to-self и без чтения sta_tab за
+    концом (индекс 30)."""
+    cmds, fifo = run(uc, 0)
+    check_group_tx(cmds, fifo, 1)
+
+
+# ---- два узла: групповые данные точки и встречные данные станции ----
+
+def bcast_vring_cfg_cmd(ringid, size=0x400, mpdu=0x800):
+    """WMI_BCAST_VRING_CFG (struct wmi_bcast_vring_cfg_cmd): ADD, кольцо ringid, 802.3."""
+    b = bytearray(0x14)
+    struct.pack_into('<IQHH', b, 0, 0, 0x20000000 + 0x10000 * ringid, size, mpdu)
+    b[0x10] = ringid
+    return bytes(b)
+
+
+BCAST_VR = 2
+GROUP = [b'\xff' * 6, bytes.fromhex('01005e7ffffa'), bytes.fromhex('333300000016')]
+
+
+@pytest.fixture(scope='module')
+def live_group(fw_elf, build_dir, uc_fw):
+    import test_air
+    r = test_air._live_data(fw_elf, build_dir, uc_fw)
+    air, ap, sta = r['air'], r['ap'], r['sta']
+    n_ev = len(ap.fw.wmi_evts)
+    ap.wmi(F.WMI_BCAST_VRING_CFG, bcast_vring_cfg_cmd(BCAST_VR))
+    done = [e for e in ap.fw.wmi_evts[n_ev:] if e.id == F.WMI_VRING_CFG_DONE]
+    air.run_us(2000)
+    t0 = ap.hw.now
+    n_rx, n_ap_rx, n_frames = len(sta.host_rx), len(ap.host_rx), len(air.frames)
+    group = [bytes([0x40 + i]) * (200 + 50 * i) for i in range(len(GROUP))]
+    up = [bytes([0x80 + i]) * 1200 for i in range(4)]
+    for da, p in zip(GROUP, group):
+        ap.host_tx(BCAST_VR, da, p)
+    for p in up:                                            # встречный поток: станция → точка в то же время
+        sta.host_tx(0, ap.mac, p)
+    ap.pump()
+    sta.pump()
+    for _ in range(40):
+        air.run_us(500)
+        if len(sta.host_rx) - n_rx >= len(group) and len(ap.host_rx) - n_ap_rx >= len(up):
+            break
+    return dict(air=air, ap=ap, sta=sta, done=done, t0=t0, group=group, up=up,
+                rx=sta.host_rx[n_rx:], ap_rx=ap.host_rx[n_ap_rx:], frames=air.frames[n_frames:])
+
+
+pytestmark_live = pytest.mark.xdist_group('live_group')
+
+
+@pytestmark_live
+def test_live_group_data_delivered(live_group):
+    """Групповые кадры кольца WMI_BCAST_VRING_CFG точки приняты станцией (RA — группа, From DS), встречные данные
+    станции — точкой; MAC без поздних ответов."""
+    r = live_group
+    assert r['done'] and r['done'][0].body[1] == 0, r['done']
+    got = [f for _, f in r['rx']]
+    for da, p in zip(GROUP, r['group']):
+        assert any(f[4:10] == da and f.endswith(p) for f in got), ('групповой кадр %s не принят' % da.hex(':'),
+                                                                   [f[:24].hex() for f in got])
+    ap_got = [f for _, f in r['ap_rx']]
+    assert all(any(f.endswith(p) for f in ap_got) for p in r['up']), len(ap_got)
+    assert not r['ap'].hw.late and not r['sta'].hw.late
+
+
+@pytestmark_live
+def test_live_group_data_no_cts_to_self(live_group):
+    """9.3.1.13 / 10.3.2.15: в эфире нет DMG CTS-to-self точки (DMG CTS: FC Type 1, Subtype 6, Control Frame
+    Extension 5; RA = свой адрес) — ни перед групповыми кадрами, ни вообще."""
+    r = live_group
+    ap = r['ap']
+    cts_self = [f for f in r['frames'] if f['src'] is ap and len(f['frame']) >= 16 and
+                int.from_bytes(f['frame'][0:2], 'little') & 0xfff == 0x564 and f['frame'][4:10] == bytes(ap.mac)]
+    assert not cts_self, [(f['start'], f['frame'].hex()) for f in cts_self]
+    grp = [f for f in r['frames'] if f['src'] is ap and f.get('mpdus') is None and len(f['frame']) >= 24 and
+           (f['frame'][0] >> 2) & 3 == 2 and f['frame'][4] & 1]
+    assert len(grp) >= len(GROUP), [f['what'] for f in r['frames'] if f['src'] is ap]

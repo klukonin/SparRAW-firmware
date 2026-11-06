@@ -106,9 +106,8 @@ UCDATA(800678) UCD_ARRAY(u8, SPARRAW_MAX_STA) brp_rf_cfg_sector = {{
 }};
 /* Конфигурация RF-модулей (пишет ucode_cmd_0x01; читают ~20 функций BRP/RF). */
 UCDATA(8006b4) struct rf_modules_cfg rf_modules = { .count = 1, .cur = 1, .mask = 1, .x4 = 0, .cur_mask = 1 };
-/* Широковещательный MAC ff:ff:ff:ff:ff:ff — vendor подставлял вместо MAC станции в групповой ATIM (ATIM вырезан,
- * bi_rx_slot_handler); TA DMG CTS-to-self перед групповыми данными точки (direct_tx_send_after_delay из tx_bcast_flow,
- * 802.11-2020 9.3.1.13). */
+/* Широковещательный MAC ff:ff:ff:ff:ff:ff — vendor подставлял вместо MAC станции в групповой ATIM; ATIM вырезан
+ * (bi_rx_slot_handler), DMG CTS-to-self перед групповыми данными — тоже (tx_bcast_flow); читателей нет. */
 UCDATA(8006c4) u16 bcast_mac[3] = {
     0xffff, 0xffff, 0xffff,
 };

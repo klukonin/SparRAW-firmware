@@ -103,6 +103,14 @@ TIMER_AUX = ((0x21, 0x22, 0x23), (0x100, 0x101, 0x102))     # COUNT / CONTROL / 
 # (команда 0x21000002 в uc_sleep_until_event) и r42 & маска 0x886d3c. Стенд (метка STAMP_L2_ENTRY, iperf 90 с): все
 # 7473 входа L2 — задача 1, все в uc_sleep_until_event.
 WAKE_VEC = 10
+# H-TXVEC5 (стенд 2026-11-06, точка на bnc.fw, групповые данные: uc assert 0x26 «поздняя команда» 4 раза в
+# test_ap_no_fw_error/test_ap_stop, FWERR 8 на 15 широковещательных ping): программа TX режима 5 (первый кадр после
+# слота CBAP) должна прийти вскоре после проверки CCA (0x29000001). Граница на железе не снята; в модели рабочие пути
+# (tx_cca_check_and_send, keep-alive, прежний tx_bcast_flow с CTS-to-self) выдают её через 42–52 такта, путь первого варианта (2026-11-06)
+# (ключ + запрос MTP с ожиданием r43 до программы TX) — через 122. Срок — между: 100 тактов (0,61 мкс), запас 48 над
+# рабочими путями.
+TXVEC5_LATE_CLK = 100
+FSCHED_PEER_ID = 0x800468              # uc DCCM: очередь широковещательного кольца точки (0xff — нет)
 HW_UC_SLEEP_WAKE_MASK = 0x886d3c
 # H-FW2UC: прерывание fw → uc — L1 вектор 8 (l1_task_entry(0)): блок RGF_ICR fw2uc с 0x886dcc (ICC, ICR W1C, ICM =
 # ICR & ~IMV, ICS — установка, IMV — маска (1 = закрыто), IMS/IMC — установка/снятие маски; HARDWARE-BLOCKS
@@ -446,6 +454,9 @@ class HW:
         self.retry_log = []               # (такт, очередь, номер повтора)
         self.mtp_qid = None               # очередь MTP (0x16 qid << 16 | 1)
         self.ack_wait = None              # переданный кадр очереди ждёт Ack
+        self.bap_rel = False              # H-BAPREL: освобождение очереди 0x46 выполнено (r53 б2)
+        self.q_hold = None                # H-BAPREL: очередь, чей переданный групповой кадр ждёт освобождения 0x46
+        self.cca_cmd_at = None            # H-TXVEC5: такт проверки CCA (0x29000001), программа TX ещё не выдана
         self.bi_ev = None                 # H-BI1: следующее bi1_event (интервал маяков запущен командой 0x0d)
         self.tbtt_log = []                # (такт bi1_event, TBTT в мкс TSF)
         c.write(HW_MAC_IFS_SIFS, (0x0173 << 16 | ifs_code(ifs)).to_bytes(4, 'little'))
@@ -455,6 +466,10 @@ class HW:
         # HW_PHY_RX_STATUS_8837B0: стенд 2026-10-30 (метка STAMP_SNR_SEL, iperf, 5656 чтений у двух узлов) — всегда 0x2
         # (rx_flow_run запускает выбор сектора по SNR на каждом кадре); мусор эмулятора включал его у одного узла
         c.write(0x8837b0, (2).to_bytes(4, 'little'))
+        # HW_TX_ENGINE_STATE (0x88656c) [3:0] — состояние TX-движка MAC; uc перед освобождением очереди (0x1c/0x46,
+        # tx_bcast_flow, sxd …) требует 0 (иначе assert 3). Состояния движка модель не ведёт — простой,
+        # 0 (мусор эмулятора давал assert 3 в tx_bcast_flow, test_uc_bcast_data)
+        c.write(0x88656c, (0).to_bytes(4, 'little'))
         # маски линий событий — поля модели (после сброса 0); чтение и запись uc — через крючки ввода-вывода
         self.evt_mask = {HW_UC_SLEEP_WAKE_MASK: 0, HW_EVT4_IRQ_MASK: 0, HW_EVT_CH2_MASK: 0}
         for a in self.evt_mask:
@@ -753,9 +768,10 @@ class HW:
         if n == 53 and self.mac_q_model:
             # H-BAP-RX (стенд, метка STAMP_BAP_RX у AP: 31 из 31 — 0x12e): после приёма кадра «для нас» BAP отмечает
             # приём (MAC_BAP_RX_UPDATE); до конца такого кадра — 0
+            rel = 4 if self.bap_rel else 0                 # H-BAPREL: bap_rel_done_ind
             if self.bap_tx is not None:                    # H-AMPDU: BlockAck принят — TX_UPDATE б0, число MPDU [14:8]
-                return 0x2f | (self.bap_tx & 0x7f) << 8
-            return 0x12e if self.bap_rx else 0
+                return 0x2f | (self.bap_tx & 0x7f) << 8 | rel
+            return (0x12e if self.bap_rx else 0) | rel
         if n == 41 and self.sel41 == 0 and self.irqs and self.mac_q_model:
             q = self._qsel()
             return 0 if q is None else (q[0] << 16) | (q[1] << 8) | (1 << (q[1] - 1))
@@ -929,6 +945,26 @@ class HW:
                 return
             self.perm_req_at = self.now
             self._go()
+        elif v == 0x29000001:                             # проверка CCA после слота (mac_cmd_29000001) — отсчёт H-TXVEC5
+            self.cca_cmd_at = self.now
+        elif v == 0x29000002:                             # CCA не прошла — передачи по этому слоту нет
+            self.cca_cmd_at = None
+        elif op == 0x06 and arg & 0x100 and self.cca_cmd_at is not None:
+            # H-TXVEC5: программа TX режима 5 (mac_program_tx_vector(5): команда режима a | б8 | б25 | б26) — первой после
+            # проверки CCA, иначе поздняя команда (assert 0x26); программа любого режима закрывает окно
+            dt, self.cca_cmd_at = self.now - self.cca_cmd_at, None
+            if arg & 0xff == 5 and dt > TXVEC5_LATE_CLK:
+                self._late((self.now, 'программа TX режима 5 через %d тактов после CCA (H-TXVEC5)' % dt,
+                            dt - TXVEC5_LATE_CLK, 'tx'))
+        elif op == 0x1c:                                  # H-BAPREL: начало освобождения очереди MTP/BAP (0x1c000006)
+            self.bap_rel = False
+        elif op == 0x46:
+            # H-BAPREL (по имени поля bap_rel_done_ind, не снято): освобождение очереди 0x46… (после 0x1c000006) —
+            # BAP отвечает r53 б2; uc ждёт его (tx_bcast_flow, mac_q_tx_ppdu …), без модели — вечное ожидание
+            self.bap_rel = True
+            if self.q_hold is not None and (arg >> 4) & 0x1f == self.q_hold:
+                self.q_hold = None
+                self._q_done((arg >> 4) & 0x1f, 0)
         elif op == 0x34:                                  # описатель прямой передачи: [15:0] длина в FIFO
             self.dtx_len = arg & 0xffff
         elif op == 0x33 and arg == 1:                     # FIFO прямой передачи открыт (direct_tx_program_desc)
@@ -1505,6 +1541,12 @@ class HW:
         if isinstance(f, list):                           # A-MPDU — ждёт BlockAck
             n, f = len(f), f[0]
         if f[4] & 1:
+            if qid == self._raw(FSCHED_PEER_ID) & 0xff:
+                # H-BAPREL: кадр широковещательного кольца точки (fsched_peer_id, tx_bcast_flow) остаётся в очереди
+                # до освобождения 0x46 — копии на секторы станций обхода (uc: перед освобождением очередь не пуста,
+                # иначе assert 7)
+                self.q_hold = qid
+                return
             self._q_done(qid, 0)
             return
         self.ack_wait = dict(qid=qid, ra=bytes(f[4:10]), n=n)

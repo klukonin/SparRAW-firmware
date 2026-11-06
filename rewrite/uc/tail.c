@@ -1928,6 +1928,18 @@ u32 l1_fixed_sched_ap_run_slot(u32 a) {
 }
 
 
+/* Групповой ключ (запись SPARRAW_PEER_UNKNOWN — широковещательное кольцо точки) — до пуска группового кадра.
+ * ХРУПКО: отдельная функция (noipa — без встраивания): вызов 4 Б вместо 26 Б встроенной проверки, спины r43/r45 пути
+ * «CCA → 0x19000001» в tx_bcast_flow — по адресам ≡ 0 mod 4 (как у прежнего пути, bti.c abft_ssw_burst). */
+static __attribute__((noipa)) void bcast_load_group_key(void)
+{
+    if (sta_tab[SPARRAW_PEER_UNKNOWN].key_valid != 0) {
+        mac_load_tx_key((const u32 *)sta_tab[SPARRAW_PEER_UNKNOWN].tx_key);
+        tx_crypto_ctl_arm();
+    }
+}
+
+
 void tx_bcast_flow(u32 a) {
     /* 6.2 asm 0x937844. */
     (void)a;
@@ -1938,6 +1950,9 @@ void tx_bcast_flow(u32 a) {
         r1 = maint_sta_mask;
         bcast.x0c = r1;
     }
+    /* Обход станций: одна копия группового кадра за вызов — на TX-сектор старшей станции из x0c (sta_tab[].tx_sel);
+     * пока в x0c остаются станции, кадр в очереди держится (б19 дескриптора), следующий вызов шлёт его следующей.
+     * Пустая маска: r15 = 30 (norm(0) = 0), сектор 1, sta_tab не читается (r15 — только для снятия бита x0c). */
     u32 n;
     n = arc_norm(r1);
     u32 r15 = 0x1e - n;
@@ -1964,13 +1979,12 @@ void tx_bcast_flow(u32 a) {
         uc_log_emit_snapshot(0x21, 0x1001a6c);
         return;
     }
-    u32 g1 = mac_sel_shadow & 0xfff0ffff;
-    mac_sel_shadow = g1 | (1u << 19);
-    uc_mac_cmd(g1 | 0x1d080000);
-    arc_nops(3);
-    while (!(mac_txctl_sel() & MAC_MTP_AGG_VALID))
-        ;
-    u32 r13v = (u32)(u16)mac_txctl_sel();
+    /* MCS группового кадра — из ответа MTP (r43) на запрос macq_probe_empty (0x16 очереди, 0x17000000 — скорость ставит
+     * MAC, тот же запрос, что перед пуском ниже; r43 готов раньше r45, которого macq_probe_empty дождался; r43 после
+     * r45 перечитывает и vendor — txop_initiator_open_txop_flow): нужна до CCA, чтобы программа TX шла сразу после неё. */
+    u32 r2 = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());
+    if (r2 == 0)
+        r2 = 1;
     u32 g2 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = g2 | (1u << 13) | (1u << 15);
     uc_mac_cmd(g2 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
@@ -1984,38 +1998,23 @@ void tx_bcast_flow(u32 a) {
         txrx_state2 = 0x800;
         return;
     }
-    mac_program_tx_vector(5, (rf_chain_cfg | 0x30) | (bcast.tx_sector << 8), 0);
-    r13v = (r13v + 3) | (1u << 24) | (1u << 26) | (1u << 28);
-    uc_mac_cmd(r13v);
-    uc_mac_cmd(0x14000007);
-    direct_tx_program_desc(0x10, 0x10);
-    mac_program_tx_with_rate(0);
-    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
-        ;
-    u32 r51b = mac_mtp_desc();
-    mtp_desc_lo = r51b & 0xf;
-    mtp_desc_hi = r51b >> 4;
-    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-        ;
-    uc_mac_cmd(0x18001000);
-    direct_tx_send_after_delay(r15, 6, 5);
-    uc_mac_cmd(0x2008000);
-    uc_mac_cmd(0x19000001);
-    mac_evt_enable_bit_sync_b(6);
-    if (sta_tab[SPARRAW_PEER_UNKNOWN].key_valid != 0) {
-        mac_load_tx_key((const u32 *)sta_tab[SPARRAW_PEER_UNKNOWN].tx_key);
-        tx_crypto_ctl_arm();
-    }
-    uc_spin_until_event(MAC_EVT1_TX_END);
-    uc_wait_one_event(6);
-    /* СРОК: широковещательные данные (0x19000001 ниже) через SIFS (3 мкс, допуск −0/+0.49 мкс)
-     * после CTS-to-self (802.11-2020 10.3.2.3.3, 10.23.2.8). Путь от выхода из ожидания
-     * события 6 (конец CTS-to-self, точный смысл события не установлен): 0x14000000, запрос MTP
-     * (0x1b/0x16/0x17 + 3 nop), r43, mac_program_tx_vector(1), 0x2008000 → 0x19000001
-     * ~109 инструкций + ответ MTP (vendor ~ так же); запас: десятки–сотни тактов (не измерен).
-     * Срыв: пауза > SIFS — среду может занять сосед, NAV из CTS-to-self (r47-длительность + 3)
-     * кончится раньше конца данных. */
-    bcast.tx1 += 1;
+    /* Групповой кадр — сразу по доступу к среде (CBAP/EDCA: слот, CCA выше), без DMG CTS-to-self. исправлено
+     * (vendor 0x937844): перед кадром шёл DMG CTS-to-self (кадр FIFO, control PHY, Duration = длительность кадра из
+     * MTP_AGGREGATION [15:0] + SIFS), кадр — через SIFS режимом 1. 802.11-2020 защиты группового кадра не требует
+     * (10.3.2.15 NAV distribution — «may»; 10.23.2.8 c) — «any frames required for protection»), TA CTS-to-self по
+     * 9.3.1.13 — адрес группы следующего кадра, его uc до пуска не знает; стенд 2026-11-04…06 (PMC): TA — MAC станции
+     * или 06:00:00:00:00:00 (MAC-STAND «Групповые данные точки без DMG CTS-to-self»). Кадр — первый после CCA:
+     * режим 5 (как tx_cca_check_and_send), не 1 (ответ/продолжение после своего кадра). Duration кадра очереди
+     * ставит MAC (H-DURQ).
+     * ХРУПКО (СРОК, H-TXVEC5): программа TX (mac_program_tx_vector(5)) — первой командой после проверки CCA, как в
+     * рабочих путях (vendor-путь CTS-to-self здесь же, tx_cca_check_and_send, internal_tx_keepalive_flow,
+     * direct_tx_send_from_desc). Доказательство — стенд 2026-11-06 (образ bnc.fw, точка, групповые данные):
+     * между CCA и программой TX стояли загрузка ключа и запрос MTP с ожиданием r43 — uc assert 0x26 «поздняя команда»
+     * (MAC_HW_ICR б4/б5) у точки 4 раза в test_ap_no_fw_error/test_ap_stop, FWERR 8 на 15 широковещательных ping, 1 под
+     * iperf. Ключ и запрос MTP — после программы TX: так у vendor (ключ — после пуска CTS-to-self, запрос MTP кадра — до
+     * его пуска) и в tx_cca_check_and_send (tx_submit_frame после mac_program_tx_vector). */
+    mac_program_tx_vector(5, (rf_chain_cfg | 0x30) | (bcast.tx_sector << 8), r2);
+    bcast_load_group_key();
     uc_mac_cmd(0x14000000);
     u32 r13b = (fsched_peer_id << 16) | 1u;
     uc_mac_cmd(0x1b001111);
@@ -2028,10 +2027,6 @@ void tx_bcast_flow(u32 a) {
     u32 r51c = mac_mtp_desc();
     mtp_desc_lo = r51c & 0xf;
     mtp_desc_hi = r51c >> 4;
-    u32 r2 = MAC_MTP_RESP_MCS_OF(mac_mtp_resp());
-    if (r2 == 0)
-        r2 = 1;
-    mac_program_tx_vector(1, (rf_chain_cfg | 0x30) | (bcast.tx_sector << 8), r2);
     uc_mac_cmd(0x2008000);
     uc_mac_cmd(0x19000001);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))

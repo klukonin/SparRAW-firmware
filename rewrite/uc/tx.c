@@ -133,40 +133,20 @@ u32 itx_wait_cts_b(void)
 }
 
 
+/* Кадр управления FIFO с RA = MAC станции a: FC (Type 1, Subtype b, Control Frame Extension c), RA — r34, TA — свой
+ * адрес (0x33000443). Вызовы — RTS (b = 0xb) и CF-End (0xe), c = 0. Ветвь vendor c = 5 (DMG CTS, TA = MAC станции a)
+ * — DMG CTS-to-self перед групповыми данными tx_bcast_flow — удалена вместе с ним (MAC-STAND «Групповые данные точки
+ * без DMG CTS-to-self»). */
 void direct_tx_send_after_delay(u32 a, u32 b, u32 c)  /* 6.2 asm 0x938218 */
 {
     arc_core_wr(33, ((b << 4) | (1u << 2)) | (c << 8));
-    u32 t0 = tx_fifo_free;
-    tx_fifo_free = t0 - 4;
-    struct sta_entry *r13 = &sta_tab[a];
-    const u16 *mac = r13->mac;
-    if (c == 5) {
-        /* DMG CTS (Control Frame Extension 5): RA — свой адрес (0x33000443, адрес записи парсера 0x886018), TA —
-         * полями ниже. Единственный вызов — tx_bcast_flow: DMG CTS-to-self перед групповым кадром широковещательного
-         * кольца точки. 802.11-2020 9.3.1.13: «For DMG CTS-to-self frames, the TA field is set to … the group address
-         * of the recipients of the frame that the DMG STA intends to transmit after the DMG CTS-to-self frame».
-         * RA группового кадра uc до пуска не знает (заголовок MPDU собирает MAC из кадра хоста; регистра или окна
-         * с адресом кадра очереди до пуска нет, MAC-STAND «TA DMG CTS-to-self перед групповыми данными») — TA
-         * широковещательный: для ff:ff:ff:ff:ff:ff ровно 9.3.1.13, для multicast — группа всех STA, включающая
-         * получателей (отклонение от буквы, записано в MAC-STAND). исправлено (vendor 0x938218): TA = MAC станции
-         * a (индивидуальный — 9.3.1.13 не допускает; при a = 30 — пустая маска станций — чтение за sta_tab); стенд
-         * 2026-11-04/05, PMC обоих узлов: TA станции у 16 из 18 CTS-to-self, 06:00:00:00:00:00 у первого в серии
-         * после простоя. */
-        mac = bcast_mac;
-        tx_fifo_free = t0 - 0xa;            /* 0x938250: от исходного r3, не от t0-4 */
-        uc_mac_cmd(0x33000443);
-        uc_wait_direct_tx_ready();
-        arc_core_wr(34, mac[0] | (1u << 24));
-        arc_core_wr(34, mac[1] | (1u << 24));
-        arc_core_wr(34, mac[2] | (1u << 24));
-        tx_fifo_free -= 6;
-    } else {
-        arc_core_wr(34, mac[0] | (1u << 24));
-        arc_core_wr(34, mac[1] | (1u << 24));
-        arc_core_wr(34, mac[2] | (1u << 24));
-        tx_fifo_free -= 0xc;
-        uc_mac_cmd(0x33000443);
-    }
+    tx_fifo_free = tx_fifo_free - 4;
+    const u16 *mac = sta_tab[a].mac;
+    arc_core_wr(34, mac[0] | (1u << 24));
+    arc_core_wr(34, mac[1] | (1u << 24));
+    arc_core_wr(34, mac[2] | (1u << 24));
+    tx_fifo_free -= 0xc;
+    uc_mac_cmd(0x33000443);
     uc_wait_direct_tx_ready();
     direct_tx_commit();
 }
