@@ -2365,6 +2365,7 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
         /* mov_s r14,1; mov.eq r14,[r13+0x28]&3 — при сброшенном бите станции в 0x802948 */
         u32 r14v = (qid_agg_mask & (1u << r13->qid)) ? 1 : (r13->chan_access & 3u);
         UC_STAMP(STAMP_TXOP_OPEN, r13->qid | r14v << 8 | ((qid_agg_mask >> r13->qid) & 1u) << 12, mac_mtp_resp());
+        UC_STAMP(STAMP_TXOP_REM, uc_read_tsf_lo(), r15 | mac_read_usec_to_tbtt_uc(0) << 16);
         if (r14v == 0) {
             /* L_93a458 */
             if ((mac_mtp_resp() & MAC_MTP_RESP_ACK_POLICY) && !(mac_mtp_resp() & MAC_MTP_RESP_RD_SUPP))

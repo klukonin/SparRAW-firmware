@@ -113,6 +113,11 @@ def test_sifs_response_in_time(uc, kind):
     assert tx, 'нет ответа в эфире'
     assert not hw.late, hw.late
     assert not [c for c in uc.calls if c[0] == 'uc_assert'], uc.calls
+    # H-RESPCMD: команда позже точки SIFS (путь uc ~700+ тактов против SIFS 495) — ответ через задержку MAC от команды,
+    # как в эфире (захват PMC 2026-11-04: DMG CTS 4,93 мкс при команде ≈ 720 тактов), а не через TX_START_CLK
+    sifs_pt = end + 495 + MACLAT_CLK
+    assert cmd[0] > sifs_pt - MACLAT_CLK, 'путь uc успел до SIFS — тест не про позднюю команду'
+    assert tx[0][0] == cmd[0] + MACLAT_CLK, (tx[0][0] - cmd[0], MACLAT_CLK)
 
 
 # ---- инициатор SLS: SSW-Feedback и его повторы при молчащем ответчике ---------------------------------------------

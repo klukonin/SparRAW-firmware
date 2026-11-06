@@ -116,6 +116,9 @@
                                   * (сырое; [17:9] — SNR в четвертях дБ со знаком) — калибровка SNR Report (9.5.3) по метрике */
 #define STAMP_RX_DUR        44   /* rx_flow_main, после rx_flow_handle_frame (ответ уже запрошен): a0 = Frame Control | Duration << 16
                                   * принятого кадра (rx_buf), a1 = TA [31:0] — поле Duration в эфире (эталон tests/ref/duration) */
+#define STAMP_TXOP_REM      45   /* txop_initiator_open_txop_flow, рядом с STAMP_TXOP_OPEN (до ожидания слота): a0 = TSF[31:0],
+                                  * a1 = REMAINING_TIME_RD (r15, мкс) | мкс до TBTT (0x886ec0) << 16 — сверка плана TXOP MAC с
+                                  * NAV RTS в захвате PMC (802.11-2020 10.39.5; docs/MAC-STAND.md «Эфир: NAV RTS и TBTT») */
 #define STAMP_TXOP_CONT     36   /* mtp_get_tx_permission (продолжение TXOP / пуск по разрешению): SIFS_CNT перед
                                   * 0x19000001 (защёлка сдвигает команду на ~8 тактов); после r45: a0 = SIFS_CNT | r36 [15:0] << 16,
                                   * a1 = r43 (ответ MTP: MCS [20:16]) */

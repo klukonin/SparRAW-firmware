@@ -260,6 +260,31 @@ def test_assoc_req_qos_info_no_uapsd(fw):
     assert qos == [b'\x00'], qos
 
 
+APPIE_ASSOC_REQ, EID_SUPP_OP_CLASSES = 3, 59                 # enum wmi_mgmt_frame_type: 3 — Association Request
+# Порядковые номера табл. 9-34 (Association Request) для элементов теста; Vendor Specific — последние
+ASSOC_REQ_ORDER = {EID_SSID: 3, EID_RSN: 8, EID_QOS_CAP: 9, EID_SUPP_OP_CLASSES: 12, EID_EXT_CAP: 15,
+                   EID_MULTI_BAND: 19, EID_DMG_CAP: 20, EID_VS: 1000}
+
+
+def test_assoc_req_merged_with_host_ies_order(fw):
+    """IE хоста для Association Request (wpa_supplicant через драйвер — WMI_SET_APPIE; порядок хоста, как на стенде:
+    Extended Capabilities, затем Supported Operating Classes) сливаются со своими (SSID, RSN, QoS Capability, DMG
+    Capabilities) по порядку табл. 9-34: Supported Operating Classes (12) — до Extended Capabilities (15), Multi-band
+    (19) — до DMG Capabilities (20). Захват 2026-11-04: 127 перед 59 — слияние по Element ID списков, не упорядоченных
+    по таблице."""
+    w = F.Fw(fw)
+    host = (bytes([EID_EXT_CAP, 10]) + bytes(10) + bytes([EID_SUPP_OP_CLASSES, 2, 0xb4, 0xb4]) +
+            bytes([EID_MULTI_BAND, 22]) + bytes(22) + bytes([EID_VS, 4, 0x00, 0x50, 0xf2, 0x04]))
+    fw.wmi(WMI_SET_APPIE, struct.pack('<BBH', APPIE_ASSOC_REQ, 0, len(host)) + host)
+    w.sta_connect(stop='assoc_req')
+    req = tx_mgmt(fw, 0)
+    assert req, 'Association Request не ушёл'
+    ids = [e for e, _ in elements(req[-1][24 + 4:])]
+    for e in (EID_SSID, EID_QOS_CAP, EID_SUPP_OP_CLASSES, EID_EXT_CAP, EID_MULTI_BAND, EID_DMG_CAP):
+        assert ids.count(e) == 1, ids
+    assert_table_order(ids, ASSOC_REQ_ORDER)
+
+
 # ---- приём: AID, Extended Schedule станции, разбор элементов; маяк discovery; RSN по умолчанию ----
 
 def test_sta_assoc_resp_aid_reserved_bits_ignored(fw):

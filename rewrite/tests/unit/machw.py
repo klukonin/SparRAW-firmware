@@ -62,7 +62,8 @@ RESP_CMD_DEADLINE_CLK = 754
 # Ответ на кадр SC (данные; BlockAck/Ack): стенд 2026-10-30 (метка STAMP_RESP_SIFS_CNT + nop в пути ответа PAD_RESP_CMD,
 # TCP): при 32 nop команды BlockAck — SIFS_CNT до 1074 (после 0x19 и защёлки, ~30 тактов после 0x37000020) без
 # ошибок; 48 nop — ошибка уже на кадрах подключения (control PHY, срок выше). Нижняя граница срока для SC — 1074 − 30.
-# Если ноль SIFS_CNT — конец PPDU, ответ на кадр SC на железе выходит позже SIFS (снифер)
+# Ноль SIFS_CNT — конец PPDU, ответ на железе выходит позже SIFS: захват PMC 2026-11-04 (H-RESPCMD, _hw_response,
+# docs/MAC-STAND.md «Эфир: ответы через SIFS»)
 RESP_CMD_DEADLINE_SC_CLK = 1044
 # DMG CTS на RTS: путь длиннее (переход RX→TX ждёт конца PPDU), точка отказа на стенде не измерена; vendor-путь
 # работает — нижняя граница срока. Наша команда — через 737 тактов от конца кадра; vendor-путь длиннее на 59 тактов
@@ -1617,12 +1618,20 @@ class HW:
 
     def _hw_response(self):
         """Ответ собирает MAC: старт — конец принятого PPDU + SIFS (0x886d00) + задержка MAC (H-ORIGIN), если команда
-        ответа успела (иначе запись в late уже есть, старт — сразу)."""
+        ответа 0x37000020 пришла раньше этой точки; позже точки, но в срок (H-SIFSRESP) — команда + та же задержка MAC
+        (H-RESPCMD); без команды или после срока — запись в late уже есть, старт — через TX_START_CLK.
+        H-RESPCMD (захват PMC обоих узлов 2026-11-04, судья tests/ref/air_judge, docs/MAC-STAND.md «Эфир: ответы через
+        SIFS»): DMG CTS в эфире через 4,93 мкс (AP) / 4,96 (станция) после RTS, команда 0x37000020 на стенде — при
+        SIFS_CNT ≈ 720 (метка 12: 0x19 при 754–761, 0x19 на ~30 тактов позже) ⇒ 4,93·165 − 720 ≈ 93 ≈ MACLAT_CLK.
+        BlockAck (команда 840–1056) — 5,5–6,0 мкс с разбросом команды. Прежде модель ставила TX_START_CLK (230, старт
+        прямой передачи после FIFO) — ответ на ~0,85 мкс позже железа."""
         r, self.resp_due = self.resp_due, None
         self.go = False
         start = r['end'] + self.ifs_clk() + MACLAT_CLK
-        if self.resp_cmd_at is None or self.resp_cmd_at > r['end'] + r['deadline'] or self.now > start:
+        if self.resp_cmd_at is None or self.resp_cmd_at > r['end'] + r['deadline']:
             start = max(start, self.now + TX_START_CLK)
+        else:
+            start = max(start, self.resp_cmd_at + MACLAT_CLK, self.now)
         self.resp_cmd_at = None
         mcs = r.get('mcs', 0)
         if self.mtp_rate is not None:

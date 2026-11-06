@@ -231,7 +231,7 @@ void mgmt_tx_build_assoc_req(u32 payload, u32 *out_len, struct mid *mid, struct 
         u32 m = mgmt_tx_assoc_req_ies(tmp, mobj, ext);
         fw_log_emit1(0x2d, 0x1013a18, m);
         app_ies_set_buffer(&blk, tmp, m, 0);
-        n = ies_block_merge(&dst, internal, &blk);
+        n = ies_block_merge_assoc_req(&dst, internal, &blk);   /* табл. 9-34; vendor — по Element ID */
         fw_log_emit1(0x2d, 0x1013a38, m);
     }
     n = (n + hdr_fixed) & 0xffffu;

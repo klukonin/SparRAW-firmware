@@ -1037,6 +1037,7 @@ u32 ie_push_ssid (u8 *dst, const u8 *ssid, u32 len);                            
 u32 ie_push_wfa_vendor (u8 *dst, const u8 *src, u32 flag);                                           /* mgmt_tx.c */
 u32 ies_block_is_empty (const struct app_ies *block);                                                /* mgmt_tx.c */
 u32 ies_block_merge (u32 *dest_block, struct app_ies *internal_block, struct app_ies *external_block); /* mgmt_tx.c */
+u32 ies_block_merge_assoc_req (u32 *dest_block, struct app_ies *internal_block, struct app_ies *external_block); /* mgmt_tx.c */
 u32 if_gain (u32 a0);                                                                                /* calib.c */
 void if_gain_adjust (u32 mode, u32 sub, u32 act, struct if_gain_meas *out);                          /* calib.c */
 void if_gain_apply_delta (s32 delta, struct if_gain_meas *out);                                      /* calib.c */

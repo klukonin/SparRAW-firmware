@@ -321,6 +321,40 @@ static u32 ie_rank_probe_resp(u32 eid)
     }
 }
 
+/* Порядковый номер элемента в теле Association Request (табл. 9-34) — элементы, что приходят от fw (SSID, RSN, QoS
+ * Capability, DMG Capabilities) или от хоста (wpa_supplicant через драйвер: Extended Capabilities, Supported Operating
+ * Classes, Multi-band, Vendor Specific …); неизвестный — перед Vendor Specific. */
+static u32 ie_rank_assoc_req(u32 eid)
+{
+    switch (eid) {
+    case 0:   return 3;                 /* SSID */
+    case 1:   return 4;                 /* Supported Rates and BSS Membership Selectors */
+    case 50:  return 5;                 /* Extended Supported Rates and BSS Membership Selectors */
+    case 33:  return 6;                 /* Power Capability */
+    case 36:  return 7;                 /* Supported Channels */
+    case 48:  return 8;                 /* RSN */
+    case 46:  return 9;                 /* QoS Capability */
+    case 70:  return 10;                /* RM Enabled Capabilities */
+    case 54:  return 11;                /* Mobility Domain */
+    case 59:  return 12;                /* Supported Operating Classes */
+    case 45:  return 13;                /* HT Capabilities */
+    case 72:  return 14;                /* 20/40 BSS Coexistence */
+    case 127: return 15;                /* Extended Capabilities */
+    case 89:  return 16;                /* QoS Traffic Capability */
+    case 94:  return 17;                /* TIM Broadcast Request */
+    case 107: return 18;                /* Interworking */
+    case 158: return 19;                /* Multi-band */
+    case 148: return 20;                /* DMG Capabilities */
+    case 170: return 21;                /* Multiple MAC Sublayers */
+    case 191: return 22;                /* VHT Capabilities */
+    case 199: return 23;                /* Operating Mode Notification */
+    case 55:  return 42;                /* Fast BSS Transition */
+    case 244: return 43;                /* RSN Extension */
+    case 221: return 0x101;             /* Vendor Specific — после всех */
+    default:  return 0x100;
+    }
+}
+
 static u32 ies_block_merge_ranked(u32 *dest_block, struct app_ies *internal_block, struct app_ies *external_block,
                                   u32 (*rank)(u32 eid));
 
@@ -328,6 +362,88 @@ __attribute__((section(".textlate"))) u32 ies_block_merge(u32 *dest_block, struc
                                                           struct app_ies *external_block)
 {
     return ies_block_merge_ranked(dest_block, internal_block, external_block, ie_rank_eid);
+}
+
+/* Ключ элемента для сортирующего слияния: порядковый номер таблицы, затем список (хост — 0, fw — 1), затем смещение
+ * в списке — порядок вывода строго по возрастанию ключа. */
+static u32 ie_sort_key(u32 (*rank)(u32 eid), const u8 *ie, u32 src, u32 off)
+{
+    return (rank(ie[0]) << 17) | (src << 16) | (off & 0xffffu);
+}
+
+/* Есть ли в списке b элемент с тем же Element ID (Vendor Specific — с тем же OUI). */
+static u32 ies_block_has_eid(struct app_ies *b, const u8 *ie)
+{
+    struct ie_iter it;
+    u8 *x;
+    ie_iter_init(&it, b);
+    while ((x = app_ie_walk_list(&it)) != 0) {
+        if (x[0] != ie[0])
+            continue;
+        if (ie[0] != 0xdd || (x[2] == ie[2] && x[3] == ie[3] && x[4] == ie[4]))
+            return 1;
+    }
+    return 0;
+}
+
+/* Слияние с сортировкой по таблице порядка элементов кадра (rank): списки хоста и fw не обязаны быть упорядочены
+ * (wpa_supplicant кладёт Extended Capabilities раньше Supported Operating Classes, а в табл. 9-34 — наоборот: 15
+ * после 12; слияние двух «отсортированных» списков по Element ID выпускало их как есть, захват 2026-11-04). Равный
+ * номер — элемент хоста, затем свой; одинаковый Element ID в обоих списках — один, хоста (как ies_block_merge);
+ * одинаковый Vendor Specific OUI в обоих — ассерт 0x11b9 (как vendor). P2P IE при frame_type 1 — пропуск. */
+static u32 ies_block_merge_sorted(u32 *dest_block, struct app_ies *internal_block, struct app_ies *external_block,
+                                  u32 (*rank)(u32 eid))
+{
+    u8 *dest = *(u8 **)dest_block;
+    u32 total = 0, last = 0, have_last = 0;
+    for (;;) {
+        u8 *best = 0;
+        u32 best_key = 0;
+        for (u32 src = 0; src < 2; src++) {
+            struct app_ies *b = src ? external_block : internal_block;
+            struct ie_iter it;
+            u8 *x;
+            ie_iter_init(&it, b);
+            while ((x = app_ie_walk_list(&it)) != 0) {
+                u32 k = ie_sort_key(rank, x, src, (u32)(x - (u8 *)b->buf));
+                if ((have_last && k <= last) || (best != 0 && k >= best_key))
+                    continue;
+                best = x;
+                best_key = k;
+            }
+        }
+        if (best == 0)
+            break;
+        last = best_key;
+        have_last = 1;
+        if ((best_key >> 16) & 1u) {                       /* свой элемент */
+            if (ies_block_has_eid(internal_block, best)) {
+                if (best[0] == 0xdd) {
+                    fw_sysassert_fatal(0, 0x11b9);         /* дубль vendor IE */
+                    return 0;
+                }
+                continue;                                  /* тот же элемент у хоста — уже выведен */
+            }
+        }
+        if (best[2] == 0x50 && best[3] == 0x6f && best[4] == 0x9a && best[5] == 0x09
+            && external_block->frame_type == 1u) {
+            fw_log_emit3(0x2d, 0x1010e9c, best[0], best[1], best[2]);
+            continue;
+        }
+        u32 n = (u32)best[1] + 2;
+        memcpy_fw(dest, best, n);
+        dest += n;
+        total += n;
+    }
+    *(u8 **)dest_block = dest;
+    return total;
+}
+
+/* Слияние IE хоста со своими для Association Request — по порядку табл. 9-34 (9.3.3.5). */
+__attribute__((section(".textlate"))) u32 ies_block_merge_assoc_req(u32 *dest_block, struct app_ies *internal_block,
+                                                                    struct app_ies *external_block)
+{
+    return ies_block_merge_sorted(dest_block, internal_block, external_block, ie_rank_assoc_req);
 }
 
 /* Слияние по ключу rank: меньший ключ — раньше; равный ключ при разных eid (неизвестные элементы) — элемент хоста
@@ -540,7 +656,7 @@ __attribute__((section(".textlate"))) void mgmt_tx_build_probe_resp(u32 payload,
         u32 dest_block[1];
         dest_block[0] = (u32)dest;
         /* исправлено (vendor): слияние по порядку табл. 9-39, а не по eid (RSN — до EDCA, Multi-band — до DMG) */
-        ies_len = ies_block_merge_ranked(dest_block, internal, &app_block, ie_rank_probe_resp);
+        ies_len = ies_block_merge_sorted(dest_block, internal, &app_block, ie_rank_probe_resp);
         dest = (u8 *)dest_block[0];
     }
 
