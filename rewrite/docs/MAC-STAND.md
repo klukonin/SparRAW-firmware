@@ -747,6 +747,13 @@ Association Response, Action точки и Probe/Association Request станц�
 WMI_CONNECT_EVENT как прежде (запрос итога не нужен для tx_complete); судья assoc_state: class_tx 0. QoS Null после
 BlockAck в конце TXOP данных остаётся (State 4).
 
+Стенд 2026-11-06 (образ fix/ajc-2b: PMC точки с записями данных с начала входа
+станции, 2 записи): QoS Null до Association Response — 0 у точки и 0 у станции (без правки — 1 и 2); после Ack на
+Probe Response и Association Response — сразу CF-End держателя (+73 и +46 мкс от начала кадра; прежде QoS Null +86/+60
+и CF-End); ассоциация за 3–4 с, FWERR 0, наборы STA 13/13 и AP 6/6. Ответный CF-End станции после Association
+Response есть (+89 мкс), после Probe Response — нет (до ассоциации; прежде шёл после QoS Null) — не нарушение
+(10.23.2.10 — ответ не обязателен), отмечено.
+
 ## TA DMG CTS-to-self перед групповыми данными
 
 Захваты PMC обоих узлов (assoc, assoc2, assoc3, data, nordd; широковещательный ping точки, SSDP, MLD): перед каждым
