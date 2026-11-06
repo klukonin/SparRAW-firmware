@@ -309,10 +309,6 @@ def test_live_duration(live):
     _no(r, [x for x in _dur(r) if x.rule not in ('SSW', 'CF-End', 'Ack', 'BlockAck', 'DMG CTS')])
 
 
-@pytest.mark.xfail(strict=True, reason='9.3.1.6: CF-End держателя TXOP (i = 2) — Duration 34 вместо TXTIME(CF-End) + '
-                                       'SIFS = 18, ответный CF-End (i = 1, последний) — 18 вместо 0: номер в '
-                                       'последовательности усечения сдвинут на 1 (ответ с ненулевым Duration '
-                                       'разрешает ещё один CF-End, 10.23.2.10)')
 def test_live_cf_end_duration(live):
     r = live
     _no(r, _by(_dur(r), 'CF-End'))

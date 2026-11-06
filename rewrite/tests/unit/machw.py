@@ -1436,12 +1436,10 @@ class HW:
         if self.dur_new or self.txop_end is None:
             self.txop_end = p['start'] - MACLAT_CLK + self.dur_us * CLK_PER_US
             self.dur_new = False
-        if self.dur_literal and p.get('fifo') is not None:   # H-LITSSW: SSW развёртки из FIFO — 0x15 как есть
-            return self.dur_us
-        if self._dur_minus_txtime():
-            return max(0, self.dur_us - -(-p['dur'] // CLK_PER_US))
         if self.dur_literal:
-            return self.dur_us                            # H-DUR18: развёртка SSW в DTI (0x18001000) — буквально
+            if p.get('fifo') is not None:                 # H-LITSSW: SSW развёртки из FIFO — 0x15 как есть
+                return self.dur_us
+            return max(0, self.dur_us - -(-p['dur'] // CLK_PER_US))   # маяк из шаблона (H-DUR18: 0x15 − 20)
         return max(0, (self.txop_end - (p['start'] + p['dur'])) // CLK_PER_US)
 
     ACK_WAIT_CLK = SIFS_CLK + ctrl_txtime_clk(14) + 2 * SLOT_CLK   # конец кадра → конец Ack (+ запас 2 слота)
