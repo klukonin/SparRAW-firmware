@@ -92,6 +92,15 @@ def blockack_frame(ra, ta, tid, ssn, sns):
             ((ssn & 0xfff) << 4).to_bytes(2, 'little') + bm.to_bytes(8, 'little'))
 
 
+def qos_ack_policy(f):
+    """Ack Policy QoS Data/QoS Null (9.2.4.5.4: QoS Control B5..B6; Table 9-13: 0 Normal Ack или Implicit BAR,
+    1 No Ack, 2 No explicit acknowledgment / PSMP Ack, 3 Block Ack). None — кадр не QoS Data (тип 2, б7 подтипа)."""
+    fc = int.from_bytes(f[:2], 'little')
+    if (fc >> 2) & 3 != 2 or not fc & 0x80 or len(f) < 26:
+        return None
+    return (f[24] >> 5) & 3
+
+
 def rx_dup_cache_key(f):
     """Кэш обнаружения дубликатов приёмника (802.11-2020 10.3.2.14.3, Table 10-6) для кадра Data/Management:
     QoS Data — RC2, индекс <Address 2, TID>; QoS (+)Null — RC3, кэша нет (None); прочие Data — RC1, <Address 2>;
@@ -176,7 +185,8 @@ class Air:
             f = f[:2] + (rec['dur_us'] & 0xffff).to_bytes(2, 'little') + f[4:]
             if (f[0] >> 2) & 3 == 2:
                 mcs = rec.get('mcs', 0) & 0x1f
-                return f, (lambda dst: {**DATA_REP, 38: self._r38(dst, src) | mcs << 20})
+                ack = qos_ack_policy(f) << 16 if qos_ack_policy(f) is not None else 0   # r38 requested_ack_policy
+                return f, (lambda dst: {**DATA_REP, 38: self._r38(dst, src) | mcs << 20 | ack})
             return f, (lambda dst: {**QFRAME_REP, 38: self._r38(dst, src)})
         if rec['what'].startswith('ответ на') and getattr(src, 'resp_kind', None) == 'cts':
             # DMG CTS (9.3.1.13): FC 0x0564, Duration = Duration RTS − (SIFS + TXTIME CTS) вверх, RA — TA RTS, TA — свой
@@ -261,7 +271,9 @@ class Air:
                     dst.uc.cpu.write(RX_BUF + i, bytes([b]))
             fc = int.from_bytes(frame[:2], 'little')
             rts = fc == 0x00b4 and frame[4:10] == bytes(dst.mac)
-            uni = (rec.get('qframe') is not None or rts) and frame[4:10] == bytes(dst.mac)
+            # Ack Policy No Ack (QoS Control B5..B6 = 1, 9.2.4.5.4): ответа через SIFS нет (QoS Null MAC, H-QNULL)
+            noack = not isinstance(rec.get('qframe'), list) and qos_ack_policy(frame) == 1
+            uni = (rec.get('qframe') is not None or rts) and frame[4:10] == bytes(dst.mac) and not noack
             if uni:
                 dst.resp_ra = bytes(src.mac)                # Ack — тому, кто прислал
                 dst.resp_kind = 'cts' if rts else 'ack'
@@ -341,6 +353,10 @@ class Air:
             if rx_is_duplicate(dst.__dict__.setdefault('rx_seq', {}), f):
                 return
         if (fc >> 2) & 3 == 2 and f[4:10] == bytes(dst.mac):
+            if (fc >> 4) & 0xc == 0xc:
+                # QoS Null (подтип 12) — данных нет, MAC в очередь не отдаёт (стенд, PMC: w0 б16 у принятого QoS Null)
+                dst.rx_qos_null.append((dst.hw.now, bytes(f)))
+                return
             dst.host_rx.append((dst.hw.now, f))
             return
         if fc & 0xff == 0x0c:                                # Extension, подтип 0 — DMG Beacon

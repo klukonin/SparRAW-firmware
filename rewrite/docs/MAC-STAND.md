@@ -701,3 +701,52 @@ CF-End, всё в эфире верно) почти ничего не прини
   (uc_wait_txop_end) покажет, приходит ли событие.
 - Указатели очередей MAC в окне дескрипторов (H-QDESC) — эмулятор их не двигает.
 - data_frame_qid и requested_ack_policy в отчёте о приёме данных — связь с TID и Ack Policy кадра.
+
+## Кадры класса 3 до ассоциации: QoS Null MAC (H-QNULL, 2026-11-04)
+
+Судья эфира (tests/ref air_judge, правило assoc_state) по захватам assoc, assoc2, assoc3 (PMC обоих узлов, в assoc2/3 —
+с `txqos`): станция в State 2 шлёт QoS Null — после своего Disassociation, после каждого Probe Request и после
+Association Request; точка — после Probe Response и Association Response; точка кадры станции принимает без
+Disassociation. 802.11-2020 11.3.3: «In State 2, only Class 1 or Class 2 frames are allowed», Data (и QoS Null) — класс 3
+(11.3.3 c) 1)); 11.3.5.1: DMG STA, получив кадр класса 3 от STA в State 2, шлёт ей Disassociation.
+
+Источник кадра — MAC, не fw и не хост (H-QNULL): QoS Null идёт через SIFS после Ack на кадр очереди управления 0x1a
+(или BlockAck на последний A-MPDU), FC 0x00c8, A1..A3 — как у предыдущего кадра очереди, Sequence Number — следующий за
+ним (Probe Request SN 32 → QoS Null SN 33, Association Request 33 → 34), QoS Control 0x0020 (TID 0, Ack Policy No Ack),
+MCS данных, Duration — остаток TXOP; за ним uc шлёт CF-End держателя. У приёмника: r38 requested_ack_policy 1, r39 тип
+0x2c, кадр в очередь не отдан (w0 б16 PMC). Так MAC отвечает на пуск продолжения TXOP (rx_flow_step → rx_txop_continue,
+0x16 qid | … → 0x37000020 → 0x19000001) у очереди, где кадров больше нет: uc проверял наличие кадров
+(rx_flow_ctrl_qid_empty, MTP_Q_AVAIL | BAP_Q_AVAIL r41 сел. 0xb/0xc) только у очередей с ctrl_b6, а очереди 0x19/0x1a и
+кольца данных fw заводит в режиме 0 (null_b5 = 1).
+
+Исправлено (uc): rx_flow_ctrl_qid_empty проверяет и очередь управления 0x1a — после последнего кадра управления TXOP не
+продолжается, CF-End сразу. Очереди данных — как прежде (проверка стоит в сроке SIFS продолжения TXOP; QoS Null в
+конце TXOP данных — State 4, класс 3 разрешён). Путь данных — +1 инструкция (`breq qid,0x1a`), код rx_flow_step /
+rx_flow_run / rx_flow_handle_frame не изменился (только смещения вызовов).
+
+Не сделано — ответ точки Disassociation (reason 7) на кадр класса 3 от неассоциированной станции (11.3.5.1). Пробный
+путь (uc: кадр данных от станции из таблицы MAC вне maint_sta_mask → событие fw → Disassociation при MLME UNASSOCIATE)
+в эмуляторе не срабатывает ни в одном сценарии: до ассоциации uc точки rx_flow не запускает (L1 начинает его по
+busy_event только в режиме прослушивания — после ассоциации; Ack на кадры управления станции собирает MAC), после
+Disassociation соединения (cid) и записи в таблице MAC у точки уже нет; QoS Null MAC в очередь не отдаёт (PMC w0 б16) —
+ни fw, ни хост его не видят. Нужен стенд: видит ли uc/fw точки такие кадры вообще (ниже), иначе — путь через хост
+(драйвер получает данные cid без соединения).
+
+Следствие: CF-End держателя после Ack на его последний кадр управления идёт через tx_cca_check_and_send — после
+ожидания слота, ~16 мкс от конца Ack (эмулятор), а не через SIFS (10.23.2.8); так же у vendor закрывались очереди с
+ctrl_b6. Strict xfail test_ref_diff `test_live_cf_end_after_mgmt_sifs`; закрытие TXOP через SIFS — путь доступа к
+среде (tx_cca_check_and_send), ветка fix/air-judge-2.
+
+Модель: machw H-QNULL (QoS Null на пуск у пустой очереди управления 0x1a; у очередей данных на стенде тоже, в модели
+не включено — эталон cbap не разбирает QoS Null перед CF-End в конце TXOP данных), H-QAVAIL (r41 сел. 0xb — очереди с невыданными
+кадрами); air: Ack Policy No Ack — без ответа, QoS Null хосту не отдаётся. Тест: test_air
+`test_live_no_class3_before_association` (встречные данные обоих узлов, ref/mlme.check_assoc_log по журналу эфира,
+QoS Null MAC только после Association Response; до исправления — QoS Null станции после Association Request: class_tx
+и missing_reply).
+
+На стенде проверить (захват ассоциации с нуля, маска rx,tx,rxqos,txqos, переподключение станции): после Probe Request /
+Association Request / Disassociation станции и Probe Response / Association Response точки — Ack, затем CF-End держателя
+без QoS Null между ними; судья: assoc_state class_tx 0, missing_reply 0. QoS Null после BlockAck в TXOP данных
+остаются (State 4). Для 11.3.5.1: счётчик принятых точкой PPDU данных от станции до её ассоциации — по PMC точки
+(RX-запись QoS Null станции есть, w0 б16 — в очередь не отдан); идёт ли uc точки при этом в rx_flow — метка
+STAMP_RESP_REP на точке во время ассоциации образа без этого исправления (QoS Null станции после Association Request).

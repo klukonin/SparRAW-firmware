@@ -637,3 +637,32 @@ def test_live_holder_grants_no_rd(live_rd_own):
     assert amp, _log(r)
     assert not [f['what'] for f in amp if f['rec'].get('rdg')]
     assert not [f['what'] for f in fr if 'RD A-MPDU' in f['what']]
+
+
+def _class3_violations(r):
+    """ref/mlme.check_assoc_log по журналу эфира (ref_bridge.mlme_events): нарушения 11.3.3 / 11.3.5.1."""
+    import ref_bridge
+    from ref import mlme as M
+    ap = ':'.join('%02x' % x for x in bytes(r['ap'].mac))
+    log = ref_bridge.mlme_events(r['air'])
+    return log, [(v, log[v.idx]) for v in M.check_assoc_log(log, ap)]
+
+
+def test_live_no_class3_before_association(live_rd_own):
+    """802.11-2020 11.3.3: «In State 2, only Class 1 or Class 2 frames are allowed»; Data (QoS Null тоже) — класс 3
+    (11.3.3 c) 1)); State 3/4 — после успешной ассоциации (11.3.5.1). Встречные данные обоих узлов после ассоциации
+    (_live_rd). Прежде: после каждого кадра очереди управления 0x1a (Probe Request/Response, Association Request/
+    Response) uc просил продолжение TXOP у пустой очереди, MAC выпускал QoS Null (H-QNULL, стенд assoc2/assoc3:
+    QoS Null станции после Disassociation, Probe Request, Association Request и точки после Probe/Association Response)."""
+    r = live_rd_own
+    log, viol = _class3_violations(r)
+    assert not viol, '\n'.join('%s %s: %s @%.1f %s %s→%s' % (v.rule, v.msg, '', float(e.t), e.kind, e.ta, e.ra)
+                               for v, e in viol)
+    kinds = [e.kind for e in log]
+    assert 'Association Request' in kinds and 'Association Response' in kinds
+    assert len(r['sta'].host_done) == 16 and len([f for t, f in r['sta'].host_rx if t >= r['t0']]) == 8   # данные дошли
+    # QoS Null MAC (H-QNULL) — только в State 4: после последнего A-MPDU обмена данных
+    qn = [f for f in r['air'].frames if 'QoS Null' in f['what']]
+    t_assoc = max(float(e.t) for e in log if e.kind == 'Association Response')
+    assert all(f['start'] / CLK > t_assoc for f in qn), [(f['start'] / CLK, f['what']) for f in qn]
+
