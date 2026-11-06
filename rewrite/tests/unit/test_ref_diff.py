@@ -323,37 +323,12 @@ def test_live_response_duration_emulator(live):
     _no(r, [x for x in _dur(r) if x.rule in ('Ack', 'BlockAck', 'DMG CTS')])
 
 
-MGMT_KINDS = ('Association Request', 'Association Response', 'Reassociation Request', 'Reassociation Response',
-              'Probe Request', 'Probe Response', 'Disassociation', 'Action')
-
-
-def _cf_end_after_mgmt(r, found):
-    """Нарушения CF-End держателя, закрывающего TXOP после Ack на свой кадр управления (очередь 0x1a): uc не продолжает
-    TXOP на пустой очереди управления (иначе MAC выпускает QoS Null класса 3, H-QNULL) и шлёт CF-End через
-    tx_cca_check_and_send — после ожидания слота, ~16 мкс от конца Ack, а не через SIFS."""
-    evs = r['evs']
-    return [f for f in found if f.rule in ('aifs', 'cf_end', 'cf_end_dur') and evs[f.idx].kind == 'CF-End' and
-            f.idx >= 2 and evs[f.idx - 1].kind == 'Ack' and evs[f.idx - 2].kind in MGMT_KINDS]
-
-
 def test_live_cbap_access(live):
     """Доступ в CBAP (ref/cbap): NAV, AIFS, TXNAV, лимит TXOP (2048 мкс из EDCA Parameter Set), конец CBAP, CF-End
     только держателем TXOP. Допуски SIFS и границы слота широкие (7 и 5 мкс): срок SIFS — test_live_cbap_sifs,
-    отсчёт слотов backoff — модель MAC эмулятора (H-BACKOFF), не прошивка. CF-End после кадра управления — отдельно
-    (test_live_cf_end_after_mgmt_sifs)."""
+    отсчёт слотов backoff — модель MAC эмулятора (H-BACKOFF), не прошивка."""
     r = live
-    found = r['RB'].judge_cbap(r['evs'], AP_S, r['sched'], r['lim'], sifs_tol=7, slot_tol=5)
-    skip = _cf_end_after_mgmt(r, found)
-    _no(r, [f for f in found if f not in skip])
-
-
-@pytest.mark.xfail(strict=True, reason='10.23.2.8 / 10.23.2.10: CF-End держателя после Ack на его последний кадр '
-                                       'управления — через ожидание слота tx_cca_check_and_send (~16 мкс), а не SIFS: '
-                                       'TXOP на пустой очереди управления не продолжается (без QoS Null MAC класса 3, '
-                                       'MAC-STAND H-QNULL), а закрытие TXOP идёт путём доступа к среде')
-def test_live_cf_end_after_mgmt_sifs(live):
-    r = live
-    _no(r, _cf_end_after_mgmt(r, r['RB'].judge_cbap(r['evs'], AP_S, r['sched'], r['lim'], sifs_tol=7, slot_tol=5)))
+    _no(r, r['RB'].judge_cbap(r['evs'], AP_S, r['sched'], r['lim'], sifs_tol=7, slot_tol=5))
 
 
 @pytest.mark.xfail(strict=True, reason='10.3.2.3.3: ответы через SIFS в эмуляции позже SIFS + 0,49 мкс — Ack 5,5, '

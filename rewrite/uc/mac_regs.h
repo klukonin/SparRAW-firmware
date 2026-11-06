@@ -125,11 +125,6 @@
 /* сел. 0x3 QSET_1_MASK_VECTOR */
 #define MAC_QSET1_Q0_29           0x3fffffffu   /* очереди 0..29 ожидают */
 #define MAC_QSET1_Q30             (1u << 30)    /* очередь 30 ожидает */
-/* сел. 0xb MTP_Q_AVAIL_R41 (mtp_q_avail_vec [31:0]) и 0xc BAP_Q_AVAIL_R41 (bap_q_avail_vec [29:0]): б qid — у очереди
- * есть кадр для MTP / для BAP (rx_flow_ctrl_qid_empty) */
-
-/* Очередь MAC кадров управления fw (fw/fwq_tx.c dma_mgr_reset_mgmt_queue: кольцо 6, режим 0 — null_b5 = 1) */
-#define MACQ_MGMT_QID             0x1a
 
 /* ---- r42: события EVENT1_STATUS_R42 (селектор не пишется), §2.8 ---- */
 

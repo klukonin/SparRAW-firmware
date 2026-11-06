@@ -375,22 +375,13 @@ void rx_update_nav_from_frame(u32 a)
     rx_nav_set_from_duration(1, r1, r2, r3);
 }
 
-/* 1 — в очереди продолжения TXOP (a->qid) кадров для MTP и BAP нет: rx_flow_step TXOP не продолжает (CF-End).
- * vendor проверял только очереди с ctrl_b6; у остальных продолжение просилось всегда, и на пустой очереди MAC сам выпускал
- * QoS Null (No Ack, H-QNULL tests/unit/machw.py; стенд 2026-11-04 assoc2/assoc3, PMC обоих узлов). После кадра очереди
- * управления 0x1a это кадр класса 3 к пиру в State 2 — после Disassociation, Probe Request/Response, Association
- * Request (802.11-2020 11.3.3: «In State 2, only Class 1 or Class 2 frames are allowed»; 11.3.5.1). исправлено: очередь
- * управления проверяется всегда. Очереди данных — как у vendor (лишняя проверка на пути данных стоит в сроке SIFS;
- * QoS Null в конце TXOP данных — State 4, класс 3 разрешён).
- * СРОК: вызов — до 0x1b001111 продолжения TXOP (rx_flow_step, ХРУПКО). Очереди данных: +1 инструкция (breq qid, 0x1a);
- * очередь управления: + чтение r41 (2 команды 0x1d, 5 nop) — как у vendor для очередей ctrl_b6. */
 UC_HOT
 u32 rx_flow_ctrl_qid_empty(struct tx_ctx_s *a)
 {
     /* 6.2 asm 0x93daf0. */
     u32 r2 = a->qid;
     u8 r1 = qid_cfg[r2].ctrl_b6;
-    if (r1 == 0 && r2 != MACQ_MGMT_QID)
+    if (r1 == 0)
         return 0;
     u32 g = mac_sel_shadow & 0xfffff0ff;
     mac_sel_shadow = g | 0xb00;
