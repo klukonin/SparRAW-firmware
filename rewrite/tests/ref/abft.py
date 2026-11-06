@@ -730,10 +730,11 @@ def check_abft_log(frames, layout, ap, start_tol=ABFT_SSW_START_TOL, fb_tol=ABFT
         if sta in last:
             ps, pc, pi = last[sta]
             got_fb = any(frames[k].dst == sta for k in fbs.get(ps, []))
-            if pc != 0 and not got_fb:
+            # CDOWN неизвестен (None) у синтетических SSW из отчёта приёма PMC — тело нулевое: продолжение не судим
+            if pc is not None and pc != 0 and not got_fb:
                 if s != ps + 1:
                     out.append(Violation(ii[0], 'resume', f'продолжение RSS в слоте {s} вместо {ps + 1}'))
-                elif L.is_txss and fr[0].cdown not in (pc - 1, pc - 2):
+                elif L.is_txss and fr[0].cdown is not None and fr[0].cdown not in (pc - 1, pc - 2):
                     out.append(Violation(ii[0], 'cdown', f'CDOWN через слот {pc} → {fr[0].cdown}'))
         last[sta] = (s, fr[-1].cdown, ii[-1])
 
