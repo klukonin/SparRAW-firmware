@@ -9,6 +9,10 @@
 """
 import os, re, shlex, struct, subprocess, sys, time
 
+# Дополнительные команды uci для точки (обе роли: peer-AP и dut-AP), например
+# SPARRAW_AP_UCI="uci set wireless.default_radio0.multicast_to_unicast=1" — проверка опций hostapd набором
+AP_UCI = (os.environ.get('SPARRAW_AP_UCI', '').strip().rstrip(';') + '; ') if os.environ.get('SPARRAW_AP_UCI') else ''
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REWRITE = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REWRITE, 'tools'))
@@ -246,11 +250,11 @@ class Stand:
             p.power_cycle()
             time.sleep(25)
             p.wait_alive()
-        p.run("killall iperf3 2>/dev/null; for i in $(iw dev | sed -n 's/.*Interface //p'); do ip addr flush dev $i; done; "
-              "uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.network=lan; "
-              "uci set wireless.default_radio0.ssid=%s; fw4 reload; wifi down; sleep 2; wifi up radio0; sleep 5; "
-              "ip addr show br-lan | grep -q %s || ip addr add %s/24 dev br-lan; "
-              "sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; iperf3 -s -D"
+        p.run(("killall iperf3 2>/dev/null; for i in $(iw dev | sed -n 's/.*Interface //p'); do ip addr flush dev $i; done; "
+               "uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.network=lan; "
+               "uci set wireless.default_radio0.ssid=%s; " + AP_UCI + "fw4 reload; wifi down; sleep 2; wifi up radio0; sleep 5; "
+               "ip addr show br-lan | grep -q %s || ip addr add %s/24 dev br-lan; "
+               "sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; iperf3 -s -D")
               % (c['ssid'], c['ip'], c['ip']), check=False, timeout=90)
         self.peer_dirty = False
 
@@ -315,8 +319,8 @@ class Stand:
               'ip addr del %s/24 dev br-lan; wifi up radio0' % (ap_ssid, self.cfg['peer']['ip']), check=False, timeout=60)
         self._dut_boot()
         d.run('uci set wireless.radio0.disabled=0; uci set wireless.default_radio0.disabled=0; '
-              'uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.ssid=%s; wifi up radio0 >/dev/null 2>&1'
-              % ap_ssid, check=False)
+              'uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.ssid=%s; ' % ap_ssid + AP_UCI +
+              'wifi up radio0 >/dev/null 2>&1', check=False)
         if not self._wait(d, "dmesg | grep -m1 'FW ready after'", 60):
             raise StandError('dut: FW не готова')
         p.mark()
