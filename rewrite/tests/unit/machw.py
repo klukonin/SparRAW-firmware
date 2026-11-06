@@ -853,6 +853,14 @@ class HW:
             self.mtp_qid = (arg >> 16) & 0x1f
             self.mtp_result = bool(arg & 0x10)            # H-RESULTGO: б4 — запрос итога (mac_program_tx_result_ctx_uc)
             self.mtp_resp_data = self.mtp_qid < 0x1e and bool(arg & 2)   # H-RD: данные очереди вместе с ответом
+            # H-MTPRESP: запрос ответа через SIFS (mtp_service_dispatch: qid 0x1f, [1] и [5], вид [10:8] — Ack 0,
+            # BlockAck 1, DMG CTS 5) — ответ собирает MAC, кадр в FIFO прямой передачи (0x161f0040 —
+            # mac_program_tx_with_rate) им не пускается. Прежде модель пускала любой закрытый кадр FIFO: RTS, оставшийся
+            # в FIFO после провала пробы CCA (txop_await_cts_ppdu → 0x29000002), уходил вместо DMG CTS на RTS пира.
+            # Стенд: захваты PMC обоих узлов (back, bis_5ef_A_slot, t2; ~100 тыс. RTS) — ни одного RTS в ответ на RTS
+            # пира в пределах 12 мкс, только DMG CTS. Что 0x29000002 делает с самим кадром FIFO — не установлено
+            # (кадр остаётся в модели; следующая прямая передача uc открывает FIFO заново: 0x33000001).
+            self.mtp_resp_req = self.mtp_qid == 0x1f and arg & 0x22 == 0x22
         elif op == 0x80 and (arg >> 16) == 0xd0:          # режим приёма (rx_mode_configure: 0x80d00000 | режим)
             self.rx_mode = arg & 0xff
         elif op == 0x27:                                  # H-E27: что поднимет busy2 (таблица E27)
@@ -917,6 +925,12 @@ class HW:
             self.dtx_len = arg & 0xffff
         elif op == 0x33 and arg == 1:                     # FIFO прямой передачи открыт (direct_tx_program_desc)
             self.fifo, self.fifo_rmw = bytearray(), False
+            if self.frame_ready is not None and 'fifo' in self.frame_ready:
+                # H-FIFO1: FIFO прямой передачи держит один кадр — новый кадр (0x33000001) заменяет закрытый, но не
+                # пущенный (RTS после провала пробы CCA, txop_await_cts_ppdu → 0x29000002). Стенд: захваты PMC обоих
+                # узлов (back, bis_5ef_A_slot) — ни одного RTS в ответ на CF-End/RTS/данные пира в пределах 12 мкс
+                # (ответный CF-End uc собирает в FIFO заново, tx_send_imm_response); модель пускала старый RTS.
+                self.frame_ready = None
         elif op == 0x33 and arg == 2:                     # кадр загружен в FIFO прямой передачи
             if self.fifo is not None:
                 self.fifo_frame, self.fifo = bytes(self.fifo), None
@@ -952,8 +966,8 @@ class HW:
                 r = self.resp_due
 
                 def auto(r=r):
-                    if self.resp_due is r and self.frame_ready is None and not self.fifo and self.tx is None \
-                            and self.tx_pending is None:
+                    fifo_free = (self.frame_ready is None and not self.fifo) or self.mtp_resp_req   # H-MTPRESP
+                    if self.resp_due is r and fifo_free and self.tx is None and self.tx_pending is None:
                         self._hw_response()
                 self.at(max(self.now, r['end'] + self.ifs_clk() + MACLAT_CLK), auto, 'resp_auto')
         elif op == 0x15:                                  # Duration следующего кадра, мкс (H-DUR)
@@ -1019,8 +1033,11 @@ class HW:
         ответ через SIFS без кадра в FIFO собирает MAC. Стенд: зазор маяков ровно SBIFS при пути tx_end → 0x19 ~276
         тактов (0x18 приходит позже и срок не задаёт)."""
         self.go = True
-        if self.frame_ready is None and self.resp_due is not None:
-            self._hw_response()                       # ответ через SIFS собирает MAC (Ack/BA/CTS) — без FIFO
+        if self.resp_due is not None and (self.frame_ready is None or self.mtp_resp_req):
+            self._hw_response()                       # ответ через SIFS собирает MAC (Ack/BA/CTS) — без FIFO (H-MTPRESP)
+            return
+        if self.mtp_resp_req:
+            self.go = False                           # H-MTPRESP: 0x19 ответа (уже начатого по 0x37000020) — не кадр FIFO
             return
         q = self._q_avail(self.mtp_qid) if self.mtp_qid not in (None, 0x1e, 0x1f) else None
         if self.frame_ready is None and self.ssw_field is None and q:
@@ -1306,6 +1323,7 @@ class HW:
 
     mtp_result = False
     mtp_rate = None                   # MCS из 0x17 (явный) — для ответа через SIFS
+    mtp_resp_req = False              # H-MTPRESP: последний запрос MTP — ответ через SIFS (собирает MAC)
     go19 = False                      # H-TXGO18F: после последнего запроса MTP была 0x19
     sweep_len = 26                    # длина кадра шаблона (маяк — fwsh bcn_psdu_len, задаёт сценарий)
     gp_hw_ref = None

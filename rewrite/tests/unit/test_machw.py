@@ -438,3 +438,30 @@ def test_dur18_fifo_frame_duration(uc):
     hw._cmd(0x15000000 | 33)
     hw._cmd(0x33000001)
     assert hw._dur_field(dict(cf_end)) == 33
+
+
+def test_sifs_response_not_from_stale_fifo(uc):
+    """H-MTPRESP / H-FIFO1: RTS остался закрытым в FIFO прямой передачи (проба CCA в txop_await_cts_ppdu провалилась,
+    0x29000002 — среду занял пир). На RTS пира uc запрашивает ответ (mtp_service_dispatch, вид 5: 0x161f0522) —
+    в эфир уходит DMG CTS, который собирает MAC, а не RTS из FIFO; 0x19 ответа кадр FIFO не пускает; следующий кадр FIFO
+    (0x33000001) заменяет старый. Стенд: захваты PMC обоих узлов — RTS в ответ на кадр пира нет ни разу."""
+    from machw import RESP_CMD_DEADLINE_CTS_CLK
+    hw = HW(uc)
+    stale = dict(what='direct 20 B', dur=ctrl_txtime_clk(20), fifo=b'\xb4\x00' + bytes(14), mpdu_len=16)
+    hw.frame_ready = dict(stale)
+    end = hw.air_rx(hw.now + 100, 20, 'RTS пира', sifs_resp=True, resp_len=20, resp_deadline=RESP_CMD_DEADLINE_CTS_CLK)
+    while hw.now < end:
+        assert hw.advance_to_next()
+    for c in (0x1b001111, 0x161f0522, 0x17000000, 0x3e000000, 0x37000020):
+        hw._cmd(c)
+    hw._cmd(0x19000001)
+    for _ in range(50):
+        if any(k == 'tx' for _, _, k, _ in hw.air_log):
+            break
+        hw.advance_to_next()
+    tx = [w for _, _, k, w in hw.air_log if k == 'tx']
+    assert tx and tx[0].startswith('ответ на RTS пира'), (tx, hw.air_log)
+    assert not [w for w in tx if w.startswith('direct')], tx
+    assert hw.frame_ready is not None and hw.frame_ready['what'] == 'direct 20 B'   # сам кадр FIFO — не установлено
+    hw._cmd(0x33000001)
+    assert hw.frame_ready is None
