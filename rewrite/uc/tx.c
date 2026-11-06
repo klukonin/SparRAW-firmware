@@ -631,8 +631,17 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
     (void)d;
 #define sta (*(volatile u32 *)a)                 /* vendor перечитывает [r13] в каждой точке */
     txr.awaiting = 0;                       /* [0x80242c + 8] */
-    if (b != 0) {
+    /* Запрос итога (tx_submit_frame: 0x16 qid | б4, пуск 0x18008000) MAC исполняет передачей: из очереди без кадров —
+     * QoS Null (No Ack, Sequence Number — следующий за последним кадром очереди) перед CF-End (стенд 2026-11-06,
+     * MAC-STAND «QoS Null перед CF-End держателя»; uc ждёт его busy2, иначе assert 0x92). После кадра очереди управления
+     * это кадр класса 3 к пиру в State 2 — Probe Response, Association Request/Response, Disassociation, Action
+     * (802.11-2020 11.3.3: «In State 2, only Class 1 or Class 2 frames are allowed»). исправлено: у очереди управления
+     * запроса итога нет — TXOP закрывает CF-End (10.23.2.10), как у vendor с c == 0 (фиксированное расписание). Очереди
+     * данных — как прежде (QoS Null в State 4 — класс 3 разрешён). */
+    u32 res = (b != 0 && a->qid != MACQ_MGMT_QID);
+    if (b != 0)
         uc_mac_cmd(1u << 29);
+    if (res) {
         tx_submit_frame(a, 0, 1, 0);            /* vendor: 0x400 в UPM-doze — PS вырезан */
         UC_STAMP_T0(STAMP_MTP_RESULT, t_go);
         txr.submit += 1;                  /* [0x80242c + 2], ldw/stw */
@@ -672,7 +681,8 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
      * SP, малый остаток TXOP) — ответ получатель не шлёт (10.23.2.10, 10.39.8.1): 1 мкс — сразу дальше. */
     u32 r18 = r17 ? 0x12 : 1;
     if (b != 0) {
-        uc_wait_one_event(6);
+        if (res)
+            uc_wait_one_event(6);               /* конец передачи по запросу итога */
         mac_program_tx_vector(1, sta_tab[sta].tx_sel, r14);
     }
     txr.rx_wait = txr.rx_wait + 1;   /* [0x80242c + 4] */

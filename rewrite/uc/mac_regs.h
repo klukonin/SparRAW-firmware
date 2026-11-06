@@ -126,6 +126,9 @@
 #define MAC_QSET1_Q0_29           0x3fffffffu   /* очереди 0..29 ожидают */
 #define MAC_QSET1_Q30             (1u << 30)    /* очередь 30 ожидает */
 
+/* Очередь MAC кадров управления fw (fw/fwq_tx.c dma_mgr_reset_mgmt_queue: кольцо 6) */
+#define MACQ_MGMT_QID             0x1a
+
 /* ---- r42: события EVENT1_STATUS_R42 (селектор не пишется), §2.8 ---- */
 
 #define mac_evt1() arc_core_rd(42)         /* EVENT1_STATUS_R42 */

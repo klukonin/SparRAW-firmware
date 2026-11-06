@@ -159,6 +159,7 @@ class CoSim:
         self.host_ring = {}                                     # кольцо хоста → [кадр] (ещё не в очереди MAC)
         self.host_done = []                                     # (такт, кольцо, статус) — завершения кадров хосту
         self.host_rx = []                                       # (такт, кадр) — данные, принятые хостом
+        self.rx_qos_null = []                                   # (такт, кадр) — принятые QoS Null нам (в очередь не идут)
         self.dma_irq = 0
         self.seq = 0
         fw.mmio[HW_TXQ_PTP_AVAIL] = F.M32                       # H-DMA2: очереди TXQ доступны (fw: assert 0x12a1)

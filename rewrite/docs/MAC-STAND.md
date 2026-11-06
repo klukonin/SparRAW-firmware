@@ -59,6 +59,9 @@ tests/unit/air.py, tests/unit/costmodel.py) берёт эти числа, мет
 `STAMP_MTP_RESULT` (35), 153 пуска у AP и станции (очереди 0x1a и 0). Запрос MTP с б4
 (`mac_program_tx_result_ctx_uc`, `0x16 qid << 16 | 0x10`) и пуск `0x18008000` (`tx_submit_frame` в
 `tx_send_and_await_rx_frame`) кадра в эфир не выпускают: tx_end — через 80–89 тактов, r43 0x80010012, r45 0x7f00.
+Неверно (2026-11-06, раздел «QoS Null перед CF-End держателя»): метка `t_go` ставится после пуска, а busy2 и tx_end,
+которых ждёт uc, остаются от приёма Ack и своего кадра — 80–89 тактов это путь кода. Из очереди без кадров пуск
+выпускает QoS Null.
 
 ### MCS данных (H-DATAMCS)
 
@@ -701,16 +704,48 @@ CF-End, всё в эфире верно) почти ничего не прини
   (uc_wait_txop_end) покажет, приходит ли событие.
 - Указатели очередей MAC в окне дескрипторов (H-QDESC) — эмулятор их не двигает.
 - data_frame_qid и requested_ack_policy в отчёте о приёме данных — связь с TID и Ack Policy кадра.
-## Кадры класса 3 до ассоциации: QoS Null MAC — открыто (2026-11-06)
+## Кадры класса 3 до ассоциации: QoS Null перед CF-End держателя (H-QNULL, 2026-11-06)
 
-Судья эфира (правило assoc_state, захваты assoc, assoc2, assoc3) видит QoS Null (FC 0x00c8, QoS Control 0x0020, SN —
-следующий за кадром управления) у обоих узлов в State 2: у точки — после Ack на Probe Response и на Association
-Response, у станции — после своих Probe/Association Request; 802.11-2020 11.3.3 — Data (в т. ч. QoS Null) — класс 3.
-Пробная правка uc (rx_flow_ctrl_qid_empty: не продолжать TXOP после последнего кадра очереди управления 0x1a, ветка
-fix/ajc-2) на стенде 2026-11-06 не помогла: запись входа станции (PMC точки с txqos, образ open + fix/ajc-2) — тот же
-QoS Null после Ack на Probe/Association Response, только на 5 мкс позже (Probe Response: Ack +73, QoS Null +91 мкс;
-без правки +72/+86), и сразу за ним CF-End. Значит, QoS Null MAC выпускает на пути закрытия TXOP (перед CF-End
-держателя), а не на продолжении TXOP у пустой очереди — модель H-QNULL этого пути не описывает. Правка снята.
+Судья эфира (правило assoc_state, захваты assoc, assoc2, assoc3) видит QoS Null (FC 0x00c8, QoS Control 0x0020 — TID 0,
+No Ack; SN — следующий за кадром управления) у обоих узлов в State 2: у точки — после Ack на Probe Response,
+Association Response, Action, у станции — после своих Probe/Association Request и Disassociation; 802.11-2020 11.3.3:
+Data (в т. ч. QoS Null) — класс 3, в State 2 запрещён.
+
+Пробная правка fix/ajc-2 (не продолжать TXOP после последнего кадра очереди 0x1a) на стенде 2026-11-06 не помогла:
+запись входа станции (PMC точки с txqos) — open: Probe Response +0 → Ack +72 → QoS Null +86 (SN 1) → CF-End → ответный
+CF-End +113 мкс; Association Response → Ack +46 → QoS Null +60 (SN 2); с правкой — QoS Null на 5 мкс позже (+91 / +65),
+то есть после ожидания слота tx_cca_check_and_send. Значит, QoS Null рождается на пути закрытия TXOP.
+
+Механизм (по коду uc и записям): закрытие TXOP держателем — tx_send_and_await_rx_frame(b = 1) (из mtp_get_tx_permission
+после неудачного продолжения и из tx_cca_check_and_send) — сначала «запрос итога» tx_submit_frame(a, 0, 1, 0):
+`0x1b001111`, `0x16000000 | qid << 16 | 0x10`, `0x17000000`, пуск `0x18008000`; uc ждёт busy2 (иначе assert 0x92) и
+tx_end, затем событие 6 (конец своей передачи) — и только потом CF-End FIFO. Ожидание busy2 с assert — признак
+передачи; у очереди без кадров MAC передаёт QoS Null от её имени (A1..A3 и счётчик SN очереди). Это единственный пуск
+между Ack и CF-End на обоих путях (с продолжением TXOP и без), и сдвиг на 5 мкс в fix/ajc-2 равен сдвигу этого вызова.
+Прежний вывод H-RESULTGO («в эфир не выпускает») — ошибка метки (выше).
+
+Исправлено (uc, tx_send_and_await_rx_frame): у очереди управления 0x1a запроса итога нет — CF-End сразу (10.23.2.10),
+как у vendor на пути фиксированного расписания (c = 0). Очереди данных — как прежде: QoS Null перед CF-End в конце
+TXOP данных — State 4, класс 3 разрешён (только лишний PPDU). Код rx_flow_step / rx_flow_run / rx_flow_handle_frame
+тот же (смещения вызовов), tx_send_and_await_rx_frame +8 инструкций.
+
+Не установлено: зачем vendor делает запрос итога (MTP r43/r45 после него uc не читает, кроме метки); если от него
+зависит завершение дескриптора кадра очереди (tx_complete в fw), то после Association Response / Request
+ассоциация встанет — на стенде видно сразу. Ответ точки Disassociation (reason 7) на кадр класса 3 от
+неассоциированной станции (11.3.5.1) не сделан: до ассоциации uc точки rx_flow не запускает, QoS Null MAC в очередь
+не отдаёт (PMC w0 б16) — точка такие кадры не видит (ветка fix/ajc-2, отчёт).
+
+Модель: machw H-QNULL — пуск 0x18008000 после запроса с б4 к очереди кольца без невыданных кадров выпускает QoS Null
+(SN + 1 последнего кадра очереди, MCS данных, No Ack; в эфир после Ack — H-TXAFTERACK); с кадрами — прежнее
+(tx_end через 85 тактов, не снято); air: No Ack — без ответа, QoS Null хосту не отдаётся. Тест test_air
+`test_live_no_class3_before_association` (встречные данные обоих узлов, ref/mlme.check_assoc_log по журналу эфира):
+на образе без исправления — QoS Null станции после Association Request (class_tx, missing_reply), с исправлением —
+нарушений нет, данные в обе стороны доходят.
+
+На стенде проверить (запись входа станции, PMC обоих узлов rx,tx,rxqos,txqos): после Ack на Probe Response,
+Association Response, Action точки и Probe/Association Request станции — CF-End держателя без QoS Null; ассоциация и
+WMI_CONNECT_EVENT как прежде (запрос итога не нужен для tx_complete); судья assoc_state: class_tx 0. QoS Null после
+BlockAck в конце TXOP данных остаётся (State 4).
 
 ## TA DMG CTS-to-self перед групповыми данными
 

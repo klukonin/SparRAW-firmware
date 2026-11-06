@@ -47,6 +47,52 @@ def events(air, t0_clk=0):
     return out
 
 
+# Management (тип 0, табл. 9-1): подтип → вид для ref/mlme.frame_class (11.3.3)
+MGMT = {0: 'Association Request', 1: 'Association Response', 2: 'Reassociation Request', 3: 'Reassociation Response',
+        4: 'Probe Request', 5: 'Probe Response', 9: 'ATIM', 10: 'Disassociation', 11: 'Authentication',
+        12: 'Deauthentication'}
+# Action (подтип 13) / Action No Ack (14): категория (табл. 9-51) класса 1 (11.3.3 a) 2) vi, vii, ix); BRP — Unprotected DMG
+ACTION_C1 = {4: 'Public Action', 15: 'Self-protected Action', 20: 'Unprotected DMG Action'}
+
+
+def _mac(b):
+    return ':'.join('%02x' % x for x in b)
+
+
+def mlme_events(air, t0_clk=0):
+    """Air.frames → журнал ref/mlme.check_assoc_log (LogEvent: t мкс, вид, TA, RA, info). Кадры без TA (Ack, DMG CTS
+    к держателю и т. п. — класс 1) и маяки пропускаются; QoS Data/QoS Null и A-MPDU — 'Data'; Association Response —
+    status/AID из тела (9.3.3.6: Capability 2, Status 2, AID 2), acked — Ack от STA следует (модель эфира без потерь:
+    по наличию Ack в пределах 50 мкс)."""
+    from ref import mlme as M
+    fr = sorted((f for f in air.frames if f['start'] >= t0_clk and not f.get('dropped')), key=lambda f: f['start'])
+    out = []
+    for i, f in enumerate(fr):
+        b = f['frame']
+        fc = int.from_bytes(b[:2], 'little')
+        typ, sub = (fc >> 2) & 3, (fc >> 4) & 0xf
+        ta, ra = _mac(bytes(f['src'].mac)), _mac(b[4:10])
+        info = {}
+        if typ == 2:
+            kind = 'Data'
+        elif typ == 0 and sub in MGMT:
+            kind = MGMT[sub]
+            if sub in (1, 3) and len(b) >= 30:
+                info = dict(status=int.from_bytes(b[26:28], 'little'), aid=int.from_bytes(b[28:30], 'little') & 0x3fff,
+                            acked=any(int.from_bytes(g['frame'][:2], 'little') == 0x00d4 and g['frame'][4:10] ==
+                                      bytes(f['src'].mac) and g['start'] - f['end'] < 50 * CLK for g in fr[i + 1:i + 4]))
+            if sub in (10, 12) and len(b) >= 26:
+                info = dict(reason=int.from_bytes(b[24:26], 'little'))
+        elif typ == 0 and sub in (13, 14):
+            kind = 'BRP' if sub == 14 else ACTION_C1.get(b[24] if len(b) > 24 else -1, 'Action')
+        elif typ == 1 and sub in (8, 9):
+            kind = CTL[sub]
+        else:
+            continue
+        out.append(M.LogEvent(Fr(f['start'], CLK), kind, ta, ra, info))
+    return out
+
+
 def check(air, t0_clk=0, **params):
     """Нарушения правил доступа (cbap.check_air_log) в журнале эфира эмуляции."""
     ev = events(air, t0_clk)

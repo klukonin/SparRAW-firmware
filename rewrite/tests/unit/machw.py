@@ -441,6 +441,7 @@ class HW:
         self.q_done = []                  # (qid, статус) — завершённые кадры очередей (DMA → fw: tx_complete)
         self.q_retry = {}                 # H-RETRY: очередь → повторов головного кадра
         self.q_agg = {}                   # H-AMPDU: очередь → окно BA (из дескриптора очереди fw)
+        self.q_last_hdr = {}              # H-QNULL: очередь → заголовок последнего выданного кадра (24 Б)
         self.bap_tx = None                # H-AMPDU: MPDU в последнем принятом BlockAck
         self.retry_log = []               # (такт, очередь, номер повтора)
         self.mtp_qid = None               # очередь MTP (0x16 qid << 16 | 1)
@@ -766,6 +767,13 @@ class HW:
             return 0 if not m else (1 << 31) | ((m & -m).bit_length() - 1) << 24
         if n == 41 and self.sel41 == 3 and self.mac_q_model:
             return self.mac_q_pending                     # H-MACQ: QSET_1_MASK_VECTOR — очереди с кадрами (б30 — маяк)
+        if n == 41 and self.sel41 == 0xb and self.mac_q_model:
+            # H-QAVAIL (по имени поля MTP_Q_AVAIL_R41 mtp_q_avail_vec, не снято): очереди колец, где у MTP есть ещё не
+            # выданный кадр (указатель чтения MAC — _q_avail); 0xc BAP_Q_AVAIL — 0 (кадров, ждущих повтора BA, модель
+            # не держит вне _q_avail)
+            return sum(1 << q for q in self.mac_q if q < 0x1e and self._q_avail(q))
+        if n == 41 and self.sel41 == 0xc and self.mac_q_model:
+            return 0
         return None
 
     def _mtp_valid(self):
@@ -942,11 +950,33 @@ class HW:
                                     mpdu_len=self.dtx_len)
             self._tx_try()
         elif op == 0x18 and arg & 0x8000 and self.mtp_result:
-            # H-RESULTGO (стенд 2026-10-30, метка STAMP_MTP_RESULT, 153 пуска у AP и станции, очереди 0x1a и 0): пуск
-            # 0x18008000 после запроса MTP с б4 (mac_program_tx_result_ctx_uc — tx_submit_frame в
-            # tx_send_and_await_rx_frame) в эфир ничего не выпускает — tx_end через 80–89 тактов (r43 0x80010012, r45
-            # 0x7f00): запрос итога, а не передача
-            self.at(self.now + RESULT_GO_TX_END_CLK, lambda: self._set42(15), 'result_go')
+            # H-RESULTGO / H-QNULL. Пуск 0x18008000 после запроса MTP с б4 (mac_program_tx_result_ctx_uc — tx_submit_frame
+            # в tx_send_and_await_rx_frame, закрытие TXOP держателем перед CF-End). Стенд 2026-11-06 (PMC точки, вход
+            # станции; asb_11 — open, asm5_11 — без продолжения TXOP после кадра очереди 0x1a): между Ack на последний
+            # кадр очереди и CF-End держателя MAC выпускает QoS Null (FC 0x00c8, 30 Б с FCS, MCS данных; A1..A3 — как
+            # у последнего кадра очереди, Sequence Number — следующий: Probe Response SN 0 → 1, Association Response 1 →
+            # 2, Action 4 → 5; QoS Control 0x0020 — TID 0, Ack Policy No Ack; Duration — остаток TXOP); без продолжения
+            # TXOP — на 5 мкс позже (путь tx_cca_check_and_send), то есть по этому пуску. uc после пуска ждёт busy2
+            # (без него assert 0x92) и tx_end. Прежний вывод «в эфир ничего не выпускает» (метка STAMP_MTP_RESULT,
+            # tx_end через 80–89 тактов от t_go) — события busy2/tx_end, оставшиеся от приёма Ack и своего кадра: метка
+            # ставится после пуска, ожидания проходят сразу. Очередь с невыданными кадрами — не снята: прежнее поведение.
+            q = self._q_avail(self.mtp_qid) if self.mtp_qid is not None and self.mtp_qid < 0x1e else None
+            h = self.q_last_hdr.get(self.mtp_qid)
+            # своя передача ещё идёт (A-MPDU данных, ответ ждёт BlockAck) — порядок PPDU не снят: прежнее поведение
+            if self.mac_q_model and q is not None and not q and h is not None and self.tx is None and \
+                    self.tx_pending is None:
+                sn = ((int.from_bytes(h[22:24], 'little') >> 4) + 1) & 0xfff
+                f = (0x00c8).to_bytes(2, 'little') + bytes(2) + h[4:22] + (sn << 4).to_bytes(2, 'little') + \
+                    (0x0020).to_bytes(2, 'little')
+                self.q_last_hdr[self.mtp_qid] = f[:24]
+                self.frame_ready = dict(what='queue %#x QoS Null (MAC, запрос итога) MCS %d' % (self.mtp_qid,
+                                                                                                self.data_mcs),
+                                        dur=sc_txtime_clk(len(f) + 4, self.data_mcs), qframe=f, qid=None,
+                                        mcs=self.data_mcs)
+                self.go = True
+                self._tx_try()
+            else:
+                self.at(self.now + RESULT_GO_TX_END_CLK, lambda: self._set42(15), 'result_go')
         elif op == 0x18 and self.mtp_qid == 0x1f and not self.go19:
             # H-TXGO18F: кадр FIFO без 0x19 после запроса MTP (CF-End держателя TXOP, cf_end_send_frame: 0x1b/0x161f…/
             # 0x17 → 0x18000000 → FIFO → 0x33000002) — пуск разрешает 0x18; по коду uc (порядок команд стенда — тот же код)
@@ -1051,6 +1081,7 @@ class HW:
                     self.mtp_qid, len(fs), ampdu_psdu_len(fs), self.data_mcs),
                     dur=sc_txtime_clk(ampdu_psdu_len(fs), self.data_mcs), qframe=fs, qid=self.mtp_qid,
                     mcs=self.data_mcs)                             # RDG — по пуску 0x18 б11 (H-RD, _cmd)
+                self.q_last_hdr[self.mtp_qid] = bytes(fs[-1][:24])
                 self._tx_try()
                 return
             if (f[0] >> 2) & 3 == 2:                      # данные — SC (H-DATAMCS)
@@ -1060,6 +1091,7 @@ class HW:
                 what, dur = 'queue %#x %d B' % (self.mtp_qid, len(f)), ctrl_txtime_clk(len(f) + 4)
             self.frame_ready = dict(what=what, dur=dur, qframe=f, qid=self.mtp_qid,
                                     mcs=self.data_mcs if (f[0] >> 2) & 3 == 2 else 0)
+            self.q_last_hdr[self.mtp_qid] = bytes(f[:24])
             self._tx_try()
             return
         if self.frame_ready is None and self.ssw_field is not None:
@@ -1467,6 +1499,8 @@ class HW:
         """Кадр очереди ушёл (H-MACQ2): групповой — сразу завершён (статус 0); одноадресный — ждёт Ack: пришёл
         (ack_rx) — статус 0, нет за ACK_WAIT_CLK — статус 1 (повторы MAC не моделируются)."""
         f, qid = t['qframe'], t['qid']
+        if qid is None:                                   # H-QNULL: QoS Null MAC (No Ack) — не кадр очереди
+            return
         n = 1
         if isinstance(f, list):                           # A-MPDU — ждёт BlockAck
             n, f = len(f), f[0]
