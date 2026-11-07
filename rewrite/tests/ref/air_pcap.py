@@ -19,7 +19,9 @@
   - точка метки в PPDU не задана документацией. Принято (СПОРНО, см. calibrate): метка TX = момент, который MAC пишет
     в Timestamp DMG Beacon (у всех маяков Timestamp == метка TX), т. е. по 11.1.3.1 начало символа данных с первым
     битом кадра: начало PPDU + PRE[класс модуляции]. Смещение метки RX от метки TX того же PPDU и сдвиг TSF второго
-    узла оцениваются по парам кадров, записанных обоими (rx_off — среднее (dt1 + dt2)/2, сдвиг — (dt1 − dt2)/2);
+    узла оцениваются по парам кадров, записанных обоими (rx_off — среднее (dt1 + dt2)/2, сдвиг — (dt1 − dt2)/2), а
+    когда пар «TX станции — RX точки» почти нет (метки TX MAC испорчены) — сдвиг по ответам MAC в обе стороны
+    (RTS → DMG CTS, только метки RX), см. calibrate;
     допущение «точка метки TX одна для всех PPDU класса» влияет только на промежутки между кадрами разных классов
     модуляции (control ↔ SC); промежутки внутри класса от него не зависят.
 
@@ -305,6 +307,7 @@ class Calib:
     def __init__(self, ref, off=None, rx_off=None, pre=None, stats=None):
         self.ref, self.other, self.bins, self.bin_us = ref, None, {}, 100_000
         self.bins_n, self.med = {}, Fr(0)
+        self.seg, self.main_seg = {}, None           # окно → участок TSF (calibrate), основной участок
         self._keys = None
         self.off = dict(off or {ref: Fr(0)})
         self.rx_off = dict(rx_off or {'control': Fr(0), 'sc': Fr(0)})
@@ -317,13 +320,28 @@ class Calib:
         m = mode_of(r.mcs)
         return Fr(r.tsft) + self.node_off(r.node, r.tsft) - self.pre[m] - (0 if r.tx else self.rx_off[m])
 
+    def _near(self, w):
+        """Соседние окна с отсчётами: [предыдущее, следующее] (у края — одно)."""
+        if self._keys is None:
+            self._keys = sorted(self.bins)
+        import bisect
+        i = bisect.bisect_left(self._keys, w)
+        return [self._keys[j] for j in (i - 1, i) if 0 <= j < len(self._keys)]
+
     def ok(self, node, tsft):
-        """Сдвиг TSF для метки узла надёжен: опорный узел, или окно с ≥ CAL_MIN_PAIRS пар и сдвигом в пределах 1 мкс от
-        медианы (до ассоциации TSF станции свой — такие окна выпадают)."""
+        """Сдвиг TSF для метки узла надёжен: опорный узел, или окно основного участка TSF с ≥ CAL_MIN_PAIRS
+        отсчётами в участке и сдвигом в пределах 1 мкс от основного (до ассоциации TSF станции свой — такие окна
+        выпадают); окно без отсчётов — если соседние окна с обеих сторон из основного участка."""
         if node != self.other or not self.bins:
             return True
         w = tsft // self.bin_us
-        return self.bins_n.get(w, 0) >= CAL_MIN_PAIRS and abs(self.bins[w] - self.med) <= 1
+        ws = [w] if w in self.bins else self._near(w)
+        if len(ws) < 2 and w not in self.bins:
+            return False                   # до первого / после последнего окна с отсчётами — участок неизвестен
+        if not self.seg:
+            return all(self.bins_n.get(k, 0) >= CAL_MIN_PAIRS and abs(self.bins[k] - self.med) <= 1 for k in ws)
+        return all(self.seg.get(k) == self.main_seg and self.bins_n.get(k, 0) >= CAL_MIN_PAIRS
+                   and abs(self.bins[k] - self.med) <= 1 for k in ws)
 
     def node_off(self, node, tsft):
         if node != self.other or not self.bins:
@@ -331,12 +349,7 @@ class Calib:
         w = tsft // self.bin_us
         o = self.bins.get(w)
         if o is None:
-            if self._keys is None:
-                self._keys = sorted(self.bins)
-            import bisect
-            i = bisect.bisect_left(self._keys, w)
-            c = [self._keys[j] for j in (i - 1, i) if 0 <= j < len(self._keys)]
-            o = self.bins[min(c, key=lambda k: abs(k - w))]
+            o = self.bins[min(self._near(w), key=lambda k: abs(k - w))]
         return o
 
     def __repr__(self):
@@ -377,13 +390,54 @@ def _pairs(tx_recs, rx_recs, window):
 
 CAL_BIN = 100_000            # мкс: окно оценки сдвига TSF второго узла (до ассоциации TSF станции свой — меняется)
 CAL_MIN_PAIRS = 3
+CAL_MIN_TWOWAY = 100         # пар control в обе стороны по меткам TX, чтобы сдвиг брать по ним (иначе — по ответам)
+CAL_JUMP = 1                 # мкс: скачок средней окна больше этого — новый участок TSF (синхронизация станции)
+RESP = ('RTS', 'DMG CTS')    # запрос и ответ MAC через SIFS для оценки по ответам (оба кадра control, длина 20)
+
+
+def _resp_pairs(req_recs, resp_recs, window):
+    """Обмен «запрос → ответ», у которого обе метки — RX: запрос (RTS), принятый узлом X, и ответ на него (DMG CTS
+    от X), принятый пиром Y. → [(запрос rx X, ответ rx Y)], однозначные в обе стороны: ответ в
+    [метка запроса, метка запроса + TXTIME(запрос) + window] (сдвиг TSF пира неизвестен), и этот ответ — ближайший
+    только к этому запросу."""
+    import bisect
+    req = sorted((r for r in req_recs if not r.tx and r.tsf_ok and r.fkind == RESP[0] and r.mcs is not None),
+                 key=lambda r: r.tsft)
+    rsp = sorted((r for r in resp_recs if not r.tx and r.tsf_ok and r.fkind == RESP[1]), key=lambda r: r.tsft)
+    ts = [r.tsft for r in rsp]
+    cand = {}
+    for q in req:
+        a = bisect.bisect_left(ts, q.tsft)
+        b = bisect.bisect_right(ts, q.tsft + ppdu_time(q.length, q.mcs) + window)
+        c = [x for x in rsp[a:b] if q.ta is None or x.ra is None or x.ra == q.ta]
+        if len(c) == 1:
+            cand.setdefault(id(c[0]), []).append((q, c[0]))
+    return [v[0] for v in cand.values() if len(v) == 1]
 
 
 def calibrate(recs_by_node, ref):
-    """Оценка Calib по парам кадров, записанных двумя узлами (TX одного — RX другого).
-    rx_off[класс] = ((rxA − txB) + (rxB − txA)) / 2 — сдвиг TSF сокращается; оценка по окнам CAL_BIN, где есть пары в
-    обе стороны, затем среднее, взвешенное по числу пар. Сдвиг TSF второго узла — по окнам: (rxA − txB) − rx_off
-    (пар B→A больше: у B все метки TX верны); окно без пар — ближайшее окно с парами. Один узел — rx_off = 0."""
+    """Оценка Calib по кадрам, записанным двумя узлами. A — опорный узел (ref), B — второй, off — сдвиг TSF B
+    (t_A = метка B + off), rx_off[класс] — метка RX минус метка TX одного PPDU (одинакова у узлов — одно железо).
+
+    Пары «TX одного — RX другого» (обе метки верны) дают по каждому классу модуляции
+        d1 = rxA − txB = rx_off + off,         d2 = rxB − txA = rx_off − off.
+    Одно направление не разделяет rx_off и off. У MAC обоих узлов почти все свои TX-метки испорчены (TSF_BAD: RTS,
+    DMG CTS, BlockAck, CF-End, SSW); верны метки маяков и CF-End точки (d2 — сотни пар в каждой записи), а d1 есть
+    лишь тогда, когда у STA случайно верна метка TX (0–7 CF-End на запись) — по ним оценка зависит от случая: ноль пар
+    давал off = rx_off = 0 (ошибка 4.5 мкс у всех событий со временем по RX станции), несколько пар — сдвиг ± 0.5 мкс
+    скачками по окнам. Поэтому сдвиг off берётся
+      1) по меткам TX в обе стороны, если пар control ≥ CAL_MIN_TWOWAY в обоих направлениях: off = (d1 − d2)/2;
+      2) иначе по ответам MAC в обе стороны (только метки RX, rx_off сокращается): RTS узла X, принятый Y, и DMG
+         CTS Y, принятый X — G_Y = rxX(CTS) − rxY(RTS) = TXTIME(RTS) + SIFS_Y ± off; off = (G_B − G_A)/2 при равном
+         времени ответа DMG CTS у обоих узлов (одно железо MAC; на стенде ajc4 с парами в обе стороны оба способа
+         дают 2.92 мкс). Это допущение: «кто из узлов отвечает позже» по DMG CTS при нём не различается —
+         air_judge сообщает сумму SIFS_A + SIFS_B (calibration_free_sum), она от калибровки не зависит.
+    Затем rx_off[класс] = d2 + off и/или d1 − off (по окнам, где есть и то и другое; сдвиг TSF сокращается, если он
+    меняется между окнами). Сдвиг TSF по окнам CAL_BIN: отсчёты d1 − rx_off и rx_off − d2 (control), окна —
+    средние; соседние окна, средние которых отличаются не больше CAL_JUMP, — один участок (TSF станции после
+    синхронизации ведёт себя как один отсчёт: на стенде d2 не зависит от времени от маяка в пределах 0.15 мкс за
+    BI), сдвиг окна = среднее его участка (медиана целых меток давала скачки на 1 мкс между окнами). Один узел —
+    rx_off = 0."""
     nodes = list(recs_by_node)
     cal = Calib(ref)
     if len(nodes) < 2:
@@ -391,55 +445,120 @@ def calibrate(recs_by_node, ref):
         return cal
     other = [n for n in nodes if n != ref][0]
     A, B = recs_by_node[ref], recs_by_node[other]
+    # окна — по метке второго узла: в ней Calib.node_off ищет сдвиг
     d1 = defaultdict(lambda: defaultdict(list))       # класс → окно → [rxA − txB]
     d2 = defaultdict(lambda: defaultdict(list))       # класс → окно → [rxB − txA]
     for tx, rx in _pairs(B, A, CAL_WINDOW):
         d1[mode_of(tx.mcs)][tx.tsft // CAL_BIN].append(rx.tsft - tx.tsft)
     for tx, rx in _pairs(A, B, CAL_WINDOW):
-        d2[mode_of(tx.mcs)][tx.tsft // CAL_BIN].append(rx.tsft - tx.tsft)
+        d2[mode_of(tx.mcs)][rx.tsft // CAL_BIN].append(rx.tsft - tx.tsft)
+    g_a = defaultdict(list)       # отвечает A: rxB(CTS A) − rxA(RTS B) = TXTIME + SIFS_A − off
+    g_b = defaultdict(list)       # отвечает B: rxA(CTS B) − rxB(RTS A) = TXTIME + SIFS_B + off
+    for q, x in _resp_pairs(A, B, CAL_WINDOW):
+        g_a[x.tsft // CAL_BIN].append(x.tsft - q.tsft)
+    for q, x in _resp_pairs(B, A, CAL_WINDOW):
+        g_b[q.tsft // CAL_BIN].append(x.tsft - q.tsft)
     st = {}
 
     def mean(v):
         return sum(v) / len(v)
 
-    def median(v):
-        v = sorted(v)
-        n = len(v)
-        return (v[(n - 1) // 2] + v[n // 2]) / 2
-    for m in ('control', 'sc'):
-        acc, wsum = 0.0, 0
-        for w in d1[m]:
-            if w in d2[m]:
-                k = min(len(d1[m][w]), len(d2[m][w]))
-                acc += k * (mean(d1[m][w]) + mean(d2[m][w])) / 2
-                wsum += k
-        if wsum:
-            cal.rx_off[m] = _q(acc / wsum)
-        n1 = sum(len(v) for v in d1[m].values())
-        n2 = sum(len(v) for v in d2[m].values())
-        st[m] = dict(pairs_b_to_a=n1, pairs_a_to_b=n2, rx_off=round(acc / wsum, 3) if wsum else 'не оценено')
-    bins = {}
-    for m in ('control', 'sc'):
-        if st[m]['rx_off'] == 'не оценено':
-            continue
-        for w, v in d1[m].items():
-            bins.setdefault(w, []).extend(x - float(cal.rx_off[m]) for x in v)
-    # медиана окна: окна с несколькими парами (ассоциация) не портятся единичной ошибкой сопоставления
-    offs = {w: median(v) for w, v in bins.items() if len(v) >= CAL_MIN_PAIRS}
-    if not offs:
-        offs = {w: median(v) for w, v in bins.items()} or {0: 0.0}
-        st['note'] = 'мало пар: сдвиг TSF второго узла оценён грубо'
-    cal.bins = {w: _q(o) for w, o in offs.items()}
-    cal.bins_n = {w: len(bins.get(w, ())) for w in offs}
-    allm = sorted(offs.values())
-    cal.med = _q(allm[len(allm) // 2]) if allm else Fr(0)
+    def nsum(d):
+        return sum(len(v) for v in d.values())
+
+    # 1. rx_off[control] (и сдвиг по окнам, где он оценивается без rx_off)
+    c1, c2 = d1['control'], d2['control']
+    off_w = {}                                         # окно → (сдвиг, вес) без rx_off
+    if nsum(c1) >= CAL_MIN_TWOWAY and nsum(c2) >= CAL_MIN_TWOWAY:
+        method = 'метки TX в обе стороны'
+        for w in c1:
+            if w in c2:
+                off_w[w] = ((mean(c1[w]) - mean(c2[w])) / 2, min(len(c1[w]), len(c2[w])))
+    elif g_a and g_b:
+        method = f'ответы MAC в обе стороны ({RESP[0]} → {RESP[1]}, равное время ответа узлов)'
+        for w in g_a:
+            if w in g_b:
+                off_w[w] = ((mean(g_b[w]) - mean(g_a[w])) / 2, min(len(g_a[w]), len(g_b[w])))
+    else:
+        method = 'метки TX в обе стороны (мало пар)'
+        for w in c1:
+            if w in c2:
+                off_w[w] = ((mean(c1[w]) - mean(c2[w])) / 2, min(len(c1[w]), len(c2[w])))
+
+    def rx_off_of(m, offs):
+        """rx_off класса m по окнам с известным сдвигом: d2 + off, d1 − off; → (оценка | None, число отсчётов)."""
+        acc, n = 0.0, 0
+        for w, (o, _) in offs.items():
+            for x in d1[m].get(w, ()):
+                acc, n = acc + x - o, n + 1
+            for x in d2[m].get(w, ()):
+                acc, n = acc + x + o, n + 1
+        return (acc / n if n else None), n
+    rc, _ = rx_off_of('control', off_w)
+    if rc is not None:
+        cal.rx_off['control'] = _q(rc)
+
+    # 2. сдвиг TSF по окнам: отсчёты control с известным rx_off; окна → участки
+    samples = defaultdict(list)
+    r0 = float(cal.rx_off['control'])
+    for w, v in c1.items():
+        samples[w].extend(x - r0 for x in v)
+    for w, v in c2.items():
+        samples[w].extend(r0 - x for x in v)
+    win = {w: mean(v) for w, v in samples.items()}
+    segs = []                                          # [[окна], [отсчёты]]
+    for w in sorted(win):
+        if segs and abs(win[w] - mean(segs[-1][1])) <= CAL_JUMP:
+            segs[-1][0].append(w)
+            segs[-1][1].extend(samples[w])
+        elif segs and len(samples[w]) < CAL_MIN_PAIRS:
+            segs[-1][0].append(w)            # 1–2 отсчёта в стороне (ошибка сопоставления) — не скачок TSF
+        else:
+            segs.append([[w], list(samples[w])])
+    main = max(segs, key=lambda s: len(s[1])) if segs else None
+    cal.bins, cal.bins_n, cal.seg = {}, {}, {}
+    for i, (ws, v) in enumerate(segs):
+        o = _q(mean(v))
+        for w in ws:
+            cal.bins[w], cal.bins_n[w], cal.seg[w] = o, len(v), i
+    cal.main_seg = segs.index(main) if main else None
+    cal.med = _q(mean(main[1])) if main else Fr(0)
     cal.bin_us = CAL_BIN
     cal.other = other
-    allv = [x for v in bins.values() for x in v]
-    cal.off[other] = _q(mean(allv)) if allv else Fr(0)
-    st['tsf_off'] = dict(median=round(float(cal.med), 3), bins=len(offs),
-                         unreliable_bins=sum(1 for w in offs if abs(cal.bins[w] - cal.med) > 1),
-                         min=round(min(offs.values()), 3), max=round(max(offs.values()), 3))
+    cal.off[other] = cal.med
+    if not cal.bins:
+        cal.bins, cal.bins_n, cal.seg, cal.main_seg = {0: Fr(0)}, {0: 0}, {0: 0}, 0
+        st['note'] = 'нет пар: сдвиг TSF второго узла не оценён (0)'
+
+    # 3. rx_off прочих классов (sc): в обе стороны — без сдвига, иначе с найденным сдвигом окна
+    for m in ('control', 'sc'):
+        n1, n2 = nsum(d1[m]), nsum(d2[m])
+        if m != 'control':
+            if n1 >= CAL_MIN_TWOWAY and n2 >= CAL_MIN_TWOWAY:
+                acc, k = 0.0, 0
+                for w in d1[m]:
+                    if w in d2[m]:
+                        j = min(len(d1[m][w]), len(d2[m][w]))
+                        acc, k = acc + j * (mean(d1[m][w]) + mean(d2[m][w])) / 2, k + j
+                r = acc / k if k else None
+            else:
+                r, _ = rx_off_of(m, {w: (float(cal.node_off(other, w * CAL_BIN)), 0)
+                                     for w in set(d1[m]) | set(d2[m])})
+            if r is not None:
+                cal.rx_off[m] = _q(r)
+        else:
+            r = rc
+        st[m] = dict(pairs_b_to_a=n1, pairs_a_to_b=n2, rx_off=round(r, 3) if r is not None else 'не оценено')
+    ga, gb = [x for v in g_a.values() for x in v], [x for v in g_b.values() for x in v]
+    st['tsf_method'] = method
+    st['resp_pairs'] = dict(ref_answers=len(ga), other_answers=len(gb),
+                            sifs_sum_rx_only=(round(mean(ga) + mean(gb) - 2 * float(T.txtime_control(20)), 3)
+                                              if ga and gb else None))
+    wm = list(win.values()) or [0.0]
+    st['tsf_off'] = dict(median=round(float(cal.med), 3), bins=len(win), segments=len(segs),
+                         unreliable_bins=sum(1 for w in cal.bins if not cal.ok(other, w * CAL_BIN)),
+                         min=round(float(min(cal.bins.values())), 3), max=round(float(max(cal.bins.values())), 3),
+                         win_min=round(min(wm), 3), win_max=round(max(wm), 3))
     cal.stats = st
     return cal
 

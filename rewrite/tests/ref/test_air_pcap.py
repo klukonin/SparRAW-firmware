@@ -81,29 +81,32 @@ def synth(fc, ra, ta, length):
 FC_RTS, FC_CTS, FC_BA, FC_CFEND, FC_QOS, FC_BEACON = 0x00b4, 0x0564, 0x0094, 0x00e4, 0x0088, 0x000c
 
 
-def exchange(ap, sta, t, holder, sifs=Fr(3), cts_dur_delta=0, ba_ctl=0x0004, ba_mcs=4, cts_bad=True, rts_dur=1982):
+def exchange(ap, sta, t, holder, sifs=Fr(3), cts_dur_delta=0, ba_ctl=0x0004, ba_mcs=4, cts_bad=True, rts_dur=1982,
+             stand=False, sta_cfend_good=False):
     """TXOP: RTS → DMG CTS → A-MPDU (данные: TX не записан, у получателя — синтетический RX) → BlockAck → CF-End →
-    ответный CF-End. Промежутки — sifs. Возвращает конец обмена."""
+    ответный CF-End. Промежутки — sifs. Возвращает конец обмена.
+    stand — метки TX как на стенде (base1/base5): испорчены у всех кадров MAC обоих узлов, верна только у CF-End
+    держателя-точки; sta_cfend_good — у CF-End держателя-станции метка верна (случай: 0–7 таких на запись)."""
     X, Y = (ap, sta) if holder == 'AP' else (sta, ap)
     t_rts = T.txtime_control(20)
-    X.tx(t, ctl(FC_RTS, rts_dur, Y.mac, X.mac), 20, 0, bad=(X is ap))
+    X.tx(t, ctl(FC_RTS, rts_dur, Y.mac, X.mac), 20, 0, bad=(X is ap or stand))
     Y.rx(t, synth(FC_RTS, Y.mac, X.mac, 20), 20, 0)
     t1 = t + t_rts + sifs
     cts_dur = ceil(Fr(rts_dur) - T.SIFS - T.txtime_control(20)) + cts_dur_delta
-    Y.tx(t1, ctl(FC_CTS, cts_dur, X.mac, Y.mac), 20, 0, bad=(Y is ap and cts_bad))
+    Y.tx(t1, ctl(FC_CTS, cts_dur, X.mac, Y.mac), 20, 0, bad=(Y is ap and cts_bad) or stand)
     X.rx(t1, synth(FC_CTS, X.mac, Y.mac, 20), 20, 0)
     t2 = t1 + T.txtime_control(20) + sifs
     L = 30000
     Y.rx(t2, synth(FC_QOS, Y.mac, X.mac, 60), L, 8, agg=True)
     t3 = t2 + T.txtime(L, 8) + sifs
     ba = ctl(FC_BA, 100, X.mac, Y.mac, struct.pack('<HH', ba_ctl, 0x10) + b'\xff' * 8)
-    Y.tx(t3, ba, 32, ba_mcs, bad=False)
+    Y.tx(t3, ba, 32, ba_mcs, bad=stand)
     X.rx(t3, synth(FC_BA, X.mac, Y.mac, 32), 32, ba_mcs)
     t4 = t3 + T.txtime(32, ba_mcs) + sifs
-    X.tx(t4, ctl(FC_CFEND, 18, Y.mac, X.mac), 20, 0, bad=False)
+    X.tx(t4, ctl(FC_CFEND, 18, Y.mac, X.mac), 20, 0, bad=stand and X is sta and not sta_cfend_good)
     Y.rx(t4, synth(FC_CFEND, Y.mac, X.mac, 20), 20, 0)
     t5 = t4 + T.txtime_control(20) + sifs
-    Y.tx(t5, ctl(FC_CFEND, 0, X.mac, Y.mac), 20, 0, bad=(Y is ap))
+    Y.tx(t5, ctl(FC_CFEND, 0, X.mac, Y.mac), 20, 0, bad=(Y is ap) or stand)
     X.rx(t5, synth(FC_CFEND, X.mac, Y.mac, 20), 20, 0)
     return t5 + T.txtime_control(20)
 
@@ -199,6 +202,84 @@ def test_event_times_match_construction(tmp_path):
     want = [t0 + i * 400 for i in range(30)]
     assert len(rts) == 30
     assert max(abs(e.t - w) for e, w in zip(rts, want)) < Fr(3, 2)
+
+
+def stand_air(tmp_path, n=80, step=5000, good_sta_cfend=(), sta_off=None, name='x'):
+    """Эфир с метками как на стенде (exchange(stand=True)): пар «TX станции — RX точки» нет, кроме CF-End станции с
+    номерами из good_sta_cfend; sta_off(i) — сдвиг TSF станции в обмене i (по умолчанию OFF_STA). Обмены через
+    step мкс (несколько окон CAL_BIN). → (Air, [начало RTS обмена i])."""
+    ap, sta = Node('AP', AP_MAC, Fr(0)), Node('STA', STA_MAC, OFF_STA)
+    t0 = Fr(20_000_000)
+    want = []
+    for i in range(n):
+        sta.off = sta_off(i) if sta_off else OFF_STA
+        t = t0 + i * step
+        want.append(t)
+        exchange(ap, sta, t, 'AP' if i % 2 else 'STA', stand=True, sta_cfend_good=i in good_sta_cfend)
+    a, s = tmp_path / f'{name}_a.pcap', tmp_path / f'{name}_s.pcap'
+    ap.write(a)
+    sta.write(s)
+    return P.merge([P.read_pcap(str(a), 'AP'), P.read_pcap(str(s), 'STA')], ref='AP'), want
+
+
+def _rts_err(air, want):
+    """Наибольшая ошибка времени RTS (начало PPDU) против построения."""
+    rts = sorted((e for e in air.events if e.kind == 'RTS'), key=lambda e: e.t)
+    assert len(rts) == len(want) and all(e.t_ok for e in rts)
+    return max(abs(e.t - w) for e, w in zip(rts, want))
+
+
+def test_calibration_without_peer_tx_stamps(tmp_path):
+    """Регрессия (base1/base2/aj2e против base5/aj2, один образ): у станции нет ни одной верной метки TX — пар
+    «TX станции — RX точки» нет, по меткам TX в одну сторону rx_off и сдвиг TSF не разделяются (прежде — оба 0,
+    время кадров по RX станции раньше на 4.5 мкс). Сдвиг — по ответам MAC в обе стороны (RTS → DMG CTS, только
+    метки RX), rx_off — по парам точка → станция."""
+    air, want = stand_air(tmp_path)
+    c = air.cal
+    assert c.stats['control']['pairs_b_to_a'] == 0
+    assert 'ответы' in c.stats['tsf_method']
+    assert abs(c.off['STA'] - OFF_STA) <= Fr(1, 2)
+    assert abs(c.rx_off['control'] - RX_OFF['control']) <= Fr(1, 2)
+    assert air.stats['t_cal_unreliable'] == 0
+    assert _rts_err(air, want) < Fr(3, 2)
+    # SIFS 3 мкс у обоих узлов — и у ответов, время которых взято из RX разных узлов
+    c2, rules = J.judge(air)
+    r = rule(rules, 'ifs_sifs')
+    assert r.checked and not r.viol, r.viol[:3]
+
+
+def test_calibration_same_with_few_peer_tx_stamps(tmp_path):
+    """Тот же эфир, но у нескольких CF-End станции метка TX верна (случай base5/aj2: 4–7 таких на запись) —
+    калибровка и время событий те же, что без них (прежде — другой режим: сдвиг по 4 парам, скачки по окнам)."""
+    air0, want = stand_air(tmp_path, name='a')
+    air1, _ = stand_air(tmp_path, good_sta_cfend=(2, 30, 64), name='b')
+    assert air0.cal.stats['control']['pairs_b_to_a'] == 0 and air1.cal.stats['control']['pairs_b_to_a'] == 3
+    assert air0.cal.stats['tsf_method'] == air1.cal.stats['tsf_method']
+    assert abs(air0.cal.off['STA'] - air1.cal.off['STA']) <= Fr(1, 4)
+    assert abs(air0.cal.rx_off['control'] - air1.cal.rx_off['control']) <= Fr(1, 4)
+    t0 = {e.recs[0]: e.t for e in air0.events if e.t_ok}
+    t1 = {e.recs[0]: e.t for e in air1.events if e.t_ok}
+    assert t0.keys() == t1.keys()
+    assert max(abs(t0[k] - t1[k]) for k in t0) <= Fr(1, 2)
+    # сдвиг одинаков во всех окнах (один участок TSF), не скачет по 1 мкс
+    assert air1.cal.stats['tsf_off']['segments'] == 1 and len(set(air1.cal.bins.values())) == 1
+
+
+def test_calibration_tsf_jump(tmp_path):
+    """Скачок TSF станции (сдвиг OFF_STA + 8 мкс в первых обменах, затем OFF_STA): два участка; окна первого —
+    ненадёжны (и окно со скачком внутри — своё среднее, свой участок), время остальных событий — по своему
+    участку."""
+    air, want = stand_air(tmp_path, n=100, sta_off=lambda i: OFF_STA + 8 if i < 30 else OFF_STA)
+    c = air.cal
+    assert c.stats['tsf_off']['segments'] in (2, 3)
+    assert c.bins[20_000_000 // P.CAL_BIN] == c.bins[20_050_000 // P.CAL_BIN] != c.med
+    assert abs(c.off['STA'] - OFF_STA) <= Fr(1, 2)
+    assert abs(c.rx_off['control'] - RX_OFF['control']) <= Fr(1, 2)
+    late = [e for e in air.events if e.t_ok and e.t > want[40]]
+    assert late and all(e.cal_ok for e in late)
+    rts = sorted((e for e in air.events if e.kind == 'RTS' and e.t_ok), key=lambda e: e.t)
+    assert max(abs(e.t - w) for e, w in zip(rts[-50:], want[-50:])) < Fr(3, 2)
+    assert air.stats['t_cal_unreliable'] > 0
 
 
 def test_retry_matched_to_last_attempt(tmp_path):
