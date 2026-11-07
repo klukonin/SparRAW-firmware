@@ -168,6 +168,12 @@ DOT11_MAX_LOST_BEACONS = 4
 assert DOT11_MAX_LOST_BEACONS == aMinBTIPeriod
 DOT11_MIN_BHI_DURATION = Fr(5000)           # dot11MinBHIDuration DEFVAL { 5000 } мкс
 DOT11_MAX_BF_TIME = 4                       # dot11MaxBFTime DEFVAL { 4 } интервалов маяка (10.42.1; T2 рис. 10-91)
+# dot11DMGOperationEntry (C.3): dot11MinPPDuration DEFVAL { 200 } мкс (10.39.7.1, 10.39.7.3), dot11SPIdleTimeout
+# DEFVAL { 200 } мкс (10.39.6.7); dot11DMGBeamformingConfigEntry: dot11AntennaSwitchingTime DEFVAL { 0 } мкс (A_k в
+# (10-18), 10.39.7.2) — mlme (MIB из DMG Operation), schedule/sp/dynalloc
+DOT11_MIN_PP_DURATION = 200
+DOT11_SP_IDLE_TIMEOUT = 200
+DOT11_ANTENNA_SWITCHING_TIME = 0
 # 9.4.2.128, рис. 9-557: AssocRespConfirmTime — «in units of 50 milliseconds»
 ASSOC_RESP_CONFIRM_UNIT = Fr(50000)
 # dot11BeamTrackingTimeLimit: SYNTAX Unsigned32 (0..65535), UNITS "microseconds", DEFVAL { 10000 } (C.3); 9.4.2.127.4:

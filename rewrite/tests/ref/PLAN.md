@@ -78,6 +78,17 @@
   `DmsRecipient` (отброс групп и дублей). GCR — вне охвата («DMG STAs do not use GCR»).
 - `air_judge` — правила `amsdu` (по записям rxqos/txqos; без них — «не проверяемо») и `dms` (DMS-кадры, DMS-элементы
   Reassociation, групповой DA подкадра — только по принятому DMS). Тесты — `test_amsdu.py`, `test_dms.py`.
+Волна E (DTI по расписанию — охват open, 10.39.6–10.39.9):
+- `schedule.py` — Extended Schedule целиком (9.4.2.131: поле Allocation ↔ bi.Allocation + BF Control 9.5.5),
+  проверка расписания BI (поле, BF, bi.check_schedule, aDMGPPMinListeningTime), повтор ES внутри BI, псевдостатика по BI
+  (10.39.6.4), знание расписания у STA (obsolete allocation, пропуск ES), генератор `plan`, общий вид журнала `events`.
+- `sp.py` — правила SP (10.39.6.2), восстановление (10.39.6.7), усечение (10.39.8.1), продление (10.39.9), CBAP
+  расписания (10.39.5); судья DTI одного BI `check_dti` (вместе с dynalloc); генераторы обменов.
+- `dynalloc.py` — PP/GP (10.39.7.2–3, ур. (10-18)), Grant Ack (10.39.4), Poll в ATI (10.39.3), Grant в CBAP, окна
+  выделения (`Window`); генераторы `pp`/`gp`/`relinquish_grant`.
+- `tdma_scen.py` — позитивный BI (SP с продлением, PP/GP в SP broadcast/broadcast, SP с BF и Heartbeat, CBAP) и
+  негативные варианты (`NEGATIVE`: имя → изменение, правило).
+- `air_sched.py` — правила судьи эфира `schedule`, `sp_access`, `dynalloc` (подключены в `air_judge.RULES`).
 
 ## Правила для каждого модуля
 - Заголовок `# SPDX-License-Identifier: AGPL-3.0-or-later`, докстрока: охват (пункты) и что НЕ моделируется.
@@ -133,6 +144,15 @@
 | 32 | Групповая копия, когда DMS просили все связанные станции | Не передаётся (dms.transmit_group); судья не проверяет (dms_group_copy) | 11.21.16.2 | «shall continue to transmit … as group addressed frames … if at least one associated STA has not requested DMS» — обязанности в обратном случае нет |
 | 33 | «Дубли» после прекращения DMS по Last Sequence Control | Групповой кадр той же группы с SN не новее Last SN (в окне 2048 назад по модулю 4096) — дубль; первый более новый снимает фильтр; 65 534 и 65 535 — фильтра нет (NOTE 2) (dms.DmsRecipient) | 11.21.16.2, 9.4.2.88 | Окно дубля не задано; 2048 — как полуокно номеров 10.25.6 |
 | 34 | A-MSDU вне соглашения BA у DMG | Разрешено (одиночный MPDU, любая Ack Policy, кроме ограничений A-MPDU), с пределами DMG Capabilities получателя (amsdu) | 10.11 | Обязанность приёма A-MSDU вне BA перечислена для HT/VHT/CMMG, для DMG — нет; запрета передачи тоже нет, предел — поля табл. 9-253/9-254 (2020 = 2024) |
+| 45 | Начало отсчёта Response Offset в PP и Duration SPR | От конца Poll (10.39.7.2: «at the time offset from the end of the Poll frame»; O_1 = SIFS — «interval between the end of the last Poll … and the expected start time of the first SPR»; рис. 10-60), Duration SPR = Poll − RO − TXTIME(SPR); чтение 9.3.1.10/9.3.1.11 (RO «beginning SIFS after the end of the Poll», Duration − SIFS) — судья как 'model' (`dyn_spr_time_9.3.1.10`, `dyn_spr_dur_9.3.1.11`). ATI: RO = 0, SPR через SIFS (10.39.3) (dynalloc, duration) | 10.39.7.2, 9.3.1.10, 9.3.1.11, 10.39.3 | 2020 = 2024 (10.38.7.2); при чтении 9.3.1.10 формула (10-18) расходится с рис. 10-60 на SIFS |
+| 46 | A_k и O_j в (10-18) | A_k — переключение антенны перед Poll_k (тот же промежуток, что SBIFS слагаемого k; буквально «frame k and frame k+1» — сдвиг на кадр, A_n — после последнего Poll); O_j — через TXTIME(SPR_j) буквально (`duration.pp_schedule(oj_spr='j')`); при одинаковых A и SPR одной длины чтения совпадают (dynalloc.pp) | 10.39.7.2 | 2020 = 2024 |
+| 47 | Начало GP после PP | По тексту: «SIFS following the end of a PP», а конец PP уже «… plus SIFS» — первый Grant через 2·SIFS после ожидаемого конца последнего SPR; рис. 10-60 (SIFS) — судья 'model' (`dyn_gp_start_fig`) (dynalloc) | 10.39.7.2, 10.39.7.3, рис. 10-60 | 2020 = 2024; рисунок — пример |
+| 48 | Duration последнего Grant GP и IFS между Grant | Duration покрывает «remaining Grant frame and Grant Ack frame transmissions, if any, plus all appropriate IFSs»: последнего — 0 без Grant Ack (судья допускает и SIFS), SIFS + TXTIME(Grant Ack) с ним; между Grant — SBIFS (рис. 10-60), после Grant Ack — SIFS; начало выделения = PHY-TXEND + Duration (каждый Grant GP указывает ту же точку, ±1 мкс округления) (dynalloc) | 10.39.7.3 | 2020 = 2024 |
+| 49 | Grant Ack и копирование AID; пересылка Grant при продлении | Grant Ack — через SIFS после Grant при Grant Ack Supported = 1 (10.39.4); пересылка партнёру (10.39.9 «SIFS after the reception of a Grant») — через SIFS после Grant Ack, если он есть. «Copy the Source AID, Destination AID» — в Grant Ack этих полей нет (рис. 9-57: Reserved 5 октетов), копируется только Beamforming Training (dynalloc, sp) | 10.39.4, 10.39.9, 9.3.1.18 | 2020 = 2024 (рис. 9-74 в 2024 — тот же Reserved) |
+| 50 | Повтор источника в SP | «may retransmit … PIFS after the end of the frame» — раньше PIFS нарушение (`sp_retx`), позже — допустимо; BF-кадры исключены (sp) | 10.39.6.2 | 2020 = 2024 |
+| 51 | Когда время SP возвращается AP | Только после объявления AP в Truncatable SP: CF-End к AP или широковещательный Grant (остаток после CBAP), либо CF-End пиру, когда пир — AP; CF-End пиру без объявления — пара заканчивает SP, AP время не получает (sp.SpState.released) | 10.39.8.1 | «In order to advertise the availability … shall transmit a CF-End frame to the AP»; 2020 = 2024 |
+| 52 | Grant AP в SP с индивидуальным AID | Не GP (GP — в SP broadcast/broadcast, CBAP с broadcast Destination AID, ATI, во времени после усечения/восстановления): продление 10.39.9 / уступка / чужая передача — правила sp (dynalloc, sp) | 10.39.7.3, 10.39.9 | 2020 = 2024 |
+| 53 | «Previous pseudo-static allocation» при изменении/удалении | Прежнее повторяется с тем же смещением от TBTT (bi.Allocation.recur) в BI изменения и следующих до dot11MaxLostBeacons − 1; новое распределение (кортеж не был в прошлом ES), перекрывающее его, — `should_ps_overlap`, кроме CBAP/CBAP и того же источника (schedule) | 10.39.6.4 | 2020 = 2024 |
 
 Вопросы одного модуля (решение — в докстроке у «СПОРНО»): sls — момент старта ISS после Grant (чтение А), отсчёт
 T1, Feedback в следующем распределении, слоты молчащих антенн, SSW-Ack после RXSS; abft — нет повторного прохода
@@ -145,4 +165,6 @@ MCS 13/16 и 7/8, остаток Extended Schedule < 15 октетов,
 повтор элементов, AID при отказе, Multi-band в Authentication; mlme — Deauthentication по рис. 11-17, перевод
 50 мс → TU вверх, Open System у DMG AP, PBSS BSSID, JOIN по DMG Beacon, «конфигурационные» коды статуса; air_judge
 `dms` — по «Terminate» снимаются все группы пары (DMSID → группы не ведётся), `amsdu` — Short без записанного PTP
-TSPEC — вердикт capture (ADDTS не разбирается).
+TSPEC — вердикт capture (ADDTS не разбирается); schedule — BF Training при broadcast AID, AllocationType 1,08 ГГц для DMG; sp — первый кадр SP при BF (SSW ISS/RSS),
+число SSW в RXSS не проверяется, Duration Grant усечения с ответным CF-End и без; dynalloc — Allocation Duration = 0
+(«one PPDU …»: не более одного PPDU источника кроме RTS), уступка TXOP (остаток — по NAV держателя).

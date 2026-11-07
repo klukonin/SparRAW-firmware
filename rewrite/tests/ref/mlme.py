@@ -40,7 +40,8 @@ from .elements import (AID_DMG_MAX, AID_DMG_MIN, AUTH_OPEN_SYSTEM, DENIED_NO_MOR
                        INVALID_CLASS3_FRAME, REFUSED_TEMPORARILY, SUCCESS, TIE_ASSOC_COMEBACK,
                        UNSUPPORTED_AUTH_ALGORITHM)
 from .timing import (aMaxBIDuration, aMinBTIPeriod, aMinChannelTime, ASSOC_RESP_CONFIRM_UNIT, BCAST,
-                     DOT11_MAX_LOST_BEACONS, DOT11_MIN_BHI_DURATION, MBIFS, PIFS, SIFS, TU)
+                     DOT11_MAX_LOST_BEACONS, DOT11_MIN_BHI_DURATION, DOT11_MIN_PP_DURATION, DOT11_SP_IDLE_TIMEOUT,
+                     MBIFS, PIFS, SIFS, TU)
 
 WILDCARD_BSSID = BCAST                      # 9.2.4.3.4: wildcard BSSID — все единицы
 WILDCARD_SSID = ''                          # 9.4.2.2: wildcard SSID — SSID нулевой длины
@@ -52,8 +53,7 @@ WILDCARD_SSID = ''                          # 9.4.2.2: wildcard SSID — SSID н
 DOT11_IMPLICIT_HANDOVER_LOST_BEACONS = 8    # dot11ImplicitHandoverLostBeacons DEFVAL { 8 }
 DOT11_PS_REQUEST_SUSPENSION_INTERVAL = 8    # DEFVAL { 8 } интервалов маяка
 DOT11_BROADCAST_STA_INFO_DURATION = 32      # DEFVAL { 32 } интервалов маяка
-DOT11_MIN_PP_DURATION = 200                 # DEFVAL { 200 } мкс
-DOT11_SP_IDLE_TIMEOUT = 200                 # DEFVAL { 200 } мкс
+# dot11MinPPDuration, dot11SPIdleTimeout (DEFVAL { 200 } мкс) — timing.py
 DOT11_ASSOC_SA_QUERY_MAX_TIMEOUT = 1000     # dot11AssociationSAQueryMaximumTimeout DEFVAL { 1000 } TU
 # dot11AssociationResponseTimeout: SYNTAX 1..4294967295 TU, DEFVAL НЕ задан — обязательный параметр StaMlme.
 

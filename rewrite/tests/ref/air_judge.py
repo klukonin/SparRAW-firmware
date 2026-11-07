@@ -2275,6 +2275,10 @@ RULES = (r_fc, r_ctl_len, r_cfe_fields, r_beacon_fields, r_mgmt_body, r_addba, r
          r_cf_end_lost, r_ifs_sifs, r_holder_gap, r_access, r_responder, r_resp_seq, r_cbap_end, r_ack_policy, r_rd,
          r_ampdu_dur, r_ba_window, r_bi, r_bti_delay, r_sls, r_abft, r_brp, r_ati, r_assoc_state, r_brp_role,
          r_nav_rx, r_cts_self, r_blm, r_beam_track, r_amsdu, r_dms)
+# DTI по расписанию: schedule, sp_access, dynalloc (ref/air_sched; импорт здесь — air_sched берёт Rule отсюда)
+from . import air_sched as AS      # noqa: E402
+RULES += AS.RULES
+PAGE.update(AS.PAGE)
 
 NOT_CHECKABLE = [
     ('ba_scoreboard', '10.25.6.3–10.25.6.5', 'битмап BlockAck целиком против принятых MPDU — записан один MPDU данных '
@@ -2295,9 +2299,7 @@ NOT_CHECKABLE = [
      '— доставка хосту в запись не попадает (модель — ref/dms.DmsRecipient)'),
     ('dms_group_copy', '11.21.16.2', 'групповая копия MSDU при станциях без DMS — тела групповых данных и состав '
      'связанных станций не записаны (модель — ref/dms.DmsProvider.transmit_group)'),
-    ('dyn_alloc', '10.39.7', 'Poll/SPR/Grant, PP/GP — open их не использует (строгий TDMA — pro); в захватах таких '
-     'кадров нет'),
-]
+] + AS.NOT_CHECKABLE
 
 
 def judge(air, examples=5, edca=None):

@@ -1,6 +1,6 @@
 # Покрытие 802.11-2020 эталонной моделью DMG MAC
 
-Карта DMG-пунктов стандарта (802.11-2020, `docs/80211-2020.txt`; заголовок и страница — из текста, страница — маркер `[Page N]` после заголовка): что есть в модели `rewrite/tests/ref` (модуль/функция), есть ли правило судьи эфира `air_judge` (id правила), что не реализовано и что вне охвата (с причиной). Охват: open — AP/STA/PCP/PBSS DMG по стандарту; pro — FTM, OOB, IBSS, строгий SP/PP-GP TDMA; power save и adhoc удалены намеренно (точка отвечает отказом на PSC-REQ); reverse direction выключен намеренно (10.29.4).
+Карта DMG-пунктов стандарта (802.11-2020, `docs/80211-2020.txt`; заголовок и страница — из текста, страница — маркер `[Page N]` после заголовка): что есть в модели `rewrite/tests/ref` (модуль/функция), есть ли правило судьи эфира `air_judge` (id правила), что не реализовано и что вне охвата (с причиной). Охват: open — AP/STA/PCP/PBSS DMG по стандарту, включая расписание DTI, SP и динамическое распределение (10.39.6–10.39.9); pro — FTM, OOB, IBSS; power save и adhoc удалены намеренно (точка отвечает отказом на PSC-REQ); reverse direction выключен намеренно (10.29.4).
 
 Статусы: **М+С** — модель и правило судьи эфира; **М** — модель (по захватам не проверяется: кадров нет или поле не записано); **Ч** — частично (что именно — в примечании); **С** — только судья; **Н** — не реализовано (в охвате open); **ВНЕ** — вне охвата (причина в примечании). Перечень «не проверяемо по записи» — `air_judge.NOT_CHECKABLE`.
 
@@ -43,15 +43,15 @@
 | 9.3.1.7 | 800 | BlockAckReq frame format | М+С | blockack (BlockAckReq) | resp_seq |  |
 | 9.3.1.8 | 803 | BlockAck frame format | М+С | blockack.encode_ba_control / encode_ba_info / Scoreboard | ba_control, ba_window, mcs_response | битмап целиком — не проверяемо (ba_scoreboard) |
 | 9.3.1.9 | 807 | Control Wrapper frame format | ВНЕ |  |  | Control Wrapper — не для DMG (+HTC = 0) |
-| 9.3.1.10 | 808 | Poll frame format | М | fields.encode_frame/parse_frame (Poll); duration | cfe_fields (если есть) | Poll — динамическое распределение (pro), в захватах нет |
-| 9.3.1.11 | 808 | Service period request (SPR) frame format | М | fields (SPR, 9.5.2, 9.5.5); duration.duration_spr_* | cfe_fields (если есть) | pro |
-| 9.3.1.12 | 809 | Grant frame format | М | fields (Grant); duration.duration_grant_*; sls.iss_start_after_grant | cfe_fields (если есть) | pro; SLS по Grant — sls |
+| 9.3.1.10 | 808 | Poll frame format | М+С | fields (Poll); duration.pp_schedule; dynalloc.pp / check_dyn_log (Duration (10-18), Response Offset) | dynalloc, cfe_fields | в захватах нет — dynalloc «не проверяемо» |
+| 9.3.1.11 | 808 | Service period request (SPR) frame format | М+С | fields (SPR, 9.5.2, 9.5.5); duration.duration_spr_*; dynalloc (ответ на Poll); sp (продление 10.39.9) | dynalloc, sp_access, cfe_fields | PLAN №26 (Duration: 10.39.7.2 / 9.3.1.11) |
+| 9.3.1.12 | 809 | Grant frame format | М+С | fields (Grant); duration.duration_grant_*; dynalloc.gp / relinquish_grant; sp (уступка, усечение, продление); sls.iss_start_after_grant | dynalloc, sp_access, cfe_fields | PLAN №29 |
 | 9.3.1.13 | 809 | DMG CTS frame format | М+С | fields (DMG CTS); duration.duration_cts_response / duration_cts_to_self; nav.single_nav_updates | dur_cts, cfe_fields, resp_seq, cts_self | новое правило cts_self: TA CTS-to-self (волна C) |
-| 9.3.1.14 | 810 | DMG DTS frame format | М | fields (DMG DTS); duration.duration_dts; nav.MultiNav (NAV-SA/NAV-DA) |  | DTS — защищённый период/SP (pro) |
+| 9.3.1.14 | 810 | DMG DTS frame format | М | fields (DMG DTS); duration.duration_dts; nav.MultiNav (NAV-SA/NAV-DA) |  | защищённый период (10.39.6.6) — Н |
 | 9.3.1.15 | 810 | Sector sweep (SSW) frame format | М+С | fields (SSW); sls; abft; duration.duration_ssw | cfe_fields, dur_bf, sls, abft |  |
 | 9.3.1.16 | 811 | Sector sweep feedback (SSW-Feedback) frame format | М+С | fields (SSW-Feedback); sls; abft; duration.duration_ssw_fb | cfe_fields, dur_bf, sls, blm |  |
 | 9.3.1.17 | 811 | Sector sweep Ack (SSW-Ack) frame format | М+С | fields (SSW-Ack); sls; duration.duration_ssw_ack | cfe_fields, dur_bf, sls, blm, brp_role |  |
-| 9.3.1.18 | 812 | Grant Ack frame format | М | fields (Grant Ack); duration.duration_grant_ack |  | pro |
+| 9.3.1.18 | 812 | Grant Ack frame format | М+С | fields (Grant Ack); duration.duration_grant_ack; dynalloc (Grant Ack 10.39.4) | dynalloc | PLAN №30: AID в Grant Ack не копируются (поля нет) |
 | 9.3.1.19 | 812 | VHT NDP Announcement frame format | ВНЕ |  |  | VHT NDP Announcement — не DMG |
 | 9.3.1.21 | 814 | TACK frame format | ВНЕ |  |  | TACK — S1G |
 
@@ -123,9 +123,9 @@
 | 9.4.2.128 | 1242 | DMG Operation element | М+С | elements.encode/parse/validate_dmg_operation; mlme (MIB из DMG Operation) | mgmt_body |  |
 | 9.4.2.129 | 1244 | DMG Beam Refinement element | М+С | brp.BeamRefinement (рис. 9-558…9-560) | brp, brp_role | новое правило brp_role: Initiator |
 | 9.4.2.130 | 1246 | DMG Wakeup Schedule element | ВНЕ |  |  | DMG Wakeup Schedule — power save удалён |
-| 9.4.2.131 | 1246 | Extended Schedule element | М+С | elements.encode/parse/validate_extended_schedule; bi.Allocation / layout | bi | в маяках стенда Extended Schedule нет (CBAP Only) |
-| 9.4.2.132 | 1250 | STA Availability element | ВНЕ |  |  | STA Availability — для PS/планирования SP |
-| 9.4.2.133 | 1251 | DMG TSPEC element | ВНЕ |  |  | DMG TSPEC — резервирование SP (pro) |
+| 9.4.2.131 | 1246 | Extended Schedule element | М+С | elements.encode/parse/validate_extended_schedule; schedule.encode/decode/check/plan; bi.Allocation / layout | schedule, bi | в маяках стенда Extended Schedule нет (CBAP Only) — schedule проверяет CBAP Only |
+| 9.4.2.132 | 1250 | STA Availability element | Ч | dynalloc.check_dyn_log(pp_available) | dynalloc (dyn_pp_unavail) | поле PP Available — параметром (10.39.7.1); кодек элемента нет |
+| 9.4.2.133 | 1251 | DMG TSPEC element | Н |  |  | DMG TSPEC — резервирование SP (11.4), в охвате open, не реализовано |
 | 9.4.2.134 | 1254 | CMMG TSPEC element | ВНЕ |  |  | CMMG |
 | 9.4.2.135 | 1255 | Next DMG ATI element | М | elements.encode/parse_next_dmg_ati; bi; mlme.ati_start_earliest | ati (ATI Present) | в захватах ATI нет |
 | 9.4.2.136 | 1255 | Channel Measurement Feedback element | М | brp.cmf_payload / cmf_octets (табл. 9-263/9-264) | brp (размер) |  |
@@ -156,18 +156,18 @@
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
 | 9.5.1 | 1437 | Sector Sweep field | М+С | fields.check/encode/parse_ssw | cfe_fields, beacon_fields, sls, abft | PLAN №2 |
-| 9.5.2 | 1438 | Dynamic Allocation Info field | М | fields.check/encode/parse_dai |  | Dynamic Allocation Info — SPR/Grant (pro) |
+| 9.5.2 | 1438 | Dynamic Allocation Info field | М+С | fields.check/encode/parse_dai; dynalloc; sp | dynalloc, sp_access | Allocation Duration по контексту Grant (9.5.2) |
 | 9.5.3 | 1439 | Sector Sweep Feedback field | М+С | fields.check/encode/parse_ssw_fb, snr_quantize | cfe_fields, sls | PLAN №3, №6 |
 | 9.5.4 | 1440 | BRP Request field | М+С | fields.check/encode/parse_brp_req; brp.BrpRequest | cfe_fields, brp, brp_role | PLAN №7 |
-| 9.5.5 | 1441 | Beamforming Control field | М | fields.check/encode/parse_bf_control |  | в Grant/SPR/Extended Schedule — нет в захватах |
+| 9.5.5 | 1441 | Beamforming Control field | М+С | fields.check/encode/parse_bf_control; schedule (в Extended Schedule); sp (BF в начале SP); dynalloc (Grant Ack: BT) | schedule, sp_access, dynalloc | в захватах нет |
 | 9.5.6 | 1442 | Beamformed Link Maintenance field | М+С | fields.Blm, blm_time, blm_negotiate (табл. 9-344/9-345); linkmaint | blm | новое (волна C) |
 
 ## 9.6–9.7 Action-кадры и A-MPDU
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
-| 9.6.3.2 | 1448 | Basic and DMG ADDTS Request frame format | ВНЕ |  |  | DMG ADDTS Request — резервирование SP (pro) |
-| 9.6.3.3 | 1450 | Basic and DMG ADDTS Response frame format | ВНЕ |  |  | DMG ADDTS Response — pro |
+| 9.6.3.2 | 1448 | Basic and DMG ADDTS Request frame format | Н |  |  | DMG ADDTS Request — резервирование SP (11.4), в охвате open, не реализовано |
+| 9.6.3.3 | 1450 | Basic and DMG ADDTS Response frame format | Н |  |  | DMG ADDTS Response — см. выше |
 | 9.6.4.2 | 1456 | ADDBA Request frame format | М+С | blockack.encode/parse_addba_req | addba |  |
 | 9.6.4.3 | 1457 | ADDBA Response frame format | М+С | blockack.encode/parse_addba_resp, check_addba_response | addba |  |
 | 9.6.4.4 | 1458 | DELBA frame format | М | blockack.encode/parse_delba |  | в захватах нет |
@@ -237,18 +237,18 @@
 | 10.39.1 | 1878 | General | М | bi |  |  |
 | 10.39.2 | 1878 | Access periods within a beacon interval | М+С | bi.layout / period_at / check_schedule; bi.rx_advance_time | bi |  |
 | 10.39.3 | 1879 | ATI transmission rules | М+С | mlme.AtiAp / ati_sta_response / ati_start_earliest / check_ati_frame; bi (ATI) | ati | новое правило ati; в захватах ATI Present = 0 |
-| 10.39.4 | 1882 | DTI transmission rules | М+С | bi; cbap | bi, cbap_end |  |
-| 10.39.5 | 1882 | Contention based access period (CBAP) transmission rules | М+С | cbap.Station (CBAP-окна, приостановка EDCAF); bi | cbap_end, access | PLAN №9 |
-| 10.39.6.1 | 1884 | General | М+С | bi.Allocation, full_tsf | bi | PLAN №12 |
-| 10.39.6.2 | 1885 | Service period (SP) allocation | Ч | bi (SP в расписании) | bi | правила внутри SP — строгий TDMA (pro) |
-| 10.39.6.3 | 1886 | Contention based access period (CBAP) allocation | М+С | bi (CBAP-распределения) | bi |  |
-| 10.39.6.4 | 1239 | and is set to 0 otherwise. The Pseudo-static Allocations subfield is | М | bi.pseudo_static_valid, obsolete |  | в захватах нет |
-| 10.39.6.5 | 1888 | Guard time | М | bi.guard_time / guard_between |  |  |
-| 10.39.6.6 | 1888 | DMG and CMMG protected period | ВНЕ | duration.duration_dts*; nav.MultiNav (DTS) |  | защищённый период — SP/DTS (pro) |
-| 10.39.6.7 | 1895 | Service period recovery | ВНЕ |  |  | восстановление SP — pro |
-| 10.39.7 | 1896 | Dynamic allocation of service period | ВНЕ | duration.duration_grant_* / duration_spr_*, pp_schedule; fields (Poll/SPR/Grant) |  | PP/GP — строгий TDMA (pro); open не использует (NOT_CHECKABLE dyn_alloc) |
-| 10.39.8 | 1900 | Dynamic truncation of service period | ВНЕ | duration.duration_grant_truncation |  | усечение SP — pro |
-| 10.39.9 | 1901 | Dynamic extension of service period | ВНЕ | duration.duration_grant_ext_* |  | продление SP — pro |
+| 10.39.4 | 1882 | DTI transmission rules | М+С | bi; cbap; sp.check_dti (кто начинает, LP SC); dynalloc (Grant Ack) | bi, cbap_end, sp_access, dynalloc |  |
+| 10.39.5 | 1882 | Contention based access period (CBAP) transmission rules | М+С | cbap.Station (CBAP-окна, приостановка EDCAF); bi; sp.check_dti (CBAP расписания) | cbap_end, access, sp_access | PLAN №9 |
+| 10.39.6.1 | 1884 | General | М+С | bi.Allocation, full_tsf; schedule.check / check_repeats / StaView (obsolete) | bi, schedule | PLAN №12 |
+| 10.39.6.2 | 1885 | Service period (SP) allocation | М+С | sp.check_sp / check_dti / sp_exchange; schedule (BF Training, aDMGPPMinListeningTime) | sp_access, bi | в захватах SP нет (CBAP Only); RD в SP — выключен намеренно |
+| 10.39.6.3 | 1886 | Contention based access period (CBAP) allocation | М+С | bi (CBAP-распределения); schedule.check (CBAP Only); sp.check_dti (CBAP расписания) | bi, schedule, sp_access |  |
+| 10.39.6.4 | 1887 | Pseudo-static allocations | М+С | bi.pseudo_static_valid, obsolete; schedule.check_history / StaView | schedule (история по BI) | PLAN №34 |
+| 10.39.6.5 | 1888 | Guard time | М+С | bi.guard_time / guard_between; schedule.plan / check | schedule |  |
+| 10.39.6.6 | 1888 | DMG and CMMG protected period | Н | duration.duration_dts*; nav.MultiNav (DTS) |  | защищённый период (DTS в SP) — в охвате open, не реализовано |
+| 10.39.6.7 | 1895 | Service period recovery | Ч | sp.check_sp (AP-получатель после dot11SPIdleTimeout, только Truncatable) | sp_access | возврат SP по ответам в ATI — нет |
+| 10.39.7 | 1896 | Dynamic allocation of service period | М+С | dynalloc.pp / gp / check_dyn_log; duration.pp_schedule / duration_grant_* | dynalloc | PLAN №26–№29; в захватах нет — «не проверяемо» |
+| 10.39.8 | 1900 | Dynamic truncation of service period | М+С | sp.check_sp, truncation_cf_end / truncation_grant; duration.duration_grant_truncation | sp_access | PLAN №32; CDMG (10.39.8.2) — вне охвата |
+| 10.39.9 | 1901 | Dynamic extension of service period | М+С | sp.check_sp, extension; duration.duration_grant_ext_* | sp_access | PLAN №30 |
 | 10.39.10 | 1902 | Updating multiple NAVs | М | nav.MultiNav (псевдокод буквально), nav.check_nav_log(multi=True) |  | новое; поддержка нескольких NAV у узла не видна — судья ведёт единый NAV (nav_multi) |
 | 10.39.11 | 1370 | and is set to 0 otherwise. | ВНЕ |  |  | CDMG |
 
@@ -342,8 +342,8 @@
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
-| 11.4.9.1 | 2159 | Deletion of a TS established between an HC, DMG AP, or PCP and a non-AP and non-PCP STA | ВНЕ |  |  | удаление TS DMG — pro (SP) |
-| 11.4.13 | 2165 | DMG allocation formats | ВНЕ |  |  | форматы распределений DMG (TSPEC) — pro |
+| 11.4.9.1 | 2159 | Deletion of a TS established between an HC, DMG AP, or PCP and a non-AP and non-PCP STA | Н |  |  | удаление TS DMG (11.4) — в охвате open, не реализовано |
+| 11.4.13 | 2165 | DMG allocation formats | Н |  |  | форматы распределений DMG (TSPEC, 11.4) — в охвате open, не реализовано |
 | 11.8.2.2 | 2178 | Providing supported channels upon association in a DMG BSS | Н |  |  | Supported Channels при ассоциации DMG — не моделируется |
 | 11.8.8.6 | 2188 | Selecting and advertising a new channel in a DMG BSS | Н |  |  | смена канала DMG BSS (ECSA в DMG Beacon/Announce/Information Response) — не реализовано |
 | 11.9 | 2189 | Extended channel switching (ECS) | Н |  |  | ECS — не реализовано |
@@ -369,7 +369,7 @@
 | 11.29.1 | 2361 | General | Н | elements (DMG BSS Parameter Change) |  | смена параметров BSS (TBTT, BI) — процедура не моделируется |
 | 11.29.4 | 2363 | Maintaining synchronization in an AP or PCP cluster | ВНЕ |  |  | синхронизация в кластере — кластеризация |
 | 11.29.5 | 2363 | Recommending DMG BSS parameters to the AP or PCP | Н |  |  | рекомендация параметров точке — не реализовано |
-| 11.30 | 2364 | Spatial sharing and interference mitigation for DMG STAs | ВНЕ |  |  | spatial sharing — SP (pro) |
+| 11.30 | 2364 | Spatial sharing and interference mitigation for DMG STAs | Н |  |  | spatial sharing — в охвате open, не реализовано (guard time без него, 10.39.6.5) |
 | 11.31 | 2367 | Multi-band operation | ВНЕ |  |  | multi-band/FST |
 | 11.32 | 2383 | MMSL cluster operation | ВНЕ |  |  | MMSL |
 | 11.33 | 2385 | DMG coexistence with non-IEEE-802.11 systems | ВНЕ |  |  | сосуществование с не-802.11 — требований к нашему MAC нет |
@@ -383,8 +383,13 @@
 - **Кластеризация AP/PCP (10.40)** — вне open: опция для нескольких AP/PCP в зоне друг друга, в нашей схеме одна
   точка; маяки объявляют CC Present = 0. Модель знает поле Clustering Control (рис. 9-78/9-79), правила кластера — нет.
 - **Relay (10.45, 11.34, 9.6.19.8–9.6.19.22)** — нет ни в open, ни в pro.
-- **Динамическое распределение (10.39.7–10.39.9, Poll/SPR/Grant)** — строгий TDMA, pro; open не использует (в захватах
-  этих кадров нет). Кодеки кадров (fields) и Duration (duration) в модели есть — для pro.
+- **Расписание DTI, SP и динамическое распределение (9.4.2.131, 10.39.6–10.39.9, Poll/SPR/Grant/Grant Ack)** — охват
+  open (open — реализация стандарта): модель `schedule` (Extended Schedule, согласованность с BI, псевдостатика, знание
+  STA, генератор), `sp` (правила SP, усечение, продление, восстановление, CBAP расписания, судья DTI `check_dti`),
+  `dynalloc` (PP/GP, Grant Ack, использование выделенного), сценарии `tdma_scen`; судья `schedule`, `sp_access`,
+  `dynalloc` (`air_sched`). В захватах стенда расписания с SP и этих кадров нет — `sp_access`/`dynalloc` «не
+  проверяемо» с причиной. Не реализовано: защищённый период (10.39.6.6), резервирование через DMG TSPEC/ADDTS (11.4),
+  spatial sharing (11.30).
 - **Power save (11.2.7, PSC, Awake Window, Wakeup Schedule)** — удалён намеренно; точка отвечает отказом на PSC-REQ.
 - **Reverse direction (10.29)** — выключен намеренно; судья rd ловит RDG/RD-ответы в эфире.
 - **BRP TXSS** — EDMG (802.11-2024 10.41.10.5), в 802.11-2020 нет; в 2020 есть только запрос списка секторов
@@ -396,6 +401,7 @@
 ## Приоритеты «Н» для open (что делает прошивка в эфире)
 
 Смена канала DMG BSS (11.8.8.6, ECSA), TPC/адаптация (10.43, Link Measurement), Information Request/Response (11.28),
-передача PCP (11.27.2), смена параметров BSS (11.29), Quiet Period (11.35). В захватах стенда
+передача PCP (11.27.2), смена параметров BSS (11.29), Quiet Period (11.35); для SP — защищённый
+период (10.39.6.6), резервирование DMG TSPEC/ADDTS (11.4), spatial sharing (11.30). В захватах стенда
 таких кадров нет — сначала нужен сценарий, где прошивка их передаёт.
 
