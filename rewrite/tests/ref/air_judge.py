@@ -2751,6 +2751,12 @@ RULES = (r_fc, r_ctl_len, r_cfe_fields, r_beacon_fields, r_mgmt_body, r_addba, r
 from . import air_sched as AS      # noqa: E402
 RULES += AS.RULES
 PAGE.update(AS.PAGE)
+# волна 3: 11.28, 11.35, 11.27.2, 10.39.6.6, 11.4, 11.30, RSNE/Ext Cap/SOC, A-MPDU, QoS Control (ref/air_wave3;
+# импорт здесь — air_wave3 берёт Rule отсюда)
+from . import air_wave3 as AW      # noqa: E402
+RULES += AW.RULES
+PAGE.update(AW.PAGE)
+TIMING_RULES += ('prot_period',)
 
 NOT_CHECKABLE = [
     ('ba_scoreboard', '10.25.6.3–10.25.6.5', 'битмап BlockAck целиком против принятых MPDU — записан один MPDU данных '
@@ -2863,6 +2869,9 @@ def main(argv=None):
                                                                               for r in rules],
                            not_checkable=NOT_CHECKABLE), f, ensure_ascii=False, indent=1, default=str)
     return 0
+
+
+NOT_CHECKABLE += AW.NOT_CHECKABLE      # волна 3 (ref/air_wave3)
 
 
 if __name__ == '__main__':

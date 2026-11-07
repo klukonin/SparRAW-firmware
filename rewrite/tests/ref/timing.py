@@ -160,6 +160,8 @@ aMinAllocationDeliveryTime = Fr(300)        # «300 µs»
 aDMGPPMinListeningTime = Fr(150)            # «150 µs»
 aMaxABFTAccessPeriod = 2
 aMinNAVTimersNumber = 2                     # «aMinNAVTimersNumber 2» — число NAV при нескольких NAV (10.39.10)
+aMinSwitchInterval = 2 * aMinBTIPeriod       # «2×aMinBTIPeriod» — интервалов маяка (11.30.4)
+aMaxSwitchInterval = 16 * aMinSwitchInterval  # «16×aMinSwitchInterval» (11.30.4)
 
 # ---- MIB (приложение C), DEFVAL, общие для нескольких модулей ----
 # PLAN.md №10 — dot11MaxLostBeacons: SYNTAX 1..32, DEFVAL { 4 }; 11.1.3.3.3: «A DMG AP shall set dot11MaxLostBeacons to

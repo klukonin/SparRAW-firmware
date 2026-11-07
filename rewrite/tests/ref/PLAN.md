@@ -109,6 +109,30 @@
   `test_bssparams.py`. Перенести в `timing.py`: aMinPPDUDurationForDMGMeasurement (5,27 мкс, табл. 11-22),
   dot11NbrOfChangeBeacons DEFVAL.
 
+Волна 3 (оставшиеся «Н»/«Ч» open; свой модуль + свой test_*.py, правила судьи — `air_wave3.py`):
+- `discovery.py` — Information Request/Response (9.6.19.4/5, 11.28): Request/Extended Request (9.4.2.9/10), Subject
+  Address (broadcast — только точке), «пустой» ответ (не-член BSS / non-AP не о себе), критерии ответа точки (SSID,
+  BSSID, DA — 11.28.2), RCPI/RSNI «нет измерения»; станция `InfoStation`.
+- `qab.py` — QAB (11.35): Quiet Period Request/Response (9.4.2.149/150), QAB Request/Response (Public Action 16/17,
+  9.6.7.34/35, Protected Dual), тихие интервалы, SP точки «сама себе» без передачи; `QabRequester`/`QabResponder`.
+- `handover.py` — передача PCP (11.27.2): Next PCP List, PCP Handover (9.4.2.140/141), Handover Request/Response
+  (9.6.19.6/7); явная (`HandoverPcp`, `HandoverMember`) и неявная (`ImplicitCandidate`, `choose_new_pcp`) передача,
+  неизменность псевдостатического расписания.
+- `protperiod.py` — защищённый период DMG (10.39.6.6): прослушивание aDMGPPMinListeningTime, RTS/DMG CTS/DMG DTS в SP,
+  Duration DTS (через duration.duration_dts), DTS без RTS после aRTSTimeoutTime, отчёт о помехах (Constraint).
+- `tspec.py` — DMG TSPEC (9.4.2.133), DMG ADDTS Request/Response и DELTS (9.6.3.x), правила 11.4 для DMG: Allocation ID,
+  TS Delay, TCLAS/U-PID, ответ обеим сторонам, Extended Schedule после SUCCESS, удаление (11.4.9), форматы (11.4.13).
+- `spsh.py` — spatial sharing (11.30): Directional Channel Quality request/report (9.4.2.20.16/9.4.2.21.15) в Radio
+  Measurement Request/Report (9.6.6.2/3), запросы точки (ANIPI — оценка, RSNI — сопровождение), антенна измерения,
+  совмещение SP после отчётов, устойчивость BSS к смене канала (11.30.4, `SwitchBackoff`).
+- `capelems.py` — RSNE DMG (наборы шифров/AKM, умолчание GCMP-128, RSN Capabilities по роли, выбор STA 12.6.3, табл.
+  12-5), Extended Capabilities (табл. 9-153 целиком), Supported Operating Classes (9.4.2.53, классы 60 ГГц табл. E-4).
+- `ampdu.py` — A-MPDU DMG: разделитель (рис. 9-975), CRC (9.7.2), паддинг, предел длины (10.12.2), Minimum MPDU Start
+  Spacing (10.12.3), групповой RA (10.12.4); `qosctl.py` — генератор и проверка QoS Control данных DMG (9.2.4.5).
+- `air_wave3` — правила `info_req`, `qab`, `pcp_handover`, `prot_period`, `addts`, `spsh`, `rsne`, `ext_caps`,
+  `op_classes`, `ampdu_limits`, `qos_ctl`; «не проверяемо» — `info_resp_supported`, `pp_listening`, `handover_implicit`,
+  `qab_peer`, `spsh_measure`, `ampdu_spacing`, `tspec_admission`. Тесты — `test_air_wave3.py`.
+
 ## Правила для каждого модуля
 - Заголовок `# SPDX-License-Identifier: AGPL-3.0-or-later`, докстрока: охват (пункты) и что НЕ моделируется.
 - Комментарии по-русски, у каждого правила — пункт/таблица/рисунок; цитаты из стандарта не длиннее строки.
@@ -182,6 +206,19 @@
 | 51 | Когда время SP возвращается AP | Только после объявления AP в Truncatable SP: CF-End к AP или широковещательный Grant (остаток после CBAP), либо CF-End пиру, когда пир — AP; CF-End пиру без объявления — пара заканчивает SP, AP время не получает (sp.SpState.released) | 10.39.8.1 | «In order to advertise the availability … shall transmit a CF-End frame to the AP»; 2020 = 2024 |
 | 52 | Grant AP в SP с индивидуальным AID | Не GP (GP — в SP broadcast/broadcast, CBAP с broadcast Destination AID, ATI, во времени после усечения/восстановления): продление 10.39.9 / уступка / чужая передача — правила sp (dynalloc, sp) | 10.39.7.3, 10.39.9 | 2020 = 2024 |
 | 53 | «Previous pseudo-static allocation» при изменении/удалении | Прежнее повторяется с тем же смещением от TBTT (bi.Allocation.recur) в BI изменения и следующих до dot11MaxLostBeacons − 1; новое распределение (кортеж не был в прошлом ES), перекрывающее его, — `should_ps_overlap`, кроме CBAP/CBAP и того же источника (schedule) | 10.39.6.4 | 2020 = 2024 |
+| 60 | Information Response «with no requested or provided elements», а табл. 9-461 требует «One or more DMG Capabilities elements» | Ответ несёт только DMG Capabilities самого отвечающего; чужой DMG Capabilities в таком ответе — нарушение (discovery, air_wave3 `info_req`) | 11.28.1, 9.6.19.5 | 2020 = 2024 (11.27.1) |
+| 61 | 11.28.2 a) «The SSID in the Information Request frame» — у кадра нет поля SSID | SSID — элемент SSID среди provided elements; нет элемента — как wildcard (discovery.ap_should_respond) | 11.28.2, табл. 9-460 | 2020 = 2024 |
+| 62 | Сколько Quiet Period Response в QAB Response при нескольких Quiet Period Request (11.35.2 a) — несколько элементов в запросе, табл. 9-382 — один элемент) | По одному на каждый элемент запроса с Target BSSID = своему; Quiet Duration > Quiet Period при Repetition Count > 1 (интервалы налезают) — нарушение запроса (qab) | 11.35.2, 11.35.3, 9.4.2.149 | 2020 = 2024 |
+| 63 | Next PCP List без способных STA: «length … is 0» (11.27.2.1) при поле Token в рис. 9-581 | Элемент с Length 0 (без Token); Length 1 (Token без AID) — нарушение («one or more AID», 9.4.2.140) (handover) | 11.27.2.1, 9.4.2.140 | 2020 = 2024 |
+| 64 | 11.27.2.2 «Handover Result field set to 1, 2, or 3» при 9.6.19.7 (Result — 0/1, причины 0–3 — в Handover Reject Reason) | Норма — 9.6.19.7: Result ∉ {0, 1} — резерв (вердикт model) (handover) | 11.27.2.2, 9.6.19.7 | 2020 = 2024 — текст процедуры смешивает Result и Reject Reason |
+| 65 | Отсчёт Remaining BIs явной передачи и значения MIB | Элемент — с BI после ответа, начальное = Handover Remaining BI − (BI ответа − BI запроса) (Handover Remaining BI не считает BI запроса), −1 на каждом TBTT; кандидат — PCP с TBTT, где счётчик 0 (маяков старого PCP с 0 нет). dot11NbrOfChangeBeacons DEFVAL 4 не «greater than dot11MaxLostBeacons» (4, 11.29.2), dot11ImplicitHandoverLostBeacons DEFVAL 8 не «lower than dot11MaxLostBeacons» (11.27.2.3) — значения MIB параметры, DEFVAL лишь по умолчанию (handover) | 11.27.2.2, 9.4.2.141, 9.6.19.6, C.3 | 2020 = 2024 (DEFVAL те же) |
+| 66 | Неявная передача: «Remaining BIs field initially set to dot11MaxLostBeacons and decremented by 1 at each TBTT» и «at least one DMG Beacon during each of the next dot11MaxLostBeacons BTIs», завершение — маяк с 0 | Срабатывание в конце BI, TBTT перед первым BTI уменьшает счётчик: маяки несут dot11MaxLostBeacons − 1 … 0 — ровно dot11MaxLostBeacons BTI (handover.ImplicitCandidate) | 11.27.2.3 | Иначе (первый маяк с dot11MaxLostBeacons) — dot11MaxLostBeacons + 1 BTI до нуля; 2020 = 2024 |
+| 67 | WEP-40/WEP-104 как групповой шифр в DMG BSS («only valid … in a TSN to allow pre-RSNA STAs») | Нарушение у DMG: до-RSNA DMG STA стандарт не описывает (DMG Privacy = dot11RSNAActivated, 9.4.1.46) — TSN в DMG BSS не бывает (capelems.check_rsne) | 9.4.2.24.2 | 2020 = 2024 |
+| 68 | Current Operating Class DMG STA: глобальный или из таблицы страны (E-1…E-3: 34, 18, 59) | Глобальный класс табл. E-4 (180, 181); иное — вердикт model (capelems.check_soc, air_wave3 `op_classes`) | 9.4.2.53, табл. E-4 | Локальные номера без Country неоднозначны |
+| 69 | aRTSTimeoutTime = TXTIME(RTS) + aAirPropagationTime + aRxPHYDelay + aMACProcessingDelay — последние два у DMG не заданы | aRxPHYDelay + aMACProcessingDelay ∈ [0, aSIFSTime] (10.3.7: aSIFSTime = aRxPHYDelay + aMACProcessingDelay + aRxTxTurnaroundTime); генератор — верхняя оценка (DTS не раньше), судья — нижняя (protperiod.rts_timeout) | табл. 11-22, 10.3.7, 10.39.6.6.2 | 2020 = 2024 |
+| 70 | TSCONST Period отчёта о помехах «set to 0 indicating that the field is not applicable», а по табл. 9-262 0/0 — Reserved («not periodic» — B15 = 1) | Частное правило 10.39.6.6.6 сильнее: в отчёте о помехах Period = 0; вне отчёта 0/0 — нарушение (tspec, protperiod) | 10.39.6.6.6, табл. 9-262 | 2020 = 2024; ссылка там же «DMG ADDTS Request frame variant (9.6.3.3.2)» — опечатка, 9.6.3.2.2 |
+| 71 | Вариант ADDTS Response «по Element ID шестого поля» (табл. 9-349) при TS Delay, присутствующем только при REJECTED_FOR_DELAY_PERIOD | Вариант — по первому элементу после Status Code, кроме TS Delay (tspec.parse_addts) | 9.6.3.1, 9.6.3.3.2 | 2020 = 2024 |
+| 72 | SUCCESS_STA_IN_PS_MODE (11.4.4.4) нет в табл. 9-50 | = SUCCESS_POWER_SAVE_MODE (85); power save у нас удалён — точка его не шлёт (нарушение 'ours'); в правилах Allocation ID — успех (tspec) | 11.4.4.4, табл. 9-50 | 2020 = 2024 |
 
 Вопросы одного модуля (решение — в докстроке у «СПОРНО»): sls — момент старта ISS после Grant (чтение А), отсчёт
 T1, Feedback в следующем распределении, слоты молчащих антенн, SSW-Ack после RXSS; abft — нет повторного прохода
@@ -197,4 +234,5 @@ MCS 13/16 и 7/8, остаток Extended Schedule < 15 октетов,
 TSPEC — вердикт capture (ADDTS не разбирается); schedule — BF Training при broadcast AID, AllocationType 1,08 ГГц для DMG; sp — первый кадр SP при BF (SSW ISS/RSS),
 число SSW в RXSS не проверяется, Duration Grant усечения с ответным CF-End и без; dynalloc — Allocation Duration = 0
 («one PPDU …»: не более одного PPDU источника кроме RTS), уступка TXOP (остаток — по NAV держателя); bssparams — пропуск BTI в записи посреди объявления — «не
-проверяемо»; chswitch — канал после смены не виден (судья проверяет только ряд объявлений).
+проверяемо»; chswitch — канал после смены не виден (судья проверяет только ряд объявлений); волна 3 — discovery (критерии ответа точки), tspec (DELTS: хвост
+только Multi-band), air_wave3 `addts` (Extended Schedule — в ближайших 4 BI после SUCCESS).
