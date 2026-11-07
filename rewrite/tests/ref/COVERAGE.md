@@ -1,6 +1,6 @@
 # Покрытие 802.11-2020 эталонной моделью DMG MAC
 
-Карта DMG-пунктов стандарта (802.11-2020, `docs/80211-2020.txt`; заголовок и страница — из текста, страница — маркер `[Page N]` после заголовка): что есть в модели `rewrite/tests/ref` (модуль/функция), есть ли правило судьи эфира `air_judge` (id правила), что не реализовано и что вне охвата (с причиной). Охват: open — AP/STA/PCP/PBSS DMG по стандарту, включая расписание DTI, SP и динамическое распределение (10.39.6–10.39.9); pro — FTM, OOB, IBSS; power save и adhoc удалены намеренно (точка отвечает отказом на PSC-REQ); reverse direction выключен намеренно (10.29.4).
+Карта DMG-пунктов стандарта (802.11-2020, `docs/80211-2020.txt`; заголовок и страница — из текста, страница — маркер `[Page N]` после заголовка): что есть в модели `rewrite/tests/ref` (модуль/функция), есть ли правило судьи эфира `air_judge` (id правила), что не реализовано и что вне охвата (с причиной). Охват: open — AP/STA/PCP/PBSS DMG по стандарту, включая расписание DTI, SP и динамическое распределение (10.39.6–10.39.9); pro — FTM, OOB, IBSS; кластеризация AP/PCP (10.40) — в охвате open (решение 2026-11-07); relay (10.45, 11.34) и MMS/MMSL (11.32) — не делаем, биты/элементы 0; multi-band/FST (11.31) — pro, будущее (в open — 0); энергосбережение и adhoc удалены намеренно (точка отвечает отказом на PSC-REQ) — правило судьи `opt_caps`; reverse direction выключен намеренно (10.29.4).
 
 Статусы: **М+С** — модель и правило судьи эфира; **М** — модель (по захватам не проверяется: кадров нет или поле не записано); **Ч** — частично (что именно — в примечании); **С** — только судья; **Н** — не реализовано (в охвате open); **ВНЕ** — вне охвата (причина в примечании). Перечень «не проверяемо по записи» — `air_judge.NOT_CHECKABLE`.
 
@@ -8,22 +8,22 @@
 
 | Статус | Пунктов |
 |---|---|
-| М+С | 180 |
-| М | 49 |
+| М+С | 189 |
+| М | 53 |
 | Ч | 15 |
 | С | 3 |
 | Н | 2 |
-| ВНЕ | 42 |
-| всего | 291 |
+| ВНЕ | 37 |
+| всего | 299 |
 
-Реализовано (М+С, М, С): 232; частично: 15; не реализовано: 2; вне охвата: 42.
+Реализовано (М+С, М, С): 245; частично: 15; не реализовано: 2; вне охвата: 37.
 
 ## 9.2 Общий формат MAC-кадра (DMG-особенности)
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
 | 9.2.2 | 755 | Conventions | М+С | fields._pack/_unpack (порядок бит, резерв = 0) | fc, ba_control (резерв) | PLAN №18: BA Control B0 |
-| 9.2.4.1 | 758 | Frame Control field | М+С | fields.check_fc / encode_fc / parse_fc (рис. 9-3, 9-4, табл. 9-1, 9-2) | fc |  |
+| 9.2.4.1 | 758 | Frame Control field | М+С | fields.check_fc / encode_fc / parse_fc (рис. 9-3, 9-4, табл. 9-1, 9-2) | fc, opt_caps | Power Management = 1 в наших кадрах — opt_caps (PS) |
 | 9.2.4.2 | 767 | Duration/ID field | М+С | duration.field / decode | dur_cts, dur_resp, dur_cf_end, dur_bf |  |
 | 9.2.4.3 | 768 | Address fields | Ч | fields.mac_str / is_group; air_pcap (RA/TA) | resp_seq, cts_self | адреса — как часть кадров |
 | 9.2.4.4 | 770 | Sequence Control field | М+С | blockack.encode_ssc / parse_ssc, sn_* | ba_window |  |
@@ -38,7 +38,7 @@
 |---|---|---|---|---|---|---|
 | 9.3.1.2 | 797 | RTS frame format | М+С | duration.duration_rts; cbap.Station | ctl_len, txop_limit, resp_seq |  |
 | 9.3.1.4 | 798 | Ack frame format | М+С | duration.duration_ack; cbap | ctl_len, dur_resp, mcs_response |  |
-| 9.3.1.5 | 799 | PS-Poll frame format | ВНЕ |  |  | PS-Poll — power save удалён намеренно |
+| 9.3.1.5 | 799 | PS-Poll frame format | ВНЕ | optcaps.FRAME_OFF | opt_caps | PS-Poll — энергосбережение — не делаем; наш PS-Poll — нарушение |
 | 9.3.1.6 | 799 | CF-End frame format | М+С | duration.duration_cf_end / cf_end_check; cbap.Nav | dur_cf_end, cf_end_rules, cf_end_unanswered |  |
 | 9.3.1.7 | 800 | BlockAckReq frame format | М+С | blockack (BlockAckReq) | resp_seq |  |
 | 9.3.1.8 | 803 | BlockAck frame format | М+С | blockack.encode_ba_control / encode_ba_info / Scoreboard | ba_control, ba_window, mcs_response | битмап целиком — не проверяемо (ba_scoreboard) |
@@ -63,7 +63,7 @@
 | 9.3.2.2 | 819 | Aggregate MSDU (A-MSDU) format | М+С | amsdu.encode_basic / encode_short / parse / check_addresses / check_mpdu / Aggregator (рис. 9-68, 9-69, 9-71, табл. 9-25, 9-30) | amsdu | Dynamic A-MSDU — только S1G, mesh (рис. 9-70) — не DMG; тела данных — только с rxqos/txqos (amsdu_body); PLAN №26–28 |
 | 9.3.3.1 | 822 | Format of (PV0) Management frames | М+С | elements.check_order (порядок, «Last») | mgmt_body |  |
 | 9.3.3.2 | 825 | Beacon frame format | ВНЕ |  |  | Beacon (не DMG); DMG — 9.3.4.2 |
-| 9.3.3.3 | 829 | ATIM frame format | ВНЕ |  |  | ATIM — PS/IBSS |
+| 9.3.3.3 | 829 | ATIM frame format | ВНЕ | optcaps.FRAME_OFF | opt_caps | ATIM — энергосбережение — не делаем (и IBSS); наш ATIM — нарушение |
 | 9.3.3.4 | 829 | Disassociation frame format | М+С | elements (Disassociation, табл. 9-33) | mgmt_body, assoc_state |  |
 | 9.3.3.5 | 830 | Association Request frame format | М+С | elements (табл. 9-34) | mgmt_body, assoc_state |  |
 | 9.3.3.6 | 832 | Association Response frame format | М+С | elements (табл. 9-35), _check_assoc_resp | mgmt_body, assoc_state (AID, статус) |  |
@@ -85,7 +85,7 @@
 | 9.4.1.1 | 867 | Authentication Algorithm Number field | М+С | elements (Authentication Algorithm Number) | mgmt_body, assoc_state |  |
 | 9.4.1.2 | 867 | Authentication Transaction Sequence Number field | М+С | elements | mgmt_body |  |
 | 9.4.1.3 | 868 | Beacon Interval field | М+С | fields (DMG Beacon), elements | beacon_fields, bi |  |
-| 9.4.1.4 | 868 | Capability Information field | М+С | elements.encode/parse/validate_capinfo_dmg (рис. 9-86) | mgmt_body |  |
+| 9.4.1.4 | 868 | Capability Information field | М+С | elements.encode/parse/validate_capinfo_dmg (рис. 9-86) | mgmt_body, opt_caps | Triggered Unscheduled PS = 0 — opt_caps |
 | 9.4.1.5 | 870 | Current AP Address field | М | elements (Current AP Address) |  |  |
 | 9.4.1.6 | 870 | Listen Interval field | М+С | elements | mgmt_body |  |
 | 9.4.1.7 | 871 | Reason Code field | М+С | elements; mlme (CONFIG_REASON) | mgmt_body, assoc_state |  |
@@ -97,8 +97,8 @@
 | 9.4.1.13 | 882 | Block Ack Parameter Set field | М+С | blockack.encode/parse_ba_params; amsdu.buffer_octets (A-MSDU Supported) | addba, amsdu |  |
 | 9.4.1.14 | 883 | Block Ack Timeout Value field | М+С | blockack.InactivityTimer | addba |  |
 | 9.4.1.16 | 884 | DELBA Parameter Set field | М | blockack.encode/parse_delba_params |  | DELBA в захватах нет |
-| 9.4.1.44 | 906 | Relay Capable STA Info field | ВНЕ |  |  | Relay Capable STA Info — relay вне охвата |
-| 9.4.1.45 | 907 | Band ID field | ВНЕ |  |  | Band ID — multi-band/FST вне охвата |
+| 9.4.1.44 | 906 | Relay Capable STA Info field | ВНЕ |  |  | Relay Capable STA Info — relay — необязательно, не поддерживается (решение 2026-11-07); поле только в кадрах relay (opt_caps) |
+| 9.4.1.45 | 907 | Band ID field | ВНЕ |  |  | Band ID — multi-band/FST — pro, будущее (в open — 0) |
 | 9.4.1.46 | 907 | DMG Parameters field | М+С | fields.check/encode/parse_dmg_params; elements; bi.DmgParameters | beacon_fields, mgmt_body | PLAN №9 |
 
 ## 9.4.2 Элементы (DMG и используемые DMG STA)
@@ -114,7 +114,7 @@
 | 9.4.2.21.15 | 1044 | Directional Channel Quality report | М+С | spsh.encode/parse_dcq_rep, check_dcq_rep, answer (рис. 9-277, табл. 9-144) | spsh | отчёт — по формату запроса (11.30.2) |
 | 9.4.2.24 | 1051 | RSNE | М+С | elements.encode/parse_rsne (структура); capelems.rsn_effective / check_rsne / check_selection / mfp_actions / check_assoc_status (табл. 9-149…9-151, рис. 9-289, табл. 12-5) | mgmt_body, assoc_state (rsna), rsne | умолчание DMG — GCMP-128 (9.4.2.24.2), AKM — 00-0F-AC:1; WEP в DMG BSS — PLAN №67; выбор STA — 12.6.3; 4-way handshake — нет |
 | 9.4.2.25 | 1060 | Vendor Specific element | М | elements.encode_vendor | mgmt_body (порядок) |  |
-| 9.4.2.26 | 1061 | Extended Capabilities element | М+С | capelems.parse_ext_cap / encode_ext_cap / check_ext_cap (табл. 9-153 целиком); dms.ext_cap_dms | mgmt_body, dms, qab, ext_caps | резерв, биты только AP (80, 84, QAB 47), Service Interval Granularity при S-PSMP, Max Number Of MSDUs In A-MSDU — резерв у DMG |
+| 9.4.2.26 | 1061 | Extended Capabilities element | М+С | capelems.parse_ext_cap / encode_ext_cap / check_ext_cap (табл. 9-153 целиком); dms.ext_cap_dms | mgmt_body, dms, qab, ext_caps, opt_caps | резерв, биты только AP (80, 84, QAB 47), Service Interval Granularity при S-PSMP, Max Number Of MSDUs In A-MSDU — резерв у DMG; PS-биты 4, 6, 11, 17, 18, 28, 29, 45 = 0 — opt_caps (optcaps.EXT_CAP_OFF) |
 | 9.4.2.30 | 1078 | TCLAS element | Ч | dms.Tclas / encode/parse_tclas / tclas_eth / tclas_ip4 / tclas_ip6 / tclas_match / check_tclas_dms | dms | типы 0, 1, 4 — те, что допускает DMS (11.21.16.2); типы 2, 3, 5–10 — только как октеты |
 | 9.4.2.32 | 1092 | TCLAS Processing element | М+С | dms.tclas_set_match, правила Processing (табл. 9-171) | dms |  |
 | 9.4.2.28 | 1068 | EDCA Parameter Set element | М+С | cbap.EdcaParams; air_judge.edca_from | edca, access, txop_limit |  |
@@ -125,35 +125,35 @@
 | 9.4.2.88 | 1193 | DMS Response element | М+С | dms.Status / encode_status / parse_statuses / check_status / encode_response_elements (рис. 9-478, 9-479, табл. 9-233, 9-234) | dms | GCR Response / «GCR Advertise» — нарушение у DMG; PLAN №30 |
 | 9.4.2.125 | 1234 | GCR Group Address element | ВНЕ |  |  | GCR — не DMG (11.21.16.1: «DMG STAs do not use GCR») |
 | 9.4.2.126 | 1235 | DMG BSS Parameter Change element | М+С | elements.encode/parse_bss_param_change; bssparams.check_change (резерв, BI Duration, aMaxBIDuration) | bss_params | процедура — 11.29 (bssparams); в захватах нет |
-| 9.4.2.127 | 1235 | DMG Capabilities element | М+С | elements.encode/parse/validate_dmg_capabilities (рис. 9-549…9-554); linkadapt.check_fla_caps (Fast Link Adaptation ⇒ Reverse Direction) | mgmt_body, beam_track, link_meas |  |
+| 9.4.2.127 | 1235 | DMG Capabilities element | М+С | elements.encode/parse/validate_dmg_capabilities (рис. 9-549…9-554); linkadapt.check_fla_caps (Fast Link Adaptation ⇒ Reverse Direction) | mgmt_body, beam_track, link_meas, cluster, opt_caps | Decentralized/Centralized Clustering ↔ Clustering Control — cluster; битов relay/MMS/FST/PS в 2020 нет (Heartbeat, Power Source — не PS, PLAN №88) |
 | 9.4.2.128 | 1242 | DMG Operation element | М+С | elements.encode/parse/validate_dmg_operation; mlme (MIB из DMG Operation) | mgmt_body |  |
 | 9.4.2.129 | 1244 | DMG Beam Refinement element | М+С | brp.BeamRefinement (рис. 9-558…9-560) | brp, brp_role | новое правило brp_role: Initiator |
-| 9.4.2.130 | 1246 | DMG Wakeup Schedule element | ВНЕ |  |  | DMG Wakeup Schedule — power save удалён |
+| 9.4.2.130 | 1246 | DMG Wakeup Schedule element | ВНЕ | optcaps.ELEMENT_OFF | opt_caps | DMG Wakeup Schedule — энергосбережение — не делаем |
 | 9.4.2.131 | 1246 | Extended Schedule element | М+С | elements.encode/parse/validate_extended_schedule; schedule.encode/decode/check/plan; bi.Allocation / layout | schedule, bi | в маяках стенда Extended Schedule нет (CBAP Only) — schedule проверяет CBAP Only |
 | 9.4.2.132 | 1250 | STA Availability element | Ч | dynalloc.check_dyn_log(pp_available) | dynalloc (dyn_pp_unavail) | поле PP Available — параметром (10.39.7.1); кодек элемента нет |
 | 9.4.2.133 | 1251 | DMG TSPEC element | М+С | tspec.encode/parse/check_dmg_tspec, alloc_info, period_us (рис. 9-568…9-571, табл. 9-260…9-262) | addts | TSCONST Period отчёта о помехах — PLAN №70; в захватах нет |
 | 9.4.2.134 | 1254 | CMMG TSPEC element | ВНЕ |  |  | CMMG |
 | 9.4.2.135 | 1255 | Next DMG ATI element | М | elements.encode/parse_next_dmg_ati; bi; mlme.ati_start_earliest | ati (ATI Present) | в захватах ATI нет |
 | 9.4.2.136 | 1255 | Channel Measurement Feedback element | М | brp.cmf_payload / cmf_octets (табл. 9-263/9-264) | brp (размер) |  |
-| 9.4.2.137 | 1258 | Awake Window element | ВНЕ |  |  | Awake Window — PS |
-| 9.4.2.138 | 1258 | Multi-band element | ВНЕ |  |  | Multi-band — FST вне охвата (elements знает порядок) |
+| 9.4.2.137 | 1258 | Awake Window element | ВНЕ | optcaps.ELEMENT_OFF | opt_caps | Awake Window — энергосбережение — не делаем |
+| 9.4.2.138 | 1258 | Multi-band element | ВНЕ | optcaps.ELEMENT_OFF | opt_caps | Multi-band — multi-band/FST — pro, будущее (в open — 0); элемента в наших кадрах нет (elements знает порядок) |
 | 9.4.2.139 | 1260 | ADDBA Extension element | Н |  |  | ADDBA Extension — не используется |
 | 9.4.2.140 | 1261 | Next PCP List element | М+С | handover.encode/parse/check_next_pcp_list, NextPcpListPcp, check_next_pcp_tokens (рис. 9-581) | pcp_handover | Length 0 при отсутствии способных STA — PLAN №63; в захватах нет (BSS — инфраструктура) |
 | 9.4.2.141 | 1261 | PCP Handover element | М+С | handover.encode/parse_pcp_handover, check_handover_beacons (рис. 9-582) | pcp_handover | PLAN №65; в захватах нет |
 | 9.4.2.142 | 1262 | DMG Link Margin element | М+С | linkadapt.LinkMargin / encode/parse/check_link_margin (рис. 9-583, табл. 9-266, коды MCS, −128, SNR — PLAN №36) | link_margin, link_meas | значения против измерения — не проверяемо (lm_measure); в захватах нет |
 | 9.4.2.143 | 1263 | DMG Link Adaptation Acknowledgment element | М+С | linkadapt.LaAck / encode/parse/check_la_ack (рис. 9-584) | link_margin | Reference Timestamp — PLAN №37; ссылка текста на 10.42.9 — опечатка (10.43) |
-| 9.4.2.144 | 1263 | Switching Stream element | ВНЕ |  |  | Switching Stream — FST |
-| 9.4.2.145 | 1265 | Session Transition element | ВНЕ |  |  | Session Transition — FST |
-| 9.4.2.146 | 1266 | Cluster Report element | ВНЕ |  |  | Cluster Report — кластеризация (решение ниже) |
-| 9.4.2.147 | 1268 | Relay Capabilities element | ВНЕ |  |  | Relay Capabilities — relay |
-| 9.4.2.148 | 1269 | Relay Transfer Parameter Set element | ВНЕ |  |  | Relay Transfer Parameter Set — relay |
+| 9.4.2.144 | 1263 | Switching Stream element | ВНЕ | optcaps.ELEMENT_OFF | opt_caps | Switching Stream — multi-band/FST — pro, будущее (в open — 0) |
+| 9.4.2.145 | 1265 | Session Transition element | ВНЕ | optcaps.ELEMENT_OFF | opt_caps | Session Transition — multi-band/FST — pro, будущее (в open — 0) |
+| 9.4.2.146 | 1266 | Cluster Report element | М+С | cluster.ClusterReport / encode/parse/check_cluster_report, report_condition, make_reports, check_sta_report (рис. 9-589, 9-590) | cluster | PLAN №82, №84; в захватах нет |
+| 9.4.2.147 | 1268 | Relay Capabilities element | ВНЕ | optcaps.ELEMENT_OFF / check_relay_cap (рис. 9-592) | opt_caps | Relay Capabilities — relay — необязательно, не поддерживается (решение 2026-11-07); элемент и биты Relay Supporter/Client/Permission… — 0/нет |
+| 9.4.2.148 | 1269 | Relay Transfer Parameter Set element | ВНЕ | optcaps.ELEMENT_OFF | opt_caps | Relay Transfer Parameter Set — relay — необязательно, не поддерживается (решение 2026-11-07) |
 | 9.4.2.149 | 1270 | Quiet Period Request element | М+С | qab.encode/parse_qp_req, check_qp_req, quiet_intervals (рис. 9-595) | qab | в захватах нет (одна точка — NOT_CHECKABLE qab_peer) |
 | 9.4.2.150 | 1271 | Quiet Period Response element | М+С | qab.encode/parse_qp_resp (рис. 9-596), check_response | qab | PLAN №62 |
 | 9.4.2.151 | 1271 | BeamLink Maintenance element | М | fields.Blm / blm_time / blm_negotiate; linkmaint.negotiate |  | элемент (в Probe/Information) не кодируется отдельно — поле то же, что в SSW-Feedback |
-| 9.4.2.152 | 1271 | Multiple MAC Sublayers (MMS) element | ВНЕ |  |  | MMS — несколько MAC (вне охвата) |
+| 9.4.2.152 | 1271 | Multiple MAC Sublayers (MMS) element | ВНЕ | optcaps.ELEMENT_OFF | opt_caps | MMS — MMS/MMSL — необязательно, не поддерживается (решение 2026-11-07); dot11MultipleMACActivated = false |
 | 9.4.2.153 | 1273 | U-PID element | ВНЕ |  |  | U-PID — FST |
-| 9.4.2.154 | 1274 | ECAPC Policy element | ВНЕ |  |  | ECAPC Policy — кластеризация |
-| 9.4.2.155 | 1275 | Cluster Time Offset element | ВНЕ |  |  | Cluster Time Offset — кластеризация |
+| 9.4.2.154 | 1274 | ECAPC Policy element | М+С | cluster.EcapcPolicy / encode/parse/check_ecapc_policy, available_bitmap, in_use_offsets (рис. 9-601, 9-602) | cluster | PLAN №81; в (Re)Association Response нет строки табл. 9-35 — PLAN №89 |
+| 9.4.2.155 | 1275 | Cluster Time Offset element | М+С | cluster.encode/parse/check_cto, select_cto (рис. 9-603) | cluster | PLAN №81 |
 | 9.4.2.156 | 1275 | Antenna Sector ID Pattern element | Н |  |  | Antenna Sector ID Pattern — не используется |
 | 9.4.2.219 | 1369 | CDMG Capabilities element | ВНЕ |  |  | CDMG/CMMG/EDMG-элементы (9.4.2.219–9.4.2.233) — вне охвата |
 
@@ -188,13 +188,13 @@
 | 9.6.13.1 | 1528 | WNM Action fields | Ч | dms (WNM Action 23/24, табл. 9-425); air_pcap.ACTION_NAME | dms | из WNM — только DMS |
 | 9.6.13.26 | 1547 | DMS Request frame format | М+С | dms.encode_request_frame / parse_frame / check_request (рис. 9-947) | dms | в захватах нет |
 | 9.6.13.27 | 1547 | DMS Response frame format | М+С | dms.encode_response_frame / parse_frame / check_response / check_exchange (рис. 9-948) | dms | в захватах нет |
-| 9.6.19.2 | 1570 | Power Save Configuration Request frame format | ВНЕ |  |  | PSC Request: PS удалён; точка отвечает отказом — не моделируется |
-| 9.6.19.3 | 1570 | Power Save Configuration Response frame format | ВНЕ |  |  | PSC Response (отказ точки) — см. выше |
+| 9.6.19.2 | 1570 | Power Save Configuration Request frame format | ВНЕ | optcaps.check_action | opt_caps | PSC Request: энергосбережение — не делаем; от нашей STA — нарушение |
+| 9.6.19.3 | 1570 | Power Save Configuration Response frame format | ВНЕ | optcaps.check_action | opt_caps | PSC Response точки — только отказ (Status Code ≠ SUCCESS) без DMG Wakeup Schedule |
 | 9.6.19.4 | 1571 | Information Request frame format | М+С | discovery.encode_request / parse / check_request (табл. 9-460; Request — 9.4.2.9, Extended Request — 9.4.2.10) | info_req | в захватах нет |
 | 9.6.19.5 | 1572 | Information Response frame format | М+С | discovery.encode_response / check_response (табл. 9-461) | info_req | «пустой» ответ — только свой DMG Capabilities (PLAN №60) |
 | 9.6.19.6 | 1573 | Handover Request frame format | М+С | handover.encode_request / parse_frame / check_request (табл. 9-462) | pcp_handover | в захватах нет |
 | 9.6.19.7 | 1573 | Handover Response frame format | М+С | handover.encode_response / check_response (табл. 9-463) | pcp_handover | Result 2/3 из 11.27.2.2 — PLAN №64 |
-| 9.6.19.8 | 1574 | Relay Search Request frame format | ВНЕ |  |  | 9.6.19.8–9.6.19.22: relay, RLS, TPA, ROC — relay вне охвата |
+| 9.6.19.8 | 1574 | Relay Search Request frame format | ВНЕ | optcaps.ACTION_OFF | opt_caps | 9.6.19.8–9.6.19.22: relay, RLS, TPA, ROC — relay — необязательно, не поддерживается (решение 2026-11-07); DMG Action 8–22 в наших кадрах — нарушение |
 | 9.6.21.2 | 1588 | Announce frame format | М | mlme.AtiAp / check_ati_frame; air_judge._bss_frames (ECSA, DMG BSS Parameter Change — табл. 9-487) | ati, ecsa | Announce — в захватах нет (ATI Present = 0); air_pcap называет Announce по категории/действию 20/0 |
 | 9.6.21.3 | 1590 | BRP frame format | М+С | brp.BrpFrame, brp_frame_length | brp, brp_role |  |
 | 9.7.1 | 1612 | A-MPDU format | М+С | duration (A-MPDU); ampdu.build / parse / check, encode/parse_delim (рис. 9-971, 9-973, 9-975, табл. 9-528) | ampdu_dur, ampdu_limits | разделители запись не несёт — судья по длине PSDU; паддинг/спейсинг — NOT_CHECKABLE ampdu_spacing |
@@ -271,7 +271,15 @@
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
-| 10.40 | 1908 | DMG and CMMG AP or PCP clustering | ВНЕ | fields.check/encode/parse_cc (Clustering Control) | beacon_fields (поля) | решение: вне open — опция для нескольких AP/PCP рядом; наши маяки — без кластеризации (CC Present = 0). Модель знает только поле Clustering Control |
+| 10.40.1 | 1908 | General (DMG and CMMG AP or PCP clustering) | М+С | cluster.cluster_time_offset / beacon_sp / beacon_sp_of / maxmem_ok / check_cluster_params / check_own_beacon / check_beacon_series; fields.check/encode/parse_cc | beacon_fields, cluster | Beacon SP_n, ClusterMaxMem (целые мкс), предел Beacon SP Duration, роль/Cluster ID, CC в каждом маяке члена; CC без бит кластеризации — PLAN №87 |
+| 10.40.2.1 | 1909 | Decentralized AP or PCP cluster formation | М+С | cluster.DecentralizedAp (start_sap, join, schedule, may_tx), empty_beacon_sps, beacon_sp_entries, check_beacon_sps_scheduled, check_member_vs_sap | cluster | PLAN №80, №83; прослушивание — NOT_CHECKABLE cluster_monitor |
+| 10.40.2.2 | 1910 | Centralized AP or PCP cluster formation | М+С | cluster.CcsrConfig / check_ccsr_config / verification_ok / ecapc_blind / must_react_to_ecapc / CentralizedSap / CentralizedMember / select_cto | cluster | CCSR — «not defined» (NOT_CHECKABLE cluster_ccsr), слепота — cluster_blind; реакция любой точки на S-AP с ECAPC = 1 (join/cease) — судья, вердикт capture; ECAPC Policy в табл. 9-35 нет — PLAN №89 |
+| 10.40.3.1 | 1914 | General cluster maintenance | М | cluster.tbtt_from_beacon (TBTT S-AP — опора) |  |  |
+| 10.40.3.2 | 1914 | Decentralized AP or PCP cluster maintenance | М | cluster.DecentralizedAp.on_beacon / end_bi (периоды мониторинга, наименьший MAC, dot11MaxNumberOfClusteringMonitoringPeriods, встреча двух S-AP) |  | NOT_CHECKABLE cluster_handover (одна точка на стенде) |
+| 10.40.3.3 | 1915 | Centralized AP or PCP cluster maintenance | М | cluster.CentralizedSap.reconfigure / CentralizedMember.on_sap_beacon / end_bi | cluster | ECAPC = 1 до конца BSS, после ухода ECAPC = 0 и без ECAPC Policy — судья (по маякам и кадрам) |
+| 10.40.3.4 | 1916 | Centralized AP or PCP cluster MAC requirements | М | cluster.bhi_deadline / txss_cbap_windows |  | PLAN №85; NOT_CHECKABLE cluster_txss_cbap |
+| 10.40.4 | 1917 | Cluster report and rescheduling | М+С | cluster.report_condition / make_reports / check_sta_report | cluster | «should send» — не нарушение; «shall not send» и копии полей — нарушения; PLAN №84 |
+| 10.40.5 | 1918 | Decentralized AP or PCP cluster request | М+С | cluster.cluster_request_expired / check_broadcast_announce; DecentralizedAp (ответ точки — «should») | cluster | Announce с TA = broadcast — MCS 0 |
 | 10.41 | 1919 | CDMG AP or PCP clustering | ВНЕ |  |  | CDMG |
 
 ## 10.42 Формирование луча DMG
@@ -310,7 +318,7 @@
 | 10.43.2 | 1971 | DMG TPC | М+С | linkadapt.TpcPeer, check_la_ack_reply, LA_ACK_DEADLINE (2·aPPDUMaxTime) | link_margin | выполнение рекомендации не видно (tpc_applied); PLAN №37 |
 | 10.43.3 | 1971 | Fast link adaptation | М+С | linkadapt.check_fla_caps / fla_may_initiate / is_fla_request / check_fla_exchange / fla_respond (рис. 10-95, aMinPPDUDurationForDMGMeasurement) | link_meas | RD-роль и кадры с немедленным ответом — fla_immediate; откат на 10.43.1 — заметка, не нарушение; PLAN №35 |
 | 10.44 | 1972 | Link adaptation using the CMMG link measurement | ВНЕ |  |  | CMMG |
-| 10.45 | 1975 | DMG relay operation | ВНЕ |  |  | DMG relay — нет ни в open, ни в pro |
+| 10.45 | 1975 | DMG relay operation | ВНЕ |  | opt_caps | DMG relay — relay — необязательно, не поддерживается (решение 2026-11-07) (нет ни в open, ни в pro) |
 
 ## 11.1 Синхронизация, маяки, сканирование
 
@@ -331,8 +339,8 @@
 | 11.1.4.3.10 | 2072 | PCP selection in a PBSS | М | mlme.pcp_factor / candidate_pcp |  | PBSS |
 | 11.1.4.4.2 | 2075 | Initializing a DMG BSS | М | mlme.start_bssid / personal_start_window |  |  |
 | 11.1.4.5 | 2075 | Synchronizing with a BSS | М | mlme.Join |  |  |
-| 11.2.7 | 2112 | Power management in a PBSS and DMG infrastructure BSS | ВНЕ |  |  | power save DMG — удалён намеренно |
-| 11.2.8 | 2124 | ATIM frame and frame transmission in IBSS, DMG infrastructure BSS, and PBSS | ВНЕ |  |  | ATIM — PS/IBSS |
+| 11.2.7 | 2112 | Power management in a PBSS and DMG infrastructure BSS | ВНЕ | optcaps | opt_caps | power save DMG — энергосбережение — не делаем (удалён намеренно) |
+| 11.2.8 | 2124 | ATIM frame and frame transmission in IBSS, DMG infrastructure BSS, and PBSS | ВНЕ |  | opt_caps | ATIM — энергосбережение — не делаем (PS/IBSS) |
 
 ## 11.3 Аутентификация и ассоциация
 
@@ -388,22 +396,28 @@
 | 11.29.1 | 2361 | General | М+С | bssparams.ApBssParamChange / check_beacon_sequence (элемент в каждом маяке до вступления) | bss_params | Announce и доставка STA с псевдостатичными SP/PS — нет (SP — pro, PS удалён) |
 | 11.29.2 | 2361 | Moving the TBTT | М+С | bssparams.ApBssParamChange.plan(move_to) / check_beacon_sequence / sta_tx_crosses_new_tbtt (рис. 11-47) | bss_params | PLAN №38, №39, №40; после сброса TSF — bss_params_tsf |
 | 11.29.3 | 2362 | Changing beacon interval duration | М+С | bssparams.ApBssParamChange.plan(new_bi_tu) / check_beacon_sequence / check_schedule_fits (рис. 11-48) | bss_params | PLAN №38 |
-| 11.29.4 | 2363 | Maintaining synchronization in an AP or PCP cluster | ВНЕ |  |  | кластеризация AP/PCP — вне open (10.40) |
+| 11.29.4 | 2363 | Maintaining synchronization in an AP or PCP cluster | М+С | cluster.change_moves_beacon_sps / member_change / check_change_beacons | cluster | Clustering Control S-AP в каждом маяке с DMG BSS Parameter Change; член вставляет свой элемент сразу |
 | 11.29.5 | 2363 | Recommending DMG BSS parameters to the AP or PCP | М+С | bssparams.recommend / ap_answer / check_recommendation_answer | bss_params | в захватах нет |
 | 11.30 | 2364 | Spatial sharing and interference mitigation for DMG STAs | М+С | spsh.assessment_requests / monitor_request / answer / check_dcq_req / check_dcq_rep / check_rm_pair / check_overlap_allowed / measurement_antenna / SwitchBackoff (11.30.1–11.30.4) | spsh | значения ANIPI/RSNI — NOT_CHECKABLE spsh_measure; совмещение SP — should (вердикт model) |
-| 11.31 | 2367 | Multi-band operation | ВНЕ |  |  | multi-band/FST |
-| 11.32 | 2383 | MMSL cluster operation | ВНЕ |  |  | MMSL |
+| 11.31 | 2367 | Multi-band operation | ВНЕ |  | opt_caps | multi-band/FST — pro, будущее (в open — 0); категория FST и Multi-band в наших кадрах — нарушение |
+| 11.32 | 2383 | MMSL cluster operation | ВНЕ |  | opt_caps | MMS/MMSL — необязательно, не поддерживается (решение 2026-11-07) |
 | 11.33 | 2385 | DMG coexistence with non-IEEE-802.11 systems | ВНЕ |  |  | сосуществование с не-802.11 — требований к нашему MAC нет |
-| 11.34 | 2386 | DMG relay procedures | ВНЕ |  |  | relay |
+| 11.34 | 2386 | DMG relay procedures | ВНЕ |  | opt_caps | relay — необязательно, не поддерживается (решение 2026-11-07) |
 | 11.35 | 2389 | Quieting adjacent DMG BSSs | М+С | qab.QabRequester / QabResponder / quiet_intervals / quiet_allocation_ok / check_quiet_tx | qab | PLAN №62; на стенде одна точка — NOT_CHECKABLE qab_peer |
 | 11.36 | 2391 | DMG beamforming | Ч | dmg_sta (SLS + BRP при входе STA) | sls, brp | MLME-BF-TRAINING — уровень SME |
 | 11.37 | 2393 | DMG MAC sublayer attributes | М+С | timing (табл. 11-22) |  | постоянные — test_consistency |
 
 ## Решения по охвату
 
-- **Кластеризация AP/PCP (10.40)** — вне open: опция для нескольких AP/PCP в зоне друг друга, в нашей схеме одна
-  точка; маяки объявляют CC Present = 0. Модель знает поле Clustering Control (рис. 9-78/9-79), правила кластера — нет.
-- **Relay (10.45, 11.34, 9.6.19.8–9.6.19.22)** — нет ни в open, ни в pro.
+- **Кластеризация AP/PCP (10.40, 11.29.4, 9.4.2.146/154/155)** — в охвате open (решение 2026-11-07): модель `cluster`
+  (Beacon SP, децентрализованная и централизованная, S-AP/член, сопровождение, Cluster Report, ECAPC Policy, Cluster Time
+  Offset, BHI/TXSS CBAP), судья `cluster` (`air_wave4`). Сейчас маяки open объявляют CC Present = 0, биты Decentralized/
+  Centralized AP or PCP Clustering = 0 — судья проверяет согласованность «кластеризация не используется»; кадров кластера
+  в захватах нет. Централизованный член требует MM-SME со второй non-AP STA (10.40.2.2), S-AP — CCSR (вне стандарта).
+- **Relay (10.45, 11.34, 9.4.2.147/148, 9.6.19.8–9.6.19.22)** — необязательно, не поддерживается (решение 2026-11-07),
+  нет ни в open, ни в pro; судья `opt_caps`: элементов и кадров relay в наших кадрах нет.
+- **MMS/MMSL (11.32, 9.4.2.152)** — необязательно, не поддерживается (решение 2026-11-07); `opt_caps`.
+- **Multi-band/FST (11.31, 9.4.2.138/144/145, категория FST)** — pro, будущее; в open — 0/нет (`opt_caps`).
 - **Расписание DTI, SP и динамическое распределение (9.4.2.131, 10.39.6–10.39.9, Poll/SPR/Grant/Grant Ack)** — охват
   open (open — реализация стандарта): модель `schedule` (Extended Schedule, согласованность с BI, псевдостатика, знание
   STA, генератор), `sp` (правила SP, усечение, продление, восстановление, CBAP расписания, судья DTI `check_dti`),
@@ -411,7 +425,9 @@
   `dynalloc` (`air_sched`). В захватах стенда расписания с SP и этих кадров нет — `sp_access`/`dynalloc` «не
   проверяемо» с причиной. Не реализовано: защищённый период (10.39.6.6), резервирование через DMG TSPEC/ADDTS (11.4),
   spatial sharing (11.30).
-- **Power save (11.2.7, PSC, Awake Window, Wakeup Schedule)** — удалён намеренно; точка отвечает отказом на PSC-REQ.
+- **Power save (11.2.7, PSC, Awake Window, Wakeup Schedule)** — энергосбережение не делаем (удалён намеренно); точка
+  отвечает отказом на PSC-REQ. `opt_caps`: Triggered Unscheduled PS, PS-биты Extended Capabilities, PS-элементы и кадры,
+  Power Management = 1 — в наших кадрах 0/нет (список — ref/optcaps).
 - **Reverse direction (10.29)** — выключен намеренно; судья rd ловит RDG/RD-ответы в эфире.
 - **BRP TXSS** — EDMG (802.11-2024 10.41.10.5), в 802.11-2020 нет; в 2020 есть только запрос списка секторов
   TXSS-FBCK-REQ в BRP (10.42.6.4.1) — brp (`txss-fbck`).

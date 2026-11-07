@@ -23,6 +23,7 @@ MODULES = ('abft', 'air_judge', 'air_pcap', 'amsdu', 'beamtrack', 'bi', 'blockac
            'chswitch', 'dms', 'duration', 'elements', 'fields', 'linkadapt', 'linkmaint', 'mlme', 'nav', 'sls')
 MODULES += ('air_wave3', 'ampdu', 'capelems', 'discovery', 'handover', 'protperiod', 'qab', 'qosctl', 'spsh',
             'tspec')                                     # волна 3
+MODULES += ('air_wave4', 'cluster', 'optcaps')               # волна 4
 
 
 def _module_level_names(path):

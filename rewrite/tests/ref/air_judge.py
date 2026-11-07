@@ -2757,6 +2757,10 @@ from . import air_wave3 as AW      # noqa: E402
 RULES += AW.RULES
 PAGE.update(AW.PAGE)
 TIMING_RULES += ('prot_period',)
+# волна 4: кластеризация AP/PCP (10.40) и необязательные возможности не open (ref/air_wave4)
+from . import air_wave4 as AW4     # noqa: E402
+RULES += AW4.RULES
+PAGE.update(AW4.PAGE)
 
 NOT_CHECKABLE = [
     ('ba_scoreboard', '10.25.6.3–10.25.6.5', 'битмап BlockAck целиком против принятых MPDU — записан один MPDU данных '
@@ -2872,6 +2876,7 @@ def main(argv=None):
 
 
 NOT_CHECKABLE += AW.NOT_CHECKABLE      # волна 3 (ref/air_wave3)
+NOT_CHECKABLE += AW4.NOT_CHECKABLE     # волна 4 (ref/air_wave4)
 
 
 if __name__ == '__main__':
