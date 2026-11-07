@@ -100,9 +100,11 @@ def _dti(c):
         params = BI.DmgParameters(p0.params.bss_type, p0.params.cbap_only, p0.params.cbap_source, p0.params.privacy,
                                   p0.params.ecapc)
         bti_end = bs[-1].te + (bs[-1].dur or 0)
+        from . import air_wave5 as W5
         try:
+            rec = W5.reclaimed_keys(c, k, bi_tu, aids)      # 10.39.6.7: SP между STA, которые AP может забрать
             v, wins, per = SPm.check_dti(log, k, bi_tu, ent or [], aids, c.ap, bti_end=bti_end, bic=J._bic(p0.bic),
-                                         params=params, q=_q())
+                                         params=params, q=_q(), reclaimed=rec)
         except (ValueError, KeyError, AttributeError) as x:
             out[k] = (None, idx, str(x), [])
             continue
@@ -181,7 +183,9 @@ def r_sp_access(c):
         ev = {i: e for i, e in enumerate(idx)}
         n_sp = sum(1 for e in idx if BI.period_at(per, e.t) is not None and BI.period_at(per, e.t).kind in
                    (S.SP, S.CBAP))
-        bad = [x for x in v if not (x.rule.startswith('dyn_') or x.rule in ('grant_ack', 'should_grant_last_src'))]
+        # AP в SP между STA без условий 10.39.6.7 — правило sp_recovery (air_wave5)
+        bad = [x for x in v if not (x.rule.startswith('dyn_') or x.rule in ('grant_ack', 'should_grant_last_src')
+                                    or (x.rule == 'sp_foreign' and '10.39.6.7' in x.msg))]
         for x in bad:
             by[x.rule] += 1
             r.bad(ev.get(x.idx), f'{x.rule}: {x.msg}')

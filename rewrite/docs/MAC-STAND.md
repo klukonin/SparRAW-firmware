@@ -859,3 +859,22 @@ include/fwsh.h): TSF после отчёта PPDU маяка + Duration + MBIFS 
 
 Стенд 2026-11-06 (PMC точки с начала входа станции, судья abft): open без правки — SSW станции в
 A-BFT в 2 записях из 4, open + правка — в 0 из 4; наборы стенда STA/AP чистые, FWERR 0.
+
+## Судья волны 5 по прежним захватам (адреса, Action, WNM, TPC, Timestamp; 2026-11-07)
+
+Новые правила `ref.air_wave5` (tests/ref, COVERAGE.md волна 5) на захватах PMC `aj1` (вход станции, 2 узла) и `ajc1`
+(iperf): `addr` (21 тыс./215 тыс. MPDU), `data_hdr`, `action_fmt`, `bf_training` — без нарушений (DMG CTS-to-self с
+TA = получатель — исключение 9.3.1.13, не нарушение адресов). Нарушения `ours`:
+- **Timestamp Probe Response = 0** (9.4.1.10 [p. 880], 11.1.3.1 [p. 2050]: TSF «at the time that the start of the
+  data symbol … appears at the transmit antenna connector»): у обоих Probe Response точки в `aj1` поле 0 при метке TX
+  22 023 539 / 25 400 942; у DMG Beacon в той же TX-записи Timestamp == метка TX (запись — после вставки TSF), у Probe
+  Response вставки нет. fw: `mgmt_tx_copy_ie_hdr` (fw/mgmt_tx.c) пишет Timestamp = 0.
+- **Antenna Sector ID Pattern из нулей в Probe Response** (9.4.2.156 [p. 1275]): элемент 190 = 00 00 00 00 (Tap 1 = 0 —
+  генератор не меняет состояние, секторы маяков 0…N−1 ему не соответствуют); элемент нужен только станциям в
+  энергосбережении (11.2.7.1), в open его нет — элемент не передавать. fw: `mgmt_tx_append_probe_resp_ies` →
+  `ie_push_antenna_sector_id_pattern(mid->blk_103)`, `blk_103` обнуляется в `mid.c`.
+- **Биты WNM без ECS и Radio Measurement** (11.21.1 [p. 2256]: WNM STA — dot11ExtendedChannelSwitchActivated и
+  dot11RadioMeasurementActivated true): Extended Capabilities точки — бит 25 (SSID List), станции — 17 (WNM Sleep Mode,
+  энергосбережение — `opt_caps`), 19 (BSS Transition), 25; бит 2 Extended Channel Switching = 0, Radio Measurement в
+  Capability Information = 0. Биты приходят от хоста (список элементов хоста в Probe/Association) — править на стороне
+  драйвера/hostapd/wpa_supplicant: снять 17, 19, 25 (функции в open не реализованы).

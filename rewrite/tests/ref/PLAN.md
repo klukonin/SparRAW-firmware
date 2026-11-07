@@ -150,6 +150,26 @@
   `cluster_blind`, `cluster_handover`, `cluster_txss_cbap`. Тесты — `test_cluster.py`, `test_optcaps.py`,
   `test_air_wave4.py`.
 
+Волна 5 (закрытие «Н» и «Ч» карты COVERAGE.md; трактовки №100–№110):
+- `addrs.py` — поля адресов (9.2.4.3), Address 3 кадров управления (9.3.3.1 c)), Public Action (11.17), To DS/From DS
+  (табл. 9-3/9-4), заголовок данных DMG (9.3.2.1, табл. 9-30): только QoS Data/QoS Null, без HT Control, QoS Null без
+  тела.
+- `actions.py` — табл. 9-51 и таблицы действий 9.6 с допустимостью для DMG (open/pro/out/nondmg), Action No Ack
+  (9.3.3.14), возврат нераспознанного (10.28.4), функции WNM по битам Extended Capabilities (9.6.13.1, 11.21.1).
+- `tpc.py` — TPC Request/Report (элементы 9.4.2.15/9.4.2.16, кадры 9.6.2.4/9.6.2.5, 11.7.7).
+- `tclas.py` — TCLAS всех типов 0–10 (9.4.2.30): кодек, проверки, сопоставление MSDU/MPDU.
+- `staavail.py` — STA Availability (9.4.2.132), Poll и PP Available (10.39.7.1).
+- `addbaext.py` — ADDBA Extension (9.4.2.139), фрагментация DMG по соглашению (10.2.6).
+- `sectorpat.py` — Antenna Sector ID Pattern (9.4.2.156): кодек, генераторы рис. 9-605/9-606, секторы маяков.
+- `tsf.py` — Timestamp/TSF (9.4.1.10, 11.1.3.1): то, что проверяемо без внешней опоры времени.
+- `sprecovery.py` — восстановление SP по ATI (10.39.6.7, 10.39.3); `sp.check_dti(reclaimed=…)`.
+- `ecs.py` — Max Channel Switch Time (9.4.2.217), OCV/SA Query после смены канала (11.9.3.2); DSE — ВНЕ.
+- `bftrain.py` — MLME-BF-TRAINING (6.3.91, 11.36) над моделью SLS/BRP.
+- `air_wave5.py` — правила судьи `addr`, `data_hdr`, `action_fmt`, `wnm`, `tpc`, `tclas`, `sta_avail`, `addba_ext`,
+  `asid_pattern`, `timestamp`, `sp_recovery`, `ecs`, `bf_training`; «не проверяемо» — `addr_rx_filter`,
+  `tclas_classification`, `tpc_power_accuracy`, `ocv_validation`, `bf_request_brp`, `wnm_reject_status`. Тесты —
+  `test_<модуль>.py`, `test_air_wave5.py`.
+
 ## Правила для каждого модуля
 - Заголовок `# SPDX-License-Identifier: AGPL-3.0-or-later`, докстрока: охват (пункты) и что НЕ моделируется.
 - Комментарии по-русски, у каждого правила — пункт/таблица/рисунок; цитаты из стандарта не длиннее строки.
@@ -247,6 +267,17 @@
 | 88 | Какие биты возможностей — «энергосбережение» (правило `opt_caps`) | Критерий — описание бита ссылается на 11.2 (Power management) или PSMP (10.30): Extended Capabilities 4, 6, 11 (11.2.3.14), 17, 18, 28, 29, 45; Capability Information B9 Triggered Unscheduled PS. Не PS: Heartbeat/Heartbeat Elapsed Indication (ATI, DMG Control в начале SP/TXOP — 9.4.2.127.2), Power Source («battery powered»), TFS (11.21.12); PCP Forwarding — не relay. В DMG Capabilities 802.11-2020 битов relay/MMS/FST/PS нет (optcaps) | табл. 9-153, рис. 9-86, 9.4.2.127.2/3 | 2020 = 2024 |
 | 89 | ECAPC Policy в (Re)Association Response: 10.40.2.2 «shall include the ECAPC Policy element in (Re)Association Response», а в табл. 9-35/9-37 строки ECAPC Policy нет | Частное правило 10.40.2.2 сильнее; место в теле не задано — судья `cluster` требует наличие, `mgmt_body` (elements.check_order) сочтёт элемент «не предусмотренным» — при реализации централизованного кластера в fw дополнить порядок (после DMG Operation) | 10.40.2.2, табл. 9-35, 9-37 | 2020 = 2024 |
 | 90 | Децентрализованная передача S-AP: счёт «number of cluster monitoring periods performed» и «may become an S-AP» против «shall establish itself as an S-AP» | Первый период (потеря S-AP за 4 × aMinBTIPeriod BI) входит в счёт; > dot11MaxNumberOfClusteringMonitoringPeriods — «may» начать образование заново; без маяков S-AP и своего кластера: нет маяков кластеризующих STA вообще — shall стать S-AP, есть чужие — may (генератор становится S-AP) (cluster.DecentralizedAp.end_bi) | 10.40.3.2 | 2020 = 2024 |
+| 100 | STA Availability: чьи AID, CBAP = 0 | STA сообщает только свой AID (9.4.2.132: «inform an AP or PCP about the STA availability»), точка — AID связанных STA; AID 0/255 и повтор — нарушение; CBAP = 0 от нашей STA без энергосбережения — model; PP Available — последнее от STA к моменту Poll (staavail, air_wave5 `sta_avail`) | 9.4.2.132, 10.39.7.1 | 2020 = 2024 |
+| 101 | Фрагментация DMG по Block Ack: ADDBA Extension нет; общий запрет 10.2.6 «HT-immediate … shall not be fragmented» | Нет элемента — запрета нет (No-Fragmentation = 0); No-Fragmentation = 1 в запросе — обещание originator; DMG-абзац 10.2.6 (по ответу ADDBA, вне A-MPDU, Normal Ack) сильнее общего запрета для HT-immediate; в A-MPDU без S-MPDU — никогда (addbaext, air_wave5 `addba_ext`) | 10.2.6, 9.4.2.139 | В 2024 (9.4.2.138) B1–B2 — HE Fragmentation Operation (только HE STA), No-Fragmentation «reserved when transmitted by a non-DMG STA»; у DMG B1–B7 = 0 в обоих изданиях; Extended Buffer Size — после 2024 |
+| 102 | Генераторы Antenna Sector ID Pattern: вид регистра, номер сектора, «initial state for the second time» | Регистр Фибоначчи: вход ячейки 0 = XOR(Tap_i · ячейка_i); бит i поля — ячейка i; сектор = значение состояния; первый маяк после элемента — State 1; нулевое состояние — после второго возврата к начальному; генератор 2 сдвигается перед взятием бит 0–5, нулевое начальное — пропуск (sectorpat) | 9.4.2.156, рис. 9-605/9-606 | 2020 = 2024; порядок бит на рисунке не задан |
+| 103 | 10.39.6.7: «does not receive a response frame … as part of the ATI exchange» и «announced within an Extended Schedule element transmitted during the ATI» | Буквально: ответа нет и тогда, когда запроса к STA в ATI не было; SP — по ключу (Source AID, Destination AID, Allocation ID) в Extended Schedule кадра AP (Announce) в ATI; возвращается всё время SP с его начала (sprecovery, sp.check_dti(reclaimed), air_wave5 `sp_recovery`) | 10.39.6.7, 10.39.3 | 2020 = 2024 (10.38.6.7) |
+| 104 | Max Channel Switch Time у DMG: правила 11.9.3.2 сказаны для Beacon frame, в табл. 9-45 строки нет | У DMG — только Probe Response вместе с ECSA (табл. 9-39); Count 0 — не включать, Switch Time ограничивает промежуток последний маяк старого канала — первый нового (по аналогии, вердикт model); в DMG Beacon — model (ecs, air_wave5 `ecs`) | 11.9.3.2, 9.4.2.217, табл. 9-45 | В 2024 (11.8.8, 11.9.3.2) — «should include … if the Channel Switch Count field is nonzero and it may include the element if the field is 0», в любом кадре с ECSA: запрет при Count 0 снят — вердикт model |
+| 105 | Табл. 9-51 и таблицы действий: что считать недопустимым для DMG; пропуски таблиц | nondmg — стандарт исключает DMG (TDLS 11.20.1, FILS 11.45.1) или функция другого PHY/диапазона (HT, VHT, S1G, CDMG, CMMG, HCCA, TVWS, DSE) — нарушение; out — применимо, в open нет (FT, GAS, QMF, Robust AV, mesh) — model; табл. 9-457 без строки «23–255 Reserved» — резерв; у TFS Notify Response (9.6.13.18) кода в табл. 9-425 нет — опознать нельзя (actions, air_wave5 `action_fmt`) | 9.4.1.11, табл. 9-51, 9-425, 9-457 | В 2024 DMG Action 23 — Protected Announce (в 2020 — резерв); кода TFS Notify Response нет и в табл. 9-536 2024 |
+| 106 | TCLAS: тип 10 и Classifier Mask «1 or 3» (рис. 9-303); порядок байт Filter Offset; типы 7–9 и HT Control у DMG | Тип 10 — без Classifier Mask (рис. 9-327, (Length − 4)/2); Filter Offset — little-endian (порядок не задан, общее правило 9.2.2); типы 7–9 (PV1 — S1G) и сравнение HT Control у DMG — model; «deprecated» (тип 2, тип 1 IPv6) — model (tclas, air_wave5 `tclas`) | 9.4.2.30 | Норма — 2020: тип 4 без бита Version — нарушение; в 2024 фразы «valid when the Classifier Mask Version bit is 1» нет |
+| 107 | 11.21.1: биты 7–27 — все ли «функции»; «Beacon frames» у DMG; отказ | Буквально все биты 7–27 (и SSID List, Multiple BSSID, UTC TSF Offset): любой = 1 ⇒ WNM STA ⇒ Extended Channel Switching = 1 и Radio Measurement = 1; Ext Cap обязателен в (Re)Association и Probe — DMG Beacon не Beacon frame; FMS/WNM sleep/TIM broadcast/TIM — на TIM/DTIM, у DMG model; отказ проверяется у BTM (Status ≠ 0) и DMS (actions, air_wave5 `wnm`) | 11.21.1, 9.6.13.1 | 2020 = 2024 |
+| 108 | Адреса: DMG CTS-to-self, кадры управления между non-AP STA, групповые данные non-AP STA | DMG CTS-to-self — исключение из «Address 2 … the transmitter» (9.3.1.13: TA — получатель следующего кадра, может быть групповым); Address 3 управления между STA BSS — BSSID (по аналогии 9.3.3.1 c) 4), model); групповой Address 1 данных non-AP STA при 0/0 — model (групповые идут через AP); 4 адреса — model (addrs, air_wave5 `addr`, `data_hdr`) | 9.2.4.3, 9.3.1.13, 9.3.3.1, табл. 9-3, 9-30 | 2020 = 2024 |
+| 109 | Что из Timestamp проверяемо без внешней опоры | Монотонность; разности против меток RX пира (допуск — два кванта + 2 · aDMGTSFAccuracy · Δt); первый маяк BI — Timestamp − TBTT ≥ преамбула и заголовок control (иначе нарушено 11.1.3.1 или 11.1.3.3.1 — оба наши); кадры SC точки (Probe Response, Announce) — Timestamp ≈ начало PPDU + PRE[класс] в TSF точки (допущение air_pcap.PRE) (tsf, air_wave5 `timestamp`) | 9.4.1.10, 11.1.3.1, 11.1.3.3.1 | 2020 = 2024 |
+| 110 | TPC вне Link Measurement у DMG: когда обязателен ответ и TPC Report в кадрах | Ответ на TPC Request обязателен при Spectrum Management = 1 (11.7.1 + 11.7.7), при одном бите TPC DMG Capabilities — model; TPC Report в DMG Beacon/Probe Response — при Spectrum Management или Radio Measurement (табл. 9-45/9-39), в Announce — при Spectrum Management (11.7.7); Link Margin = 0 (tpc, air_wave5 `tpc`) | 11.7.7, 11.7.1, 9.4.2.16 | 2020 = 2024 |
 
 Вопросы одного модуля (решение — в докстроке у «СПОРНО»): sls — момент старта ISS после Grant (чтение А), отсчёт
 T1, Feedback в следующем распределении, слоты молчащих антенн, SSW-Ack после RXSS; abft — нет повторного прохода
@@ -263,4 +294,5 @@ TSPEC — вердикт capture (ADDTS не разбирается); schedule �
 число SSW в RXSS не проверяется, Duration Grant усечения с ответным CF-End и без; dynalloc — Allocation Duration = 0
 («one PPDU …»: не более одного PPDU источника кроме RTS), уступка TXOP (остаток — по NAV держателя); bssparams — пропуск BTI в записи посреди объявления — «не
 проверяемо»; chswitch — канал после смены не виден (судья проверяет только ряд объявлений); волна 3 — discovery (критерии ответа точки), tspec (DELTS: хвост
-только Multi-band), air_wave3 `addts` (Extended Schedule — в ближайших 4 BI после SUCCESS).
+только Multi-band), air_wave3 `addts` (Extended Schedule — в ближайших 4 BI после SUCCESS); волна 5 — bftrain (BRP без SLS
+пары — model: обучение могло быть до записи), ecs (OCV: защищённый Action после смены — вердикт capture).

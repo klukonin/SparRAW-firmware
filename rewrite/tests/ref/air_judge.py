@@ -2761,6 +2761,11 @@ TIMING_RULES += ('prot_period',)
 from . import air_wave4 as AW4     # noqa: E402
 RULES += AW4.RULES
 PAGE.update(AW4.PAGE)
+# волна 5: адреса, заголовок данных, Action/WNM, TPC, TCLAS, STA Availability, ADDBA Extension, Antenna Sector ID
+# Pattern, Timestamp, восстановление SP, ECS, MLME-BF-TRAINING (ref/air_wave5)
+from . import air_wave5 as AW5     # noqa: E402
+RULES += AW5.RULES
+PAGE.update(AW5.PAGE)
 
 NOT_CHECKABLE = [
     ('ba_scoreboard', '10.25.6.3–10.25.6.5', 'битмап BlockAck целиком против принятых MPDU — записан один MPDU данных '
@@ -2877,6 +2882,7 @@ def main(argv=None):
 
 NOT_CHECKABLE += AW.NOT_CHECKABLE      # волна 3 (ref/air_wave3)
 NOT_CHECKABLE += AW4.NOT_CHECKABLE     # волна 4 (ref/air_wave4)
+NOT_CHECKABLE += AW5.NOT_CHECKABLE     # волна 5 (ref/air_wave5)
 
 
 if __name__ == '__main__':

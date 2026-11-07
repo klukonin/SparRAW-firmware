@@ -346,14 +346,16 @@ def cbap_may_initiate(aid, p, cbap_only=False, cbap_source=False, is_ap=False):
 
 def check_dti(evs, k, bi_tu, entries, aids, ap, bti_end=None, bic=None, params=None, caps=None, pp_available=None,
               sifs_tol=SIFS_TOL, q=0, idle_timeout=DOT11_SP_IDLE_TIMEOUT, ati_start=None, ati_duration=0,
-              ant_switch=0):
+              ant_switch=0, reclaimed=()):
     """Судья DTI одного BI k по расписанию entries ([schedule.Entry]). Возвращает (нарушения, окна, периоды).
     Сверх check_sp и dynalloc.check_dyn_log:
       'sp_foreign'      — в SP передаёт не источник/получатель, не в выделенном Grant окне, не AP во возвращённом
                           времени и не ответ (10.39.6.2, 10.39.4 b));
       'sp_pcp_inactive' — передача к PCP в SP с PCP Active = 0, где PCP не участник (10.39.6.2);
       'cbap_member'     — начало обмена в CBAP расписания STA, не допущенной 10.39.5;
-      'cbap_end'        — кадр кончается после конца CBAP (10.39.5)."""
+      'cbap_end'        — кадр кончается после конца CBAP (10.39.5).
+    reclaimed — ключи (Source AID, Destination AID, Allocation ID) SP между non-AP STA, которые AP может забрать
+    целиком по итогам ATI (10.39.6.7, ref/sprecovery.reclaimable): время такого SP — AP с начала SP."""
     ev = events(evs)
     cfg = BI.BiConfig(bic=bic, params=params, allocations=[e.alloc for e in entries], ati_start=ati_start,
                       ati_duration=ati_duration)
@@ -365,6 +367,9 @@ def check_dti(evs, k, bi_tu, entries, aids, ap, bti_end=None, bic=None, params=N
     for p in periods:
         if p.kind == SP and p.src_aid != AID_BROADCAST and p.alloc is not None:
             vv, st = check_sp(ev, p, bfc_of.get(id(p.alloc)), mac_of, ap, caps, periods, sifs_tol, q, idle_timeout)
+            if p.alloc.key() in reclaimed and ap not in st.pair:
+                st.released = p.start                  # 10.39.6.7: «reclaim the entire time allocated in an SP»
+                vv = [x for x in vv if x.rule != 'sp_first_src']
             out += vv
             states.append(st)
     relq = [(st.released, st.end) for st in states if st.released is not None]
@@ -386,8 +391,10 @@ def check_dti(evs, k, bi_tu, entries, aids, ap, bti_end=None, bic=None, params=N
             elif x == ap and st.released is not None and r['ts'] >= st.released:
                 pass
             else:
+                why = (' — AP забирает SP между STA только при условиях 10.39.6.7 (объявлен в ATI, нет ответа в ATI) '
+                       'или после возврата времени (10.39.8.1)') if x == ap else ''
                 out.append(Violation(r['i'], 'sp_foreign', f'{r["kind"]} от {x} (AID {aids.get(x)}) в {p} '
-                                                          f'(10.39.6.2)'))
+                                                          f'(10.39.6.2){why}'))
             al = p.alloc
             if not al.pcp_active and ap not in st.pair and r['dst'] == ap and x != ap:
                 out.append(Violation(r['i'], 'sp_pcp_inactive', f'{r["kind"]} к PCP в {p} при PCP Active = 0 '
