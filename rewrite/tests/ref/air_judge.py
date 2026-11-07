@@ -497,21 +497,51 @@ def r_dur_cf_end(c):
     return r
 
 
+def _abft_windows(c):
+    """[(начало, конец, BIC последнего маяка BTI)] объявленных A-BFT (10.42.5.1/10.42.5.2) по маякам точки."""
+    by, _ = _btis(c)
+    out = []
+    for k in sorted(by):
+        w = _abft_window(by[k])
+        if w is not None:
+            out.append((w[0], w[1], by[k][-1].p.bic))
+    return out
+
+
 def r_dur_bf(c):
-    r = Rule('dur_bf', '9.3.1.15', 'Duration SSW (DTI: CDOWN·(SBIFS + TXTIME(SSW)) + MBIFS), SSW-Feedback (9.3.1.16), '
-             'SSW-Ack (9.3.1.17)')
+    r = Rule('dur_bf', '9.3.1.15', 'Duration SSW (DTI: CDOWN·(SBIFS + TXTIME(SSW)) + MBIFS; A-BFT: до конца слота), '
+             'SSW-Feedback (9.3.1.16: A-BFT — 0), SSW-Ack (9.3.1.17)')
     fb_of = {}
+    wins = _abft_windows(c)
+
+    def in_abft(e):
+        if not e.t_ok:
+            return None
+        for s, en, bic in wins:
+            if s - Q <= e.t < en:
+                return s, bic
+        return None
     for e in c.evs:
         if e.kind not in ('SSW', 'SSW-Feedback', 'SSW-Ack'):
             continue
         if not e.body_ok or e.p is None:
             r.skip('синтетический RX: CDOWN/поля не записаны')
             continue
+        ab = in_abft(e)
         if e.kind == 'SSW':
-            m = D.check_duration('ssw', e.dur, {'cdown': e.p.ssw.cdown})
+            if ab is not None:
+                # 9.3.1.15: в A-BFT — «time until the end of the current SSW slot» (слот — aSSSlotTime, 10.42.5.2)
+                s, bic = ab
+                sst = T.ss_slot_time(bic.fss + 1)
+                end = s + ((e.t - s) // sst + 1) * sst
+                m = D.check_duration('ssw', e.dur, {'abft_slot_remaining': end - e.te})
+                if m is not None and abs(e.dur - D.field(end - e.te)) <= 1:
+                    m = None                  # квант метки времени ±1 мкс
+            else:
+                m = D.check_duration('ssw', e.dur, {'cdown': e.p.ssw.cdown})
         elif e.kind == 'SSW-Feedback':
             b = e.p.brp
-            m = D.check_duration('ssw_fb', e.dur, {'in_abft': False,
+            m = D.check_duration('ssw_fb', e.dur, {'in_abft': ab is not None,
                                                    'brp_requested': S.brp_requested({'L-RX': b.l_rx,
                                                                                      'TX-TRN-REQ': b.tx_trn_req,
                                                                                      'MID-REQ': b.mid_req,
@@ -527,7 +557,8 @@ def r_dur_bf(c):
             r.ok()
         else:
             r.bad(e, m)
-    r.verdict_note = 'SSW в DTI: конец распределения (CBAP до TBTT) дальше конца свипа — берётся CDOWN-формула.'
+    r.verdict_note = ('SSW в DTI: конец распределения (CBAP до TBTT) дальше конца свипа — берётся CDOWN-формула; в '
+                      'A-BFT (окна по BIC маяков) — остаток слота aSSSlotTime.')
     return r
 
 
@@ -827,10 +858,13 @@ def r_responder(c):
         for e in seq[1:]:
             if e.src == holder:
                 continue
-            if e.kind in ('SSW', 'SSW-Feedback', 'SSW-Ack'):
-                continue                  # SLS — правило sls
+            if e.kind in ('SSW', 'SSW-Feedback', 'SSW-Ack', 'BRP'):
+                continue                  # SLS — правило sls; ответ BRP (10.42.3.1/10.42.3.2) — правило brp
             p = c.prev.get(e.i)
             if p is None:
+                continue
+            if e.t_ok and p.t_ok and e.t < p.te:
+                r.skip('начало во время чужого PPDU (коллизия двух доступов на одной границе слота) — правило access')
                 continue
             if p.src == holder and is_response_pair(p, e) and e.t - p.te <= RESP_WINDOW:
                 r.ok()
@@ -1476,6 +1510,28 @@ def r_brp(c):
             continue
         pp.append(B.Ppdu(e.t, e.src, e.dst, frame=f, mcs=e.mcs or 0, length=e.length, dur=e.dur))
         idx.append(e.i)
+    # BRP setup (10.42.3.2): последовательность, начатая кадром с Capability Request = 1, — brp.check_setup, кадры —
+    # phase 'setup' (их запросы — намерение, не запрос немедленного ответа, как в dmg_sta.judge)
+    k = 0
+    while k < len(pp):
+        if pp[k].frame.bre.cap_req and pp[k].frame.bre.initiator:
+            seq = [k]
+            while seq[-1] + 1 < len(pp) and pp[seq[-1] + 1].t - pp[seq[-1]].end <= T.BRPIFS + SIFS_TOL and \
+                    {pp[seq[-1] + 1].src, pp[seq[-1] + 1].dst} == {pp[k].src, pp[k].dst}:
+                seq.append(seq[-1] + 1)
+            lost = len(seq) == 1 and not any(c.air.nodes.get(n) == pp[k].dst for n in c.evs[idx[k]].rx_nodes)
+            vs, end = ([], None) if lost else B.check_setup([pp[j] for j in seq], pp[k].src)
+            if lost:
+                r.skip('BRP setup не принят адресатом (запись RX пира) — ответа нет, setup не начат')
+            for v in vs:
+                r.bad(c.evs[idx[seq[v.idx]]], f'{v.rule}: {v.msg}')
+            last = seq[-1] if end is None else seq[end]
+            for j in seq:
+                if j <= last:
+                    pp[j].phase = 'setup'
+            k = last + 1
+        else:
+            k += 1
     if pp:
         trn = Counter()
         for v in B.check_brp_log(pp):
@@ -1534,11 +1590,16 @@ def r_sls(c):
         r.info['frames_without_time'] = [f'{e.kind} {_who(c, e.src)} CDOWN {e.p.ssw.cdown}'
                                          if e.p is not None and e.kind == 'SSW' else e.kind for e in lost]
     known = sorted((e for e in bf if e.t_ok and e.p is not None), key=lambda e: e.t)
-    runs, cur = [], None
+    # последовательности — по каждой паре отдельно (одновременные ISS двух станций — коллизия на одной границе слота —
+    # чередуются в журнале); новый SLS — ISS после других кадров пары или повтор ISS (CDOWN снова растёт, 10.42.6.2)
+    runs, by_pair = [], {}
     for e in known:
+        pair = frozenset((e.src, e.dst))
+        cur = by_pair.get(pair)
         if e.kind == 'SSW' and e.p.ssw.direction == 0 and (cur is None or cur[-1].kind != 'SSW' or
-                                                           cur[-1].p.ssw.direction != 0 or cur[-1].src != e.src):
-            cur = [e]
+                                                           cur[-1].p.ssw.direction != 0 or cur[-1].src != e.src or
+                                                           e.p.ssw.cdown >= cur[-1].p.ssw.cdown):
+            cur = by_pair[pair] = [e]
             runs.append(cur)
         elif cur is not None:
             cur.append(e)
@@ -1913,6 +1974,7 @@ def r_nav_rx(c):
         r.skip('нужны записи обоих узлов (приём пира)')
         return r
     cnt = Counter()
+    wins = _abft_windows(c)
     for node, me in macs.items():
         nav = NV.Nav(me)
         last_end = None
@@ -1920,7 +1982,9 @@ def r_nav_rx(c):
             gap = e.t - last_end if last_end is not None else None
             if e.tx_node == node:
                 if gap is not None and gap >= INIT_GAP and e.kind != 'DMG Beacon':
-                    if nav.busy(e.t):
+                    if e.kind == 'SSW' and any(s - Q <= e.t < en for s, en, _ in wins):
+                        r.skip('SSW в A-BFT: доступ по слотам (10.42.5.2: «even if the CS … busy»), не по NAV')
+                    elif nav.busy(e.t):
                         cnt['busy'] += 1
                         r.bad(e, f'{node}: {e.kind} начат при занятом NAV (до {float(nav.idle_from()):.1f}; '
                                  f'10.3.2.1, 10.3.2.4)')

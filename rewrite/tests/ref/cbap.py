@@ -732,7 +732,8 @@ class Air:
 # ======================== проверка журнала эфира ========================
 class LogParams:
     """Параметры check_air_log.
-      aifsn — AIFSN передатчика: int или dict src → AIFSN (по умолчанию 3 — AC_BE, единственная AC DMG STA).
+      aifsn — AIFSN передатчика: int, dict src → AIFSN или функция (src, индекс события во входном списке) → AIFSN
+        (AC кадра: 10.2.3.2 — кадры управления на AC_VO); по умолчанию 3 — AC_BE.
       sifs_tol — допуск SIFS (10.3.2.3.3: +10 %·(aSlotTime − aAirPropagationTime), −0 %).
       slot_tol, tol_early — допуски выравнивания на границу слота (стандарт не задаёт; по умолчанию как SIFS).
       check_slots — проверять, что начало доступа — AIFS + k·aSlotTime от освобождения среды.
@@ -741,17 +742,24 @@ class LogParams:
       cbaps — список CBAP (start, end) для учёта приостановки EDCAF (10.39.5); None — не учитывать.
       rts_nav_reset — допускать сброс NAV по RTS (10.3.2.4, «is permitted»).
       report_collisions — сообщать одновременные начала (это не нарушение: обе STA на границе слота).
-      unchecked — виды кадров вне правил EDCA (BTI, BF) — занимают среду, но доступ не проверяется."""
+      unchecked — виды кадров вне правил EDCA (BTI, BF) — занимают среду, но доступ не проверяется;
+      txnav_kinds — из них виды, Duration которых задаёт TXNAV передатчика (10.23.2.2: «Duration/ID field in the
+        frame most recently successfully transmitted by the TXOP holder»), напр. BRP setup в TXOP (10.42.3.2);
+        или функция (индекс события во входном списке) → bool (кадр держателя, а не ответчика)."""
     def __init__(self, aifsn=3, sifs_tol=SIFS_TOL, slot_tol=SIFS_TOL, tol_early=Fr(0), check_slots=True, aps=(),
                  txop_limit=0, cbaps=None, rts_nav_reset=True, report_collisions=False,
-                 unchecked=('Beacon', 'DMG Beacon', 'SSW', 'SSW-Feedback', 'SSW-Ack', 'BRP')):
+                 unchecked=('Beacon', 'DMG Beacon', 'SSW', 'SSW-Feedback', 'SSW-Ack', 'BRP'), txnav_kinds=()):
+        self.txnav_kinds = txnav_kinds if callable(txnav_kinds) else tuple(txnav_kinds)
         self.aifsn, self.sifs_tol, self.slot_tol, self.tol_early = aifsn, sifs_tol, slot_tol, tol_early
         self.check_slots, self.aps, self.txop_limit = check_slots, set(aps), Fr(txop_limit)
         self.cbaps = None if cbaps is None else sorted((Fr(s), Fr(e)) for s, e in cbaps)
         self.rts_nav_reset, self.report_collisions, self.unchecked = rts_nav_reset, report_collisions, unchecked
 
-    def aifs_of(self, src):
-        n = self.aifsn.get(src, 3) if isinstance(self.aifsn, dict) else self.aifsn
+    def aifs_of(self, src, idx=None):
+        if callable(self.aifsn):
+            n = self.aifsn(src, idx)
+        else:
+            n = self.aifsn.get(src, 3) if isinstance(self.aifsn, dict) else self.aifsn
         return aifs(n)
 
 
@@ -886,6 +894,8 @@ def check_air_log(events, params=None):
             last_init.pop(pf['src'], None)
             continue
         if f.kind in p.unchecked:
+            if (p.txnav_kinds(r['i']) if callable(p.txnav_kinds) else f.kind in p.txnav_kinds):
+                txop[x] = dict(txnav_end=r['te'] + f.dur, open=True, ok=True, failed=False, data=0)
             continue
         h = txop.get(x)
         cont = False
@@ -925,7 +935,7 @@ def check_air_log(events, params=None):
             ended = [j for j in range(k) if R[j]['te'] <= t]
             if ended and not busy:
                 jb = max(ended, key=lambda j: R[j]['te'])
-                a = p.aifs_of(x)
+                a = p.aifs_of(x, r['i'])
                 ref = max(R[jb]['te'], nav_end if nav_end <= t else Fr(0))
                 if wins is not None:
                     ws = [s for s, e in wins if s <= t]
