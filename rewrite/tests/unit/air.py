@@ -45,6 +45,21 @@ BA_REP = {36: 0x201, 37: 0, 38: 0xe0001000, 39: 0x08001840}
 # вместе с данными встречной стороны»), r38 как у A-MPDU без б15 (стенд, PMC: 0xe2801800)
 RD_RESP_REP = {36: 0x203, 37: 0, 38: 0xe2001000, 39: 0x08023e50}
 R38_RD = 1 << 15
+# H-RXGRP (по именам полей r38 mcast_indication б13 / bcast_indication б14, на стенде не снято): кадр с групповым RA
+# (I/G-бит A1, 802.11-2020 9.2.4.3.4) MAC отмечает в отчёте приёма — широковещательный (все единицы) б14, прочий
+# групповой б13. uc по ним отличает кадр «для нас» (rx_flow_handle_frame: ADDR2_VALID без MCAST/BCAST/NEIGHBOUR) от
+# группового: на групповой ответа через SIFS нет (9.2.4.5.4 Table 9-12, 10.3.2.11), BAP приём не отмечает. Без этих
+# битов модель выдавала групповой кадр точки за адресованный станции — uc станции ждал MAC_BAP_RX_UPDATE (r53 б3),
+# которого у группового кадра нет (air_rx sifs_resp = False), и висел (метка 0xff31)
+R38_MCAST = 1 << 13
+R38_BCAST = 1 << 14
+
+
+def r38_group(ra):
+    """Биты группового RA в r38 (H-RXGRP)."""
+    if not ra[0] & 1:
+        return 0
+    return R38_BCAST if bytes(ra) == b'\xff' * 6 else R38_MCAST
 # RTS у получателя и DMG CTS у отправителя RTS (стенд 2026-10-30, iperf: STAMP_RESP_REP, STAMP_TXOP_WAIT): r36 б3 у обоих,
 # r37 б0 rts / б1 mmWaveCTS, r38 FCS + индекс отправителя, r39 0x08001a40 / 0x0801b340
 RTS_REP = {36: 0x8, 37: 0x1, 38: 0xe0000000, 39: 0x08001a40}
@@ -186,8 +201,8 @@ class Air:
             if (f[0] >> 2) & 3 == 2:
                 mcs = rec.get('mcs', 0) & 0x1f
                 ack = qos_ack_policy(f) << 16 if qos_ack_policy(f) is not None else 0   # r38 requested_ack_policy
-                return f, (lambda dst: {**DATA_REP, 38: self._r38(dst, src) | mcs << 20 | ack})
-            return f, (lambda dst: {**QFRAME_REP, 38: self._r38(dst, src)})
+                return f, (lambda dst: {**DATA_REP, 38: self._r38(dst, src) | mcs << 20 | ack | r38_group(f[4:10])})
+            return f, (lambda dst: {**QFRAME_REP, 38: self._r38(dst, src) | r38_group(f[4:10])})
         if rec['what'].startswith('ответ на') and getattr(src, 'resp_kind', None) == 'cts':
             # DMG CTS (9.3.1.13): FC 0x0564, Duration = Duration RTS − (SIFS + TXTIME CTS) вверх, RA — TA RTS, TA — свой
             d = max(0, getattr(src, 'resp_dur', 0) - (3 + -(-ctrl_txtime_clk(20) // 165)))

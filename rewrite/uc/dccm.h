@@ -1845,7 +1845,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
  * только 0x0 и 0x2, поле всегда 0. */
 #define MTP_DESC_HI_OF(r51)          (((r51) >> 4) & 0x3ffu)
 #define l2_wd_fired                  (*(u32 *)0x800624)   /* [в] l2_handle_watchdog ставит 1; l1_task_on_evt1 / l1_task_on_evt1_fixed_sched при ≠0 обнуляют и сообщают link lost. UCODE-TASKS.md, VERSION-DIFF.md, NA... */
-#define uc_wait_marker               (*(u32 *)0x800628)   /* [в] Метка текущего ожидания для отладки (0xff2f/0xff30 в mac_switch_rx_to_tx, 0xff31 в rx_get_required_response; 0 после выхода). volatile. */
+#define uc_wait_marker               (*(u32 *)0x800628)   /* [в] Метка текущего ожидания для отладки (0xff2f/0xff30 в mac_switch_rx_to_tx, 0xff31 в rx_get_required_response; 0 после выхода; срывы по пределу — fwsh_uc_wait: 0xff31 BAP RX, 0xff32 конец PPDU BRP ответчика, 0xff33 отчёт PPDU rx_flow_run). volatile. */
 #define bti_busy_cancel_cnt          (*(u32 *)0x80062c)   /* [в] bti_ap_beacon_sweep_tx: ++ при отмене развёртки маяка по busy2 (MAC_EVT1_BUSY2), обнуляется при успехе. BEACONING.md («счётчик 0x800... */
 #define rf_switch_wait_cnt           (*(u32 *)0x800630)   /* [с] mac_rf_switch_wait_idle: ++ на каждой итерации ожидания r40[2:0]==5, затем 0. UCODE-TASKS §1.3 называет 0x800630 маской фоновых задач — это 4.1 (в 6.2 ... */
 #define bf_tmo_tick                  (*(u32 *)0x800688)   /* [н] l1_task_check_bf_req_timeout: ++ при каждом вызове, пока голова кольца BF в состоянии 0x12; при таймауте (>1000 мкс) сохраняется в 0x80068c и обнуляется.... */

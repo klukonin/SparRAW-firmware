@@ -103,12 +103,13 @@ fwsh_rssi    = 0x857828;  /* uc: struct fwsh_rssi — RSSI станций (SparR
 fwsh_sect_snr = 0x857860; /* uc: struct fwsh_sect_snr — SNR по секторам SLS (SparRAW) */
 fwsh_peer_aid = 0x857964; /* uc: struct fwsh_peer_aid — AID станций у AP/PCP (SparRAW) */
 fwsh_sta_abft = 0x85796c; /* uc: struct fwsh_sta_abft — конец A-BFT BI у станции (SparRAW) */
+fwsh_uc_wait  = 0x857978; /* uc: struct fwsh_uc_wait — срывы ожиданий событий MAC (SparRAW) */
 
 /* Диапазоны, которые обнуляет crt0 (fw/start.S, как vendor). */
 __sram_clr_start = tx_ring_mem_data;        /* 0x840000 */
 __sram_clr_end   = phy_monitor + 0x3c;      /* 0x84e81c: конец struct phy_monitor */
 __fwsh_clr_start = fwsh_diag;               /* 0x857000 */
-__fwsh_clr_end   = fwsh_sta_abft + 0xc;   /* vendor — 0x857828 (конец шаблона FTM, SparRAW-pro); + fwsh_rssi, fwsh_sect_snr, fwsh_peer_aid, fwsh_sta_abft */
+__fwsh_clr_end   = fwsh_uc_wait + 0xc;    /* vendor — 0x857828 (конец шаблона FTM, SparRAW-pro); + fwsh_rssi, fwsh_sect_snr, fwsh_peer_aid, fwsh_sta_abft, fwsh_uc_wait */
 __conn_clr_start = conn_mgr;                /* 0x854000 */
 __conn_clr_end   = ll_detectors + 8 * 0xa4; /* 0x8552f4: конец ll_detectors[8] */
 

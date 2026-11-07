@@ -950,3 +950,70 @@ fix/ajc-3 два дефекта путей, которые открыла пра
 Тест — `tests/unit/test_uc_sls_loss.py` (развёртки целиком, SBIFS, роли BRP, данные в обе стороны): до исправления —
 uc_assert(4) при потере Feedback и пауза 1,61 мкс в ISS станции при потере Ack, после — чисто. Стенд: `sls` без «ours»
 вида «RSS начат через −… мкс» и «SSW-Feedback ≠ MBIFS»; паузы в развёртках точки остаются (как у базы).
+
+## Ожидания событий MAC без предела (2026-11-07)
+
+Повод: эмулятор, сценарий `test_uc_bcast_data` с элементом хоста 7 Б в кадрах ассоциации (иное взаимное время) — uc
+станции навсегда в `rx_get_required_response` (метка 0xff31 в `uc_wait_marker` 0x800628): опрос MAC_BAP_RX_UPDATE
+(r53 б3 `bap_rx_update_ind`, BAP отметил приём кадра «для нас»), дальше станция ничего не передаёт. Тот же класс —
+стенд 2026-11-07 (fix/ajc-3): ветка `brp_responder_flow_enter` с опросом MAC_EVT1_BUSY2 (маска 0x73 —
+конец принятого PPDU, H-E27 rx_end) без предела, чип заклинивало дважды.
+
+Причина висения r53 б3 — **пробел модели MAC (H-RXGRP)**, не порядок событий железа. Групповой кадр точки (RA
+ff:ff:ff:ff:ff:ff / 01:00:5e:… / 33:33:…) модель отдавала с r38 = 0xe0800800: ADDR2_VALID без `mcast_indication`
+(б13) / `bcast_indication` (б14). uc (`rx_flow_handle_frame`) считает кадр «для нас» только при ADDR2_VALID без
+MCAST/BCAST/NEIGHBOUR и для QoS Data с Ack Policy Normal ждёт BAP; BAP групповой кадр не отмечает (ответа на него нет,
+9.2.4.5.4 Table 9-12, 10.3.2.11; в модели `bap_rx` ставит только кадр с ответом через SIFS) — вечный опрос. Сдвиг
+времени лишь выводил групповой кадр на этот путь (в исходном сценарии он приходил, когда приём шёл другой веткой).
+На железе путь ходовой: широковещательные ARP точки и станции идут при каждом ping на стенде, uc принимающей стороны
+не висит — MAC группу отмечает. Модель исправлена (air.py `r38_group`: б14 у широковещательного RA, б13 у прочих
+групповых; по именам полей, на стенде не снято — снять r38 группового кадра меткой).
+Побочно: модель MAC собирает групповой QoS Data с Ack Policy Normal (H-ENCAP: QoS Control 0x0000 у всех кадров хоста);
+по 9.2.4.5.4 Table 9-12 у групповых кадров QoS — No Ack. Что ставит MAC на железе — снять PMC (QoS Control группового
+кадра точки, захват ping 10.60.0.255).
+
+Исправлено (политика: у ожидания события железа, зависящего от эфира или пира, — предел по времени стандарта и
+безопасный выход; такты не повышаются):
+- `rx_get_required_response`: MAC_BAP_RX_UPDATE — не дольше aPPDUMaxTime + SIFS (2 мс, Table 20-30, + 3 мкс; вход
+  возможен с начала кадра — отчёт r36…r39 по заголовку, BAP отмечает по концу PPDU). Цикл — asm goto, 4 инструкции на
+  проход; выход по биту — `mov r53` / `bbit0` без перехода, как у vendor; на пути +3 инструкции (счётчик, sub.f, beq;
+  test_uc_deadlines в бюджете). Срыв: ответа нет (0), `rx_bap_rx_up = 0`, метка 0xff31.
+- `brp_responder_flow_enter`, первый ответ без своей тренировки: конец PPDU BRP (busy2, маска 0x73) — не дольше
+  aPPDUMaxTime (кадр с TRN заведомо кончился), дальше как после события; метка 0xff32.
+- `rx_flow_run`, приём без кадра: отчёт PPDU (r42 б16) — не дольше aPPDUMaxTime + SIFS, дальше «кадра нет»; метка 0xff33.
+- Общее: `uc_spin_until_event_tmo(mask, проходов, метка)` (проход ≥ 4 тактов, `UC_SPIN_PASSES(clk)`), срыв —
+  `uc_hw_wait_tmo`: счётчик/метка/TSF в `fwsh_uc_wait` (0x857978: +0 `tmo_cnt`, +4 `last_marker`, +8 `last_tsf`;
+  fw обнуляет при загрузке), `uc_wait_marker` = 0, тень счётчика PPDU `ppdu_evt_cnt` — заново по r40 PHY_SIGNALS
+  [13:8] (выбор r40 возвращается). Без пересчёта (эмулятор): кадры, принятые PHY за время ожидания, uc не видел,
+  и каждый следующий DMG CTS точки на RTS станции брал за «нет события» — данные станции не уходили.
+
+Эмулятор: `test_uc_wait_bounds` (предел и метки, пересчёт тени PPDU), `test_uc_bcast_data::test_live_group_data_shifted`
+(сценарий со сдвигом проходит), `::test_live_bap_rx_wait_bounded` (группа без битов mcast/bcast — событие BAP не
+приходит: выход по пределу, 0xff31, данные станции доставлены). ucemu: опрос в одной точке при меняющихся регистрах
+ядра (счётчик проходов) — не «вечное ожидание».
+
+Стенд (что снять): после серии (iperf в обе стороны, BRP/SLS, широковещательный ping) — `fwsh_uc_wait` обоих узлов
+(память 0x857978, 12 Б). 0 — ни одного срыва; ненулевой — событие железа не пришло за предел: `last_marker` (0xff31 BAP
+RX, 0xff32 конец PPDU BRP, 0xff33 отчёт PPDU), `last_tsf` — время для захвата PMC. 0xff31 на железе — BAP не отметил
+кадр «для нас» (разбирать r36…r39 этого кадра метками STAMP_RESP_REP).
+
+Остальные ожидания без предела (аудит uc, 207 мест; категории — по тому, от чего зависит событие):
+- **эфир** (25): `mac_switch_rx_to_tx` / `_wait_brp` — CCA_PPDU_COMP, PHY_RX_FRAME, состояние PHY < 6 (ХРУПКО, SIFS/
+  MBIFS; конец принимаемого PPDU — не позже aPPDUMaxTime); `rx_flow_run` — `uc_wait_event_busy(SFD_SYNC|BUSY2, 0)` и
+  ХРУПКО-цикл busy2/BRP_ON_AIR (SIFS); `uc_wait_event_busy(PPDU_REPORT, 0)` — `rx_arm_window`, `rx_ppdu_is_ack/cts/
+  ssw`, `rx_flow_handle_frame` (ХРУПКО, SIFS), `rx_flow_step` (SIFS), `rx_handle_ppdu_report` (MBIFS),
+  `abft_resp_parse_fdbk`, `bti_beacon_rx_match_bss`, `tx_await_rx_or_timeout`; `mac_wait_evt1_or_status`;
+  SLOT|BUSY2 (маска 0x7e/0x0e) — `mac_select_all_sectors_and_wait`, `bti_ap_beacon_sweep_tx`, `txss_program_tx_frame`,
+  `mac_prepare_txrx_window`; `brp_init_tx_request` (slot_event); `brp_program_and_measure` (метрика TRN/BRP_DONE,
+  ХРУПКО); `mac_rf_switch_wait_idle` (idle_detect = 5, MBIFS; из ucode_cmd_0x01 — с запрещёнными прерываниями).
+  Предложение: предел aPPDUMaxTime (+ SIFS) счётчиком проходов; при срыве — «кадра нет» (у `uc_wait_event_busy`
+  вызывающие сейчас читают r36…r39 без проверки возврата — сначала проверка, иначе устаревший отчёт прошлого кадра);
+  в ХРУПКО-циклах — только с совпадающим кодом нормального пути (сверка дизассемблером, выравнивание).
+- **своя передача** (53): TX_END после пуска (18) и подтверждения событий движка 2 (`mac_evt_enable_bit_sync(_b)`,
+  `uc_wait_one_event(6)`, сырые busy2 в `tx_mtp_queue_gate` / `txop_initiator_open_txop_flow` — SIFS) (35). Предел —
+  TXTIME своего PPDU ≤ aPPDUMaxTime от пуска; при срыве — сброс TX (0x29000002) и возврат в приём.
+- **таймер uc** (24): GP0/1/2, EXT_GP345, slot2, BI2 (`uc_spin_until_event4`, `uc_wait_event1_or_event4(…, 0)`):
+  кончаются, только если таймер взведён; предел — длительность, с которой таймер взведён, + запас.
+- **внутренние квитирования MAC** (105): MTP r43/r45 б31, BAP_REL r53 б2, CNT_IF r47 б0, RFC, окно дескрипторов
+  очередей, DTX, HW_MAC_TIMING_STATUS — ответ MAC на команду uc за единицы–десятки тактов, от эфира не зависят;
+  предел — крупный счётчик (~10⁴ проходов) с меткой, без изменения кода нормального пути на SIFS.

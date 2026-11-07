@@ -113,10 +113,27 @@ BCAST_VR = 2
 GROUP = [b'\xff' * 6, bytes.fromhex('01005e7ffffa'), bytes.fromhex('333300000016')]
 
 
-@pytest.fixture(scope='module')
-def live_group(fw_elf, build_dir, uc_fw):
+HOST_IE = bytes([70, 5, 1, 0, 0, 0, 0])   # элемент хоста 7 Б (RM Enabled Capabilities) в кадрах ассоциации
+
+
+def _live_group(fw_elf, build_dir, uc_fw, host_ie=False, max_us=20000):
+    """Два узла: AP шлёт групповые кадры кольца WMI_BCAST_VRING_CFG, станция одновременно — данные точке.
+    host_ie — элемент хоста (WMI_SET_APPIE) в Probe/Assoc Request/Response обоих узлов: длиннее кадры ассоциации —
+    другое взаимное время дальнейшего обмена (на нём групповой кадр попадал станции в rx_get_required_response)."""
     import test_air
-    r = test_air._live_data(fw_elf, build_dir, uc_fw)
+    mp = pytest.MonkeyPatch()
+    if host_ie:
+        orig = F.Fw.set_mac
+
+        def set_mac(self, mac):
+            orig(self, mac)
+            for t in (2, 3, 4):                             # WMI_SET_APPIE: Probe Response, Assoc Request/Response
+                self.fw.wmi(0x3f, struct.pack('<BBH', t, 0, len(HOST_IE)) + HOST_IE)
+        mp.setattr(F.Fw, 'set_mac', set_mac)
+    try:
+        r = test_air._live_data(fw_elf, build_dir, uc_fw)
+    finally:
+        mp.undo()
     air, ap, sta = r['air'], r['ap'], r['sta']
     n_ev = len(ap.fw.wmi_evts)
     ap.wmi(F.WMI_BCAST_VRING_CFG, bcast_vring_cfg_cmd(BCAST_VR))
@@ -132,12 +149,17 @@ def live_group(fw_elf, build_dir, uc_fw):
         sta.host_tx(0, ap.mac, p)
     ap.pump()
     sta.pump()
-    for _ in range(40):
+    for _ in range(max_us // 500):
         air.run_us(500)
         if len(sta.host_rx) - n_rx >= len(group) and len(ap.host_rx) - n_ap_rx >= len(up):
             break
     return dict(air=air, ap=ap, sta=sta, done=done, t0=t0, group=group, up=up,
                 rx=sta.host_rx[n_rx:], ap_rx=ap.host_rx[n_ap_rx:], frames=air.frames[n_frames:])
+
+
+@pytest.fixture(scope='module')
+def live_group(fw_elf, build_dir, uc_fw):
+    return _live_group(fw_elf, build_dir, uc_fw)
 
 
 pytestmark_live = pytest.mark.xdist_group('live_group')
@@ -170,3 +192,49 @@ def test_live_group_data_no_cts_to_self(live_group):
     grp = [f for f in r['frames'] if f['src'] is ap and f.get('mpdus') is None and len(f['frame']) >= 24 and
            (f['frame'][0] >> 2) & 3 == 2 and f['frame'][4] & 1]
     assert len(grp) >= len(GROUP), [f['what'] for f in r['frames'] if f['src'] is ap]
+
+
+# ---- групповой кадр станции при другом времени обмена; ожидание BAP с пределом ----
+
+UC_WAIT = 0x857978                      # include/fwsh.h fwsh_uc_wait: +0 tmo_cnt, +4 last_marker, +8 last_tsf
+UC_WAIT_MARKER = 0x800628               # uc_wait_marker
+
+
+def _group_ok(r):
+    got = [f for _, f in r['rx']]
+    lost = [da.hex(':') for da, p in zip(GROUP, r['group']) if not any(f[4:10] == da and f.endswith(p) for f in got)]
+    ap_got = [f for _, f in r['ap_rx']]
+    up_lost = [i for i, p in enumerate(r['up']) if not any(f.endswith(p) for f in ap_got)]
+    return lost, up_lost
+
+
+@pytestmark_live
+def test_live_group_data_shifted(fw_elf, build_dir, uc_fw):
+    """Тот же обмен, кадры ассоциации длиннее на элемент хоста (7 Б) — иное взаимное время. Прежде групповой кадр
+    точки станция принимала как адресованный ей (модель MAC не ставила r38 mcast/bcast — H-RXGRP), ждала
+    MAC_BAP_RX_UPDATE (r53 б3) без предела и висела в rx_get_required_response (метка 0xff31); дальше станция ничего
+    не передавала. Теперь: групповые кадры приняты, встречные данные доставлены, срывов ожиданий нет."""
+    r = _live_group(fw_elf, build_dir, uc_fw, host_ie=True)
+    sta = r['sta']
+    assert _group_ok(r) == ([], []), (_group_ok(r), sta.uc.where(sta.uc.cpu.pc))
+    assert sta.uc.r32(UC_WAIT) == 0 and r['ap'].uc.r32(UC_WAIT) == 0
+    assert not r['ap'].hw.late and not sta.hw.late
+
+
+@pytestmark_live
+def test_live_bap_rx_wait_bounded(fw_elf, build_dir, uc_fw, monkeypatch):
+    """Ожидание MAC_BAP_RX_UPDATE (r53 б3) с пределом: событие не приходит — групповой кадр без битов mcast/bcast в
+    отчёте (прежний пробел модели, H-RXGRP снят), BAP его не отмечает. uc станции выходит по пределу (aPPDUMaxTime +
+    SIFS), метка 0xff31 и счётчик в fwsh_uc_wait, ответа на кадр нет, связь идёт дальше: встречные данные станции
+    доставлены точке (без пересчёта тени счётчика PPDU по r40 после срыва — нет: кадры, принятые PHY за время
+    ожидания, uc не видел, и каждый следующий DMG CTS точки принимал за «нет события»). Прежде — вечный опрос (uc
+    станции больше ничего не передавал)."""
+    import air
+    monkeypatch.setattr(air, 'r38_group', lambda ra: 0)
+    r = _live_group(fw_elf, build_dir, uc_fw, host_ie=True, max_us=40000)
+    sta = r['sta']
+    assert sta.uc.r32(UC_WAIT) >= 1, 'предел не сработал: %s' % sta.uc.where(sta.uc.cpu.pc)
+    assert sta.uc.r32(UC_WAIT + 4) == 0xff31
+    assert sta.uc.r32(UC_WAIT_MARKER) == 0
+    assert 'rx_get_required_response' not in sta.uc.where(sta.uc.cpu.pc)
+    assert _group_ok(r)[1] == [], _group_ok(r)

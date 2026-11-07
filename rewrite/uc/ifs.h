@@ -13,6 +13,10 @@
 #define DMG_SLOT_CLK     (5u * DMG_CLK_PER_US)
 #define DMG_PIFS_CLK     (DMG_SIFS_CLK + DMG_SLOT_CLK)
 #define DMG_MBIFS_CLK    (3u * DMG_SIFS_CLK)
+/* aPPDUMaxTime DMG — 2 мс (Table 20-30): PPDU (с полем TRN) не длиннее. Предел ожиданий событий конца/отчёта
+ * принимаемого PPDU: за aPPDUMaxTime от любого момента приёма PPDU заведомо кончился (uc_spin_until_event_tmo). */
+#define DMG_PPDU_MAX_US  2000u
+#define DMG_PPDU_MAX_CLK (DMG_PPDU_MAX_US * DMG_CLK_PER_US)
 
 /* TXTIME кадра control PHY (MCS0) длиной L байт (с FCS), 20.11.3 (N_CW — 20.4.3.3.3):
  *   TXTIME = T_STF + T_CE + (11·8 + (L − 6)·8 + N_CW·168)·32·Tc,  N_CW = 1 + ⌈(L − 6)·8 / 168⌉,

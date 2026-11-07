@@ -79,6 +79,16 @@ class _CPU(cpumod.CPU):
             return (self._o.t1_base + self.insns) % (T1_LIMIT + 1)
         return super().read_aux(addr)
 
+    def _counting(self, key):
+        """Опрос в одной точке, но регистры ядра между проверками меняются (счётчик проходов — ожидание с пределом,
+        uc_spin_until_event_tmo, ожидание BAP в rx_get_required_response): не вечное ожидание. Снимок r0..r24 — на
+        середине счёта (SPIN_MAX / 2), сверка — на пределе; совпал — регистры стоят, это зависание."""
+        return self._o._spin_regs.get(key) != tuple(self.regs[:25])
+
+    def _spin_note(self, key, sp):
+        if sp == SPIN_MAX // 2:
+            self._o._spin_regs[key] = tuple(self.regs[:25])
+
     def read_reg(self, n):
         if 32 <= n <= 56:
             o = self._o
@@ -90,7 +100,10 @@ class _CPU(cpumod.CPU):
                         o._spin_val[key] = v
                         o._spin = {}
                     sp = o._spin[key] = o._spin.get(key, 0) + 1
-                    if sp > SPIN_MAX:
+                    self._spin_note(key, sp)
+                    if sp > SPIN_MAX and self._counting(key):
+                        o._spin[key] = 0                      # ожидание с пределом (счётчик проходов) — не зависание
+                    elif sp > SPIN_MAX:
                         # опрос в одной точке: если железо ещё что-то сделает — продвинуть часы к событию
                         if o.hw.advance_to_next():
                             o._spin[key] = 0
@@ -103,7 +116,10 @@ class _CPU(cpumod.CPU):
                     return v
             key = (self.pc, n)
             sp = self._o._spin[key] = self._o._spin.get(key, 0) + 1
-            if sp > SPIN_MAX:
+            self._spin_note(key, sp)
+            if sp > SPIN_MAX and self._counting(key):
+                self._o._spin[key] = 0
+            elif sp > SPIN_MAX:
                 raise SpinError('опрос r%d без выхода в %s (значение %#x): задайте uc.ext[%d] или заглушку'
                                 % (n, self._o.where(self.pc), self._o._val(n), n))
             k = self._o._ext_reads.get(n, 0)
@@ -158,6 +174,7 @@ class UC:
         self.ext = {40: (1 << 24) | 5, 45: 1 << 31}
         self._spin = {}
         self._spin_val = {}
+        self._spin_regs = {}           # снимок регистров ядра на проверке опроса (_CPU._counting)
         self.t1_base = 0               # COUNT1 в начале теста (задать, чтобы проверить заворот)
         self._ext_reads = {}
         self.calls = []

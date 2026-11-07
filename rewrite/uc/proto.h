@@ -733,6 +733,9 @@ void uc_sleep_until_event(u32 a, u32 b);                        /* uutil.c */
 u32 uc_sm_handle_event(struct sm_obj *obj, u32 ev, u32 a2);     /* uutil.c */
 u32 uc_spin_until_event(u32 mask);                              /* mac.c */
 u32 uc_wait_txop_end(void);                                      /* mac.c */
+void uc_hw_wait_tmo(u32 marker);                                 /* mac.c */
+u32 uc_spin_until_event_tmo(u32 mask, u32 passes, u32 marker);   /* mac.c */
+#define UC_SPIN_PASSES(clk) ((clk) / 4u + 1u)                     /* проходов uc_spin_until_event_tmo на ≥ clk тактов */
 void uc_spin_until_event4(u32 a);                               /* uutil.c */
 void uc_spin_until_gp2_end(void);                         /* bf.c */
 void uc_sysassert_emit_mac_trace(u32 a);                        /* misc.c */

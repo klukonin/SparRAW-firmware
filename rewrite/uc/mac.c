@@ -779,3 +779,41 @@ u32 uc_wait_txop_end(void)
     mac_mon_report.txop_end_tmo += 1;
     return 0;
 }
+
+/* Безопасный выход из ожидания события MAC по пределу (политика: у ожидания бита/события железа, зависящего от
+ * эфира или пира, — предел и выход вместо вечного опроса). Счётчик, метка и TSF — в fwsh_uc_wait (0x857978,
+ * со стенда — чтением памяти); метка текущего ожидания uc_wait_marker снимается.
+ * За время ожидания (до aPPDUMaxTime) PHY мог принять кадры, которых uc не видел: тень счётчика PPDU ppdu_evt_cnt —
+ * заново по r40 PHY_SIGNALS [13:8] (как mac_switch_rx_to_tx), иначе uc отстаёт на эти кадры навсегда и каждый
+ * следующий принимает за «нет события» (эмулятор: после срыва ожидания BAP DMG CTS точки на RTS станции
+ * отбрасывался, данные станции не уходили). Выбор r40 возвращается прежний. Вне горячих путей: зовут только при
+ * срыве. */
+__attribute__((noinline, cold)) void uc_hw_wait_tmo(u32 marker)
+{
+    FWSH(fwsh_uc_wait, tmo_cnt) += 1;
+    FWSH(fwsh_uc_wait, last_marker) = marker;
+    FWSH(fwsh_uc_wait, last_tsf) = uc_read_tsf_lo();
+    VOL(uc_wait_marker) = 0;
+    u32 g = mac_sel_shadow, f = g & ~MAC_SEL_FIELD;
+    mac_sel_shadow = f | MAC_SEL_PHY_SIGNALS;
+    uc_mac_cmd(f | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
+    arc_nops(3);
+    ppdu_evt_cnt = MAC_PHYSIG_PPDU_EVT_CNT_OF(mac_status_sel());
+    mac_sel_shadow = g;
+    uc_mac_cmd(f | MAC_CMD_STATUS_SEL | (g & MAC_SEL_FIELD));
+    arc_nops(3);
+}
+
+/* Ожидание события r42 (как uc_spin_until_event) не дольше passes проходов. Предел — счётчиком, без часов ядра
+ * (Timer1 сбрасывают l1/сторож): проход — 6 инструкций (brne / mov r42 / tst / bne / sub / b, дизассемблер), каждая —
+ * не меньше такта; UC_SPIN_PASSES(clk) берёт по 4 такта на проход — выдержка не меньше clk тактов. Задержка
+ * реакции — один проход. Возврат 1 — событие; 0 — предел (uc_hw_wait_tmo(marker)), дальше решает вызывающий. */
+u32 uc_spin_until_event_tmo(u32 mask, u32 passes, u32 marker)
+{
+    for (u32 n = passes; n != 0; n--) {
+        if (mac_evt1() & mask)
+            return 1;
+    }
+    uc_hw_wait_tmo(marker);
+    return 0;
+}

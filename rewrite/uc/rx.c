@@ -659,7 +659,10 @@ busy:
         ppdu_evt_cnt += 1;
         VOL(uc_stats.rx_arm) += 1;
         FWSH(fwsh_diag, rx_arm) = VOL(uc_stats.rx_arm);
-        uc_spin_until_event(MAC_EVT1_PPDU_REPORT);
+        /* исправлено (vendor: без ограничения): отчёт о PPDU (r42 б16) приходит по концу принимаемого PPDU — не позже
+         * aPPDUMaxTime (Table 20-30) + SIFS; нет — PHY кадр потерял (ложное обнаружение), uc не висит: метка 0xff33
+         * в fwsh_uc_wait, дальше — как «кадра нет» (тот же путь). */
+        uc_spin_until_event_tmo(MAC_EVT1_PPDU_REPORT, UC_SPIN_PASSES(DMG_PPDU_MAX_CLK + DMG_SIFS_CLK), 0xff33);
         VOL(uc_stats.rx_no_frame) += 1;
         goto noframe;
     }
@@ -1647,11 +1650,24 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
     return 0;
 }
 
+/* Предел ожидания MAC_BAP_RX_UPDATE в rx_get_required_response (проходов по ≥ 4 тактов; первый — вход): aPPDUMaxTime + SIFS. */
+#define BAP_RX_WAIT_PASSES  ((DMG_PPDU_MAX_CLK + DMG_SIFS_CLK) / 4u + 2u)
+
+/* Срыв ожидания MAC_BAP_RX_UPDATE: BAP не отметил приём за предел — ответа нет (возврат 0, как «ответ не нужен»),
+ * rx_bap_rx_up = 0 (тень счётчика PPDU — заново в uc_hw_wait_tmo). Отдельной функцией (хвостовой переход) —
+ * горячая функция не платит за неё. */
+__attribute__((noinline, cold)) static u32 rx_bap_rx_timeout(void)
+{
+    uc_hw_wait_tmo(0xff31);
+    rx_bap_rx_up = 0;
+    return 0;
+}
+
 /* СРОК: вызывается из rx_flow_handle_frame до запроса ответа в MTP — вся функция в сроке SIFS
  * 3 мкс (802.11-2020 10.3.2.3.3): QoS Data/BAR → Ack/BlockAck (10.3.2.11, 10.25.3), RTS → DMG CTS /
  * DMG DTS (10.3.2.9, 10.39.6.6.2), CF-End (10.39.8.1), Grant → Grant Ack (10.39.4). Размер 1220 Б
  * против 1468 Б у vendor 0x932e40; ветка RTS — одно чтение TSF (~9 инструкций с командой 0x4d
- * и nop; проверка NAV — rx_nav_check_idle_at по нему же); ветка данных — ожидание MAC_BAP_RX_UPDATE без ограничения (ниже).
+ * и nop; проверка NAV — rx_nav_check_idle_at по нему же); ветка данных — ожидание MAC_BAP_RX_UPDATE с пределом (ниже).
  * Запас общий с rx_frame_tx_resp_seq: единицы. Логи uc_log_emit* — только на ветках без ответа. */
 UC_HOT
 u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out)
@@ -1710,17 +1726,31 @@ bap_rx_check:   /* L_932fd0 */
     r17 = (MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8) ? 1 : 0;
     r16 = mac_rx_rep1();
     if (!(r17 || (r16 & (1u << 17)))) {
-        /* СРОК: ожидание MAC_BAP_RX_UPDATE (BAP: приём учтён) без таймаута — на пути до Ack/BlockAck через SIFS
-         * (802.11-2020 10.3.2.3.3). Как у vendor 0x933004 (тоже без ограничения); запас задаёт BAP.
-         * Если BAP не ответит — uc висит здесь (метка 0xff31 в uc_wait_marker). */
+        /* СРОК: ожидание MAC_BAP_RX_UPDATE (r53 б3, BAP: приём учтён) — на пути до Ack/BlockAck через SIFS
+         * (802.11-2020 10.3.2.3.3); запас задаёт BAP. исправлено (vendor 0x933004: без ограничения — если BAP не
+         * отметит приём, uc висит навсегда, метка 0xff31 в uc_wait_marker). Предел — BAP_RX_WAIT_PASSES проходов:
+         * не меньше aPPDUMaxTime + SIFS (вход возможен с начала кадра — отчёт r36…r39 готов по заголовку, BAP
+         * отмечает приём по концу PPDU; позже ответ всё равно опоздал). Проход — 4 инструкции ≥ 4 тактов (asm goto:
+         * gcc строил 6 — mov/btst/bne/sub/tst/bne_s — и проверку счётчика после цикла). Выход по биту — как у vendor:
+         * mov r53 / bbit0 без перехода (задержка реакции та же); на пути +3 инструкции (mov счётчика, sub.f, beq).
+         * Срыв — rx_bap_rx_timeout: ответа нет (пир повторит кадр по своему AckTimeout), метка 0xff31 в
+         * fwsh_uc_wait, uc возвращается в приём.
+         * ХРУПКО: путь до 0x37000020 с запасом 32–48 тактов (стенд 2026-10-30, PAD_RESP_CMD); цикл сверять
+         * дизассемблером (2026-11-07: начало цикла и mov r53 ≡ 0 mod 4, смещение в функции как до правки). */
         VOL(uc_wait_marker) = 0xff31;     /* метка ожидания: gcc выкидывал запись как мёртвую */
-        while (!(mac_bap_if() & MAC_BAP_RX_UPDATE))
-            ;
+        __asm__ goto("mov\tr12,%0\n"
+                     "1:\tsub.f\tr12,r12,1\n\tbeq\t%l[bap_tmo]\n"
+                     "\tmov\tr11,r53\n\tbbit0\tr11,3,1b"
+                     :: "i"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : bap_tmo);
         VOL(uc_wait_marker) = 0;
         UC_STAMP(STAMP_BAP_RX, mac_bap_if(), mac_rx_rep1());
         rx_bap_rx_up = (mac_bap_if() & MAC_BAP_RX_UP_STATUS) ? 1 : 0;
         uc_mac_cmd(0x1c000008);
         goto bap_rx_done;
+    }
+    if (0) {
+bap_tmo:
+        return rx_bap_rx_timeout();
     }
     /* L_93303c: vendor при td_enabled для ATIM — rx_bap_rx_up = 0 и op 4; отсрочка трафика (LMAC 0x27, D3 PCIe) вырезана — см. fw/vectors.c pcie_pm_event_unsupported */
     rx_bap_rx_up = 1;

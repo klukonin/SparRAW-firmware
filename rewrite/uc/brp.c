@@ -704,7 +704,12 @@ void brp_responder_flow_enter(u32 a)
                     uc_mac_cmd(mac_evt_en_shadow | 0x27007300);
                     uc_mac_cmd(0x2004000);
                     arc_nops(3);
-                    uc_spin_until_event(MAC_EVT1_BUSY2);
+                    /* Конец принятого PPDU BRP пира (busy2 по маске 0x73, H-E27 rx_end). исправлено (vendor: без
+                     * ограничения — если конец кадра уже прошёл до взвода или MAC его не отметит, uc висит навсегда;
+                     * стенд 2026-11-07: этой веткой (первый ответ без своей тренировки) чип заклинивало). Предел —
+                     * aPPDUMaxTime (PPDU с TRN не длиннее, Table 20-30): за него кадр заведомо кончился, дальше —
+                     * как после события; метка 0xff32 в fwsh_uc_wait. */
+                    uc_spin_until_event_tmo(MAC_EVT1_BUSY2, UC_SPIN_PASSES(DMG_PPDU_MAX_CLK), 0xff32);
                 } else if (brp_program_and_measure(brp_ctx.resp_sta, 0, sp0) != 0) {
                     brp_rf_module_done(sp0);
                 } else {

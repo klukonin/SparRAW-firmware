@@ -10,7 +10,8 @@
  *    ll_ctx, ese_slot_tbl, байты STA-capability, отсчёты энергии fwsh_energy, статистика PHY
  *    fwsh_phy, наборы RF fwsh_sets (результаты и шаблон FTM — только SparRAW-pro, до 0x857828),
  *    RSSI станций fwsh_rssi (0x857828). За ним — SNR по секторам SLS fwsh_sect_snr (0x857860) и AID станций
- *    fwsh_peer_aid (0x857964, до 0x85796c), конец A-BFT BI у станции fwsh_sta_abft (0x85796c, до 0x857978).
+ *    fwsh_peer_aid (0x857964, до 0x85796c), конец A-BFT BI у станции fwsh_sta_abft (0x85796c, до 0x857978),
+ *    срывы ожиданий событий MAC в uc fwsh_uc_wait (0x857978, до 0x857984).
  *    Дальше (0x857a00..) — только uc: рейтинги секторов, link_stat (uc/dccm.h).
  *  - fixed_sched (0x847a3c) — объект fw (символ fw/fw.ld); uc читает его по указателю
  *    fwsh_sets.fsched_tbl.
@@ -463,6 +464,18 @@ struct fwsh_sta_abft {
 };
 _Static_assert(sizeof(struct fwsh_sta_abft) == 0xc, "fwsh_sta_abft");
 
+/* Срывы ожиданий событий MAC в uc (0x857978, SparRAW; пишет только uc, fw обнуляет при загрузке). Политика: у каждого
+ * ожидания бита/события MAC, которое зависит от эфира или пира, — предел (время стандарта: aPPDUMaxTime, SIFS…) и
+ * безопасный выход вместо вечного опроса (прежде uc висел, основной поток вставал — стенд 2026-11-07). При выходе по
+ * пределу uc_hw_wait_tmo: счётчик, метка ожидания (те же коды, что uc_wait_marker 0x800628) и TSF. Ненулевой tmo_cnt
+ * на стенде — событие железа действительно не пришло (или пришло позже предела): разбирать по метке. */
+struct fwsh_uc_wait {
+    u32 tmo_cnt;                               /* 0x00: выходов по пределу (всех ожиданий) */
+    u32 last_marker;                           /* 0x04: метка последнего (0xff31 BAP RX, 0xff32 конец PPDU BRP, …) */
+    u32 last_tsf;                              /* 0x08: TSF (мкс, младшие 32 бита) последнего */
+};
+_Static_assert(sizeof(struct fwsh_uc_wait) == 0xc, "fwsh_uc_wait");
+
 
 
 /* ---------------- объекты ---------------- */
@@ -485,6 +498,7 @@ _Static_assert(sizeof(struct fwsh_sta_abft) == 0xc, "fwsh_sta_abft");
 #define FWSH_A_fwsh_sect_snr      0x857860u
 #define FWSH_A_fwsh_peer_aid      0x857964u
 #define FWSH_A_fwsh_sta_abft      0x85796cu
+#define FWSH_A_fwsh_uc_wait       0x857978u
 
 /* Поле общего объекта по его собственному литеральному адресу (целая константа «адрес
  * объекта + offsetof») — кодоген как с числом. Форма obj.field даёт у gcc адрес «база
@@ -518,6 +532,7 @@ extern struct fwsh_rssi fwsh_rssi;             /* 0x857828 */
 extern struct fwsh_sect_snr fwsh_sect_snr;     /* 0x857860 */
 extern struct fwsh_peer_aid fwsh_peer_aid;     /* 0x857964 */
 extern struct fwsh_sta_abft fwsh_sta_abft;     /* 0x85796c */
+extern struct fwsh_uc_wait fwsh_uc_wait;       /* 0x857978 */
 #else
 /* uc: имена — макросы на литеральный адрес. */
 #define fw_stats_dash      (*(volatile struct fw_stats_dash *)FWSH_A_fw_stats_dash)
@@ -536,6 +551,7 @@ extern struct fwsh_sta_abft fwsh_sta_abft;     /* 0x85796c */
 #define fwsh_sect_snr      (*(volatile struct fwsh_sect_snr *)FWSH_A_fwsh_sect_snr)
 #define fwsh_peer_aid      (*(volatile struct fwsh_peer_aid *)FWSH_A_fwsh_peer_aid)
 #define fwsh_sta_abft      (*(volatile struct fwsh_sta_abft *)FWSH_A_fwsh_sta_abft)
+#define fwsh_uc_wait       (*(volatile struct fwsh_uc_wait *)FWSH_A_fwsh_uc_wait)
 
 
 /* Псевдонимы uc. «Число наборов» развёртки = n_sec[1][0] (≥ 2 — по набору своя база сектора). */
