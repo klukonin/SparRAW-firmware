@@ -27,10 +27,12 @@ if __package__ in (None, ''):
     __package__ = 'ref'
 
 from . import abft as A           # noqa: E402
+from . import amsdu as AM          # noqa: E402
 from . import air_pcap as AP       # noqa: E402
 from . import beamtrack as BT      # noqa: E402
 from . import bi as BI             # noqa: E402
 from . import blockack as BA       # noqa: E402
+from . import dms as DM            # noqa: E402
 from . import duration as D        # noqa: E402
 from . import elements as E        # noqa: E402
 from . import fields as F          # noqa: E402
@@ -56,7 +58,7 @@ PAGE = {'9.2.2': 757, '9.2.4.1': 758, '9.2.5.1': 791, '9.2.5.2': 791, '9.2.5.7':
         '10.25.6': 1791, '10.29.2': 1819, '10.39.2': 1878, '10.39.5': 1882, '10.42.2': 1933, '10.42.4': 1946,
         '10.42.5': 1946, '11.1.3.1': 2050, '11.1.3.3.1': 2052, '20.11.3': 3007,
         '10.3.2.4': 1648, '10.39.3': 1879, '10.39.10': 1902, '10.42.3.1': 1941, '10.42.6.4': 1961, '10.42.7': 1964,
-        '11.3.3': 2128, '11.27.1': 2355}
+        '11.3.3': 2128, '11.27.1': 2355, '9.3.2.2': 819, '10.11': 1715, '11.21.16.2': 2291}
 
 
 def cite(cl):
@@ -2054,12 +2056,225 @@ def r_beam_track(c):
     return r
 
 
+# ---------------------------------------------------------------------------------------------------- A-MSDU, DMS
+CAPS_FRAMES = (E.ASSOC_REQ, E.ASSOC_RESP, E.REASSOC_REQ, E.REASSOC_RESP, E.PROBE_REQ, E.PROBE_RESP)
+
+
+def _caps(c):
+    """Из тел кадров управления (TX, тело целиком): {MAC: DmgCapabilities}, {MAC: бит DMS Extended Capabilities}."""
+    dmg, ext = {}, {}
+    for e in c.evs:
+        if e.kind not in CAPS_FRAMES or not e.body_ok or e.raw is None:
+            continue
+        try:
+            _, els = E.parse_body(e.kind, e.raw[24:])
+        except (ValueError, NotImplementedError):
+            continue
+        for el in els:
+            try:
+                if el.eid == E.EID_DMG_CAPABILITIES:
+                    dmg[e.src] = E.parse_dmg_capabilities(el.info)
+                elif el.eid == E.element_key('Extended Capabilities')[0]:
+                    ext[e.src] = DM.ext_cap_dms(el.info)
+            except ValueError:
+                pass
+    return dmg, ext
+
+
+def _mpdu_complete(e, raw):
+    """Тело MPDU записано целиком: одиночный MPDU и длина записи = длина PSDU без FCS."""
+    return not e.agg and e.length is not None and len(raw) == e.length - 4
+
+
+def _amsdu_checks(c):
+    """[(событие, raw, amsdu.Check, сведения)] по всем записанным MPDU данных с ведением соглашений BA (ADDBA Response
+    / DELBA в захвате) — общий проход правил amsdu и dms."""
+    caps, _ = _caps(c)
+    ba, seen = {}, set()                       # (originator, recipient, TID) → A-MSDU Supported ответа
+    out = []
+    for e in c.evs:
+        if e.action == 'ADDBA Response' and e.body_ok:
+            try:
+                p = BA.parse_addba_resp(e.raw[24:])
+            except ValueError:
+                continue
+            seen.add((e.dst, e.src, p.params.tid))
+            if p.status == BA.STATUS_SUCCESS:
+                ba[(e.dst, e.src, p.params.tid)] = p.params.amsdu
+            else:
+                ba.pop((e.dst, e.src, p.params.tid), None)
+            continue
+        if e.action == 'DELBA' and e.body_ok:
+            try:
+                _, tid, _ = BA.parse_delba(e.raw[24:])
+            except ValueError:
+                continue
+            for k in ((e.src, e.dst, tid), (e.dst, e.src, tid)):
+                ba.pop(k, None)
+                seen.add(k)
+            continue
+        if e.kind not in ('A-MPDU', 'Data', 'QoS Null'):
+            continue
+        for raw in e.mpdus or ():
+            m = AM.split_mpdu(raw)
+            if m is None:
+                continue
+            key = (m.a2, m.a1, m.qos.tid)
+            known = key in seen
+            ch = AM.check_mpdu(raw, _mpdu_complete(e, raw), rx_caps=caps.get(m.a1), ba=ba.get(key) if known else None,
+                               in_ampdu=bool(e.agg) and known, bssid=c.ap)
+            out.append((e, raw, ch, dict(ba_known=known)))
+    return out
+
+
+def r_amsdu(c):
+    r = Rule('amsdu', '9.3.2.2', 'A-MSDU (ref/amsdu): A-MSDU Present/Type (табл. 9-11, 9.2.4.5.13), формат Basic/Short '
+             '(рис. 9-69/9-71: Length, паддинг до 4, последний без паддинга), пределы табл. 9-25 и DMG Capabilities '
+             'получателя (табл. 9-253/9-254), адреса (табл. 9-30), 10.11 (без фрагментации, Address 1 индивидуальный, '
+             'Short — по PTP TSPEC, под BA — при A-MSDU Supported = 1), A-MPDU: биты 4, 8–15 QoS Control (10.12.1)')
+    n_hdr, kinds, nsub = 0, Counter(), Counter()
+    for e in c.evs:
+        if e.kind in ('A-MPDU', 'Data', 'QoS Null') and not any(AM.split_mpdu(m) for m in e.mpdus or ()):
+            r.skip('заголовок данных не записан (синтетический RX или TX без txqos)')
+    for e, raw, ch, info in _amsdu_checks(c):
+        n_hdr += 1
+        if ch.unchecked and ch.parsed is None and not ch.violations:
+            r.skip(ch.unchecked)
+            continue
+        q = ch.mpdu.qos
+        if q.amsdu:
+            kinds[AM.KIND_NAME[q.amsdu_type]] += 1
+            if ch.parsed is not None:
+                nsub[len(ch.parsed.subframes)] += 1
+                if ch.parsed.truncated:
+                    r.skip('тело A-MSDU усечено записью (dsnap): хвост и полная длина не проверены')
+            if q.amsdu and e.agg and not info['ba_known']:
+                r.skip('A-MSDU в A-MPDU: ADDBA для пары/TID не записан — A-MSDU Supported неизвестен')
+        if ch.unchecked:
+            r.skip(ch.unchecked)
+        for m in ch.violations:
+            r.bad(e, f'{e.kind} SN {ch.mpdu.sn}: {m}', 'capture' if 'PTP TSPEC' in m else 'ours')
+        if not ch.violations:
+            r.ok()
+    for e in c.evs:                                   # 10.12.1: QoS Control MPDU одного A-MPDU
+        qs = [AM.split_mpdu(m) for m in e.mpdus or ()] if e.agg else []
+        qs = [m.qos.raw for m in qs if m is not None]
+        if len(qs) >= 2:
+            ms = AM.check_ampdu_qos(qs)
+            for m in ms:
+                r.bad(e, m)
+            if not ms:
+                r.ok()
+    r.info['MPDU данных с заголовком'] = n_hdr
+    r.info['A-MSDU (вид)'] = dict(kinds)
+    r.info['подкадров в A-MSDU'] = dict(sorted(nsub.items()))
+    return r
+
+
+DMS_REASSOC = (E.REASSOC_REQ, E.REASSOC_RESP)
+
+
+def r_dms(c):
+    r = Rule('dms', '11.21.16.2', 'DMS (ref/dms): DMS Request/Response (9.6.13.26/27, элементы 9.4.2.87/88: Request/'
+             'Response Type, DMSID, DMS Length, TCLAS 0/1/4 с групповым адресом, TCLAS Processing, без GCR), пара '
+             'запрос→ответ (порядок, DMSID, копии), бит DMS Extended Capabilities (11.21.1), групповой DA подкадра '
+             'индивидуального A-MSDU — только по принятому DMS')
+    _, ext = _caps(c)
+    reqs, acc, any_dms = {}, defaultdict(set), False
+    for e in c.evs:
+        items, token, is_req = None, None, None
+        if e.action in ('DMS Request', 'DMS Response'):
+            any_dms = True
+            if not e.body_ok or e.raw is None:
+                r.skip('тело DMS-кадра не записано целиком')
+                continue
+            if F.parse_fc(e.raw[:2]).protected:
+                r.skip('DMS-кадр защищён (WNM — robust Action, табл. 9-51) — тело не разобрать')
+                continue
+            try:
+                f = DM.parse_frame(e.raw[24:])
+            except (ValueError, F.FieldError) as x:
+                r.bad(e, f'{e.action}: разбор: {x}')
+                continue
+            is_req, token, items = f.action == DM.ACT_DMS_REQ, f.token, f.items
+            ms = DM.check_request(f) if is_req else DM.check_response(f)
+        elif e.kind in DMS_REASSOC and e.body_ok and e.raw is not None:
+            try:
+                _, els = E.parse_body(e.kind, e.raw[24:])
+                eid = DM.EID_DMS_REQ if e.kind == E.REASSOC_REQ else DM.EID_DMS_RESP
+                items = DM.items_from_elements(els, eid)
+            except (ValueError, NotImplementedError) as x:
+                r.bad(e, f'{e.kind}: разбор DMS-элементов: {x}')
+                continue
+            is_req = e.kind == E.REASSOC_REQ
+            pend = reqs.get((e.dst, e.src, 'reassoc'))
+            if not items:
+                if not is_req and pend is not None and ext.get(e.src):
+                    # табл. 9-37 (Reassociation Response): DMS Response — «present if dot11DMSActivated is true and the
+                    # DMS Request element is present in the Reassociation Request»
+                    r.bad(e, 'Reassociation Response без DMS Response на DMS Request (табл. 9-37, бит DMS точки = 1)')
+                continue
+            any_dms = True
+            token = 'reassoc'
+            ms = []
+            for k, x in enumerate(items, 1):
+                ms += DM.check_descriptor(x, k) if is_req else DM.check_status(x, k)
+        else:
+            continue
+        role_bad = c.ap is not None and ((is_req and e.src == c.ap) or (not is_req and e.dst == c.ap))
+        if role_bad:
+            ms.append('DMS Request от точки / DMS Response точке — 11.21.16.2: recipient — non-AP STA, provider — AP')
+        if is_req:
+            if ext.get(e.dst) is False:
+                ms.append('запрос DMS у STA с битом DMS = 0 (11.21.1: «shall not request the corresponding feature»)')
+            reqs[(e.src, e.dst, token)] = items
+        else:
+            req = reqs.pop((e.dst, e.src, token), None) if token else None
+            if token and req is None:
+                r.skip('ответ DMS без записанного запроса')
+            if req is not None:
+                ms += DM.check_exchange(req, items, provider_dms=ext.get(e.src))
+            for k, s in enumerate(items):
+                d = req[k] if req is not None and k < len(req) else None
+                if s.resp_type == DM.RESP_ACCEPT and d is not None and d.req_type == DM.REQ_ADD:
+                    for t in d.tclas:
+                        try:
+                            g = DM.tclas_group(t)
+                        except ValueError:
+                            g = None
+                        if g is not None:
+                            acc[(e.src, e.dst)].add(DM.group_mac(g))
+                elif s.resp_type == DM.RESP_TERMINATE:
+                    acc.pop((e.src, e.dst), None)       # СПОРНО: DMSID → группы не ведём — снимаем все группы пары
+        for m in ms:
+            r.bad(e, f'{e.action or e.kind}: {m}')
+        if not ms:
+            r.ok()
+    # данные: групповой DA подкадра индивидуального A-MSDU (11.21.16.2) — только при принятом DMS
+    for e, raw, ch, _ in _amsdu_checks(c):
+        if not ch.groups:
+            continue
+        m = ch.mpdu
+        if ext.get(m.a2) is False:
+            r.bad(e, f'A-MSDU с групповым DA от {m.a2} с битом DMS = 0 (11.21.16.2: «shall set to 1 the DMS field»)')
+        for s in ch.groups:
+            if s.da in acc.get((m.a2, m.a1), ()):
+                r.ok()
+            elif any_dms:
+                r.bad(e, f'подкадр с групповым DA {s.da} к {m.a1} без принятого DMS для этой группы (11.21.16.2, '
+                         f'табл. 9-30 NOTE 1)')
+            else:
+                r.bad(e, f'подкадр с групповым DA {s.da} к {m.a1}: DMS-обмен не записан (соглашение могло быть до '
+                         f'начала захвата)', 'capture')
+    return r
+
+
 RULES = (r_fc, r_ctl_len, r_cfe_fields, r_beacon_fields, r_mgmt_body, r_addba, r_ba_control, r_mcs_control,
          r_mcs_response, r_dur_cts, r_dur_resp, r_dur_cf_end, r_dur_bf, r_nav_txop, r_edca, r_txop_limit,
          r_cf_end_rules,
          r_cf_end_lost, r_ifs_sifs, r_holder_gap, r_access, r_responder, r_resp_seq, r_cbap_end, r_ack_policy, r_rd,
          r_ampdu_dur, r_ba_window, r_bi, r_bti_delay, r_sls, r_abft, r_brp, r_ati, r_assoc_state, r_brp_role,
-         r_nav_rx, r_cts_self, r_blm, r_beam_track)
+         r_nav_rx, r_cts_self, r_blm, r_beam_track, r_amsdu, r_dms)
 
 NOT_CHECKABLE = [
     ('ba_scoreboard', '10.25.6.3–10.25.6.5', 'битмап BlockAck целиком против принятых MPDU — записан один MPDU данных '
@@ -2074,6 +2289,12 @@ NOT_CHECKABLE = [
      'модель нескольких NAV — ref/nav.MultiNav'),
     ('abft_responder', '10.42.5.2', 'выбор слота, FSS ответчика, FailedRSSAttempts/backoff — STA входит через SLS в '
      'DTI, кадров в A-BFT нет (модель — ref/abft)'),
+    ('amsdu_body', '9.3.2.2', 'тела данных пишутся только с rxqos/txqos (по умолчанию выкл.), обычно усечены dsnap; '
+     'зашифрованное тело не разбирается — подкадры A-MSDU видны лишь в таких захватах (модель — ref/amsdu)'),
+    ('dms_recipient', '11.21.16.2', 'отброс станцией групповых кадров принятых групп и дублей по Last Sequence Control '
+     '— доставка хосту в запись не попадает (модель — ref/dms.DmsRecipient)'),
+    ('dms_group_copy', '11.21.16.2', 'групповая копия MSDU при станциях без DMS — тела групповых данных и состав '
+     'связанных станций не записаны (модель — ref/dms.DmsProvider.transmit_group)'),
     ('dyn_alloc', '10.39.7', 'Poll/SPR/Grant, PP/GP — open их не использует (строгий TDMA — pro); в захватах таких '
      'кадров нет'),
 ]

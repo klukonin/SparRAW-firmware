@@ -67,6 +67,18 @@
   `blm` (11.27.1), `beam_track` (поле Beam Tracking Time Limit, табл. 10-31). Тесты правил — `test_air_judge_c.py`
   (журнал из событий, без pcap).
 
+Волна D (агрегация MSDU и групповая доставка; `COVERAGE.md`):
+- `amsdu.py` — A-MSDU DMG (9.3.2.2, 10.11): Basic и Short (кодирование/разбор, паддинг до 4, последний без паддинга),
+  A-MSDU Present/Type QoS Control (табл. 9-11), адреса по табл. 9-30, пределы табл. 9-25 (MSDU 7920, A-MSDU 7935) и
+  DMG Capabilities получателя (табл. 9-253/9-254), A-MSDU Supported ADDBA Response (9.4.1.13, 10.25.2), A-MSDU в A-MPDU
+  (10.12.1, табл. 9-530), aPPDUMaxTime (10.13), время жизни; генератор `Aggregator`.
+- `dms.py` — DMS (11.21.16.2): элементы DMS Request/Response (9.4.2.87/88), кадры WNM (9.6.13.26/27), TCLAS 0/1/4 и
+  TCLAS Processing (9.4.2.30/32), бит DMS Extended Capabilities (11.21.1); точка `DmsProvider` (DMSID, копии, групповой
+  MSDU → индивидуальный A-MSDU с групповым DA подкадра, групповая копия, Last Sequence Control) и станция
+  `DmsRecipient` (отброс групп и дублей). GCR — вне охвата («DMG STAs do not use GCR»).
+- `air_judge` — правила `amsdu` (по записям rxqos/txqos; без них — «не проверяемо») и `dms` (DMS-кадры, DMS-элементы
+  Reassociation, групповой DA подкадра — только по принятому DMS). Тесты — `test_amsdu.py`, `test_dms.py`.
+
 ## Правила для каждого модуля
 - Заголовок `# SPDX-License-Identifier: AGPL-3.0-or-later`, докстрока: охват (пункты) и что НЕ моделируется.
 - Комментарии по-русски, у каждого правила — пункт/таблица/рисунок; цитаты из стандарта не длиннее строки.
@@ -112,6 +124,15 @@
 | 23 | A-BFT на эфире для судьи | BI с Next A-BFT = 0: начало — конец BTI (Duration последнего маяка, №5) + MBIFS (10.42.5.1), длина — (A-BFT Length + 1)·aSSSlotTime(FSS + 1) (№1); кадры в ней — abft.check_abft_log (air_judge `abft`) | 10.42.5.1, 10.42.5.2 | 2020 = 2024 |
 | 24 | Вид синтетической RX-записи данных (FC по слоту парсера) для класса кадра | Тип Data → класс 3 в инфраструктуре при любом подтипе (11.3.3 c) 1)); подтип QoS Null — по длине 30 октетов (air_judge `assoc_state`) | 11.3.3 | Запись не несёт FC синтетических кадров (air_pcap) |
 | 25 | Свой dot11BeamTrackingTimeLimit в табл. 10-31, если MIB не виден | = своему полю DMG STA Beam Tracking Time Limit (9.4.2.127.4: поле «contains the value of dot11BeamTrackingTimeLimit»), при 0/нет поля — DEFVAL 10 000 мкс (beamtrack, air_judge `beam_track`) | 9.4.2.127.4, табл. 10-31 | 2020 = 2024 |
+| 26 | Порядок октетов Length в подкадре Short A-MSDU | Basic — как IEEE 802.3 (старший октет первым, 9.3.2.2.2 «same as the IEEE 802.3 frame format»); Short — по 9.2.2 (младший первым) (amsdu) | 9.3.2.2.2, 9.3.2.2.3, 9.2.2 | Для Short ссылки на 802.3 нет ни в 2020, ни в 2024 — действует общее правило 9.2.2 |
+| 27 | Short A-MSDU «only between a pair of STAs that communicate directly», «cannot be used for frame forwarding» | DA/SA — из заголовка (табл. 9-30, столбец «MSDU and Short A-MSDU»); пересылка = 1/1, или 0/1 с Address 3 (SA) ≠ TA, или 1/0 с Address 3 (DA) ≠ RA (amsdu) | 10.11, табл. 9-30 | «Directly» не определено через адреса; критерий — MSDU не идёт дальше пары RA/TA |
+| 28 | Адреса A-MSDU при пересылке через PCP (PBSS, PCP Forwarding = 1) | RA = такой PCP — DA подкадров любые (и групповые, не DMS); TA = такой PCP — SA подкадров исходные (правило TA = SA табл. 9-30 не применяется) (amsdu.check_addresses ra_is_pcp_fwd / ta_is_pcp_fwd) | 10.11, табл. 9-30 | 10.11: «The DA field of the A-MSDU shall be set to the destination's individual or group address»; о передаче PCP дальше текст 2020 = 2024 молчит |
+| 29 | Несколько DMS Request/Response элементов | Новый элемент — только когда следующее поле не помещается в 255 октетов текущего (жадная упаковка); лишнее разбиение — нарушение (dms) | 11.21.16.2 | «If the length … exceeds 255 octets, then multiple … elements shall be included, each containing only those … completely contained within 255 octets» — 2020 = 2024 |
+| 30 | Копии TCLAS в DMS Status против «предложения» при отказе и ответа на «Change» | Accept на Add — точная копия TCLAS/Processing/TSPEC/подэлементов; Denied — копия или предложение (меньше TCLAS, один TCLAS — без Processing); ответ на Change несёт TCLAS потока, сверяются TSPEC и подэлементы; «≥ 1 TCLAS» (9.4.2.88) проверяется у Accept (dms) | 11.21.16.2, 9.4.2.88 | 11.21.16.2 требует копию и при Accept, и при Denied, но тут же разрешает при Denied предлагать другие TCLAS; запрос Change TCLAS не несёт, а 9.4.2.88 требует их в Accept/Denied |
+| 31 | Срок жизни DMS-соглашения | Повторная ассоциация к той же точке — сохраняется (11.3.5.4 c) «not affected»: «DMS agreements»); к другой и при потере ассоциации — снимается (dms.DmsProvider) | 11.3.5.4 | Про разассоциацию текст 2020 = 2024 молчит; соглашение относится к ассоциации (DMS provider — для «associated STAs») |
+| 32 | Групповая копия, когда DMS просили все связанные станции | Не передаётся (dms.transmit_group); судья не проверяет (dms_group_copy) | 11.21.16.2 | «shall continue to transmit … as group addressed frames … if at least one associated STA has not requested DMS» — обязанности в обратном случае нет |
+| 33 | «Дубли» после прекращения DMS по Last Sequence Control | Групповой кадр той же группы с SN не новее Last SN (в окне 2048 назад по модулю 4096) — дубль; первый более новый снимает фильтр; 65 534 и 65 535 — фильтра нет (NOTE 2) (dms.DmsRecipient) | 11.21.16.2, 9.4.2.88 | Окно дубля не задано; 2048 — как полуокно номеров 10.25.6 |
+| 34 | A-MSDU вне соглашения BA у DMG | Разрешено (одиночный MPDU, любая Ack Policy, кроме ограничений A-MPDU), с пределами DMG Capabilities получателя (amsdu) | 10.11 | Обязанность приёма A-MSDU вне BA перечислена для HT/VHT/CMMG, для DMG — нет; запрета передачи тоже нет, предел — поля табл. 9-253/9-254 (2020 = 2024) |
 
 Вопросы одного модуля (решение — в докстроке у «СПОРНО»): sls — момент старта ISS после Grant (чтение А), отсчёт
 T1, Feedback в следующем распределении, слоты молчащих антенн, SSW-Ack после RXSS; abft — нет повторного прохода
@@ -122,4 +143,6 @@ SIFS или SBIFS, TRN-R единицами по 4, немедленный TRN-R
 Extended Schedule «but not both» буквально, повтор строк табл. 9-45, Dynamic Allocation Info 0…32 767; elements —
 MCS 13/16 и 7/8, остаток Extended Schedule < 15 октетов, 
 повтор элементов, AID при отказе, Multi-band в Authentication; mlme — Deauthentication по рис. 11-17, перевод
-50 мс → TU вверх, Open System у DMG AP, PBSS BSSID, JOIN по DMG Beacon, «конфигурационные» коды статуса.
+50 мс → TU вверх, Open System у DMG AP, PBSS BSSID, JOIN по DMG Beacon, «конфигурационные» коды статуса; air_judge
+`dms` — по «Terminate» снимаются все группы пары (DMSID → группы не ведётся), `amsdu` — Short без записанного PTP
+TSPEC — вердикт capture (ADDTS не разбирается).

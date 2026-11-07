@@ -8,15 +8,15 @@
 
 | Статус | Пунктов |
 |---|---|
-| М+С | 108 |
-| М | 52 |
-| Ч | 15 |
+| М+С | 117 |
+| М | 53 |
+| Ч | 18 |
 | С | 3 |
-| Н | 26 |
-| ВНЕ | 52 |
-| всего | 256 |
+| Н | 25 |
+| ВНЕ | 54 |
+| всего | 270 |
 
-Реализовано (М+С, М, С): 163; частично: 15; не реализовано: 26; вне охвата: 52.
+Реализовано (М+С, М, С): 173; частично: 18; не реализовано: 25; вне охвата: 54.
 
 ## 9.2 Общий формат MAC-кадра (DMG-особенности)
 
@@ -27,7 +27,7 @@
 | 9.2.4.2 | 767 | Duration/ID field | М+С | duration.field / decode | dur_cts, dur_resp, dur_cf_end, dur_bf |  |
 | 9.2.4.3 | 768 | Address fields | Ч | fields.mac_str / is_group; air_pcap (RA/TA) | resp_seq, cts_self | адреса — как часть кадров |
 | 9.2.4.4 | 770 | Sequence Control field | М+С | blockack.encode_ssc / parse_ssc, sn_* | ba_window |  |
-| 9.2.4.5 | 771 | QoS Control field | Ч | air_judge.qos_of (табл. 9-11) | ack_policy, rd | поля QoS Control данных; модели-генератора нет |
+| 9.2.4.5 | 771 | QoS Control field | Ч | air_judge.qos_of; amsdu.parse_qos / encode_qos (табл. 9-11) | ack_policy, rd, amsdu | A-MSDU Present/Type (9.2.4.5.9, 9.2.4.5.13) — amsdu; поведение EOSP/Buffered AC — нет |
 | 9.2.4.6 | 777 | HT Control field | М+С | fields.check_fc (+HTC = 0 у DMG) | fc | HT Control в DMG не используется |
 | 9.2.4.8 | 790 | FCS field | М | fields.fcs / fcs_residue |  | FCS в записи PMC не хранится |
 | 9.2.5 | 791 | Duration/ID field (QoS STA) | М+С | duration.* (QoS STA, 9.2.5.1–9.2.5.7) | dur_resp, dur_cts, nav_txop, txop_limit | PLAN №19 |
@@ -60,7 +60,7 @@
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
 | 9.3.2.1 | 815 | Format of Data frames | Ч | blockack, duration.duration_data_single | ack_policy, rd, ampdu_dur | заголовки данных — только в записях rxqos/txqos |
-| 9.3.2.2 | 819 | Aggregate MSDU (A-MSDU) format | Н |  |  | A-MSDU (в т. ч. Short A-MSDU DMG) не моделируется; согласование — ADDBA |
+| 9.3.2.2 | 819 | Aggregate MSDU (A-MSDU) format | М+С | amsdu.encode_basic / encode_short / parse / check_addresses / check_mpdu / Aggregator (рис. 9-68, 9-69, 9-71, табл. 9-25, 9-30) | amsdu | Dynamic A-MSDU — только S1G, mesh (рис. 9-70) — не DMG; тела данных — только с rxqos/txqos (amsdu_body); PLAN №26–28 |
 | 9.3.3.1 | 822 | Format of (PV0) Management frames | М+С | elements.check_order (порядок, «Last») | mgmt_body |  |
 | 9.3.3.2 | 825 | Beacon frame format | ВНЕ |  |  | Beacon (не DMG); DMG — 9.3.4.2 |
 | 9.3.3.3 | 829 | ATIM frame format | ВНЕ |  |  | ATIM — PS/IBSS |
@@ -94,7 +94,7 @@
 | 9.4.1.10 | 880 | Timestamp field | Ч | fields (DMG Beacon), bi | beacon_fields (Timestamp = метка TX) | точка Timestamp (11.1.3.1) — не проверяема без внешней опоры (timestamp_point) |
 | 9.4.1.11 | 880 | Action field | Ч | air_pcap.ACTION_NAME | addba, brp | категории/действия, нужные DMG |
 | 9.4.1.12 | 882 | Dialog Token field | М+С | blockack | addba |  |
-| 9.4.1.13 | 882 | Block Ack Parameter Set field | М+С | blockack.encode/parse_ba_params | addba |  |
+| 9.4.1.13 | 882 | Block Ack Parameter Set field | М+С | blockack.encode/parse_ba_params; amsdu.buffer_octets (A-MSDU Supported) | addba, amsdu |  |
 | 9.4.1.14 | 883 | Block Ack Timeout Value field | М+С | blockack.InactivityTimer | addba |  |
 | 9.4.1.16 | 884 | DELBA Parameter Set field | М | blockack.encode/parse_delba_params |  | DELBA в захватах нет |
 | 9.4.1.44 | 906 | Relay Capable STA Info field | ВНЕ |  |  | Relay Capable STA Info — relay вне охвата |
@@ -108,12 +108,16 @@
 | 9.4.2.2 | 949 | SSID element | М+С | elements.encode/parse_ssid | mgmt_body |  |
 | 9.4.2.24 | 1051 | RSNE | Ч | elements.encode/parse_rsne (структура) | mgmt_body, assoc_state (rsna) | допустимые наборы шифров/AKM не проверяются |
 | 9.4.2.25 | 1060 | Vendor Specific element | М | elements.encode_vendor | mgmt_body (порядок) |  |
-| 9.4.2.26 | 1061 | Extended Capabilities element | Ч | elements (порядок) | mgmt_body | содержимое не разбирается |
+| 9.4.2.26 | 1061 | Extended Capabilities element | Ч | elements (порядок); dms.ext_cap_dms / encode_ext_cap (бит 26 DMS, табл. 9-153) | mgmt_body, dms | разбирается только бит DMS |
+| 9.4.2.30 | 1078 | TCLAS element | Ч | dms.Tclas / encode/parse_tclas / tclas_eth / tclas_ip4 / tclas_ip6 / tclas_match / check_tclas_dms | dms | типы 0, 1, 4 — те, что допускает DMS (11.21.16.2); типы 2, 3, 5–10 — только как октеты |
+| 9.4.2.32 | 1092 | TCLAS Processing element | М+С | dms.tclas_set_match, правила Processing (табл. 9-171) | dms |  |
 | 9.4.2.28 | 1068 | EDCA Parameter Set element | М+С | cbap.EdcaParams; air_judge.edca_from | edca, access, txop_limit |  |
 | 9.4.2.48 | 1116 | Timeout Interval element (TIE) | М+С | elements.encode/parse_tie; mlme (holdoff) | assoc_state (holdoff) |  |
 | 9.4.2.52 | 1119 | Extended Channel Switch Announcement element | Н |  |  | Extended Channel Switch Announcement (смена канала DMG, 11.8.8.6) — не моделируется |
 | 9.4.2.53 | 1119 | Supported Operating Classes element | Ч | elements (порядок) | mgmt_body | содержимое не разбирается |
-| 9.4.2.125 | 1234 | GCR Group Address element | ВНЕ |  |  | GCR — не DMG |
+| 9.4.2.87 | 1190 | DMS Request element | М+С | dms.Descriptor / encode_descriptor / parse_descriptors / check_descriptor / encode_request_elements (рис. 9-475, 9-476, табл. 9-229, 9-230) | dms | TSPEC — 55 октетов без разбора; GCR Request — нарушение у DMG; PLAN №29 |
+| 9.4.2.88 | 1193 | DMS Response element | М+С | dms.Status / encode_status / parse_statuses / check_status / encode_response_elements (рис. 9-478, 9-479, табл. 9-233, 9-234) | dms | GCR Response / «GCR Advertise» — нарушение у DMG; PLAN №30 |
+| 9.4.2.125 | 1234 | GCR Group Address element | ВНЕ |  |  | GCR — не DMG (11.21.16.1: «DMG STAs do not use GCR») |
 | 9.4.2.126 | 1235 | DMG BSS Parameter Change element | М | elements.encode/parse_bss_param_change |  | процедура 11.29 — нет |
 | 9.4.2.127 | 1235 | DMG Capabilities element | М+С | elements.encode/parse/validate_dmg_capabilities (рис. 9-549…9-554) | mgmt_body, beam_track |  |
 | 9.4.2.128 | 1242 | DMG Operation element | М+С | elements.encode/parse/validate_dmg_operation; mlme (MIB из DMG Operation) | mgmt_body |  |
@@ -167,6 +171,9 @@
 | 9.6.4.2 | 1456 | ADDBA Request frame format | М+С | blockack.encode/parse_addba_req | addba |  |
 | 9.6.4.3 | 1457 | ADDBA Response frame format | М+С | blockack.encode/parse_addba_resp, check_addba_response | addba |  |
 | 9.6.4.4 | 1458 | DELBA frame format | М | blockack.encode/parse_delba |  | в захватах нет |
+| 9.6.13.1 | 1528 | WNM Action fields | Ч | dms (WNM Action 23/24, табл. 9-425); air_pcap.ACTION_NAME | dms | из WNM — только DMS |
+| 9.6.13.26 | 1547 | DMS Request frame format | М+С | dms.encode_request_frame / parse_frame / check_request (рис. 9-947) | dms | в захватах нет |
+| 9.6.13.27 | 1547 | DMS Response frame format | М+С | dms.encode_response_frame / parse_frame / check_response / check_exchange (рис. 9-948) | dms | в захватах нет |
 | 9.6.19.2 | 1570 | Power Save Configuration Request frame format | ВНЕ |  |  | PSC Request: PS удалён; точка отвечает отказом — не моделируется |
 | 9.6.19.3 | 1570 | Power Save Configuration Response frame format | ВНЕ |  |  | PSC Response (отказ точки) — см. выше |
 | 9.6.19.4 | 1571 | Information Request frame format | Н |  |  | Information Request — 11.28.1, не реализовано |
@@ -204,7 +211,9 @@
 |---|---|---|---|---|---|---|
 | 10.6.7.1 | 1701 | Usage of DMG Control modulation class | М+С | duration (control-кадры на MCS 0) | mcs_control |  |
 | 10.6.7.2 | 1702 | Rate selection rules for Control frames transmitted by DMG STAs | М+С | duration.response_mcs_set / response_mcs | mcs_response |  |
-| 10.12 | 1719 | A-MPDU operation | Ч | blockack, duration | ampdu_dur, ba_window | пределы длины A-MPDU/MPDU spacing — нет |
+| 10.11 | 1715 | A-MSDU operation | М+С | amsdu.check_mpdu / check_addresses / Aggregator / lifetime_expired / short_allowed | amsdu | DMG: одна пара RA/TA, один TID, без фрагментации, Address 1 индивидуальный, пределы табл. 9-253/9-254, под BA — A-MSDU Supported, Short — по PTP TSPEC (PTP TSPEC не разбирается — вердикт capture); SPP A-MSDU (табл. 10-12) — HT/S1G; PLAN №27, №28, №34 |
+| 10.12 | 1719 | A-MPDU operation | Ч | blockack, duration; amsdu.check_ampdu_qos, check_mpdu(in_ampdu) | ampdu_dur, ba_window, amsdu | A-MSDU в A-MPDU (10.12.1: биты 4, 8–15 QoS Control; табл. 9-530 — только под BA) — amsdu; пределы длины A-MPDU/MPDU spacing — нет |
+| 10.13 | 1724 | PPDU duration constraint | М | amsdu.fits_ppdu / max_amsdu_in_ppdu (aPPDUMaxTime, табл. 20-30) |  | одно MPDU с A-MSDU 7935 октетов — ≈ 165 мкс на MCS 1: предел ограничивает A-MPDU, не A-MSDU |
 | 10.23.2.2 | 1739 | EDCA backoff procedure | М | cbap.Edcaf (backoff a–e) | access (статистика AIFS) | выбор счётчика не наблюдаем — только распределение |
 | 10.23.2.4 | 1741 | Obtaining an EDCA TXOP | М+С | cbap.Station | access |  |
 | 10.23.2.8 | 1747 | Multiple frame transmission in an EDCA TXOP | М+С | cbap.Station (несколько кадров в TXOP) | holder_gap, responder_tx, nav_txop |  |
@@ -212,7 +221,7 @@
 | 10.23.2.10 | 1751 | Truncation of TXOP | М+С | cbap.Nav (CF-End DMG); duration.cf_end_nonzero_allowed | cf_end_rules, cf_end_unanswered |  |
 | 10.23.2.12 | 1754 | Retransmit procedures | М | cbap (повторы, QSRC) |  | предел повторов MAC — открыт (MAC-STAND.md) |
 | 10.25.1 | 1786 | Introduction | М+С | blockack (номера по модулю 4096) | ba_window |  |
-| 10.25.2 | 1787 | Setup and modification of the block ack parameters | М+С | blockack.agreement_allowed, make_addba_response | addba |  |
+| 10.25.2 | 1787 | Setup and modification of the block ack parameters | М+С | blockack.agreement_allowed, make_addba_response; amsdu (A-MSDU Supported ответа) | addba, amsdu |  |
 | 10.25.6 | 1791 | HT-immediate block ack extensions | М+С | blockack.Recipient / Originator / Scoreboard / ReorderBuffer | ba_window, ba_control |  |
 | 10.28.6 | 863 | on the parsing of the elements. | М | elements.parse_elements (неизвестные ID) |  |  |
 | 10.28.8 | 1817 | Extensible element parsing | М | elements.known_info (расширяемые элементы) |  |  |
@@ -320,7 +329,7 @@
 | 11.3.5.1 | 2132 | General | М+С | mlme.rx_filter | assoc_state (missing_reply) |  |
 | 11.3.5.2 | 2133 | Non-AP and non-PCP STA association initiation procedures | М+С | mlme.StaMlme | assoc_state (holdoff) |  |
 | 11.3.5.3 | 2135 | AP or PCP association receipt procedures | М+С | mlme.ApMlme (AID) | assoc_state (aid_range, aid_dup) |  |
-| 11.3.5.4 | 2137 | Non-AP and non-PCP STA reassociation initiation procedures | М | mlme.StaMlme |  |  |
+| 11.3.5.4 | 2137 | Non-AP and non-PCP STA reassociation initiation procedures | М | mlme.StaMlme; dms.DmsProvider.reassociate (DMS-соглашения) |  | PLAN №31 |
 | 11.3.5.5 | 2140 | AP or PCP reassociation receipt procedures | М | mlme.ApMlme |  |  |
 | 11.3.5.6 | 2142 | Non-AP and non-PCP STA disassociation initiation procedures | М | mlme.StaMlme |  |  |
 | 11.3.5.7 | 2142 | Non-AP and non-PCP STA disassociation receipt procedure | М+С | mlme.StaMlme | assoc_state |  |
@@ -339,6 +348,16 @@
 | 11.8.8.6 | 2188 | Selecting and advertising a new channel in a DMG BSS | Н |  |  | смена канала DMG BSS (ECSA в DMG Beacon/Announce/Information Response) — не реализовано |
 | 11.9 | 2189 | Extended channel switching (ECS) | Н |  |  | ECS — не реализовано |
 | 11.10.11 | 2217 | Link measurement | Н |  |  | Link Measurement (DMG Link Margin, 10.43.2) — не реализовано |
+
+## 11.21 WNM: DMS
+
+| Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
+|---|---|---|---|---|---|---|
+| 11.21.1 | 2256 | Wireless network management dependencies | Ч | dms.DmsRecipient.may_request, DmsProvider (отказ без бита), check_exchange(provider_dms) | dms | только бит DMS; прочие функции WNM — нет |
+| 11.21.16.1 | 2291 | General (group addressed transmission service) | М+С | dms (подэлементы GCR, «GCR Advertise» — нарушения) | dms | DMG STA не использует GCR |
+| 11.21.16.2 | 2291 | DMS procedures | М+С | dms.DmsProvider (on_request, terminate, transmit_group) / DmsRecipient (request, on_response, rx_group, rx_amsdu) / check_exchange | dms | отброс станцией и групповая копия — не проверяемо (dms_recipient, dms_group_copy); FMS/TFS — нет; PLAN №29–33 |
+| 11.21.16.3 | 2294 | GCR procedures | ВНЕ |  |  | 11.21.16.1: «DMG STAs do not use GCR» |
+| 11.21.16.4 | 2305 | GLK-GCR | ВНЕ |  |  | GLK и GCR — не DMG |
 
 ## 11.27–11.37 DMG-процедуры
 
@@ -370,11 +389,13 @@
 - **Reverse direction (10.29)** — выключен намеренно; судья rd ловит RDG/RD-ответы в эфире.
 - **BRP TXSS** — EDMG (802.11-2024 10.41.10.5), в 802.11-2020 нет; в 2020 есть только запрос списка секторов
   TXSS-FBCK-REQ в BRP (10.42.6.4.1) — brp (`txss-fbck`).
+- **GCR (11.21.16.3–11.21.16.4, 9.4.2.125)** — «DMG STAs do not use GCR» (11.21.16.1); подэлементы GCR в DMS-элементах
+  и «GCR Advertise» модель dms считает нарушением у DMG.
 - **CDMG/CMMG/EDMG** (10.37, 10.39.11, 10.41, 10.42.9, 10.44, 9.4.2.219–9.4.2.233) — вне охвата.
 
 ## Приоритеты «Н» для open (что делает прошивка в эфире)
 
 Смена канала DMG BSS (11.8.8.6, ECSA), TPC/адаптация (10.43, Link Measurement), Information Request/Response (11.28),
-передача PCP (11.27.2), смена параметров BSS (11.29), Quiet Period (11.35), A-MSDU (9.3.2.2). В захватах стенда
+передача PCP (11.27.2), смена параметров BSS (11.29), Quiet Period (11.35). В захватах стенда
 таких кадров нет — сначала нужен сценарий, где прошивка их передаёт.
 
