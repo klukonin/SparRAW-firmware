@@ -7,7 +7,9 @@
     9.4.1.46), Status Code, AID (9.4.1.8), порядок элементов, DMG Capabilities (9.4.2.127, рис. 9-549..9-553),
     DMG Operation (9.4.2.128, рис. 9-555..9-556);
   * то же при TDMA точки (ESE в маяке): CBAP Only = 0, TDDTI / Pseudo-static allocations = 1;
-  * Probe Response (9.3.3.10, табл. 9-39) — Capability Information как в Association Response;
+  * Probe Response (9.3.3.10, табл. 9-39) — Capability Information как в Association Response; Timestamp (9.4.1.10,
+    11.1.3.1) — TSF при передаче: бит ts_insert TX-дескриптора (модель MAC H-TSINS); Antenna Sector ID Pattern
+    (9.4.2.156) — только действительный;
   * Association Request станции (9.3.3.5, табл. 9-34) — резервные подполя DMG Parameters, Supported Channels
     (9.4.2.17, 11.8.2.2).
 """
@@ -443,3 +445,75 @@ def test_default_rsn_capabilities_zero(fw):
     fw.wbytes(rsn, b'\xff' * 0x28)
     fw.call('mid_set_default_rsn_ie', w.mid0)
     assert fw.rbytes(rsn, 2) == bytes([48, 20]) and fw.rbytes(rsn + 0x14, 2) == b'\0\0', fw.rbytes(rsn, 0x16).hex()
+
+
+# ---- Timestamp Probe Response (9.4.1.10, 11.1.3.1) ----
+
+TX_DESC_D0_TS_INSERT = 1 << 14             # include/fwq_tx.h: mac_d0 б14 ts_insert
+FC_PROBE_RESP = 0x50                       # тип 0, подтип 5 (табл. 9-1)
+
+
+def mac_tx(fw, e, tsf):
+    """«MAC» передаёт кадр кольца e (fw.tx_frames). H-TSINS (include/fwq_tx.h, не проверено на стенде): при ts_insert в
+    mac_d0 дескриптора MAC пишет TSF начала передачи в октеты 24..31 (Timestamp кадра управления, сразу за заголовком
+    9.3.3.10), как движок маяка — Timestamp DMG Beacon (== метка TX, docs/MAC-STAND.md)."""
+    f = bytearray(e[1])
+    if fw.r32(e.desc) & TX_DESC_D0_TS_INSERT:
+        f[24:32] = tsf.to_bytes(8, 'little')
+    return bytes(f)
+
+
+def test_probe_resp_timestamp_inserted_by_mac(ap):
+    """Probe Response: Timestamp — TSF «at the time that the start of the data symbol … appears at the transmit antenna
+    connector» (11.1.3.1). fw оставляет поле 0 и ставит ts_insert в дескриптор — в эфире TSF (модель H-TSINS); прочим
+    кадрам (Association Response — поля Timestamp нет, 9.3.3.6) бит не ставится: MAC затёр бы их тело."""
+    w = ap
+    fw = w.fw
+    conn = w.ap_sta_join()
+    joined = list(fw.tx_frames)
+    fw.tx_complete()
+    fw.tx_frames.clear()
+    fw.call('tx_probe_send_probe_resp', fw.call('TX_API_alloc_tx_payload'), w.mid0, conn, 0, 0)
+    pr = [e for e in fw.tx_frames if e[1][0] == FC_PROBE_RESP]
+    assert len(pr) == 1, [e[1][:2].hex() for e in fw.tx_frames]
+    e = pr[0]
+    assert e[1][24:32] == bytes(8)
+    assert fw.r32(e.desc) & TX_DESC_D0_TS_INSERT
+    tsf = 0x0000_0123_4567_89ab
+    air = mac_tx(fw, e, tsf)
+    assert struct.unpack_from('<Q', air, 24)[0] == tsf and air[32:] == e[1][32:]
+    others = [x for x in joined if x[1][0] != FC_PROBE_RESP]
+    assert any(x[1][0] == 0x10 for x in others), 'Association Response не ушёл'
+    assert all(not fw.r32(x.desc) & TX_DESC_D0_TS_INSERT for x in others), [x[1][:2].hex() for x in others]
+
+
+def test_sta_frames_without_ts_insert(fw):
+    """Станция: Probe Request / Association Request поля Timestamp не имеют (9.3.3.5, 9.3.3.9) — ts_insert нет."""
+    w = F.Fw(fw)
+    w.sta_connect(stop='assoc_req')
+    assert fw.tx_frames
+    assert all(not fw.r32(x.desc) & TX_DESC_D0_TS_INSERT for x in fw.tx_frames), [x[1][:2].hex() for x in fw.tx_frames]
+
+
+# ---- Antenna Sector ID Pattern (9.4.2.156) ----
+
+MID_ASID_PATTERN = 0x48 + 0x103            # struct mid: bss (0x48) + asid_pattern (include/mid.h)
+
+
+@pytest.mark.parametrize('pattern, sent', [
+    (bytes(4), False),                                  # не заполнен (open): Tap 1 = 0 — недействителен
+    (bytes([0x01, 0x00, 0x00, 0x00]), False),           # Type 1 — Reserved
+    (bytes([0x30, 0x04, 0x00, 0x00]), True),            # Type 0, Tap 1 = 0b000011, State 1 = 1
+], ids=['zero', 'type_reserved', 'valid'])
+def test_probe_resp_asid_pattern_only_valid(ap, pattern, sent):
+    """Antenna Sector ID Pattern в Probe Response (табл. 9-39 строка 57, «optionally present») — только действительный:
+    Type 0 (Random Sequence Generator), Tap 1 ≠ 0 (рис. 9-604). Нули (vendor: всегда) — генератор с Tap 1 = 0 не
+    меняет состояние, секторы маяков ему не соответствуют; энергосбережения нет — в open элемента нет."""
+    w = ap
+    conn = w.ap_sta_join()
+    w.fw.wbytes(w.mid0 + MID_ASID_PATTERN, pattern)
+    f = build(w.fw, 'mgmt_tx_build_probe_resp', w.mid0, conn, 0)
+    els = dict(elements(f[24 + 12:]))
+    assert (EID_ANT_SECTOR in els) == sent, sorted(els)
+    if sent:
+        assert els[EID_ANT_SECTOR] == pattern

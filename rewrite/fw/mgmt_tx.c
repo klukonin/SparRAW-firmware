@@ -158,6 +158,14 @@ __attribute__((section(".textlate"))) u32 ie_push_antenna_sector_id_pattern(u8 *
     return 0x06;
 }
 
+/* Тело Antenna Sector ID Pattern (рис. 9-604: Type B0..B3, Tap 1 B4..B9, State 1, Tap 2, State 2) действительно:
+ * Type 0 — Random Sequence Generator (1–3 Reserved), отводы генератора 1 не нулевые. */
+static u32 asid_pattern_valid(const u8 *p)
+{
+    u32 v = (u32)p[0] | ((u32)p[1] << 8);
+    return (v & 0xfu) == 0 && ((v >> 4) & 0x3fu) != 0;
+}
+
 /* mgmt_tx__copy_ie_max96 (0x8e2048, 148 Б, тело 28 Б): копия до 0x60 байт. */
 __attribute__((section(".textlate"))) u32 mgmt_tx_copy_ie_bounded(u8 *dst, const u8 *src, u32 len)
 {
@@ -522,7 +530,8 @@ static u32 ies_block_merge_ranked(u32 *dest_block, struct app_ies *internal_bloc
  * ============================================================ */
 
 /* mgmt_tx__copy_ie_hdr (0x8d7fd4, 44 Б): фиксированная часть probe resp
- * (timestamp 8 Б = 0, beacon interval, Capability Info). Возврат длины. Beacon interval —
+ * (timestamp 8 Б = 0 — TSF при передаче вставляет MAC, бит ts_insert в tx_ring_post_frame; beacon interval,
+ * Capability Info). Возврат длины. Beacon interval —
  * полуслово (ldh [r13,78] / stw_s [r14,8]); прежде — слово из невыровненного mid+0x4e. */
 __attribute__((section(".textlate"))) u32 mgmt_tx_copy_ie_hdr(u8 *dst, const struct mid_bss *mid)
 {
@@ -573,8 +582,14 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_append_probe_resp_ies(u8 *dst,
     n = ie_push_dmg_operation(dst, mid); dst += n; total += n;
     fw_log_emit2(0x2d, 0x100fc00, n, total);                    /* dband oper */
 
-    n = ie_push_antenna_sector_id_pattern(dst, mid->blk_103); dst += n; total += n;
-    fw_log_emit2(0x2d, 0x100fc34, n, total);                    /* dband ANT */
+    /* Antenna Sector ID Pattern (9.4.2.156) — только действительный: Type 0 (Random Sequence Generator), Tap 1 ≠ 0.
+     * Нужен лишь станциям в энергосбережении (11.2.7.1); в open его не заполняет никто (asid_pattern обнулён в
+     * mid.c), маяки идут секторами подряд. исправлено (vendor): элемент из нулей шёл всегда (Tap 1 = 0 — генератор
+     * не меняет состояние, секторы маяков ему не соответствуют; судья волны 5, MAC-STAND.md). */
+    if (asid_pattern_valid(mid->asid_pattern)) {
+        n = ie_push_antenna_sector_id_pattern(dst, mid->asid_pattern); dst += n; total += n;
+        fw_log_emit2(0x2d, 0x100fc34, n, total);                /* dband ANT */
+    }
 
     n = mgmt_tx_copy_ie_bounded(dst, mid->vs_ie, mid->vs_ie_len); total += n;
     fw_log_emit2(0x2d, 0x100fbc8, n, total);                    /* vendor specific */

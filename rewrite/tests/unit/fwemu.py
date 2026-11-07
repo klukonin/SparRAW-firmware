@@ -12,7 +12,8 @@
     fw.advance(us); fw.fire_timer(name) # время u_schd: таймеры срабатывают по срокам, как прерывание таймера
     fw.lmac_cmds                        # [LmacCmd(type, len, flags, body)] — команды LMAC fw → uc (lmac_if_post_cmd)
     fw.wmi_evts                         # [WmiEvt(id, len, mid, body)] — события WMI fw → хост (wmi_evt_post)
-    fw.tx_frames                        # [(кольцо, кадр)] — кадры, поставленные в кольцо TX (tx_ring_post_frame)
+    fw.tx_frames                        # [(кольцо, кадр)] — кадры, поставленные в кольцо TX (tx_ring_post_frame);
+                                        # .desc — адрес их TX-дескриптора
     fw.logs; fw.logged('WMI_BAD_PARAM') # журнал fw (уровень, токен, аргументы); fw.rejects — wmi_reject_param
     fw.timers(); fw.ready_tasks()       # взведённые таймеры [(cb, a0, a1, срок, задача)] / готовые задачи u_schd
     fw.wild                             # обращения вне карты памяти fw (на чипе — зависание шины AHB)
@@ -35,6 +36,14 @@ from ucemu import _sections                             # noqa: E402
 import subprocess                                       # noqa: E402
 
 M32 = 0xffffffff
+
+
+class TxFrame(tuple):
+    """Элемент fw.tx_frames: пара (кольцо, кадр) и адрес TX-дескриптора .desc (struct tx_desc, include/fwq_tx.h)."""
+    def __new__(cls, ring, frame, desc):
+        t = tuple.__new__(cls, (ring, frame))
+        t.desc = desc
+        return t
 ICCM, ICCM_SIZE = 0x8c0000, 0x40000
 DCCM, DCCM_SIZE = 0x800000, 0x8000
 SRAM, SRAM_END = 0x840000, 0x860000      # рабочая память fw (fw/fw.ld) + общий с uc блок 0x857000
@@ -357,10 +366,12 @@ class FW:
             return 0
         self._entry_fixed('wmi_evt_post', evt_post)
 
-        # кадры, поставленные в кольцо TX (DMA): (кольцо, байты кадра) — «эфир» fw
+        # кадры, поставленные в кольцо TX (DMA): (кольцо, байты кадра) — «эфир» fw; .desc — адрес дескриптора
+        # (голова кольца на входе; struct tx_ring: r.base +4, r.head +0x10), поля — после возврата tx_ring_post_frame
         def post_frame(cpu):
             tr, pl, ln = (cpu.regs[i] & M32 for i in range(3))
-            self.tx_frames.append((tr, self.rbytes(pl, min(ln, 0x600))))
+            desc = self.r32(tr + 4) + (self.r32(tr + 0x10) << 5)
+            self.tx_frames.append(TxFrame(tr, self.rbytes(pl, min(ln, 0x600)), desc))
             return None                                 # исполнять
         self._entry_fixed('tx_ring_post_frame', post_frame)
 

@@ -105,6 +105,11 @@ FWQ_OFF(struct tx_desc, status_w, 0x1c);
 FWQ_OFF(struct tx_desc, length, 0x1e);
 _Static_assert(sizeof(struct tx_desc) == 0x20, "tx_desc");
 #define TX_DESC_DU  (1u << 8)                  /* status_w: дескриптор завершён (DU) */
+/* mac_d0 б14 ts_insert (wil6210 txrx.h MAC_CFG_DESC_TX_0_TIMESTAMP_INSERTION, docs/DATAPATH.md §4): вставка TSF MAC.
+ * H-TSINS (по имени поля, не проверено на стенде): MAC пишет TSF начала передачи в поле Timestamp кадра управления
+ * (октеты 24..31, сразу за MAC-заголовком 9.3.3.10 — так же, как движок маяка пишет Timestamp DMG Beacon == метке
+ * TX, MAC-STAND.md). vendor (tx_desc_build) бит не ставил. Проверка — MAC-STAND.md «Timestamp Probe Response». */
+#define TX_DESC_D0_TS_INSERT  (1u << 14)
 
 
 struct tx_ring;

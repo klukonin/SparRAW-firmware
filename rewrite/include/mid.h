@@ -119,7 +119,7 @@ struct mid_bss {
         u16 dmg_params_h;                      /* mid__reset_ie_area: RMW полусловом (ldw/stw) */
         struct {
             u8 dmg_params;                     /* 0x102: DMG Parameters (тип BSS 0..1, бит 2) */
-            u8 blk_103[4];                     /* 0x103: обнуляется mid__reset_ssid */
+            u8 asid_pattern[4];                /* 0x103: тело Antenna Sector ID Pattern (9.4.2.156); 0 — нет */
             u8 bi_ctrl[6];                     /* 0x107: Beacon Interval Control бикона */
         };
     };

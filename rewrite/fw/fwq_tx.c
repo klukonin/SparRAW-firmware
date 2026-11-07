@@ -14,6 +14,7 @@
 #include "../include/fwdata.h"
 #include "../include/power.h"
 #include "../include/conn.h"
+#include "../include/ieee80211.h"
 
 /* fw_tx_packet_error_buffer (0x805ac0, 0x524 Б; в образе нули): кадр «пул пуст», статус 0xfd. */
 FWDATA(805ac0) struct tx_pkt tx_err_buf = { 0 };
@@ -615,6 +616,16 @@ u32 tx_ring_post_frame(struct tx_ring *tr, u32 payload, u32 len, u32 a3, u32 ret
     tx_desc_init_32(d, tr->macq, 1, payload, len, a6);
     tx_desc_build((u32)vring_tbl_entry_addr(tr->macq), d, flags, prio != 0, 1,
                   prio, a3, retry, lifetime, (u8)cid);
+    /* Timestamp Probe Response (9.4.1.10) — TSF в момент передачи (11.1.3.1): вставку делает MAC по биту ts_insert
+     * MAC-части дескриптора (H-TSINS, include/fwq_tx.h). Тело кадра fw пишет с Timestamp = 0 (mgmt_tx_copy_ie_hdr).
+     * Только Probe Response: у прочих кадров очереди управления поля Timestamp нет, а DMG Beacon (очередь маяков)
+     * получает TSF от движка маяка. исправлено (vendor): бит не ставился — в эфире Timestamp = 0 (MAC-STAND.md,
+     * судья волны 5). */
+    {
+        u32 fc = ((const struct ieee80211_hdr *)payload)->fc_b[0];
+        if (FC_TYPE(fc) == FC_TYPE_MGMT && FC_STYPE(fc) == FC_STYPE_PROBE_RESP)
+            d->mac_d0 |= TX_DESC_D0_TS_INSERT;
+    }
     tx_ring_advance_index(r, &tr->r.head);
     hwd_dma_write_ring_reg(tr->dma_ring, tr->r.head);
     macq_kick_queue(tr->macq);

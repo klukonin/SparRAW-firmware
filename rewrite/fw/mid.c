@@ -245,10 +245,10 @@ static void mid_reset_dmg_params(struct mid_bss *o, u32 mode)
     o->dmg_params_h |= 1u << 2;
 }
 
-/* mid__reset_ssid (0x8c4df8, 12 Б). */
-static void mid_reset_ssid(struct mid_bss *o)
+/* mid__reset_ssid (0x8c4df8, 12 Б): тело Antenna Sector ID Pattern = 0 (элемент не передаётся). */
+static void mid_reset_asid_pattern(struct mid_bss *o)
 {
-    memset0_words(o->blk_103, 4);
+    memset0_words(o->asid_pattern, 4);
 }
 
 /* edca__fill_default_ac_params (0x8e63f4, 200 Б): записи AC 0..3 EDCA IE (o+0x16 + 4·i):
@@ -314,7 +314,7 @@ void mid_reset_bss_defaults(struct mid_bss *o, const u8 *mac, const u8 *ssid, u3
     dmg_cap_build_sta_capability(o, o->owner->mac);
     mid_reset_dmg_operation(o);
     mid_reset_dmg_params(o, mode);
-    mid_reset_ssid(o);
+    mid_reset_asid_pattern(o);
     bcon_tx_build_step(o, 1);
     mid_set_ssid(o, ssid, ssid_len);
     l2mgr_set_edca_defaults(o);

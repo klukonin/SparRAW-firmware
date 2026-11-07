@@ -869,10 +869,21 @@ TA = получатель — исключение 9.3.1.13, не нарушен
   data symbol … appears at the transmit antenna connector»): у обоих Probe Response точки в `aj1` поле 0 при метке TX
   22 023 539 / 25 400 942; у DMG Beacon в той же TX-записи Timestamp == метка TX (запись — после вставки TSF), у Probe
   Response вставки нет. fw: `mgmt_tx_copy_ie_hdr` (fw/mgmt_tx.c) пишет Timestamp = 0.
+  **Исправление (ждёт стенда):** DMG Beacon получает TSF от движка маяка (очередь маяков, команды MAC 0x2a/0x2b/0x2d
+  патчат и прочие поля), бит `ts_insert` дескриптора у маяка не стоит. Для кадров очереди управления у MAC есть бит
+  `ts_insert` (б14 MAC-части TX-дескриптора, wil6210 `txrx.h` `MAC_CFG_DESC_TX_0_TIMESTAMP_INSERTION`); vendor его не
+  ставил ни в одном кадре. `tx_ring_post_frame` (fw/fwq_tx.c) ставит его кадрам с FC Probe Response — путь fw, uc не
+  затронут. Допущение **H-TSINS** (по имени поля): MAC пишет TSF начала передачи в октеты 24..31. Опыт: образ с
+  исправлением на точке, PMC точки с начала входа станции (как `aj1`), судья `timestamp` — у Probe Response точки
+  Timestamp == метке TX (как у маяка) или отстоит от неё на постоянную; станция входит (кадр цел: элементы после
+  Timestamp разбираются, FCS верен). Если поле осталось 0 — бит не действует (MAC вставляет только в маяк); если
+  испорчены другие октеты — смещение вставки иное (снять сырые байты Probe Response из PMC).
 - **Antenna Sector ID Pattern из нулей в Probe Response** (9.4.2.156 [p. 1275]): элемент 190 = 00 00 00 00 (Tap 1 = 0 —
   генератор не меняет состояние, секторы маяков 0…N−1 ему не соответствуют); элемент нужен только станциям в
   энергосбережении (11.2.7.1), в open его нет — элемент не передавать. fw: `mgmt_tx_append_probe_resp_ies` →
-  `ie_push_antenna_sector_id_pattern(mid->blk_103)`, `blk_103` обнуляется в `mid.c`.
+  `ie_push_antenna_sector_id_pattern(mid->blk_103)`, `blk_103` обнуляется в `mid.c`. **Исправлено:** поле —
+  `mid_bss.asid_pattern`; элемент идёт только при действительном теле (Type 0, Tap 1 ≠ 0), в open его не заполняет
+  никто — элемента нет.
 - **Биты WNM без ECS и Radio Measurement** (11.21.1 [p. 2256]: WNM STA — dot11ExtendedChannelSwitchActivated и
   dot11RadioMeasurementActivated true): Extended Capabilities точки — бит 25 (SSID List), станции — 17 (WNM Sleep Mode,
   энергосбережение — `opt_caps`), 19 (BSS Transition), 25; бит 2 Extended Channel Switching = 0, Radio Measurement в
@@ -1017,3 +1028,10 @@ RX, 0xff32 конец PPDU BRP, 0xff33 отчёт PPDU), `last_tsf` — врем
 - **внутренние квитирования MAC** (105): MTP r43/r45 б31, BAP_REL r53 б2, CNT_IF r47 б0, RFC, окно дескрипторов
   очередей, DTX, HW_MAC_TIMING_STATUS — ответ MAC на команду uc за единицы–десятки тактов, от эфира не зависят;
   предел — крупный счётчик (~10⁴ проходов) с меткой, без изменения кода нормального пути на SIFS.
+
+  драйвера/hostapd/wpa_supplicant: снять 17, 19, 25 (функции в open не реализованы). **Исправлено в драйвере**
+  (SparRAW-driver, `wil_wiphy_init`): `wiphy->extended_capabilities` = 0 с маской (NL80211_ATTR_EXT_CAPA_MASK) —
+  hostapd (`hostapd_eid_ext_capab`) и wpa_supplicant (`wpas_build_ext_capab`) снимают биты маски при сборке элемента.
+  Маска: энергосбережение 4, 6, 11, 17, 18, 28, 29, 45; весь диапазон WNM 7–27 (11.21.1) и WNM Notification 46. Прочие
+  биты (FTM 70/71, Interworking 31) остаются за хостом. fw элементы хоста не правит (место в ICCM, fw не знает, какие
+  функции реализует хост).

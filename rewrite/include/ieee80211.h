@@ -31,6 +31,7 @@ static inline u32 mac_lo32(const union mac_addr *m)
 #define FC_TYPE_CTRL    1u
 #define FC_TYPE_DATA    2u
 #define FC_TYPE_EXT     3u              /* extension (DMG-бикон — подтип 0) */
+#define FC_STYPE_PROBE_RESP 5u          /* управление: Probe Response (табл. 9-1) */
 
 /* Заголовок 802.11 (mgmt/data — 0x18 Б; extension/control — первые 0xa Б: FC, Duration,
  * адрес 1 = BSSID у DMG-бикона). vendor читает FC и полусловом, и словом (FC + Duration). */
