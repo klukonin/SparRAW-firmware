@@ -54,6 +54,10 @@ class ApSme(_Sme):
         self.ssid, self.bi_tu, self.abft_slots, self.fss, self.dl_bytes, self.edca = ssid, bi_tu, abft_slots, fss, \
             dl_bytes, edca
         self.dl_sent = {}
+        # своё MLME-ADDBA.request: False — в ответ на ADDBA станции (по умолчанию); True — сразу после ассоциации
+        # (как драйвер прошивки: соглашение открывает сторона с данными; этап 2, diff_scenario)
+        self.addba_on_assoc = False
+        self.addba_req = set()
 
     def start(self):
         self.mac.mlme_request(ML.MlmeStartRequest(SSID=self.ssid, BeaconPeriod=self.bi_tu, abft_slots=self.abft_slots,
@@ -69,12 +73,17 @@ class ApSme(_Sme):
         self.log.append(p)
         if isinstance(p, ML.MlmeAssociateIndication):
             self.mac.mlme_response(ML.MlmeAssociateResponse(PeerSTAAddress=p.PeerSTAAddress, ResultCode=ML.SUCCESS))
+            if self.addba_on_assoc:
+                self._addba(p.PeerSTAAddress)
         elif isinstance(p, ML.MlmeAddbaIndication):
             self.mac.mlme_response(ML.MlmeAddbaResponse(PeerSTAAddress=p.PeerSTAAddress, DialogToken=p.DialogToken,
                                                         TID=p.TID, ResultCode=ML.SUCCESS, BufferSize=64))
-            if self.dl_bytes:
-                self.mac.mlme_request(ML.MlmeAddbaRequest(PeerSTAAddress=p.PeerSTAAddress, DialogToken=0x5A, TID=0,
-                                                          BufferSize=64))
+            self._addba(p.PeerSTAAddress)
+
+    def _addba(self, peer):
+        if self.dl_bytes and peer not in self.addba_req:
+            self.addba_req.add(peer)
+            self.mac.mlme_request(ML.MlmeAddbaRequest(PeerSTAAddress=peer, DialogToken=0x5A, TID=0, BufferSize=64))
 
 
 class StaSme(_Sme):
@@ -85,6 +94,8 @@ class StaSme(_Sme):
         self.state = 'init'
         self.bss = None
         self.ul = []
+        # MLME-ADDBA.request станции: 'always' — после ассоциации всегда (по умолчанию); 'ul' — только при данных вверх
+        self.addba = 'always'
         if bf == 'dti':
             mac.need_bf = False            # модель: станция не участвует в A-BFT (BF — только SLS в DTI)
 
@@ -129,14 +140,20 @@ class StaSme(_Sme):
                 self.state = 'failed'
                 return
             self.state = 'associated'
+            if self.addba == 'ul' and not self.ul_bytes:
+                self._data()
+                return
             self.mac.mlme_request(ML.MlmeAddbaRequest(PeerSTAAddress=self.bss.BSSID, DialogToken=0x21, TID=0,
                                                       BufferSize=64))
         elif isinstance(p, ML.MlmeAddbaConfirm) and p.ResultCode == ML.SUCCESS:
-            self.state = 'data'
-            if self.bf == 'both':
-                self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID))
-            self.ul = msdus(self.ul_bytes, seed=0x10)
-            self._send(self.bss.BSSID, self.ul)
+            self._data()
+
+    def _data(self):
+        self.state = 'data'
+        if self.bf == 'both':
+            self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID))
+        self.ul = msdus(self.ul_bytes, seed=0x10)
+        self._send(self.bss.BSSID, self.ul)
 
     def mlme_indication(self, p):
         self.log.append(p)

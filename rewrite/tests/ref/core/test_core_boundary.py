@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Граница импорта: ядро (модули ref/core, кроме тестов) не импортирует ничего из tests/unit (эмулятор, модели
 железа, мост) — только стандартную библиотеку, эталон ref/* и себя. Проверяется статически (AST) и динамически
-(в отдельном процессе после импорта всех модулей ядра в sys.modules нет модулей tests/unit)."""
+(в отдельном процессе после импорта всех модулей ядра в sys.modules нет модулей tests/unit). Сравнитель этапа 2
+(diff_report) мост и эмулятор подключает только внутри функций (unit_modules) — импорт модуля их не тянет."""
 import ast
 import os
 import subprocess
@@ -17,7 +18,8 @@ UNIT_MODS = sorted(f[:-3] for f in os.listdir(UNIT) if f.endswith('.py'))
 
 def test_core_modules_listed():
     assert {'sap_phy', 'sap_mac', 'sap_mlme', 'offload', 'mac', 'ap', 'sta', 'medium_ideal', 'journal',
-            'scenario', 'sme', 'judge_run', 'frames', 'sim'} <= set(CORE)
+            'scenario', 'sme', 'judge_run', 'frames', 'sim', 'diff_scenario', 'diff_compare',
+            'diff_report'} <= set(CORE)
 
 
 def test_static_imports():

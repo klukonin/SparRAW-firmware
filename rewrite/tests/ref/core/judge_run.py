@@ -183,8 +183,14 @@ def sls_pairs(evs, ap, sched, RB):
 def bridge(journal, ap, RB, bi_tu=None):
     """→ (события RB.Ev, [RB.Finding]) — все судьи RB.judge_all, доступ CBAP — cbap_ac."""
     bi_tu = bi_tu or journal.bi_tu
+    return bridge_snapshot(journal.to_snapshot(ap, bi_tu), ap, RB, bi_tu)
+
+
+def bridge_snapshot(snap, ap, RB, bi_tu):
+    """bridge над снимком эфира (journal.to_snapshot или ref_bridge2.snapshot эмулятора) — одни правила для ядра и
+    прошивки (этап 2, diff_compare)."""
     from .. import fields as F
-    evs = RB.events(journal.to_snapshot(ap, bi_tu), F.mac_bytes(ap))
+    evs = RB.events(snap, F.mac_bytes(ap))
     sched = RB.Schedule(evs, ap, bi_tu)
     lim = RB.edca_txop_limit(evs, ap)
     found = (RB.judge_fields(evs, ap, sched) + RB.judge_elements(evs, ap) +
