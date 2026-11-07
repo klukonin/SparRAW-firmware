@@ -647,6 +647,19 @@ void brp_responder_flow_enter(u32 a)
     brp_init_ctx((u8)r18);
     uc_log_emit2(0, 0x1000998, rf_modules.mask, r19);
     gp_timer_arm(0, r19 * 0x10d18, 0, 0);               /* mulu64 r19*0x10d18 -> mlo */
+    /* Вход с пути приёма (rx_flow_main → bf_abort_unexpected(…, 0xa)): BRP инициатора уже принят, его TRN-R может быть
+     * ещё в эфире. Метрики TRN — по подполям с начала поля TRN (802.11-2020 20.9.2.2.6); начатое с середины измерение
+     * даёт номера метрик не с нуля — uc_assert(4) в brp_program_and_measure (эмулятор: SLS при потере SSW-Feedback).
+     * Дождаться конца BRP-стадии здесь, до цикла — ожидание ограничено GP0 этого потока (взведён выше, ≥ 424 мкс при
+     * TRN-R ≤ 16 блоков ≈ 45 мкс), путь цикла не меняется: принятый кадр дальше даёт meas_not_ready (измерения нет),
+     * ответ BRP уходит как обычно. Метка в журнале uc — вход с BRP-стадией в эфире и исход ожидания. */
+    if (mac_evt_eng2() & MAC_EE2_BRP_ON_AIR) {
+        u32 n = 0;
+        /* второй предел — число опросов (0x10000 × ≥ 8 тактов ≥ 3 мс): ожидание конечно и без события GP0 */
+        while ((mac_evt_eng2() & MAC_EE2_BRP_ON_AIR) && !(mac_evt4() & MAC_EVT4_GP0_END) && n < 0x10000u)
+            n++;
+        uc_log_emit2(0x20, LS_UC(UC_BRP_RESP_LATE), r18, n | ((mac_evt4() & MAC_EVT4_GP0_END) ? (1u << 31) : 0));
+    }
     u32 r15 = 1;
     if (!(bf_sta_mask & (1u << (r18 & 31)))) {     /* ldw_s [gp,144] */
         uc_mac_cmd(0x2011000);

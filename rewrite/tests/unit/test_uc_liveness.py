@@ -249,3 +249,22 @@ def test_abft_ap_slot_silent_ends_at_slot_boundary(uc):
     uc.call('abft_rx_ssw_tx_feedback', 0x803000, stub={'direct_tx_ssw_feedback': 0, 'uc_evt_build_and_post_report': 0})
     assert not [c for c in uc.calls if c[0] == 'direct_tx_ssw_feedback']
     assert uc.t1() - t0 <= slot + PATH
+
+
+def test_brp_responder_entered_with_brp_stage_on_air_bounded(uc):
+    """brp_responder_flow_enter с пути приёма, BRP-стадия «в эфире» не кончается (r49 б13 держится), инициатор
+    больше не шлёт: ожидание конца BRP-стадии на входе и ожидание кадра BRP кончаются по GP0 потока
+    (r19 · 0x10d18 тактов), без вечного ожидания (стенд 2026-11-07: заклинивание образа, где на этом входе стоял
+    опрос MAC_EVT1_BUSY2 без срока)."""
+    gp = GP(uc)
+    uc.ext[42] = 0
+    uc.ext[49] = 1 << 13                               # MAC_EE2_BRP_ON_AIR
+    t0 = uc.t1()
+    uc.call('brp_responder_flow_enter', 0, stub={'rfca_select_rf_uc': 0, 'brp_program_rf_awv': 0,
+                                                  'rf_set_cur_sector_word': 0, 'bf_flow_exit': 0,
+                                                  'rfca_clear_sector_row_other_rf': 0, 'uc_log_emit2': 0})
+    assert gp.arms[0], 'GP0 не взведён'
+    late = [c for c in uc.calls if c[0] == 'uc_log_emit2' and c[1][0] == 0x20]
+    assert late and late[0][1][3] >> 31 == 1, late         # метка входа с BRP-стадией: ожидание кончил GP0 (б31)
+    lim = max(v for _, v in gp.arms[0])
+    assert uc.t1() - t0 <= 2 * lim + 10 * PATH, (uc.t1() - t0, lim)

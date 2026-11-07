@@ -147,6 +147,13 @@ _Static_assert(DMG_RESP_TIMEOUT_SLOTS == 4u, "AckTimeout в слотах");
 /* dot11BFRetryLimit (MIB, DEFVAL 8): инициатор может повторить SSW-Feedback до этого числа раз (10.42.6.2, «may restart
  * the SSW feedback procedure up to dot11BFRetryLimit times»). vendor — 2 повтора (3 попытки). */
 #define DOT11_BF_RETRY_LIMIT     8u
+/* dot11MaxBFTime (MIB, DEFVAL 4 BI): T2 автомата инициатора SLS (10.42.8, рис. 10-91 [p. 1966]). Из Idle инициатор
+ * начинает ISS заново, только пока не превышен dot11BFRetryLimit; после тайм-аута в Sector Selector (ответа на ISS нет)
+ * — снова Idle. Подряд ISS без ответа пиру — не больше 1 + dot11BFRetryLimit; дальше новая развёртка тому же пиру — не
+ * раньше T2 от первого ISS без ответа этой серии (процедура BF длится не дольше dot11MaxBFTime). vendor повторял ISS
+ * по каждому новому триггеру BF (CTS failure) без предела: при молчащем пире — шторм развёрток (стенд 2026-11-06,
+ * ~300 ISS/с у точки). */
+#define DOT11_MAX_BF_TIME_BI     4u
 /* Ожидание ответчиком SLS SSW-Feedback после своей RSS (GP0 из txss_resp_wait_iss_end — взводится до RSS, к сроку
  * прибавляется её длительность; выход txss_resp_wait_fdbk по r54.6): Feedback начинается через MBIFS после RSS (10.42.2.2), инициатор может повторить его dot11BFRetryLimit раз,
  * каждый цикл — Feedback, MBIFS, SSW-Ack, PIFS (10.42.6.2). Срок покрывает все попытки: 9 × 8829 = 79461 такт ≈ 482 мкс.

@@ -836,10 +836,11 @@ struct bf_sta_s {
     u32  state;                         /* +0x00 ucode_bf_state_e: 0 idle, 3 TXSS_INIT, 4 TXSS_RESP, 9 BRP_INIT,
                                            10 BRP_RESP, 0xb abort, 0x11 «нужен BF», 0x12 таймаут */
     u32  flow_status;                   /* +0x04 итог потока (1 ENERGY_FAILURE_SS, 9 успех, 0x30/0x35 ...) */
-    u8   _8;
+    u8   iss_fail_n;                    /* +0x08 ISS подряд без ответа пира (bf.c, 10.42.8: ≤ 1 + dot11BFRetryLimit) */
     u8   peer_l_rx;                     /* +0x09 L-RX из BRP-запроса пира (SSW-Feedback/Ack, & 0x1f) */
     u8   brp_flags;                     /* +0x0a б0 — пир просил BRP-RX без MID/BC; AoA (LMAC 0x31, только SparRAW-pro) ставил */
-    u8   _b;
+    u8   iss_fail_bi;                   /* +0x0b bi_win.tbtt_cnt (младший байт) первого из них — отсчёт dot11MaxBFTime
+                                           (vendor: байты +8/+0xb не используются) */
     struct bf_req_desc *req_desc;       /* +0x0c дескриптор запроса (bf_req_desc_default; AoA — только SparRAW-pro) */
     u32  done_cb2;                      /* +0x10 второй колбэк завершения (из req_desc->cb2) */
 };

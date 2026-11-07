@@ -8,6 +8,7 @@
 #include "../include/arc.h"
 #include "../include/sta_max.h"
 #include "abft.h"
+#include "ifs.h"
 
 
 /* ---- Портированные в других файлах ---- */
@@ -570,9 +571,30 @@ void bf_req_report_pkt_cb(struct rx_meas_ctx *m)
     uc_evt_send_rx_pkt_data((u32)&m->pkt);
 }
 
+/* Предел ISS без ответа (ifs.h DOT11_MAX_BF_TIME_BI, 802.11-2020 10.42.8 рис. 10-91): после 1 + dot11BFRetryLimit ISS
+ * подряд без ответа пира новая развёртка ему — только когда с первого из них прошло dot11MaxBFTime (BI по
+ * bi_win.tbtt_cnt). 1 — развёртку не начинать. */
+static u32 bf_iss_limited(u32 sta)
+{
+    struct bf_sta_s *e = &bf_sta[sta];
+    if (e->iss_fail_n <= DOT11_BF_RETRY_LIMIT)
+        return 0;
+    if ((u8)((u8)bi_win.tbtt_cnt - e->iss_fail_bi) < DOT11_MAX_BF_TIME_BI)
+        return 1;
+    e->iss_fail_n = 0;                          /* T2 истёк — новая процедура BF */
+    return 0;
+}
+
 void bf_trigger_for_sta(u32 a0)
 {
     u32 buf[3];
+    /* Предел ISS без ответа исчерпан, dot11MaxBFTime не прошёл (10.42.8): развёртку не начинать. Причины BF сняты, как
+     * по завершении BF (sta_reset_link_state): с ними путь TX считает BF идущим; новые сбои (CTS failure и др.) снова
+     * поставят причину. */
+    if (a0 < SPARRAW_MAX_STA && !(bf_req.pending_mask & (1u << a0)) && bf_iss_limited(a0)) {
+        VOL(link_stat[a0].bf_reasons) &= 0x40;
+        return;
+    }
     bf_pause_sta_tx(3, a0);
     if (lmac_personality != 1) {
         buf[0] = 1;
@@ -684,16 +706,30 @@ u32 bf_sm_txss_init_result(u32 a0)
     case 1:
         cnt = &txss_retry_cnt[0];
         break;
-    case 2: case 3:
-        cnt = &txss_retry_cnt[1];
+    case 2: case 3: {
+        /* ISS без ответа — тайм-аут Sector Selector (GP0: ни одного SSW RSS; GP1: RSS не завершена), 10.42.8 рис. 10-91:
+         * Idle, повтор ISS — пока не превышен dot11BFRetryLimit (счёт — через запросы, bf_iss_limited). */
+        struct bf_sta_s *e = &bf_sta[a0];
+        if (e->iss_fail_n == 0)
+            e->iss_fail_bi = (u8)bi_win.tbtt_cnt;
+        if (e->iss_fail_n <= DOT11_BF_RETRY_LIMIT)
+            e->iss_fail_n = (u8)(e->iss_fail_n + 1);
+        if (e->iss_fail_n > DOT11_BF_RETRY_LIMIT)
+            r = 2;
+        else
+            cnt = &txss_retry_cnt[1];
         break;
+    }
     case 4:
+        bf_sta[a0].iss_fail_n = 0;              /* ответчик ответил RSS (далее — повторы Feedback) */
         cnt = &txss_retry_cnt[2];
         break;
     case 5:
+        bf_sta[a0].iss_fail_n = 0;
         r = 1;
         break;
     case 6: case 7: case 8:
+        bf_sta[a0].iss_fail_n = 0;
         r = 2;
         break;
     default:
@@ -821,9 +857,15 @@ u32 bf_sm_dispatch_by_state(u32 sta)
         if (sta_tab[sta].fixed_link != 0) {
             sta_apply_rx_sector_and_mcs(sta);
             r = 3;
-        } else if ((bf_sta_mask & bit) || bf_ctrl.brp_mode != 1 || !(maint_sta_mask & bit)) {
+        } else if (bf_ctrl.brp_mode != 1 || !(maint_sta_mask & bit)) {
+            /* исправлено (vendor: и при бите станции в bf_sta_mask — первый BF с пиром — r = 3, BRP инициатора — позже,
+             * из FIFO (pick) через внутреннюю передачу с доступом к среде). Ответчик SLS к тому времени свободен и
+             * сам начинает обмен (эмулятор: ISS ответчика через 2 мкс после первого BRP инициатора, коллизия). BRP
+             * инициатора — сразу после SSW-Ack, как при снятом бите (802.11-2020 10.42.3.1, 10.42.6.4.3). */
             r = 3;
         } else {
+            if (bf_sta_mask & bit)
+                uc_log_emit1(0x20, LS_UC(UC_BRP_INIT_INLINE), sta);
             bf_sm_set_sta_state(sta, 9);
         }
         break;
@@ -1063,7 +1105,12 @@ void bf_sm_process_request_fifo(void)
         if (r == 2 || r == 3)
             bf_sm_set_sta_state(sta, 0xb);
         else if (r == 1)
-            goto pick;
+            /* исправлено (vendor: goto pick — ответчик SLS уходил в состояние 9, brp_init_flow, и слал BRP с
+             * Initiator = 1, как инициатор). 802.11-2020 10.42.3.1: в том же распределении, что и SLS (DTI open —
+             * CBAP Only), инициатор уточнения — инициатор SLS, ответчик SLS — ответчик BRP; транзакцию начинает
+             * инициатор (10.42.6.4.2, 10.42.6.4.3). Ответчик SLS свою не начинает: SLS завершён (0xd), BRP
+             * инициатора с L-RX > 0 запускает поток ответчика с пути приёма (sls_rx.flags б9 → состояние 0xa). */
+            bf_sm_set_sta_state(sta, 0xd);
         goto pending;
     case 5:
         sta_reset_link_state(sta, 0, 1);
