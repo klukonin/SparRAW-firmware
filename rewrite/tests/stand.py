@@ -123,6 +123,12 @@ class Node:
         p = self.cfg['power']
         if p.get('kind') != 'tapo':
             raise StandError('%s: неизвестное управление питанием %r' % (self.name, p))
+        # перед снятием питания — сброс записей на флеш, если узел отвечает (2026-11-07 узел .12 после серии
+        # power-cycle не грузился даже в failsafe; восстановлен загрузкой по сети и sysupgrade)
+        try:
+            subprocess.run(['ssh'] + SSH_OPTS + [self.host, 'sync; sleep 1; sync'], capture_output=True, timeout=15)
+        except subprocess.TimeoutExpired:
+            pass
         r = subprocess.run([sys.executable, self.tools['tapo'], p['addr'], 'cycle', str(off_s)],
                            capture_output=True, timeout=120)
         if r.returncode != 0:
