@@ -8,15 +8,15 @@
 
 | Статус | Пунктов |
 |---|---|
-| М+С | 117 |
-| М | 53 |
-| Ч | 18 |
+| М+С | 147 |
+| М | 44 |
+| Ч | 24 |
 | С | 3 |
-| Н | 25 |
-| ВНЕ | 54 |
-| всего | 270 |
+| Н | 17 |
+| ВНЕ | 42 |
+| всего | 277 |
 
-Реализовано (М+С, М, С): 173; частично: 18; не реализовано: 25; вне охвата: 54.
+Реализовано (М+С, М, С): 194; частично: 24; не реализовано: 17; вне охвата: 42.
 
 ## 9.2 Общий формат MAC-кадра (DMG-особенности)
 
@@ -106,6 +106,8 @@
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
 | 9.4.2.2 | 949 | SSID element | М+С | elements.encode/parse_ssid | mgmt_body |  |
+| 9.4.2.16 | 966 | TPC Report element | Ч | linkadapt (в Link Measurement Report: ID 35, Length 2, Transmit Power, Link Margin) | link_margin | только внутри Link Measurement Report; Beacon/Probe Response/TPC Report frame (11.7) — не моделируются |
+| 9.4.2.17 | 966 | Supported Channels element | М+С | chswitch.encode/parse/check_supported_channels, channels_of / subbands_of (рис. 9-176, каналы табл. E-4) | supp_channels |  |
 | 9.4.2.24 | 1051 | RSNE | Ч | elements.encode/parse_rsne (структура) | mgmt_body, assoc_state (rsna) | допустимые наборы шифров/AKM не проверяются |
 | 9.4.2.25 | 1060 | Vendor Specific element | М | elements.encode_vendor | mgmt_body (порядок) |  |
 | 9.4.2.26 | 1061 | Extended Capabilities element | Ч | elements (порядок); dms.ext_cap_dms / encode_ext_cap (бит 26 DMS, табл. 9-153) | mgmt_body, dms | разбирается только бит DMS |
@@ -113,13 +115,13 @@
 | 9.4.2.32 | 1092 | TCLAS Processing element | М+С | dms.tclas_set_match, правила Processing (табл. 9-171) | dms |  |
 | 9.4.2.28 | 1068 | EDCA Parameter Set element | М+С | cbap.EdcaParams; air_judge.edca_from | edca, access, txop_limit |  |
 | 9.4.2.48 | 1116 | Timeout Interval element (TIE) | М+С | elements.encode/parse_tie; mlme (holdoff) | assoc_state (holdoff) |  |
-| 9.4.2.52 | 1119 | Extended Channel Switch Announcement element | Н |  |  | Extended Channel Switch Announcement (смена канала DMG, 11.8.8.6) — не моделируется |
-| 9.4.2.53 | 1119 | Supported Operating Classes element | Ч | elements (порядок) | mgmt_body | содержимое не разбирается |
+| 9.4.2.52 | 1119 | Extended Channel Switch Announcement element | М+С | chswitch.encode/parse/check_ecsa (рис. 9-369; режим 0/1, DMG-классы 180/181 табл. E-4) | ecsa | Channel Switch Count для mesh (биты 6–0, ×2/×100 TU) — не DMG; в захватах нет |
+| 9.4.2.53 | 1119 | Supported Operating Classes element | Ч | elements (порядок); chswitch.parse/check_supported_opclasses (Current Operating Class, классы до разделителя 130/0) | mgmt_body, supp_channels | Current Operating Class Extension и Duple Sequence не разбираются |
 | 9.4.2.87 | 1190 | DMS Request element | М+С | dms.Descriptor / encode_descriptor / parse_descriptors / check_descriptor / encode_request_elements (рис. 9-475, 9-476, табл. 9-229, 9-230) | dms | TSPEC — 55 октетов без разбора; GCR Request — нарушение у DMG; PLAN №29 |
 | 9.4.2.88 | 1193 | DMS Response element | М+С | dms.Status / encode_status / parse_statuses / check_status / encode_response_elements (рис. 9-478, 9-479, табл. 9-233, 9-234) | dms | GCR Response / «GCR Advertise» — нарушение у DMG; PLAN №30 |
 | 9.4.2.125 | 1234 | GCR Group Address element | ВНЕ |  |  | GCR — не DMG (11.21.16.1: «DMG STAs do not use GCR») |
-| 9.4.2.126 | 1235 | DMG BSS Parameter Change element | М | elements.encode/parse_bss_param_change |  | процедура 11.29 — нет |
-| 9.4.2.127 | 1235 | DMG Capabilities element | М+С | elements.encode/parse/validate_dmg_capabilities (рис. 9-549…9-554) | mgmt_body, beam_track |  |
+| 9.4.2.126 | 1235 | DMG BSS Parameter Change element | М+С | elements.encode/parse_bss_param_change; bssparams.check_change (резерв, BI Duration, aMaxBIDuration) | bss_params | процедура — 11.29 (bssparams); в захватах нет |
+| 9.4.2.127 | 1235 | DMG Capabilities element | М+С | elements.encode/parse/validate_dmg_capabilities (рис. 9-549…9-554); linkadapt.check_fla_caps (Fast Link Adaptation ⇒ Reverse Direction) | mgmt_body, beam_track, link_meas |  |
 | 9.4.2.128 | 1242 | DMG Operation element | М+С | elements.encode/parse/validate_dmg_operation; mlme (MIB из DMG Operation) | mgmt_body |  |
 | 9.4.2.129 | 1244 | DMG Beam Refinement element | М+С | brp.BeamRefinement (рис. 9-558…9-560) | brp, brp_role | новое правило brp_role: Initiator |
 | 9.4.2.130 | 1246 | DMG Wakeup Schedule element | ВНЕ |  |  | DMG Wakeup Schedule — power save удалён |
@@ -134,8 +136,8 @@
 | 9.4.2.139 | 1260 | ADDBA Extension element | Н |  |  | ADDBA Extension — не используется |
 | 9.4.2.140 | 1261 | Next PCP List element | Н |  |  | Next PCP List — передача PCP (11.27.2), не реализовано |
 | 9.4.2.141 | 1261 | PCP Handover element | Н |  |  | PCP Handover — 11.27.2, не реализовано |
-| 9.4.2.142 | 1262 | DMG Link Margin element | Н |  |  | DMG Link Margin — 10.43 (TPC/быстрая адаптация), не реализовано |
-| 9.4.2.143 | 1263 | DMG Link Adaptation Acknowledgment element | Н |  |  | DMG Link Adaptation Acknowledgment — 10.43, не реализовано |
+| 9.4.2.142 | 1262 | DMG Link Margin element | М+С | linkadapt.LinkMargin / encode/parse/check_link_margin (рис. 9-583, табл. 9-266, коды MCS, −128, SNR — PLAN №36) | link_margin, link_meas | значения против измерения — не проверяемо (lm_measure); в захватах нет |
+| 9.4.2.143 | 1263 | DMG Link Adaptation Acknowledgment element | М+С | linkadapt.LaAck / encode/parse/check_la_ack (рис. 9-584) | link_margin | Reference Timestamp — PLAN №37; ссылка текста на 10.42.9 — опечатка (10.43) |
 | 9.4.2.144 | 1263 | Switching Stream element | ВНЕ |  |  | Switching Stream — FST |
 | 9.4.2.145 | 1265 | Session Transition element | ВНЕ |  |  | Session Transition — FST |
 | 9.4.2.146 | 1266 | Cluster Report element | ВНЕ |  |  | Cluster Report — кластеризация (решение ниже) |
@@ -171,17 +173,20 @@
 | 9.6.4.2 | 1456 | ADDBA Request frame format | М+С | blockack.encode/parse_addba_req | addba |  |
 | 9.6.4.3 | 1457 | ADDBA Response frame format | М+С | blockack.encode/parse_addba_resp, check_addba_response | addba |  |
 | 9.6.4.4 | 1458 | DELBA frame format | М | blockack.encode/parse_delba |  | в захватах нет |
+| 9.6.6.4 | 1460 | Link Measurement Request frame format | М+С | linkadapt.LmRequest / encode/parse/check_lm_request (рис. 9-862, 9.4.1.19/9.4.1.20) | link_meas | Action и Action No Ack (DMG); в захватах нет |
+| 9.6.6.5 | 1461 | Link Measurement Report frame format | М+С | linkadapt.LmReport / encode/parse/check_lm_report (рис. 9-863: TPC Report, DMG antenna ID, RCPI табл. 9-176, RSNI, DMG Link Margin, DMG LA Ack) | link_meas, link_margin | в захватах нет |
+| 9.6.7.7 | 1469 | Extended Channel Switch Announcement frame format | М+С | chswitch.encode/parse_ecsa_frame, check_ecsa_frame_addr (рис. 9-871, 11.9.1) | ecsa | Mesh Channel Switch Parameters, Wide Bandwidth Channel Switch — не DMG; New Country / New TPE — только как элементы |
 | 9.6.13.1 | 1528 | WNM Action fields | Ч | dms (WNM Action 23/24, табл. 9-425); air_pcap.ACTION_NAME | dms | из WNM — только DMS |
 | 9.6.13.26 | 1547 | DMS Request frame format | М+С | dms.encode_request_frame / parse_frame / check_request (рис. 9-947) | dms | в захватах нет |
 | 9.6.13.27 | 1547 | DMS Response frame format | М+С | dms.encode_response_frame / parse_frame / check_response / check_exchange (рис. 9-948) | dms | в захватах нет |
 | 9.6.19.2 | 1570 | Power Save Configuration Request frame format | ВНЕ |  |  | PSC Request: PS удалён; точка отвечает отказом — не моделируется |
 | 9.6.19.3 | 1570 | Power Save Configuration Response frame format | ВНЕ |  |  | PSC Response (отказ точки) — см. выше |
-| 9.6.19.4 | 1571 | Information Request frame format | Н |  |  | Information Request — 11.28.1, не реализовано |
-| 9.6.19.5 | 1572 | Information Response frame format | Н |  |  | Information Response — 11.28.1, не реализовано |
+| 9.6.19.4 | 1571 | Information Request frame format | Ч | bssparams.encode/parse/check_info (табл. 9-460: Subject Address, Request element первым) | bss_params, supp_channels | каркас для 11.29.5 и 11.8.2.2; Extended/Vendor Specific Request — только как элементы |
+| 9.6.19.5 | 1572 | Information Response frame format | Ч | bssparams.encode/parse/check_info (табл. 9-461: DMG Capabilities первыми, широковещательный — Action No Ack) | bss_params, ecsa, supp_channels | содержание ответа на Request element (11.28.1) — не проверяется |
 | 9.6.19.6 | 1573 | Handover Request frame format | Н |  |  | Handover Request — передача PCP (11.27.2) |
 | 9.6.19.7 | 1573 | Handover Response frame format | Н |  |  | Handover Response — 11.27.2 |
 | 9.6.19.8 | 1574 | Relay Search Request frame format | ВНЕ |  |  | 9.6.19.8–9.6.19.22: relay, RLS, TPA, ROC — relay вне охвата |
-| 9.6.21.2 | 1588 | Announce frame format | М | mlme.AtiAp / check_ati_frame | ati | Announce — в захватах нет (ATI Present = 0) |
+| 9.6.21.2 | 1588 | Announce frame format | М | mlme.AtiAp / check_ati_frame; air_judge._bss_frames (ECSA, DMG BSS Parameter Change — табл. 9-487) | ati, ecsa | Announce — в захватах нет (ATI Present = 0); air_pcap называет Announce по категории/действию 20/0 |
 | 9.6.21.3 | 1590 | BRP frame format | М+С | brp.BrpFrame, brp_frame_length | brp, brp_role |  |
 | 9.7.1 | 1612 | A-MPDU format | Ч | duration (A-MPDU) | ampdu_dur | разбор разделителей не нужен (запись — по MPDU) |
 | 9.7.3 | 1615 | A-MPDU contents | М+С | duration.check_ampdu_same_duration; blockack.ampdu_response | ampdu_dur, ack_policy |  |
@@ -291,9 +296,9 @@
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
-| 10.43.1 | 1970 | General | Н |  |  | общие правила адаптации линка DMG — не моделируются |
-| 10.43.2 | 1971 | DMG TPC | Н |  |  | DMG TPC (Link Measurement Report + DMG Link Margin) — не реализовано |
-| 10.43.3 | 1971 | Fast link adaptation | Н |  |  | быстрая адаптация — не реализовано (поле Fast Link Adaptation — в DMG Capabilities) |
+| 10.43.1 | 1970 | General | М+С | linkadapt.LinkMeasResponder (токен ≠ 0 — следующий кадр, 0 — любой), check_report_reply, unsolicited | link_meas | выбор MCS/Activity — «implementation specific»; значения — lm_measure |
+| 10.43.2 | 1971 | DMG TPC | М+С | linkadapt.TpcPeer, check_la_ack_reply, LA_ACK_DEADLINE (2·aPPDUMaxTime) | link_margin | выполнение рекомендации не видно (tpc_applied); PLAN №37 |
+| 10.43.3 | 1971 | Fast link adaptation | М+С | linkadapt.check_fla_caps / fla_may_initiate / is_fla_request / check_fla_exchange / fla_respond (рис. 10-95, aMinPPDUDurationForDMGMeasurement) | link_meas | RD-роль и кадры с немедленным ответом — fla_immediate; откат на 10.43.1 — заметка, не нарушение; PLAN №35 |
 | 10.44 | 1972 | Link adaptation using the CMMG link measurement | ВНЕ |  |  | CMMG |
 | 10.45 | 1975 | DMG relay operation | ВНЕ |  |  | DMG relay — нет ни в open, ни в pro |
 
@@ -303,7 +308,7 @@
 |---|---|---|---|---|---|---|
 | 11.1.2.1 | 2049 | TSF for an infrastructure BSS or a PBSS | М+С | bi (TSF, TBTT); mlme | bi |  |
 | 11.1.3.1 | 2050 | General | Ч | mlme.LinkMonitor | beacon_fields (Timestamp), bti_delay | точка Timestamp — не проверяема |
-| 11.1.3.3.1 | 2052 | General | М+С | bi.txss_plan / bti_beacons | bi, bti_delay |  |
+| 11.1.3.3.1 | 2052 | General | М+С | bi.txss_plan / bti_beacons; bssparams (сброс TSF при смене параметров BSS) | bi, bti_delay, bss_params |  |
 | 11.1.3.3.2 | 2053 | Beacon generation in a PBSS | М | bi; mlme |  | PBSS — в захватах нет |
 | 11.1.3.3.3 | 2053 | Beacon generation in a DMG infrastructure BSS | М | timing.DOT11_MAX_LOST_BEACONS |  | PLAN №10 |
 | 11.1.3.4 | 2053 | DMG beacon generation before establishment of a BSS | М | mlme.DiscoveryBeaconing; abft (Discovery Mode) |  |  |
@@ -344,10 +349,10 @@
 |---|---|---|---|---|---|---|
 | 11.4.9.1 | 2159 | Deletion of a TS established between an HC, DMG AP, or PCP and a non-AP and non-PCP STA | Н |  |  | удаление TS DMG (11.4) — в охвате open, не реализовано |
 | 11.4.13 | 2165 | DMG allocation formats | Н |  |  | форматы распределений DMG (TSPEC, 11.4) — в охвате open, не реализовано |
-| 11.8.2.2 | 2178 | Providing supported channels upon association in a DMG BSS | Н |  |  | Supported Channels при ассоциации DMG — не моделируется |
-| 11.8.8.6 | 2188 | Selecting and advertising a new channel in a DMG BSS | Н |  |  | смена канала DMG BSS (ECSA в DMG Beacon/Announce/Information Response) — не реализовано |
-| 11.9 | 2189 | Extended channel switching (ECS) | Н |  |  | ECS — не реализовано |
-| 11.10.11 | 2217 | Link measurement | Н |  |  | Link Measurement (DMG Link Margin, 10.43.2) — не реализовано |
+| 11.8.2.2 | 2178 | Providing supported channels upon association in a DMG BSS | М+С | chswitch.check_association_channels, check_bcast_supported_channels | supp_channels | PLAN №41 (11.8.2.2 выше условия табл. 9-34/9-36); Country — не проверяется |
+| 11.8.8.6 | 2188 | Selecting and advertising a new channel in a DMG BSS | М+С | chswitch.ApChannelSwitch / StaChannelSwitch / check_ecsa_sequence / check_sta_no_ecsa | ecsa | сам переход на канал не виден (ecsa_switch); PLAN №42 |
+| 11.9 | 2189 | Extended channel switching (ECS) | Ч | chswitch (11.9.1: бит Extended Channel Switching, Address 1 кадра ECSA; 11.9.2: Current Operating Class; 11.9.3.2: ECSA только от AP) | ecsa, supp_channels | DSE/enabling STA, Max Channel Switch Time, OCV/SA Query, IBSS/MBSS (11.9.3.3–11.9.3.4) — нет |
+| 11.10.11 | 2217 | Link measurement | М+С | linkadapt.LinkMeasResponder (activated / is_ap), rm_link_meas | link_meas | срок ответа не задан — REPLY_WAIT, вердикт model |
 
 ## 11.21 WNM: DMS
 
@@ -365,10 +370,12 @@
 |---|---|---|---|---|---|---|
 | 11.27.1 | 2355 | Beamformed link maintenance | М+С | linkmaint.negotiate / LinkTimer / expiry / sets_timer / check_blm_log | blm | новое; у нас BLM Value = 0 — dot11BeamLinkMaintenanceTime не определён |
 | 11.27.2 | 2357 | PCP Handover | Н |  |  | передача PCP (PBSS) — не реализовано |
-| 11.28 | 2359 | DMG BSS peer and service discovery | Н |  |  | Information Request/Response, peer service discovery — не реализовано |
-| 11.29.1 | 2361 | General | Н | elements (DMG BSS Parameter Change) |  | смена параметров BSS (TBTT, BI) — процедура не моделируется |
-| 11.29.4 | 2363 | Maintaining synchronization in an AP or PCP cluster | ВНЕ |  |  | синхронизация в кластере — кластеризация |
-| 11.29.5 | 2363 | Recommending DMG BSS parameters to the AP or PCP | Н |  |  | рекомендация параметров точке — не реализовано |
+| 11.28 | 2359 | DMG BSS peer and service discovery | Ч | bssparams (каркас Information Request/Response) | bss_params | ответ на Request element, RCPI/RSNI, peer service discovery (11.28.2) — нет |
+| 11.29.1 | 2361 | General | М+С | bssparams.ApBssParamChange / check_beacon_sequence (элемент в каждом маяке до вступления) | bss_params | Announce и доставка STA с псевдостатичными SP/PS — нет (SP — pro, PS удалён) |
+| 11.29.2 | 2361 | Moving the TBTT | М+С | bssparams.ApBssParamChange.plan(move_to) / check_beacon_sequence / sta_tx_crosses_new_tbtt (рис. 11-47) | bss_params | PLAN №38, №39, №40; после сброса TSF — bss_params_tsf |
+| 11.29.3 | 2362 | Changing beacon interval duration | М+С | bssparams.ApBssParamChange.plan(new_bi_tu) / check_beacon_sequence / check_schedule_fits (рис. 11-48) | bss_params | PLAN №38 |
+| 11.29.4 | 2363 | Maintaining synchronization in an AP or PCP cluster | ВНЕ |  |  | кластеризация AP/PCP — вне open (10.40) |
+| 11.29.5 | 2363 | Recommending DMG BSS parameters to the AP or PCP | М+С | bssparams.recommend / ap_answer / check_recommendation_answer | bss_params | в захватах нет |
 | 11.30 | 2364 | Spatial sharing and interference mitigation for DMG STAs | Н |  |  | spatial sharing — в охвате open, не реализовано (guard time без него, 10.39.6.5) |
 | 11.31 | 2367 | Multi-band operation | ВНЕ |  |  | multi-band/FST |
 | 11.32 | 2383 | MMSL cluster operation | ВНЕ |  |  | MMSL |
@@ -400,8 +407,8 @@
 
 ## Приоритеты «Н» для open (что делает прошивка в эфире)
 
-Смена канала DMG BSS (11.8.8.6, ECSA), TPC/адаптация (10.43, Link Measurement), Information Request/Response (11.28),
-передача PCP (11.27.2), смена параметров BSS (11.29), Quiet Period (11.35); для SP — защищённый
-период (10.39.6.6), резервирование DMG TSPEC/ADDTS (11.4), spatial sharing (11.30). В захватах стенда
-таких кадров нет — сначала нужен сценарий, где прошивка их передаёт.
+Information Request/Response полностью (11.28), передача PCP (11.27.2), Quiet Period (11.35); для SP — защищённый
+период (10.39.6.6), резервирование DMG TSPEC/ADDTS (11.4), spatial sharing (11.30). Смена канала (11.8.8.6),
+TPC/адаптация (10.43, 11.10.11) и смена параметров BSS (11.29) — в модели и судье (волна F); в захватах стенда таких
+кадров нет — прошивка их не передаёт (сначала нужен сценарий).
 

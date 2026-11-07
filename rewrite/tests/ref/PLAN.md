@@ -91,6 +91,24 @@
   негативные варианты (`NEGATIVE`: имя → изменение, правило).
 - `air_sched.py` — правила судьи эфира `schedule`, `sp_access`, `dynalloc` (подключены в `air_judge.RULES`).
 
+Волна F (адаптация линка, смена канала и параметров BSS; `COVERAGE.md`):
+- `linkadapt.py` — адаптация линка DMG (10.43.1–10.43.3) и Link Measurement (11.10.11): кадры Link Measurement
+  Request/Report (9.6.6.4/9.6.6.5), элементы TPC Report (9.4.2.16), DMG Link Margin (9.4.2.142, табл. 9-266, коды MCS),
+  DMG Link Adaptation Acknowledgment (9.4.2.143); отвечающая STA (токен ≠ 0 — измерение на следующем кадре, RA = TA,
+  DMG Link Margin, игнор у AP без dot11RMLinkMeasurementActivated), `TpcPeer` (LA Ack, 2·aPPDUMaxTime), быстрая
+  адаптация (Fast Link Adaptation ⇒ RD, условия PPDU, IFS ≤ SIFS, отчёт до BRPIFS на MCS 1, рис. 10-95).
+- `chswitch.py` — смена канала DMG BSS (11.8.8.6) и ECS (11.9 в части DMG): ECSA (9.4.2.52), кадр ECSA (9.6.7.7),
+  Supported Channels (9.4.2.17, 11.8.2.2), Supported Operating Classes (Current Operating Class, 11.9.2), DMG-классы
+  табл. E-4 (180, 181); `ApChannelSwitch` (счётчик по TBTT, объявление до смены), `StaChannelSwitch`,
+  `check_ecsa_sequence`.
+- `bssparams.py` — смена параметров DMG BSS (11.29.1–11.29.3, 11.29.5): план маяков (dot11NbrOfChangeBeacons,
+  Beacon Interval на N+1, новый TBTT/BI, сброс TSF 11.1.3.3.1), судья ряда BTI `check_beacon_sequence`, запрет STA
+  передавать за новый TBTT, рекомендация STA и ответ точки; каркас Information Request/Response (9.6.19.4/9.6.19.5).
+- `air_judge` — правила `link_meas`, `link_margin`, `ecsa`, `supp_channels`, `bss_params`; air_pcap — имена действий
+  Link Measurement, ECSA, Information Request/Response, Announce. Тесты — `test_linkadapt.py`, `test_chswitch.py`,
+  `test_bssparams.py`. Перенести в `timing.py`: aMinPPDUDurationForDMGMeasurement (5,27 мкс, табл. 11-22),
+  dot11NbrOfChangeBeacons DEFVAL.
+
 ## Правила для каждого модуля
 - Заголовок `# SPDX-License-Identifier: AGPL-3.0-or-later`, докстрока: охват (пункты) и что НЕ моделируется.
 - Комментарии по-русски, у каждого правила — пункт/таблица/рисунок; цитаты из стандарта не длиннее строки.
@@ -145,6 +163,16 @@
 | 32 | Групповая копия, когда DMS просили все связанные станции | Не передаётся (dms.transmit_group); судья не проверяет (dms_group_copy) | 11.21.16.2 | «shall continue to transmit … as group addressed frames … if at least one associated STA has not requested DMS» — обязанности в обратном случае нет |
 | 33 | «Дубли» после прекращения DMS по Last Sequence Control | Групповой кадр той же группы с SN не новее Last SN (в окне 2048 назад по модулю 4096) — дубль; первый более новый снимает фильтр; 65 534 и 65 535 — фильтра нет (NOTE 2) (dms.DmsRecipient) | 11.21.16.2, 9.4.2.88 | Окно дубля не задано; 2048 — как полуокно номеров 10.25.6 |
 | 34 | A-MSDU вне соглашения BA у DMG | Разрешено (одиночный MPDU, любая Ack Policy, кроме ограничений A-MPDU), с пределами DMG Capabilities получателя (amsdu) | 10.11 | Обязанность приёма A-MSDU вне BA перечислена для HT/VHT/CMMG, для DMG — нет; запрета передачи тоже нет, предел — поля табл. 9-253/9-254 (2020 = 2024) |
+| 35 | Отчёт быстрой адаптации не по условиям 10.43.3 (MCS ≠ 1, без агрегации, позже BRPIFS, IFS > SIFS) | Не нарушение — откат на 10.43.1 («If at least one of the conditions above … is not met, the STA may follow the rules in 10.43.1»); нарушения — только у начавшего (запрос: Action No Ack, токен 0, AGGREGATED, > aMinPPDUDurationForDMGMeasurement, обе стороны с Fast Link Adaptation) и Fast Link Adaptation = 1 при Reverse Direction = 0. В open RD выключен намеренно (10.29.4) — Fast Link Adaptation = 0 (linkadapt, air_judge `link_meas`) | 10.43.3, 10.29 | 2020 = 2024 (10.42.3) |
+| 36 | Кодирование SNR в DMG Link Margin | Как SNR Report 9.5.3: 4·(SNR − 19) в дополнительном коде (тот же диапазон −13…50,75 дБ шагом 0,25; `fields.snr_report_raw`, квантование — №6) (linkadapt) | 9.4.2.142 | 9.4.2.142 даёт только диапазон и шаг (2020 = 2024); 256 значений диапазона совпадают с 8 битами 9.5.3 |
+| 37 | Reference Timestamp DMG LA Ack и момент «acknowledged the reception» | LA Ack: Reference Timestamp — копия Reference Timestamp подтверждаемого DMG Link Margin (судья допускает и конец PPDU принятого отчёта ± 10 мкс); срок 2·aPPDUMaxTime — от конца Ack на отчёт, у Action No Ack — от конца PPDU отчёта; Reference Timestamp отчёта в TSF отвечающего сверяется с концом PPDU захвата ± 10 мкс, вердикт model (linkadapt, air_judge `link_margin`, `link_meas`) | 9.4.2.143, 10.43.2 | 9.4.2.143 дословно повторяет определение 9.4.2.142 (для LA Ack «feedback» не определён); ссылка «described in 10.42.9» — устаревшая (в 2024 — 10.41.9; по смыслу 10.43) |
+| 38 | dot11NbrOfChangeBeacons: DEFVAL 4 и «shall be greater than dot11MaxLostBeacons» (= 4, №10) | Норма — требование: наименьшее допустимое 5, модель по умолчанию 5; судья требует > 4 объявлений (bssparams, air_judge `bss_params`) | 11.29.2, 11.29.3, MIB | DEFVAL { 4 } в 2020 и 2024 — противоречит тексту 11.29.2/11.29.3 обоих изданий |
+| 39 | Элемент DMG BSS Parameter Change в маяках TBTT N+1 при переносе TBTT | Модель включает (11.29.1: «in every DMG Beacon … after … first included, stopping … immediately after the … change takes effect» — вступает на новом TBTT N+2); судья допускает и без него («sent at each TBTT dot11NbrOfChangeBeacons times»); после сброса TSF элемента быть не должно (bssparams) | 11.29.1, 11.29.2 | 2020 = 2024; два абзаца дают N и N+1 объявлений |
+| 40 | Beacon Interval на TBTT N+1 при переносе TBTT (поле — в TU) | Разность нового TBTT и TBTT N+1 кратна TU (модель); судья — отклонение BI·TU от разности < 1 TU; точка, принимая рекомендацию STA, округляет TBTT вниз до сетки TU от TBTT N+1 (bssparams) | 11.29.2, 9.4.1.3 | TBTT Offset — мкс, Beacon Interval — TU: некратный сдвиг не представим; текст молчит (2020 = 2024) |
+| 41 | Supported Channels DMG STA: 11.8.2.2 «shall provide … a list of channels» или условие табл. 9-34/9-36 («present if dot11SpectrumManagementRequired is true and dot11ExtendedChannelSwitchActivated is false») | DMG-правило 11.8.2.2: Supported Channels в (Re)Association Request или в Information Request STA — обязательно (chswitch, air_judge `supp_channels`) | 11.8.2.2, табл. 9-34, 9-36 | Частное DMG-правило против общего условия таблицы; 2020 = 2024 |
+| 42 | ECSA в DMG BSS: счётчик при нескольких маяках BTI, кадр ECSA, режим 1 | Count — число TBTT: одинаков во всех кадрах BI, −1 на каждый TBTT; Count 0 — смена в любой момент после кадра (кадр без ECSA после него — уже после смены); объявление, оборванное до момента смены, — нарушение; кадр ECSA (Public Action) в DMG BSS не обязателен (11.8.8.6 называет DMG Beacon, Announce, Information Response), но если послан — Address 1 широковещательный (11.9.1); режим 1 в DMG STA может игнорировать — передачи STA после него не нарушение (chswitch, air_judge `ecsa`) | 11.8.8.6, 9.4.2.52, 11.9.1 | 2020 = 2024 |
+| 43 | Dialog Token 0 в Link Measurement Request | Допустим у DMG (10.43.1 «If the Dialog Token field … is equal to 0», 10.43.3 — обязателен для быстрой адаптации) — не нарушение 9.6.6.4 «set to a nonzero value» (linkadapt) | 9.6.6.4, 10.43.1, 10.43.3 | Общий формат против DMG-правил; 2020 = 2024 |
+| 44 | Источник полей отчёта при токене ≠ 0 | Буквально: TPC Report Link Margin, RCPI, RSNI, Receive Antenna ID — по кадру запроса (9.6.6.5, 9.4.2.16 «of the corresponding Link Measurement Request frame»); MCS, SNR, Link Margin DMG Link Margin и Reference Timestamp — по следующему кадру запросившего (10.43.1) (linkadapt) | 9.6.6.5, 10.43.1 | 2020 = 2024 |
 | 45 | Начало отсчёта Response Offset в PP и Duration SPR | От конца Poll (10.39.7.2: «at the time offset from the end of the Poll frame»; O_1 = SIFS — «interval between the end of the last Poll … and the expected start time of the first SPR»; рис. 10-60), Duration SPR = Poll − RO − TXTIME(SPR); чтение 9.3.1.10/9.3.1.11 (RO «beginning SIFS after the end of the Poll», Duration − SIFS) — судья как 'model' (`dyn_spr_time_9.3.1.10`, `dyn_spr_dur_9.3.1.11`). ATI: RO = 0, SPR через SIFS (10.39.3) (dynalloc, duration) | 10.39.7.2, 9.3.1.10, 9.3.1.11, 10.39.3 | 2020 = 2024 (10.38.7.2); при чтении 9.3.1.10 формула (10-18) расходится с рис. 10-60 на SIFS |
 | 46 | A_k и O_j в (10-18) | A_k — переключение антенны перед Poll_k (тот же промежуток, что SBIFS слагаемого k; буквально «frame k and frame k+1» — сдвиг на кадр, A_n — после последнего Poll); O_j — через TXTIME(SPR_j) буквально (`duration.pp_schedule(oj_spr='j')`); при одинаковых A и SPR одной длины чтения совпадают (dynalloc.pp) | 10.39.7.2 | 2020 = 2024 |
 | 47 | Начало GP после PP | По тексту: «SIFS following the end of a PP», а конец PP уже «… plus SIFS» — первый Grant через 2·SIFS после ожидаемого конца последнего SPR; рис. 10-60 (SIFS) — судья 'model' (`dyn_gp_start_fig`) (dynalloc) | 10.39.7.2, 10.39.7.3, рис. 10-60 | 2020 = 2024; рисунок — пример |
@@ -168,4 +196,5 @@ MCS 13/16 и 7/8, остаток Extended Schedule < 15 октетов,
 `dms` — по «Terminate» снимаются все группы пары (DMSID → группы не ведётся), `amsdu` — Short без записанного PTP
 TSPEC — вердикт capture (ADDTS не разбирается); schedule — BF Training при broadcast AID, AllocationType 1,08 ГГц для DMG; sp — первый кадр SP при BF (SSW ISS/RSS),
 число SSW в RXSS не проверяется, Duration Grant усечения с ответным CF-End и без; dynalloc — Allocation Duration = 0
-(«one PPDU …»: не более одного PPDU источника кроме RTS), уступка TXOP (остаток — по NAV держателя).
+(«one PPDU …»: не более одного PPDU источника кроме RTS), уступка TXOP (остаток — по NAV держателя); bssparams — пропуск BTI в записи посреди объявления — «не
+проверяемо»; chswitch — канал после смены не виден (судья проверяет только ряд объявлений).

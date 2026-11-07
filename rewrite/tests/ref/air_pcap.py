@@ -68,9 +68,13 @@ MGMT_NAME = {0: E.ASSOC_REQ, 1: E.ASSOC_RESP, 2: E.REASSOC_REQ, 3: E.REASSOC_RES
              12: E.DEAUTH, 13: 'Action', 14: 'Action No Ack'}
 DATA_NAME = {8: 'Data', 12: 'QoS Null'}                    # табл. 9-1, тип 10: QoS Data, QoS Null
 # Action (9.6): категория (табл. 9-51) и действие: Block Ack (табл. 9-376), Unprotected DMG (табл. 9-486), WNM
-# (табл. 9-425: DMS Request/Response)
+# (табл. 9-425: DMS Request/Response), Radio Measurement (табл. 9-363), Public (табл. 9-364: ECSA), DMG (табл.
+# 9-457: Information Request/Response)
 ACTION_NAME = {(3, 0): 'ADDBA Request', (3, 1): 'ADDBA Response', (3, 2): 'DELBA', (20, 1): 'BRP',
-               (10, 23): 'DMS Request', (10, 24): 'DMS Response'}
+               (10, 23): 'DMS Request', (10, 24): 'DMS Response', (20, 0): 'Announce',
+               (5, 2): 'Link Measurement Request', (5, 3): 'Link Measurement Report',
+               (4, 4): 'Extended Channel Switch Announcement', (16, 2): 'Information Request',
+               (16, 3): 'Information Response'}
 # адрес TA есть (9.3.1): у всех, кроме Ack, CTS, DMG DTS; DMG Beacon — BSSID на месте A1 (9.3.4.2)
 NO_TA = ('Ack', 'CTS', 'DMG DTS')
 

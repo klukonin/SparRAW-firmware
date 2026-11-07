@@ -19,8 +19,8 @@ from .cbap import SeqRng
 
 HERE = os.path.dirname(__file__)
 # Модули, сведённые к общим постоянным timing.py (новый модуль — добавить сюда).
-MODULES = ('abft', 'air_judge', 'air_pcap', 'amsdu', 'beamtrack', 'bi', 'blockack', 'brp', 'cbap', 'dms', 'duration',
-           'elements', 'fields', 'linkmaint', 'mlme', 'nav', 'sls')
+MODULES = ('abft', 'air_judge', 'air_pcap', 'amsdu', 'beamtrack', 'bi', 'blockack', 'brp', 'bssparams', 'cbap',
+           'chswitch', 'dms', 'duration', 'elements', 'fields', 'linkadapt', 'linkmaint', 'mlme', 'nav', 'sls')
 
 
 def _module_level_names(path):

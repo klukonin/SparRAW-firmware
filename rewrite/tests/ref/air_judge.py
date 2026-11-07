@@ -32,10 +32,13 @@ from . import air_pcap as AP       # noqa: E402
 from . import beamtrack as BT      # noqa: E402
 from . import bi as BI             # noqa: E402
 from . import blockack as BA       # noqa: E402
+from . import bssparams as BP      # noqa: E402
+from . import chswitch as CS       # noqa: E402
 from . import dms as DM            # noqa: E402
 from . import duration as D        # noqa: E402
 from . import elements as E        # noqa: E402
 from . import fields as F          # noqa: E402
+from . import linkadapt as LA      # noqa: E402
 from . import linkmaint as LM      # noqa: E402
 from . import mlme as M            # noqa: E402
 from . import nav as NV            # noqa: E402
@@ -58,7 +61,8 @@ PAGE = {'9.2.2': 757, '9.2.4.1': 758, '9.2.5.1': 791, '9.2.5.2': 791, '9.2.5.7':
         '10.25.6': 1791, '10.29.2': 1819, '10.39.2': 1878, '10.39.5': 1882, '10.42.2': 1933, '10.42.4': 1946,
         '10.42.5': 1946, '11.1.3.1': 2050, '11.1.3.3.1': 2052, '20.11.3': 3007,
         '10.3.2.4': 1648, '10.39.3': 1879, '10.39.10': 1902, '10.42.3.1': 1941, '10.42.6.4': 1961, '10.42.7': 1964,
-        '11.3.3': 2128, '11.27.1': 2355, '9.3.2.2': 819, '10.11': 1715, '11.21.16.2': 2291}
+        '11.3.3': 2128, '11.27.1': 2355, '9.3.2.2': 819, '10.11': 1715, '11.21.16.2': 2291,
+        '10.43.1': 1970, '10.43.2': 1971, '11.8.2.2': 2178, '11.8.8.6': 2188, '11.29.1': 2361}
 
 
 def cite(cl):
@@ -2269,12 +2273,480 @@ def r_dms(c):
     return r
 
 
+# ------------------------------------------------------------------------------ адаптация линка, канал, параметры BSS
+REF_TS_TOL = Fr(10)     # СПОРНО (PLAN.md №37): Reference Timestamp в TSF отвечающего ↔ время захвата (TSF точки)
+REPLY_WAIT = 100 * T.TU  # СПОРНО: срок ответа на Link Measurement Request не задан — после него «нет ответа»
+
+
+def _mgmt_raws(e):
+    """MPDU управления PPDU (TX/RX с телом): [(raw, fc, тело целиком)]."""
+    if e.synth:
+        return []
+    raws = e.mpdus or ([e.raw] if e.raw is not None else [])
+    out = []
+    for raw in raws:
+        if raw is None or len(raw) < 26:
+            continue
+        fc = F.parse_fc(raw[:2])
+        if fc.type == F.TYPE_MGMT and not F.fc_is_cfe(fc):
+            out.append((raw, fc, bool(e.body_ok) and not e.agg))
+    return out
+
+
+def _actions(c, names):
+    """[(событие, raw, имя действия, Action No Ack, тело целиком)] Action-кадров с данными именами."""
+    out = []
+    for e in c.evs:
+        for raw, fc, full in _mgmt_raws(e):
+            if fc.subtype not in (13, 14):
+                continue
+            n = AP.ACTION_NAME.get((raw[24], raw[25]))
+            if n in names:
+                out.append((e, raw, n, fc.subtype == 14, full, fc.protected))
+    return out
+
+
+def _peer_info(c):
+    """Из TX-тел кадров управления: {MAC: dict(cap=(поля DMG STA Capability, событие), rm=бит Link Measurement,
+    ecs=бит Extended Channel Switching, assoc=[(событие, элементы)], info_req=[(событие, элементы)])}."""
+    out = defaultdict(lambda: dict(cap=None, rm=None, ecs=None, assoc=[], info_req=[]))
+    for e in c.evs:
+        if e.kind not in CAPS_FRAMES or not e.body_ok or e.raw is None:
+            continue
+        try:
+            _, els = E.parse_body(e.kind, e.raw[24:])
+        except (ValueError, NotImplementedError):
+            continue
+        d = out[e.src]
+        for el in els:
+            try:
+                if el.eid == E.EID_DMG_CAPABILITIES and d['cap'] is None:
+                    d['cap'] = (E.parse_dmg_capabilities(el.info).sta_cap, e)
+                elif el.eid == LA.EID_RM_ENABLED:
+                    d['rm'] = LA.rm_link_meas(el.info)
+                elif el.eid == CS.EID_EXT_CAP:
+                    d['ecs'] = CS.ext_cap_bit(el.info, CS.EXT_CAP_ECS_BIT)
+            except ValueError:
+                pass
+        if e.kind in (E.ASSOC_REQ, E.REASSOC_REQ):
+            d['assoc'].append((e, els))
+    for e, raw, n, noack, full, prot in _actions(c, ('Information Request',)):
+        if not prot:
+            try:
+                out[e.src]['info_req'].append((e, BP.parse_info(raw[24:]).elements))
+            except (ValueError, F.FieldError):
+                pass
+    return out
+
+
+def _parse_lm(r, e, raw, name, full, prot):
+    """Разбор Link Measurement Request/Report или None (с пометкой правила)."""
+    if prot:
+        r.skip('Link Measurement защищён (Radio Measurement — robust Action, табл. 9-51) — тело не разобрать')
+        return None
+    try:
+        return (LA.parse_lm_request if name == 'Link Measurement Request' else LA.parse_lm_report)(raw[24:])
+    except ValueError as x:
+        if full:
+            r.bad(e, f'{name}: разбор: {x}')
+        else:
+            r.skip(f'{name}: тело не записано целиком')
+        return None
+
+
+def _acked_end(c, e):
+    """Конец подтверждения кадра e (Ack от получателя сразу после него) или конец самого e (Action No Ack / Ack не
+    записан)."""
+    n = c.nxt.get(e.i)
+    if n is not None and n.kind == 'Ack' and n.dst == e.src and n.t - e.te <= RESP_WINDOW:
+        return n.te
+    return e.te
+
+
+def r_link_meas(c):
+    r = Rule('link_meas', '10.43.1', 'Link Measurement (ref/linkadapt): запрос (9.6.6.4: Transmit Power Used ≤ Max '
+             'Transmit Power), отчёт на запрос — RA = TA, Dialog Token, DMG Link Margin (10.43.1), измерение на '
+             'следующем кадре при токене ≠ 0 (Reference Timestamp), ответ STA с dot11RMLinkMeasurementActivated '
+             '(11.10.11), игнор у AP без него; быстрая адаптация (10.43.3): Fast Link Adaptation = 1 ⇒ RD, обе '
+             'стороны, PPDU запроса и отчёта')
+    info = _peer_info(c)
+    caps = {m: d['cap'][0] for m, d in info.items() if d['cap'] is not None}
+    for m, d in info.items():
+        if d['cap'] is None:
+            continue
+        ms = LA.check_fla_caps(d['cap'][0], _who(c, m))
+        for x in ms:
+            r.bad(d['cap'][1], x)
+        if not ms:
+            r.ok()
+    pend, stats, notes = {}, Counter(), Counter()
+    acts = _actions(c, LA_ACTIONS)
+    for e, raw, name, noack, full, prot in acts:
+        f = _parse_lm(r, e, raw, name, full, prot)
+        if f is None:
+            continue
+        stats[name + (' (No Ack)' if noack else '')] += 1
+        if name == 'Link Measurement Request':
+            req, extra = f
+            fla = noack and req.token == 0 and bool(e.agg)
+            ms = LA.check_lm_request(req, fla=fla, extra=extra)
+            if fla:
+                stats['запрос быстрой адаптации'] += 1
+                a, b = caps.get(e.src), caps.get(e.dst)
+                if a is not None and b is not None and not LA.fla_may_initiate(a, b):
+                    ms.append(f'быстрая адаптация: Fast Link Adaptation {a.get("fast_link_adaptation")}/'
+                              f'{b.get("fast_link_adaptation")} (10.43.3: «shall not initiate … with a peer STA '
+                              f'that does not support»)')
+                if e.t_ok and e.te - e.t <= LA.aMinPPDUDurationForDMGMeasurement:
+                    ms.append('PPDU запроса быстрой адаптации ≤ aMinPPDUDurationForDMGMeasurement (10.43.3)')
+                if e.t_ok:
+                    _, n2 = LA.check_fla_exchange(_fla_seq(c, e), None)
+                    for x in n2:
+                        notes[x.split(':')[0]] += 1
+                r.skip('быстрая адаптация: RD (RDG держателя) и кадры с немедленным ответом в PPDU — заголовки данных '
+                       'не записаны (fla_immediate)')
+            for x in ms:
+                r.bad(e, f'Link Measurement Request: {x}')
+            if not ms:
+                r.ok()
+            pend[(e.src, e.dst)] = (e, req)
+            continue
+        rep = f
+        q = pend.pop((e.dst, e.src), None)
+        if q is None:
+            if rep.token:
+                r.skip('отчёт с Dialog Token ≠ 0 без записанного запроса')
+            else:
+                stats['отчёт без запроса (Dialog Token 0)'] += 1
+            continue
+        qe, req = q
+        ms = LA.check_report_reply(rep, req, qe.src, e.dst)
+        if c.ap is not None and e.src == c.ap and info.get(c.ap, {}).get('rm') is False:
+            ms.append('AP с Link Measurement Capability Enabled = 0 ответила на запрос (11.10.11: «shall ignore the '
+                      'request»)')
+        for x in ms:
+            r.bad(e, f'Link Measurement Report: {x}')
+        if not ms:
+            r.ok()
+        # 10.43.1: токен ≠ 0 — MCS/SNR/Link Margin по следующему PPDU запросившего (Reference Timestamp — его конец)
+        if req.token and rep.margin is not None and qe.t_ok and e.t_ok:
+            nxt = next((x for x in c.k if x.src == qe.src and x.t >= qe.te and x.t < e.t), None)
+            if nxt is None:
+                r.skip('между запросом и отчётом нет записанного PPDU запросившего — Reference Timestamp не сверить')
+            else:
+                d = (rep.margin.ref_ts - int(nxt.te)) % T.TSF_LOW_MOD
+                d = min(d, T.TSF_LOW_MOD - d)
+                if d > REF_TS_TOL:
+                    r.bad(e, f'Reference Timestamp {rep.margin.ref_ts} не у конца следующего PPDU запросившего '
+                             f'(#{nxt.i}, {int(nxt.te) % T.TSF_LOW_MOD}) — измерение не на нём (10.43.1)', 'model')
+                else:
+                    r.ok()
+    end = max((e.te for e in c.k), default=None)
+    for (src, dst), (qe, req) in pend.items():
+        if not qe.t_ok or end is None or end - qe.te < REPLY_WAIT:
+            r.skip('запрос без ответа в конце захвата')
+            continue
+        rm = info.get(dst, {}).get('rm')
+        if dst == c.ap and rm is False:
+            r.ok()                                       # 11.10.11: AP без Link Measurement игнорирует
+        elif rm:
+            r.bad(qe, f'Link Measurement Request к {_who(c, dst)} (Link Measurement Capability Enabled = 1) без отчёта '
+                      f'за {float(REPLY_WAIT / T.TU):.0f} TU (11.10.11: «shall respond»)', 'model')
+        else:
+            r.skip('запрос без ответа: Link Measurement Capability Enabled отвечающей STA не записан')
+    r.info['frames'] = dict(stats)
+    if notes:
+        r.info['fla'] = dict(notes)
+    return r
+
+
+LA_ACTIONS = ('Link Measurement Request', 'Link Measurement Report')
+
+
+def _fla_seq(c, e):
+    """PPDU запроса быстрой адаптации и следующие за ним PPDU (linkadapt.Ppdu)."""
+    out = []
+    x = e
+    while x is not None and len(out) < 16:
+        frames = []
+        for raw, fc, _ in _mgmt_raws(x):
+            n = AP.ACTION_NAME.get((raw[24], raw[25])) if fc.subtype in (13, 14) else None
+            kind = {'Link Measurement Request': 'LM Request', 'Link Measurement Report': 'LM Report'}.get(n, x.kind)
+            frames.append(LA.Frame(kind, fc.subtype == 14, raw[26] if len(raw) > 26 else None, False))
+        if not frames:
+            frames = [LA.Frame(x.kind, False, None, False)]
+        out.append(LA.Ppdu(x.t, x.te, x.src, x.dst, x.mcs, bool(x.agg), tuple(frames), None))
+        x = c.nxt.get(x.i)
+        if x is not None and x.src not in (e.src, e.dst):
+            break
+    return out
+
+
+def r_link_margin(c):
+    r = Rule('link_margin', '10.43.2', 'DMG Link Margin / DMG LA Ack в Link Measurement Report (ref/linkadapt): поля '
+             '(табл. 9-266 Activity, коды MCS 9.4.2.142, TPC Report 9.4.2.16, DMG antenna ID 9.4.2.39, RCPI табл. '
+             '9-176, порядок рис. 9-863); LA Ack — только в ответ на Activity 2/3, Activity = полученному или 0, не '
+             'позже 2·aPPDUMaxTime после подтверждения (10.43.2)')
+    last, acts = {}, Counter()
+    for e, raw, name, noack, full, prot in _actions(c, ('Link Measurement Report',)):
+        rep = _parse_lm(r, e, raw, name, full, prot)
+        if rep is None:
+            continue
+        ms = LA.check_lm_report(rep)
+        if rep.margin is not None:
+            acts[LA.ACTIVITY_NAME.get(rep.margin.activity, rep.margin.activity)] += 1
+        prev = last.get((e.dst, e.src))                    # последний отчёт пира этой STA
+        ms += LA.check_la_ack_reply(rep, prev[1] if prev else None)
+        if rep.ack is not None and prev is not None and prev[1].margin is not None and not ms:
+            pe = prev[0]
+            if pe.t_ok and e.t_ok:
+                t_ack = _acked_end(c, pe)
+                if e.t > t_ack + LA.LA_ACK_DEADLINE + Q:
+                    ms.append(f'LA Ack через {float(e.t - t_ack):.0f} мкс после подтверждения отчёта > 2·aPPDUMaxTime '
+                              f'(10.43.2)')
+                if not LA.la_ack_ref_ok(rep.ack, prev[1].margin, None):
+                    d = (rep.ack.ref_ts - int(pe.te)) % T.TSF_LOW_MOD
+                    if min(d, T.TSF_LOW_MOD - d) > REF_TS_TOL:
+                        r.bad(e, f'LA Ack: Reference Timestamp {rep.ack.ref_ts} — ни рекомендации '
+                                 f'{prev[1].margin.ref_ts}, ни конца принятого отчёта (PLAN.md №37)', 'model')
+            else:
+                r.skip('LA Ack: время отчёта пира неизвестно — срок 2·aPPDUMaxTime не проверен')
+        for x in ms:
+            r.bad(e, f'Link Measurement Report: {x}')
+        if not ms:
+            r.ok()
+        last[(e.src, e.dst)] = (e, rep)
+    r.info['activity'] = dict(acts)
+    return r
+
+
+def _bss_frames(c):
+    """Кадры точки, несущие объявления BSS (11.8.8.6, 11.29.1): [(событие, вид, элементы [(eid, ext, info)])] —
+    DMG Beacon (TX точки), Announce и Information Response (тело целиком)."""
+    out = []
+    for e in c.evs:
+        if e.src != c.ap or e.synth:
+            continue
+        if e.kind == 'DMG Beacon':
+            if e.p is not None and e.tx_node:
+                out.append((e, 'DMG Beacon', [(a, b, d) for a, b, d in e.p.elements]))
+            continue
+        for raw, fc, full in _mgmt_raws(e):
+            if fc.subtype not in (13, 14) or not full or fc.protected:
+                continue
+            n = AP.ACTION_NAME.get((raw[24], raw[25]))
+            try:
+                if n == 'Announce':
+                    els = E.parse_elements(raw[24 + 12:])       # табл. 9-487: Category, Action, Timestamp, BI
+                elif n == 'Information Response':
+                    els = BP.parse_info(raw[24:]).elements
+                else:
+                    continue
+            except (ValueError, F.FieldError):
+                continue
+            out.append((e, n, [(x.eid, x.ext, x.info) for x in els]))
+    return out
+
+
+def r_ecsa(c):
+    r = Rule('ecsa', '11.8.8.6', 'смена канала DMG BSS (ref/chswitch): ECSA (9.4.2.52: режим 0/1, DMG-класс и канал '
+             'табл. E-4) только от AP/PCP, в каждом DMG Beacon/Announce/Information Response до смены, Channel Switch '
+             'Count −1 на TBTT, поля неизменны; бит Extended Channel Switching (11.9.1); кадр ECSA — Address 1 '
+             'широковещательный (11.9.1)')
+    info = _peer_info(c)
+    bi_tu = next((e.p.beacon_interval for e in c.k if e.kind == 'DMG Beacon' and e.p is not None), None)
+    obs, n = [], 0
+    for e, kind, els in _bss_frames(c):
+        x = None
+        for eid, _, data in els:
+            if eid == CS.EID_ECSA:
+                try:
+                    x = CS.parse_ecsa(data)
+                except ValueError as err:
+                    r.bad(e, f'{kind}: {err}')
+        if x is not None:
+            n += 1
+            if info.get(c.ap, {}).get('ecs') is False:
+                r.bad(e, 'ECSA от точки с Extended Channel Switching = 0 (11.9.1: ECS — только при '
+                         'dot11ExtendedChannelSwitchActivated, бит 2 Extended Capabilities = 1)')
+        if e.t_ok and bi_tu:
+            obs.append(CS.Obs(BI.bi_index(e.t, bi_tu), kind, x, e))
+    if n:
+        v, notes = CS.check_ecsa_sequence(obs)
+        for e, m in v:
+            r.bad(e, m)
+        if not v:
+            r.ok(n)
+        for m in notes:
+            r.skip(m)
+    # ECSA от STA (в любых записанных телах управления) и кадр ECSA
+    for e in c.evs:
+        for raw, fc, full in _mgmt_raws(e):
+            act = AP.ACTION_NAME.get((raw[24], raw[25])) if fc.subtype in (13, 14) else None
+            if act == 'Extended Channel Switch Announcement':
+                ms = CS.check_sta_no_ecsa(e.src == c.ap, True) + CS.check_ecsa_frame_addr(E.mac_str(raw[4:10]))
+                try:
+                    ms += CS.check_ecsa(CS.parse_ecsa_frame(raw[24:])[0])
+                except ValueError as x:
+                    ms.append(str(x))
+                for m in ms:
+                    r.bad(e, m)
+                if not ms:
+                    r.ok()
+                continue
+            if e.src == c.ap or e.kind not in BODY_FRAMES or not full:
+                continue
+            try:
+                _, els = E.parse_body(e.kind, raw[24:])
+            except (ValueError, NotImplementedError):
+                continue
+            has = any(el.eid == CS.EID_ECSA for el in els)
+            for m in CS.check_sta_no_ecsa(False, has):
+                r.bad(e, f'{e.kind}: {m}')
+    r.info['ecsa_frames'] = n
+    return r
+
+
+def r_supp_channels(c):
+    r = Rule('supp_channels', '11.8.2.2', 'Supported Channels при ассоциации DMG (ref/chswitch): STA передаёт список '
+             'каналов в (Re)Association Request или Information Request (11.8.2.2), каналы — DMG (табл. E-4); '
+             'Supported Operating Classes — DMG-класс (11.9.2); широковещательный Information Response точки — '
+             'пересечение каналов STA')
+    info = _peer_info(c)
+    sta_ch = {}
+    for m, d in info.items():
+        if m == c.ap:
+            continue
+        for e, els in d['assoc']:
+            ms, chs = CS.check_association_channels(els, [x for _, x in d['info_req']])
+            if chs is not None:
+                sta_ch[m] = chs
+            for x in ms:
+                r.bad(e, f'{e.kind}: {x}')
+            if not ms:
+                r.ok()
+            for el in els:
+                if el.eid == CS.EID_SUPPORTED_OPCLASSES:
+                    try:
+                        cur, cls = CS.parse_supported_opclasses(el.info)
+                    except ValueError as x:
+                        r.bad(e, str(x))
+                        continue
+                    for x in CS.check_supported_opclasses(cur, cls):
+                        r.bad(e, f'{e.kind}: {x}')
+    for e, kind, els in _bss_frames(c):
+        if kind != 'Information Response' or e.dst != T.BCAST:
+            continue
+        for eid, _, data in els:
+            if eid == CS.EID_SUPPORTED_CHANNELS:
+                if len(sta_ch) < len([m for m in info if m != c.ap]):
+                    r.skip('Supported Channels широковещательного Information Response: не у всех STA записан список')
+                    continue
+                ms = CS.check_bcast_supported_channels(CS.parse_supported_channels(data), sta_ch)
+                for x in ms:
+                    r.bad(e, x)
+                if not ms:
+                    r.ok()
+    return r
+
+
+def _btis_seq(c):
+    """BTI точки по порядку захвата: [(первый маяк BTI, элементы)] — новый BTI, когда CDOWN не убывает."""
+    out, prev = [], None
+    for e in c.evs:
+        if e.kind != 'DMG Beacon' or e.src != c.ap or e.p is None or not e.tx_node:
+            continue
+        if prev is None or e.p.ssw.cdown >= prev.p.ssw.cdown:
+            out.append(e)
+        prev = e
+    return out
+
+
+def r_bss_params(c):
+    r = Rule('bss_params', '11.29.1', 'смена параметров DMG BSS (ref/bssparams): DMG BSS Parameter Change в маяках '
+             'подряд и неизменен, TBTT Offset = намеченный TBTT, объявлений > dot11MaxLostBeacons (11.29.2/11.29.3), '
+             'Beacon Interval на TBTT N+1, сдвиг ≤ BI, сброс TSF (11.1.3.3.1), конец объявлений, STA не передают за '
+             'новый TBTT; рекомендация STA и ответ точки (11.29.5)')
+    btis = []
+    for e in _btis_seq(c):
+        ch = None
+        for eid, _, data in e.p.elements:
+            if eid == E.EID_DMG_BSS_PARAMETER_CHANGE:
+                try:
+                    ch = E.parse_bss_param_change(data)
+                except ValueError as x:
+                    r.bad(e, f'DMG BSS Parameter Change: {x}')
+        btis.append(BP.Bti(e.p.timestamp, e.p.beacon_interval, ch, e))
+    if not any(b.change for b in btis):
+        if btis:
+            r.skip('в маяках нет DMG BSS Parameter Change (смены параметров BSS в захвате нет)')
+    else:
+        v, sk, runs = BP.check_beacon_sequence(btis)
+        for e, m in v:
+            r.bad(e, m)
+        for m in sk:
+            r.skip(m)
+        if not v:
+            r.ok(sum(x['announced'] for x in runs))
+        r.info['changes'] = [{k: v for k, v in x.items() if k != 'p_ref'} for x in runs]
+        for x in runs:
+            pe, d = x.get('p_ref'), x.get('d')
+            if pe is None or not pe.t_ok:
+                continue
+            t_new = pe.t - (pe.p.timestamp - BP.tbtt_of(pe.p.timestamp, x['bi_old'])) + d
+            for e in c.k:
+                if e.src != c.ap and BP.sta_tx_crosses_new_tbtt(e.t, e.te, t_new):
+                    r.bad(e, f'{e.kind} {_who(c, e.src)} кончается за новым TBTT {float(t_new):.0f} (11.29.2: «shall '
+                             f'not transmit during the beacon interval that precedes a new TBTT if the transmission '
+                             f'time ends at the TBTT or later»)')
+    # 11.29.5: рекомендация STA — Information Request/Response к точке с элементом; ответ точки
+    reqs = []
+    for e, raw, name, noack, full, prot in _actions(c, ('Information Request', 'Information Response')):
+        if prot or not full:
+            continue
+        try:
+            f = BP.parse_info(raw[24:])
+        except (ValueError, F.FieldError) as x:
+            r.bad(e, f'{name}: разбор: {x}')
+            continue
+        chs = [E.parse_bss_param_change(x.info) for x in BP.find(f.elements, E.EID_DMG_BSS_PARAMETER_CHANGE)]
+        for m in BP.check_info(f, e.dst, noack):
+            r.bad(e, m)
+        if e.src != c.ap:
+            for ch in chs:
+                ms = BP.check_change(ch)
+                if c.ap is not None and e.dst != c.ap:
+                    ms.append('рекомендация параметров не точке (11.29.5: «sent to the AP or PCP»)')
+                for m in ms:
+                    r.bad(e, f'{name}: {m}')
+                if not ms:
+                    r.ok()
+            if chs and name == 'Information Request':
+                reqs.append(e)
+        elif name == 'Information Response':
+            q = next((x for x in reqs if x.src == e.dst), None)
+            if q is not None:
+                reqs.remove(q)
+                later = [b.change for b in btis if b.change is not None and b.ref.i > e.i]
+                for m in BP.check_recommendation_answer(chs[0] if chs else None, later):
+                    r.bad(e, m)
+    end = max((e.te for e in c.k), default=None)
+    for q in reqs:
+        if q.t_ok and end is not None and end - q.te >= REPLY_WAIT:
+            r.bad(q, 'Information Request с DMG BSS Parameter Change без Information Response точки (11.29.5, '
+                     '11.28.1)', 'model')
+        else:
+            r.skip('рекомендация без ответа в конце захвата')
+    return r
+
+
 RULES = (r_fc, r_ctl_len, r_cfe_fields, r_beacon_fields, r_mgmt_body, r_addba, r_ba_control, r_mcs_control,
          r_mcs_response, r_dur_cts, r_dur_resp, r_dur_cf_end, r_dur_bf, r_nav_txop, r_edca, r_txop_limit,
          r_cf_end_rules,
          r_cf_end_lost, r_ifs_sifs, r_holder_gap, r_access, r_responder, r_resp_seq, r_cbap_end, r_ack_policy, r_rd,
          r_ampdu_dur, r_ba_window, r_bi, r_bti_delay, r_sls, r_abft, r_brp, r_ati, r_assoc_state, r_brp_role,
-         r_nav_rx, r_cts_self, r_blm, r_beam_track, r_amsdu, r_dms)
+         r_nav_rx, r_cts_self, r_blm, r_beam_track, r_amsdu, r_dms, r_link_meas, r_link_margin, r_ecsa,
+         r_supp_channels, r_bss_params)
 # DTI по расписанию: schedule, sp_access, dynalloc (ref/air_sched; импорт здесь — air_sched берёт Rule отсюда)
 from . import air_sched as AS      # noqa: E402
 RULES += AS.RULES
@@ -2299,6 +2771,17 @@ NOT_CHECKABLE = [
      '— доставка хосту в запись не попадает (модель — ref/dms.DmsRecipient)'),
     ('dms_group_copy', '11.21.16.2', 'групповая копия MSDU при станциях без DMS — тела групповых данных и состав '
      'связанных станций не записаны (модель — ref/dms.DmsProvider.transmit_group)'),
+    ('tpc_applied', '10.43.2', 'выполнила ли STA рекомендацию Activity (мощность, MCS) — мощность передачи запись PMC '
+     'не несёт; обязательность LA Ack «если выполнила» не проверяется (модель — ref/linkadapt.TpcPeer)'),
+    ('lm_measure', '10.43.1, 9.4.2.142', 'значения MCS/SNR/Link Margin/RCPI/RSNI отчёта против измерения — SNR и '
+     'мощность приёма запись не несёт; проверяются коды полей, пары запрос→отчёт и Reference Timestamp'),
+    ('fla_immediate', '10.43.3', 'RD-роль и кадры с немедленным ответом в PPDU быстрой адаптации — заголовки данных '
+     'без rxqos/txqos не записаны (модель — ref/linkadapt.check_fla_exchange)'),
+    ('ecsa_switch', '11.8.8.6, 9.4.2.52', 'канал запись PMC не хранит — сам переход на новый канал и действия STA '
+     'после ECSA не видны (модель — ref/chswitch)'),
+    ('bss_params_tsf', '11.29.2–11.29.3, 11.1.3.3.1', 'после сброса TSF при смене параметров метки PMC и слияние '
+     'air_pcap по TSF не проверены — правила времени после изменения недостоверны; судья bss_params опирается на '
+     'Timestamp маяков'),
 ] + AS.NOT_CHECKABLE
 
 
