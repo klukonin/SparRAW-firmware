@@ -8,8 +8,10 @@
     DMG Operation (9.4.2.128, рис. 9-555..9-556);
   * то же при TDMA точки (ESE в маяке): CBAP Only = 0, TDDTI / Pseudo-static allocations = 1;
   * Probe Response (9.3.3.10, табл. 9-39) — Capability Information как в Association Response;
-  * Association Request станции (9.3.3.5, табл. 9-34) — резервные подполя DMG Parameters.
+  * Association Request станции (9.3.3.5, табл. 9-34) — резервные подполя DMG Parameters, Supported Channels
+    (9.4.2.17, 11.8.2.2).
 """
+import os
 import struct
 
 import pytest
@@ -67,6 +69,10 @@ def check_dmg_caps(body, own_mac, max_sta):
     assert body[0:6] == own_mac                               # STA Address — передающая станция
     assert body[6] == 0                                       # AID передающей станции: 0 — AP/PCP (9.4.1.8)
     sta = int.from_bytes(body[7:15], 'little')                # DMG STA Capability Information (рис. 9-550)
+    # Reverse Direction = dot11RDResponderOptionImplemented (10.29.1): ответчик RD отклоняет каждый RDG (10.29.4,
+    # docs/MAC-STAND.md «Ответчик RD глохнет») — 0; Higher Layer Timer Sync (11.6), TPC (11.7), SPSH (11.30) — нет
+    assert bits(sta, 0, 3) == 0
+    assert bits(sta, 6, 6) == 0                               # Fast Link Adaptation: требует RD (10.43.3)
     assert bits(sta, 4, 5) == 0                               # Number of RX DMG Antennas − 1: одна антенна
     assert bits(sta, 7, 13) == 32 - 1                         # Total Number of Sectors − 1 (board-файл: 32)
     assert bits(sta, 27, 27) == 0                             # BA with Flow Control: нет (10.42.9)
@@ -261,8 +267,9 @@ def test_assoc_req_qos_info_no_uapsd(fw):
 
 
 APPIE_ASSOC_REQ, EID_SUPP_OP_CLASSES = 3, 59                 # enum wmi_mgmt_frame_type: 3 — Association Request
-# Порядковые номера табл. 9-34 (Association Request) для элементов теста; Vendor Specific — последние
-ASSOC_REQ_ORDER = {EID_SSID: 3, EID_RSN: 8, EID_QOS_CAP: 9, EID_SUPP_OP_CLASSES: 12, EID_EXT_CAP: 15,
+# Порядковые номера табл. 9-34 (Association Request) для элементов теста (36 — Supported Channels); Vendor Specific —
+# последние
+ASSOC_REQ_ORDER = {EID_SSID: 3, 36: 7, EID_RSN: 8, EID_QOS_CAP: 9, EID_SUPP_OP_CLASSES: 12, EID_EXT_CAP: 15,
                    EID_MULTI_BAND: 19, EID_DMG_CAP: 20, EID_VS: 1000}
 
 
@@ -283,6 +290,92 @@ def test_assoc_req_merged_with_host_ies_order(fw):
     for e in (EID_SSID, EID_QOS_CAP, EID_SUPP_OP_CLASSES, EID_EXT_CAP, EID_MULTI_BAND, EID_DMG_CAP):
         assert ids.count(e) == 1, ids
     assert_table_order(ids, ASSOC_REQ_ORDER)
+
+
+# ---- Supported Channels в Association Request (9.4.2.17, 11.8.2.2) ----
+
+EID_SUPP_CH = 36
+BRD_BUF, BRD_SIZE = 0x84f800, 0x2400                         # fw/fw.ld brd_file_buf, include/brd_if.h
+RF_BRD_IF = 0x58                                            # struct rf_obj: brd_if (include/rf_obj.h)
+BRD_DATA, BRD_SIZE_OFF, BRD_VALID = 0x48, 0x4c, 0x50       # struct brd_if (include/brd_if.h)
+
+
+def load_brd(fw, channels):
+    """Board-файл с секциями RF каналов channels (1..4): таблица секций (8 Б на запись: смещение, размер / 8) за
+    8-байтовым заголовком; секция TX канала ch — запись 2ch, RX — 2ch + 1 (ch с 1), метка 0xc00N900e / 0xc00N900d,
+    заголовок секции — тип 0 (TX) / 1 (RX), маска секторов (B26..B31) не пуста. Канал вне channels — секции с чужой
+    меткой (как в файле без этого канала: загрузка его секций не проходит)."""
+    img = bytearray(0x200)
+    off = 0x80
+    for ch in range(1, 5):
+        for rx in (0, 1):
+            sid = 2 * ch + rx
+            tag = (0xc0009000 | ch << 16 | (0xd if rx else 0xe)) if ch in channels else 0
+            struct.pack_into('<II', img, 8 + sid * 8, off, 2)
+            struct.pack_into('<IIII', img, 8 + off, tag, 0, 0x04000000 | rx << 20, 0)
+            off += 0x10
+    fw.wbytes(BRD_BUF, bytes(img))
+    o = fw.r32(fw.a('rf_obj') + RF_BRD_IF)
+    fw.w32(o + BRD_DATA, BRD_BUF)
+    fw.w32(o + BRD_SIZE_OFF, BRD_SIZE)
+    fw.w32(o + BRD_VALID, 1)
+
+
+def assoc_req_elements(fw, host=None):
+    w = F.Fw(fw)
+    if host is not None:
+        fw.wmi(WMI_SET_APPIE, struct.pack('<BBH', APPIE_ASSOC_REQ, 0, len(host)) + host)
+    w.sta_connect(stop='assoc_req')
+    req = tx_mgmt(fw, 0)
+    assert req, 'Association Request не ушёл'
+    return elements(req[-1][24 + 4:])
+
+
+@pytest.mark.parametrize('channels, body', [((1, 2, 3, 4), [1, 4]), ((1, 2, 4), [1, 2, 4, 1]), ((2,), [2, 1])],
+                         ids=['all', 'gap', 'one'])
+def test_assoc_req_supported_channels(fw, channels, body):
+    """11.8.2.2: DMG STA даёт в Association Request Supported Channels — каналы, в которых может работать: те, для
+    которых в board-файле есть секции RF (TX и RX), кортежами (First Channel Number, Number of Channels) по подряд
+    идущим каналам (9.4.2.17); место — 7 по табл. 9-34: после SSID (3), до RSN (8) и QoS Capability (9)."""
+    load_brd(fw, channels)
+    el = assoc_req_elements(fw)
+    ids = [e for e, _ in el]
+    assert [b for e, b in el if e == EID_SUPP_CH] == [bytes(body)], el
+    assert_table_order(ids, ASSOC_REQ_ORDER)
+    assert ids.index(EID_SSID) < ids.index(EID_SUPP_CH) < ids.index(EID_QOS_CAP), ids
+    # тот же DMG Capabilities станции: Reverse Direction = 0 (10.29.1)
+    sta = int.from_bytes(dict(el)[EID_DMG_CAP][7:15], 'little')
+    assert bits(sta, 0, 0) == 0 and bits(sta, 6, 6) == 0
+
+
+BRD_WAP60G = os.path.join(os.path.dirname(__file__), '../../../images/openwrt/brd/wil6210-wap60g-omni.brd')
+
+
+@pytest.mark.skipif(not os.path.exists(BRD_WAP60G), reason='нет images/openwrt/brd')
+def test_assoc_req_supported_channels_wap60g_brd(fw):
+    """Board-файл wAP 60G (секции RF общие для всех каналов, метки 0xc00c900e/0xc00c900d): каналы 1..4 — (1, 4).
+    Образ board-файла в записи файла — с 0x48 (заголовки формата wil6210 до него), в SRAM fw — как кладёт драйвер."""
+    img = open(BRD_WAP60G, 'rb').read()[0x48:]
+    fw.wbytes(BRD_BUF, img)
+    o = fw.r32(fw.a('rf_obj') + RF_BRD_IF)
+    fw.w32(o + BRD_DATA, BRD_BUF)
+    fw.w32(o + BRD_SIZE_OFF, BRD_SIZE)
+    fw.w32(o + BRD_VALID, 1)
+    assert [b for e, b in assoc_req_elements(fw) if e == EID_SUPP_CH] == [bytes([1, 4])]
+
+
+def test_assoc_req_supported_channels_from_host_once(fw):
+    """Supported Channels от хоста (WMI_SET_APPIE) — один элемент, хоста; своего второго нет."""
+    load_brd(fw, (1, 2, 3, 4))
+    host = bytes([EID_SUPP_CH, 2, 2, 1]) + bytes([EID_EXT_CAP, 8]) + bytes(8)
+    el = assoc_req_elements(fw, host)
+    assert [b for e, b in el if e == EID_SUPP_CH] == [bytes([2, 1])], el
+    assert_table_order([e for e, _ in el], ASSOC_REQ_ORDER)
+
+
+def test_assoc_req_no_supported_channels_without_brd(fw):
+    """Board-файла нет (brd_if.valid = 0) — каналы fw неизвестны, элемента нет (не выдумывается)."""
+    assert EID_SUPP_CH not in [e for e, _ in assoc_req_elements(fw)]
 
 
 # ---- приём: AID, Extended Schedule станции, разбор элементов; маяк discovery; RSN по умолчанию ----

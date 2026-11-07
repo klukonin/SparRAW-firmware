@@ -255,3 +255,43 @@ def test_beacon_order_with_host_schedule(fw):
     ids = [e for e, _ in el]
     assert ids == [0x90, 48, 151, 221], ids
     assert dict(el)[151][0] & 1 == 1
+
+
+# Element ID (табл. 9-92) → порядковый номер в теле DMG Beacon (табл. 9-45) — выписано из стандарта, не из fw
+BCN_TABLE_ORDER = {
+    148: 7,     # DMG Capabilities
+    144: 8,     # Extended Schedule
+    48: 9,      # RSN
+    71: 10,     # Multiple BSSID
+    151: 11,    # DMG Operation
+    147: 12,    # Next DMG ATI
+    152: 13,    # DMG BSS Parameter Change
+    158: 14,    # Multi-band
+    143: 16,    # DMG Wakeup Schedule
+    200: 17,    # UPSIM
+    0: 18,      # SSID
+    7: 20,      # Country
+    12: 22,     # EDCA Parameter Set
+    52: 24,     # Neighbor Report
+    46: 26,     # QoS Capability
+    60: 27,     # Extended Channel Switch Announcement
+    145: 34,    # STA Availability
+    160: 35,    # Next PCP List
+    161: 36,    # PCP Handover
+    190: 37,    # Antenna Sector ID Pattern
+    221: 1000,  # Vendor Specific — последние
+}
+
+
+def test_beacon_host_ies_table_order(fw):
+    """Элементы хоста маяка в обратном порядке (все известные табл. 9-45, кроме Awake Window — энергосбережения нет,
+    и IBSS Parameter Set — не IBSS) — в маяке в порядке табл. 9-45 по Element ID табл. 9-92: Next DMG ATI (147) —
+    после DMG Operation, DMG BSS Parameter Change (152) — до Multi-band, UPSIM (200) — до SSID, STA Availability
+    (145), Next PCP List (160), PCP Handover (161) — после EDCA и до Antenna Sector ID Pattern."""
+    ap(fw)
+    order = sorted(BCN_TABLE_ORDER, key=BCN_TABLE_ORDER.get)
+    host = b''.join(bytes([e, 2, e, 0x5a]) for e in reversed(order) if e not in (151, 144))
+    t0 = len(fw.tx_frames)
+    host_beacon_ies(fw, host)
+    ids = [e for e, _ in bcn_elements(last_beacon(fw, t0))]
+    assert ids == [e for e in order if e != 144], ids

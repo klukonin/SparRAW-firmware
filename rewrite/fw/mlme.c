@@ -183,8 +183,42 @@ static u32 mgmt_tx_assoc_req_fixed_fields(u8 *dst, const struct mid_bss *mobj, s
     return (n + 2) & 0xffffu;
 }
 
-/* mgmt_tx__assoc_req_ies (0x8f4ec0, 96 Б): SSID, RSN (mobj+0x180), QoS Capability,
- * DMG Capabilities (mobj+0x5e). Третий аргумент vendor не читает. */
+/* НЕ vendor: Supported Channels (9.4.2.17, Element ID 36) — каналы, в которых станция может работать: 802.11-2020
+ * 11.8.2.2 — DMG STA при (ре)ассоциации обязана их дать (в (Re)Association Request или Information Request; условие
+ * табл. 9-34 «dot11SpectrumManagementRequired» — для не-DMG, 11.8.2.1). vendor элемент не добавлял (только хост через
+ * APPIE, и драйвер его не даёт). Номера каналов — класс 180 (Annex E, табл. E-4: 1..6); RF настраивает только 1..4
+ * (marlon_r_if_class_config_channel: ch > 3 — ассерт 0x119b), и канал годен, лишь если в board-файле есть обе его
+ * секции RF — TX 2ch+2 и RX 2ch+3 (без них config_channel отказывает). Регуляторных ограничений каналов fw не знает
+ * (их применяет хост, cfg80211). Кортежи (First Channel Number, Number of Channels) — по подряд идущим каналам.
+ * board-файла нет (brd_if.valid = 0) — элемента нет (0). */
+static u32 ie_push_supported_channels(u8 *dst)
+{
+    struct brd_if *o = rf_obj.brd_if;
+    struct brd_section_info info;
+    u32 n = 0, run = 0, ch;
+
+    if (o == 0 || o->valid == 0)
+        return 0;
+    for (ch = 0; ch <= 4; ch++) {
+        if (ch < 4 && o->vt->get_section_info(o, 2 * ch + 2, &info) != 0 &&
+            o->vt->get_section_info(o, 2 * ch + 3, &info) != 0) {
+            if (run++ == 0)
+                dst[2 + n] = (u8)(ch + 1);
+        } else if (run != 0) {
+            dst[3 + n] = (u8)run;
+            n += 2;
+            run = 0;
+        }
+    }
+    if (n == 0)
+        return 0;
+    dst[0] = 36;
+    dst[1] = (u8)n;
+    return n + 2;
+}
+
+/* mgmt_tx__assoc_req_ies (0x8f4ec0, 96 Б): SSID, Supported Channels (не vendor), RSN (mobj+0x180), QoS Capability,
+ * DMG Capabilities (mobj+0x5e) — порядок табл. 9-34 (3, 7, 8, 9, 20). Третий аргумент vendor не читает. */
 static u32 mgmt_tx_assoc_req_ies(u8 *dst, struct mid_bss *mobj, u32 flag)
 {
     u8 ssid[0x20];
@@ -193,6 +227,9 @@ static u32 mgmt_tx_assoc_req_ies(u8 *dst, struct mid_bss *mobj, u32 flag)
     r = mid_copy_ssid(mobj, ssid);
     n = ie_push_ssid(dst, ssid, r & 0xffu) & 0xffffu;
     dst += n;
+    r = ie_push_supported_channels(dst);
+    dst += r;
+    n += r;
     r = ie_push_raw(dst, mobj->rsn_ie) & 0xffffu;
     if (r != 0) {
         dst += r;

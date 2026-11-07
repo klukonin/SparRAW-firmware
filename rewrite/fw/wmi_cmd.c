@@ -722,8 +722,8 @@ static void le_bits_set(u8 *b, u32 n, u32 shift, u32 width, u32 v)
 
 
 /* dmg_cap__build_sta_capability (0x8e6598, 276 Б): свой DMG Capabilities BSS записи mid
- * (obj+0x5e): адрес STA, AID 0, DMG STA Capability Information (sta_cap, obj+0x65..):
- * бит 0 — нет OOB-режима [0x803c0c], число TX-секторов − 1 (биты 7..13), RXSS 0x1f,
+ * (obj+0x5e): адрес STA, AID 0, DMG STA Capability Information (sta_cap, obj+0x65.., 802.11-2020 рис. 9-550):
+ * Reverse Direction и B1..B3 — 0, число TX-секторов − 1 (биты 7..13), RXSS 0x1f,
  * бит 20, 0x35 (биты 21..26), OUI-часть из caps5 (obj+0x17b; биты 36..59), биты 62..,
  * PCP Capability (pcp_cap, max assoc записи); копии для uc — fwsh_n_rx_ant / fwsh_total_sectors. */
 void dmg_cap_build_sta_capability(struct mid_bss *obj, const u8 *sta_addr)
@@ -733,10 +733,11 @@ void dmg_cap_build_sta_capability(struct mid_bss *obj, const u8 *sta_addr)
     u32 b;
     c->aid = 0;
     memcpy_fw(c->sta_addr, sta_addr, 6);
-    b = c->sta_cap[0];
-    b |= 1u;                             /* без OOB R1 (OOB — только SparRAW-pro) */
-    b &= ~0xeu;
-    c->sta_cap[0] = (u8)b;
+    /* B0 Reverse Direction = dot11RDResponderOptionImplemented (10.29.1). исправлено (vendor): было 1, а ответчик RD
+     * намеренно отклоняет каждый RDG (uc/txss.c, docs/MAC-STAND.md «Ответчик RD глохнет», 10.29.4) — объявление
+     * расходилось с поведением; с RD = 0 и Fast Link Adaptation (B6, требует RD — 10.43.3) — 0. B1 Higher Layer
+     * Timer Synchronization (11.6), B2 TPC (11.7), B3 SPSH and Interference Mitigation (11.30) — нет. */
+    c->sta_cap[0] &= (u8)~0xfu;
     le_bits_set(&c->sta_cap[0], 1, 4, 2, 0);                /* bits__set8_s4_w2 0x8ed298 */
     c->sta_cap[0] &= (u8)~(1u << 6);
     le_bits_set(&c->sta_cap[0], 2, 7, 7, (rf_if_num_tx_sectors(&rf_obj) - 1) & 0x7fu); /* 0x8ed214 */

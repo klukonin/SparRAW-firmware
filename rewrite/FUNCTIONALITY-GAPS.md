@@ -70,6 +70,20 @@
   Pseudo-static остаются 0 сознательно: способность «10.39.6 и 11.4» требует DMG ADDTS (11.4) и выделения по Poll
   Required в A-BFT (10.42.5) — их нет. Power Source (B11) — по power_source (vendor 0, «от батареи»).
   Тест: test_fw_mgmt_frames (тело Association Response и DMG Capabilities).
+- **Reverse Direction в DMG Capabilities** (fw/wmi_cmd.c `dmg_cap_build_sta_capability`, 2026-11-07): vendor
+  объявлял B0 = 1 (рис. 9-550; комментарий порта ошибочно звал его «OOB»), а ответчик RD отклоняет каждый RDG
+  (docs/MAC-STAND.md «Ответчик RD глохнет», 10.29.4); по 10.29.1 бит = dot11RDResponderOptionImplemented — теперь 0.
+  Fast Link Adaptation (B6, требует RD — 10.43.3), HLTS, TPC, SPSH — 0, как были. Тест: test_fw_mgmt_frames.
+- **Element ID в порядке элементов DMG Beacon** (fw/stubs.c `dmg_bcon_ie_rank`, 2026-11-07): шесть Element ID не
+  совпадали с табл. 9-92 — Next DMG ATI 162 (это DMG Link Margin) → 147, DMG BSS Parameter Change 155 (резерв) → 152,
+  UPSIM 187 → 200, STA Availability 185 → 145, Next PCP List 154 → 160, PCP Handover 156 → 161; такие элементы хоста
+  вставали перед Vendor Specific, а не по табл. 9-45. Тест: test_fw_ese `test_beacon_host_ies_table_order`.
+- **Supported Channels в Association Request** (fw/mlme.c `ie_push_supported_channels`, 2026-11-07): 11.8.2.2 требует
+  от DMG STA при (ре)ассоциации список каналов (9.4.2.17); vendor элемент не ставил, драйвер через APPIE — тоже. Теперь
+  fw кладёт его на место 7 табл. 9-34 (после SSID, до RSN): каналы класса 180 (табл. E-4), которые RF настраивает
+  (1..4) и для которых в board-файле есть обе секции RF (TX 2ch+2, RX 2ch+3); подряд идущие — одним кортежем (на
+  board-файлах wAP 60G секции общие для всех каналов — (1, 4)). Регуляторику fw не знает (её применяет хост). Элемент
+  хоста с тем же Element ID — вместо своего; без board-файла элемента нет. Тест: test_fw_mgmt_frames.
 - **Block Ack Policy в ADDBA** (fw/ba.c, 2026-10-31): vendor ставил B1 = 0 (delayed BA) в Request и Response; по
   802.11-2020 9.4.1.13 — 1 (immediate). Тест: test_fw_peer_vanish (байты ADDBA в эфире), test_live_ampdu.
 - **Capability Request элемента DMG Beam Refinement** (uc/brp.c): vendor ставил и читал B50 (раскладка 802.11ad-2012 с

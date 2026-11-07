@@ -817,7 +817,13 @@ __attribute__((section(".textlate"))) void bcon_tx_build_step(struct mid_bss *mi
         bss_bi_ctrl_pcp_ready_set(mid, 1);
 }
 
-/* Порядковый номер элемента в теле DMG Beacon (802.11-2020 табл. 9-45); неизвестный — перед Vendor Specific. */
+/* Порядковый номер элемента в теле DMG Beacon (802.11-2020 табл. 9-45); Element ID — по табл. 9-92 (9.4.2.1);
+ * неизвестный — перед Vendor Specific. Элементы-расширения (Element ID 255: Cluster Probe, SPSH Report и др.,
+ * порядок 40..46) и CDMG/CMMG (38, 47..54 — не DMG) различаются только Element ID Extension — тоже перед Vendor
+ * Specific. исправлено: Element ID шести элементов были чужими (Next DMG ATI 162 — DMG Link Margin, DMG BSS
+ * Parameter Change 155 — резерв, UPSIM 187 — HCCA TXOP Update Count, STA Availability 185 — SCS Descriptor, Next PCP
+ * List 154 — Channel Measurement Feedback, PCP Handover 156 — резерв) — такие элементы хоста вставали перед Vendor
+ * Specific, а не на своё место. */
 static u32 dmg_bcon_ie_rank(u32 eid)
 {
     switch (eid) {
@@ -826,12 +832,12 @@ static u32 dmg_bcon_ie_rank(u32 eid)
     case 48:  return 9;                 /* RSN */
     case 71:  return 10;                /* Multiple BSSID */
     case 151: return 11;                /* DMG Operation */
-    case 162: return 12;                /* Next DMG ATI */
-    case 155: return 13;                /* DMG BSS Parameter Change */
+    case 147: return 12;                /* Next DMG ATI */
+    case 152: return 13;                /* DMG BSS Parameter Change */
     case 158: return 14;                /* Multi-band */
     case 157: return 15;                /* Awake Window */
     case 143: return 16;                /* DMG Wakeup Schedule */
-    case 187: return 17;                /* UPSIM */
+    case 200: return 17;                /* UPSIM */
     case 0:   return 18;                /* SSID */
     case 6:   return 19;                /* IBSS Parameter Set */
     case 7:   return 20;                /* Country */
@@ -848,9 +854,9 @@ static u32 dmg_bcon_ie_rank(u32 eid)
     case 107: return 31;                /* Interworking */
     case 108: return 32;                /* Advertisement Protocol */
     case 111: return 33;                /* Roaming Consortium */
-    case 185: return 34;                /* STA Availability */
-    case 154: return 35;                /* Next PCP List */
-    case 156: return 36;                /* PCP Handover */
+    case 145: return 34;                /* STA Availability */
+    case 160: return 35;                /* Next PCP List */
+    case 161: return 36;                /* PCP Handover */
     case 190: return 37;                /* Antenna Sector ID Pattern */
     case 221: return 0x101;             /* Vendor Specific — после всех */
     default:  return 0x100;
