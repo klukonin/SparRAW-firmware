@@ -456,12 +456,30 @@ def radio_matches_phy(w):
     return False, 'у radio0 нет ни path, ни phy, ни macaddr'
 
 
+def netconsole(node, log):
+    """Журнал ядра узла по UDP на хост до insmod — чтобы зависание/паника узла оставили след (стенд 2026-11-08:
+    «самопроизвольные перезагрузки» оказались паникой, видимой только через netconsole). Включается переменной
+    SPARRAW_NETCON="<ip хоста>,<mac хоста>"; порт 6600 + последний октет адреса узла (.11 → 6611); приёмник на хосте
+    (socat -u UDP-RECV:<порт> -) запускает тот, кто ведёт прогон."""
+    nc = os.environ.get('SPARRAW_NETCON')
+    if not nc:
+        return
+    ip, mac = nc.split(',')
+    me = node.host.split('@')[-1]
+    port = 6600 + int(me.rsplit('.', 1)[-1])
+    _sh(node, 'rmmod netconsole 2>/dev/null; insmod /lib/modules/$(uname -r)/netconsole.ko '
+              'netconsole=+6665@%s/br-lan,%d@%s/%s && echo 8 > /proc/sys/kernel/printk && '
+              'echo "stand netconsole $(cat /proc/sys/kernel/random/boot_id)" > /dev/kmsg' % (me, port, ip, mac), 30)
+    log('%s: netconsole → %s:%d' % (node.name, ip, port))
+
+
 def load(node, spec, log=None):
     """Драйвер итерации на только что загруженном узле: прошивка и плата в tmpfs, путь firmware_class, роль в uci
     без commit и один network reload (до insmod), ожидание netifd, insmod с параметрами, phy ↔ radio0,
     network.wireless up radio0. Возвращает ожидаемые md5 {'fw', 'ko'}."""
     log = log or (lambda s: None)
     check_clean(node)
+    netconsole(node, log)
     if not _wait(lambda: _q(node, RC_SETTLE_CMD).strip(), RC_SETTLE + 60, 5):
         raise StandError('%s: /etc/rc.local не закончился за %d с после загрузки' % (node.name, RC_SETTLE + 60))
     want = {'fw': None, 'ko': None}
