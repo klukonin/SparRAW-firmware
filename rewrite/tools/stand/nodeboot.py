@@ -30,7 +30,7 @@ Spec.max_fw_starts), роль поднята один раз (wifi-scripts «Sta
 Узел — объект с полем name и методом sh(cmd, timeout, input=None) -> (rc | None при зависании, stdout, stderr):
 одна попытка ssh без самовосстановления. CLI — tools/stand/node_boot.sh.
 """
-import hashlib, re, shlex, struct, subprocess, sys, time
+import hashlib, os, re, shlex, struct, subprocess, sys, time
 
 FWDIR = '/tmp/sparraw-fw'                 # firmware_class.path итерации (tmpfs)
 FW_TMP = FWDIR + '/wil6210.fw'
