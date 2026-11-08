@@ -1,4 +1,4 @@
-# Ядро DMG MAC (этап 1)
+# Ядро DMG MAC (этапы 1–3)
 
 Исполняемое ядро DMG MAC по 802.11-2020 на Python: точка (AP, BSS Type 3) и станция (non-AP STA) как событийные
 автоматы с интерфейсами стандарта, идеальная среда и журнал эфира в формате судей. Ядро не знает про регистры, очереди
@@ -31,7 +31,7 @@ cd rewrite/tests && python3 -m pytest ref/core -q -p no:xdist
 | `sap_phy.py` | PHY-SAP 8.3.5 (PHY-TXSTART/DATA/TXEND, PHY-CCA, PHY-CCARESET, PHY-RXSTART/DATA/RXEND, PHY-CONFIG), TXVECTOR/RXVECTOR (табл. 20-1), TXSTATUS, PHYCONFIG_VECTOR (20.2.3), `Beam` — луч (антенна, сектор / квази-омни) |
 | `sap_mac.py` | MAC-SAP 5.2: MA-UNITDATA.request/.indication, MA-UNITDATA-STATUS.indication |
 | `sap_mlme.py` | MLME-SAP 6.3: START, SCAN, JOIN, ASSOCIATE, ADDBA (6.3.27), BF-TRAINING (6.3.91); имена параметров — стандарта |
-| `offload.py` | точки разгрузки (таблица ARCHITECTURE.md), `AdapterCaps`; этап 1 принимает только пустой набор |
+| `offload.py` | точки разгрузки (таблица ARCHITECTURE.md), `AdapterCaps`, интерфейс ядро ↔ адаптер (OffloadSap/OffloadUser, OffloadNav); пустой набор — идеальная среда, `SPARROW` — этап 3 |
 | `frames.py` | сборка/разбор MPDU и PSDU (FCS, A-MPDU с разделителями), EDCA Parameter Set; поля — кодеками `ref/*` |
 | `mac.py` | общий MAC: доступ, обмены, ответы, Block Ack, MAC-SAP, SLS в DTI, BRP setup |
 | `ap.py` / `sta.py` | роли |
@@ -81,10 +81,10 @@ MCS ответа — 10.6.7.2, Duration — 9.2.5.7/9.3.1.13. TXOP данных:
 
 | Файл | Что |
 |---|---|
-| `test_core_units.py` | кадры, PSDU/A-MPDU, время, среда (доставка, CCA, задержка, коллизия, полудуплекс, чувствительность, луч), EDCA (слоты, заморозка), тайм-ауты, SAP-имена, разгрузка, форматы журнала |
+| `test_core_units.py` | кадры, PSDU/A-MPDU, время, среда (доставка, CCA, задержка, коллизия, полудуплекс, чувствительность, луч), EDCA (слоты, заморозка), тайм-ауты, SAP-имена, наборы разгрузки и ядро при разгрузке (заглушка адаптера: ответы, арбитр доступа, Duration, NAV), TXTIME BRP-RX, форматы журнала |
 | `test_core_integration.py` | точка + станция: 1 МиБ в обе стороны, данные целиком и по порядку, последовательность MLME, состав эфира, оба судьи — 0 нарушений, покрытие правил; варианты: только SLS в DTI, A-BFT + SLS с 16/8 секторами, 2 и 3 станции, BI 5 TU и 3 МБ (обмены у границы CBAP) |
 | `test_core_negative.py` | порча поведения ловится: AIFSN 1 у STA, Duration DMG CTS, CF-End без запаса, Duration маяка, ответ через 5 мкс, данные до ассоциации, Duration SSW в A-BFT, обмен за TBTT, нет Supported Channels, A-MPDU длиннее предела получателя |
-| `test_core_boundary.py` | ядро не импортирует tests/unit (AST и sys.modules в отдельном процессе) |
+| `test_core_boundary.py` | ядро не импортирует tests/unit, в т. ч. адаптер Sparrow (AST и sys.modules в отдельном процессе) |
 
 Вне набора (дольше) прогнан перебор 54 конфигураций — seed 1–6 × 1/2/3 станции × BF (A-BFT, SLS в DTI, оба) ×
 задержка 0–30 нс, 150 КБ в обе стороны: все соединяются, оба судьи — 0 нарушений.
@@ -133,7 +133,8 @@ MCS ответа — 10.6.7.2, Duration — 9.2.5.7/9.3.1.13. TXOP данных:
 
 ## Не сделано на этапе 1
 
-BRP с TRN (MLME-BF-TRAINING с RequestBRP = true), ATI, SP/PP/GP и строгий TDMA, сопровождение луча, Link Measurement,
+BRP с TRN по запросу SME (MLME-BF-TRAINING с RequestBRP = true) и обучение передачи (TX-TRN-REQ; ответчиком обучения
+приёма ядро стало на этапе 3), ATI, SP/PP/GP и строгий TDMA, сопровождение луча, Link Measurement,
 кластеризация, RSNA, энергосбережение, несколько DMG-антенн, BlockAckReq/DELBA, фрагментация, A-MSDU, RD.
 
 ## Этап 2: сравнение по эфиру (прошивка в эмуляторе против ядра)
@@ -203,9 +204,102 @@ H-ORIGIN, RA CF-End в эфире > 2 узлов), «трактовка» (`ref/
 | неопределённо (2 STA) | после SLS/BRP STA2 с точкой STA1 не шлёт свой CF-End и не отвечает Ack на кадры управления точки (21 ADDBA Response без Ack), позже ответ на RTS через ~50 мкс → uc_assert 0x6002 | прогон `sls-2sta`; отчёт приёма air.py не зависит от RA (кадры чужих SLS/BRP приходят как «свои») — пробел модели вероятен; опыт с фильтром по RA перенёс срыв к точке (поздний ответ через SIFS, 47 мкс) — нужен стенд |
 | неопределённо | BRP после SLS, повтор SLS после ассоциации, SLS от точки — только у прошивки; DMG Capabilities (RD, heartbeat, Grant Ack, RXSS Length 31, reciprocity); EDCA AC_VO TXOP 512 / AC_VI 2048; A-BFT раз в 4 BI; кадры управления на MCS 0 | выбор реализации, стандарт допускает обе стороны; ядро BRP после SLS не делает (этап 4) |
 
+## Этап 3: ядро на адаптере Sparrow, смешанные пары
+
+Ядро работает поверх модели MAC эмулятора: функции, которые у Sparrow делает железо (точки разгрузки), ядро не
+делает, а получает о них события; узел ядра стоит в эфире `air.Air` наравне с узлами прошивки (CoSim fw + uc).
+
+```
+cd rewrite/tests
+python3 -m pytest unit/test_adapter_sparrow.py -q                                   # без сборки прошивки
+SPARRAW_UNIT_BUILD=<dir> python3 -m pytest unit/test_mixed_pairs.py -n 4 -q          # смешанные пары (~5 мин)
+pypy3 -m ref.core.diff_report --scenario all --against core-sparrow --out-dir <dir>  # ядро-Sparrow против ядра
+pypy3 -m ref.core.diff_report --scenario all --against fw-sparrow --load-snapshot <снимки прошивки> --out-dir <dir>
+pypy3 -m ref.core.diff_report --scenario all --against mixed-ap  --mixed-preset core   --build <dir> --out-dir <dir>
+pypy3 -m ref.core.diff_report --scenario all --against mixed-sta --mixed-preset compat --build <dir> --out-dir <dir>
+```
+
+| Модуль | Что |
+|---|---|
+| `offload.py`, `mac.py` | точки разгрузки в ядре: при флаге ядро не передаёт Ack/BlockAck/DMG CTS и не строит scoreboard, NAV — адаптера (`OffloadNav`), Duration RTS/кадров очереди берёт у адаптера (`offload_duration`), доступ для работ очереди (кадры управления с Ack, TXOP данных) выигрывает арбитр адаптера (`offload_access_request` → `offload_access_granted`); SLS и BRP setup — EDCAF ядра (у железа их пускает микрокод) |
+| `unit/adapter_sparrow.py` | `CoreNode` — узел ядра (свои часы `Sim`, ось — TSF эмулятора, H-SYNC) + PHY-SAP + модель MAC Sparrow для разгруженных точек; `MixedAir` — `air.Air` с узлами ядра (кадр ядра идёт к узлам прошивки путём `Air._tx`: буфер приёма uc, отчёт r36..r39, NAV, ответ через SIFS); `snapshot` — снимок `ref_bridge2` с узлами ядра |
+| `unit/sparrow_scenario.py` | сценарии `diff_scenario`: `run_core` — точка и станции на ядре поверх адаптера; `run_mixed(scn, 'ap'/'sta')` — смешанная пара с драйвером прошивки (WMI); `PRESETS` — выбор реализации ядра для пары |
+| `diff_report.py`, `diff_compare.py` | режимы `core-sparrow`, `fw-sparrow`, `mixed-ap`, `mixed-sta`; класс «ядро на Sparrow ≠ стандарт»; нарушение стороны B на модели MAC, объяснимое допущением H-* (`b_hyp`), — «модель MAC эмулятора» |
+
+Модель MAC в CoSim не отделяется от микрокода (machw отвечает на команды uc), поэтому адаптер — минимальная обвязка с
+теми же допущениями и, где можно, тем же кодом:
+
+| Точка | Ядро при разгрузке | Модель MAC адаптера (Sparrow) |
+|---|---|---|
+| SIFS_RESPONSE + BA_SCOREBOARD | не отвечает; «ответ назначен» и «ответ в эфире» — события, буфер переупорядочения и выдача MSDU — свои | кому отвечать — как `air.Air._tx` (uni); кадр и Duration — `air.Air._frame` (Ack Duration 0, BlockAck — карта MPDU принятого A-MPDU, H-AMPDU); момент — конец + IFS + MACLAT (H-RESPCMD, команда в срок) + `resp_cmd_delay_clk`; MCS — H-RESPMCS; DMG CTS — при свободном NAV MAC или держателю |
+| DURATION | берёт поставленное значение для TXNAV и конца NAV держателя (запас под CF-End) | RTS и кадры очереди: остаток лимита TXOP AC_BE ядра от начала TXOP − SIFS (H-DURQ, `machw._dur_field`) — в каждый MPDU |
+| EDCA_BACKOFF | просит доступ, начинает обмен по разрешению, если укладывается в CBAP | арбитр очередей H-BACKOFF (`machw._backoff_kick/_fire`): max(сейчас, NAV, конец занятости) + AIFS_CLK + U[0, 15]·SLOT_CLK, AIFS одна на все очереди |
+| NAV | спрашивает адаптер | кадр не себе — конец + Duration (+ A-BFT у маяка, H-NAVABFT, `Air._nav_us`); CF-End NAV не сбрасывает |
+| BEACON_TIMESTAMP | — | Timestamp = TSF начала PPDU (H-BIC) |
+
+В идеальной среде набор пуст, поведение этапов 1–2 не изменилось: журналы ядра сценариев этапа 2 и `Bss` побайтно те
+же (сверка с open), тесты ref-набора зелёные.
+
+**Ядро, дополненное по находкам смешанных пар** (по стандарту; в идеальной среде журналы прежние):
+- ответчик обучения приёма (10.42.6.4.1): на BRP с L-RX > 0 — BRP-RX с L-RX·4 подполями TRN-R, RX-train-response = 1,
+  Initiator = 0; BRP инициатора, завершающий setup, — BRP-RX, если ответчик запросил L-RX (10.42.3.2); TXTIME с TRN —
+  `ref/brp.brp_txtime` (20.11.3). Без этого станция-прошивка после SLS ждёт TRN и не подключается;
+- ожидание ответа на BRP setup — BRPIFS (10.3.2.3.9; было SIFS — ответ прошивки через 18,9 мкс терялся);
+- значение DMG BSS Parameter Configuration вне SYNTAX MIB (точка-прошивка: PS Request Suspension Interval = 0, MIB
+  1..64) не принимается (11.3.5.2 d)), ассоциация не рвётся;
+- SME: выбор BSS по BSSID, если DMG Beacon без SSID (табл. 9-45: SSID необязателен; маяк прошивки его не несёт);
+  `StaSme.pause_us`; повтор MLME-ADDBA после отказа получателя (`ApSme.addba_retry_us`); `DmgMac.mgmt_mcs`.
+
+### Результат (open, 7 сценариев этапа 2)
+
+Счёт: прошивка ≠ стандарт / ядро ≠ стандарт / модель MAC / трактовка / неопределённо / ядро на Sparrow ≠ стандарт.
+
+| Режим | Итог |
+|---|---|
+| ядро-Sparrow против ядра (`core-sparrow`) | 1-STA: 0 / 0 / 29–43 / 0 / 0–2 / 0; `sls-2sta`: 0 / 0 / 40 / 1 / 7 / 0 — всё расхождение — точки разгрузки |
+| прошивка против ядра-Sparrow (`fw-sparrow`) | «прошивка ≠ стандарт» — те же 11 уникальных, что против ядра в идеальной среде (BTI через 12–14 мкс после TBTT; при 2 STA — CF-End с RA другой станции, BRP с Initiator 0, CF-End не на границе слота; при BI 10 TU — A-MPDU/CF-End станции в BTI, RTS за концом CBAP): находки прошивки не зависят от того, идеальна ли среда у ядра |
+| `mixed-ap`, preset core | соединение и данные во всех 1-STA сценариях, кроме `sls-1sta-dl` (uc станции: uc_assert 0x26 в txop_await_cts_ppdu на 36 мс) |
+| `mixed-ap`, preset compat | 6 из 6: соединение, данные в обе стороны |
+| `mixed-sta`, preset core | срыв точки-прошивки в 5 из 6 (uc_assert 0x26/0x6019, ниже); BI 10 TU — вниз 48/48, вверх ADDBA станции без Ack |
+| `mixed-sta`, preset compat | 5 из 6 целиком; BI 10 TU — uc_assert 0x6002 точки на 135,6 мс |
+
+Расхождения железа/модели со стандартом (ядро-Sparrow против ядра; все — «модель MAC эмулятора»):
+
+| Расхождение | Пункт | Допущение |
+|---|---|---|
+| ответы через 3,55 мкс (SIFS + MACLAT), мост — «не SIFS» | 10.3.2.3.3 | H-RESPCMD |
+| Duration ответов MAC: Ack 0, DMG CTS/BlockAck на 1 мкс меньше; BlockAck на MCS 1 в ответ на MCS 11 (допустимо 2–4) | 9.2.5.7, 9.3.1.13, 10.6.7.2 | H-RESPCMD, H-RESPMCS |
+| Duration RTS, A-MPDU и кадров управления — остаток лимита TXOP (2030/1944/2040 против 102/7); NAV RTS за TBTT при BI 10 TU | 9.2.5.2 | H-DURQ |
+| доступ: AIFS AC_BE для кадров управления (AC_VO), не граница слота от AIFS[AC_VO] | 10.23.2.4 | H-BACKOFF |
+| Timestamp маяка — TSF начала PPDU (−5/−6 мкс; при BTI ровно в TBTT судья `timestamp`) | 11.1.3.1 | H-BIC |
+
+Найдено смешанными парами (прошивка или модель MAC, стандарт на стороне ядра; решает стенд):
+
+| Что | Доказательство |
+|---|---|
+| точка-прошивка не успевает с ответом через SIFS на кадр станции вскоре после SLS (Association Request через 23 мкс после SSW-Ack — команда ответа через 43 мкс) и сразу после ассоциации (ADDBA во время подготовки своей SLS — 39 мкс); uc_assert 0x26/0x6019 | `mixed-sta` preset core; uc в это время исполняет команды LMAC fw по событию BF или готовит развёртку (cmd_log) |
+| короткий кадр управления на MCS 1 (ADDBA Request, 3,4 мкс) от ассоциированной станции uc точки не подтверждает: rx_flow_run уходит в ветку рассинхронизации счётчика PPDU (0xeeee04), 8 повторов без Ack | `mixed-sta`; на MCS 0 (control) — Ack есть; кадры управления SC у прошивки не встречаются — сроки H-HDR-SC/H-PHYRX для таких кадров не сняты |
+| Ack через 3,55 мкс (минимум железа) на свой кадр очереди ломает продолжение TXOP точки: machw.ModelGap «закрыт кадр FIFO, пока идёт передача» | `mixed-sta`; с ответом через 4,95 мкс (как у железа с микрокодом) — нет; H-TXAFTERACK |
+| DMG BSS Parameter Configuration в Association Response: PS Request Suspension Interval = 0 (MIB 1..64) | ядро-станция: `dmg_bss_param_invalid` |
+| станция-прошивка отказывает в ADDBA точки до WMI_CONNECT_EVENT (Status 1, Buffer Size 0) | `mixed-ap`; ядро повторяет MLME-ADDBA через 5 мс — соглашение есть |
+| станция-прошивка отвечает на BRP setup точки только с ~20-й попытки | `mixed-ap`; судья `brp setup-end` относит это к кадрам ядра — в паре атрибуция по кадрам ограничена |
+
+Preset compat (`sparrow_scenario.PRESETS`) — выбор реализации в рамках стандарта ближе к узлам прошивки: пауза SME 3 мс
+перед MLME-ASSOCIATE и MLME-ADDBA, кадры управления на MCS 0, ответ MAC через 4,95 мкс (230 тактов; стенд: DMG CTS
+через 4,93/4,96 мкс). Тест «станция-ядро с умолчаниями» — xfail strict (`unit/test_mixed_pairs.py`): исправленная
+прошивка даст XPASS.
+
+Тесты этапа 3: `test_core_units.py` (наборы разгрузки, ядро с заглушкой адаптера, TXTIME BRP-RX),
+`test_core_boundary.py` (адаптер — в tests/unit, ядро его не импортирует), `unit/test_adapter_sparrow.py` (правила
+ответа, NAV, ось времени; пара ядро–ядро на адаптере: данные в обе стороны, ответы через SIFS + MACLAT, Duration
+H-DURQ, Timestamp H-BIC, слоты H-BACKOFF; против ядра в идеальной среде — только модель MAC), `unit/test_mixed_pairs.py`
+(обе пары: соединение, данные в обе стороны, фазы, судьи по передатчику, отчёт).
+
+Ограничения: канал адаптера идеальный (как у `air.Air`), SNR постоянный, секторы — только номера; моменты прямых передач
+ядра — момент PHY-TXSTART (H-ORIGIN/H-ORIGIN-RX не добавляются); смешанные пары — одна станция; SSW_SWEEP не
+разгружается (этап 4).
+
 ## Дальше
 
-- **Этап 3.** `adapter_sparrow.py`: PHY-SAP поверх `unit/machw.py` + `air.py`; набор `offload.Offload` по фактам
-  MAC-STAND (SIFS-ответы, Duration, backoff, NAV, scoreboard, Timestamp, развёртка SSW) — ядро получает события вместо
-  того, чтобы делать это само; смешанные пары ядро ↔ прошивка.
-- **Этап 4.** BRP (с TRN), сопровождение луча, SP/PP/GP, кластеризация, Link Measurement — в ядре, сравнении и парах.
+- **Этап 4.** BRP по запросу SME и обучение передачи, сопровождение луча, SP/PP/GP, кластеризация, Link Measurement,
+  SSW_SWEEP — в ядре, сравнении и парах; стенд — по находкам этапа 3 (таблица выше).

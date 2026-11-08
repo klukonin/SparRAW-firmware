@@ -7,6 +7,8 @@ ApSme: MLME-START → на MLME-ASSOCIATE.indication — .response(SUCCESS) → 
 StaSme: MLME-SCAN(PASSIVE) → MLME-JOIN выбранного BSS → BF: A-BFT (MLME-BF-TRAINING.indication) и/или SLS в DTI
        (MLME-BF-TRAINING.request) → MLME-SCAN(ACTIVE, Probe) → MLME-ASSOCIATE → MLME-ADDBA.request → восходящие MSDU
        после .confirm."""
+from dataclasses import replace
+
 from . import sap_mac as MS
 from . import sap_mlme as ML
 
@@ -58,6 +60,10 @@ class ApSme(_Sme):
         # (как драйвер прошивки: соглашение открывает сторона с данными; этап 2, diff_scenario)
         self.addba_on_assoc = False
         self.addba_req = set()
+        # отказ получателя в соглашении (10.25.2: Status ≠ SUCCESS) — новый MLME-ADDBA.request через addba_retry_us,
+        # не больше addba_retries раз (решение SME; получатель вправе отказать, например до готовности хоста)
+        self.addba_retry_us, self.addba_retries = 5000, 3
+        self._addba_tries = {}
 
     def start(self):
         self.mac.mlme_request(ML.MlmeStartRequest(SSID=self.ssid, BeaconPeriod=self.bi_tu, abft_slots=self.abft_slots,
@@ -65,6 +71,13 @@ class ApSme(_Sme):
 
     def mlme_confirm(self, p):
         self.log.append(p)
+        if isinstance(p, ML.MlmeAddbaConfirm) and p.ResultCode != ML.SUCCESS:
+            n = self._addba_tries.get(p.PeerSTAAddress, 0)
+            if n < self.addba_retries:
+                self._addba_tries[p.PeerSTAAddress] = n + 1
+                self.mac.sim.after(self.addba_retry_us, self.mac.mlme_request, ML.MlmeAddbaRequest(
+                    PeerSTAAddress=p.PeerSTAAddress, DialogToken=0x5A + n + 1, TID=0, BufferSize=64))
+            return
         if isinstance(p, ML.MlmeAddbaConfirm) and p.ResultCode == ML.SUCCESS and p.PeerSTAAddress not in self.dl_sent:
             self.dl_sent[p.PeerSTAAddress] = msdus(self.dl_bytes, seed=0x40)
             self._send(p.PeerSTAAddress, self.dl_sent[p.PeerSTAAddress])
@@ -88,9 +101,15 @@ class ApSme(_Sme):
 
 class StaSme(_Sme):
     """bf: 'abft' — BF в A-BFT; 'dti' — без A-BFT, SLS в DTI; 'both' — A-BFT, затем SLS в DTI после ассоциации."""
-    def __init__(self, mac, ssid=b'dmg-core', ul_bytes=0, bf='abft', probe=True):
+    def __init__(self, mac, ssid=b'dmg-core', ul_bytes=0, bf='abft', probe=True, bssid=None):
         super().__init__(mac)
         self.ssid, self.ul_bytes, self.bf, self.probe = ssid, ul_bytes, bf, probe
+        # BSSID, заданный SME (как драйвер прошивки в WMI_CONNECT): BSS выбирается и по нему — DMG Beacon может не
+        # нести SSID (табл. 9-45: элемент SSID в DMG Beacon необязателен); SSID для ассоциации — свой
+        self.bssid_hint = bssid
+        # пауза SME (мкс) перед MLME-ASSOCIATE (после BF) и перед MLME-ADDBA (после ассоциации): когда просить —
+        # решение SME, не MAC; 0 — сразу
+        self.pause_us = 0
         self.state = 'init'
         self.bss = None
         self.ul = []
@@ -110,11 +129,14 @@ class StaSme(_Sme):
     def mlme_confirm(self, p):
         self.log.append(p)
         if isinstance(p, ML.MlmeScanConfirm) and self.state == 'scan':
-            cands = [d for d in p.BSSDescriptionSet if d.SSID == self.ssid]
+            cands = [d for d in p.BSSDescriptionSet if d.SSID == self.ssid or
+                     (self.bssid_hint is not None and d.BSSID == self.bssid_hint and not d.SSID)]
             if not cands:
                 self.state = 'failed'
                 return
             self.bss = max(cands, key=lambda d: d.best_sector[2])
+            if not self.bss.SSID:
+                self.bss = replace(self.bss, SSID=self.ssid)
             self.state = 'join'
             self.mac.mlme_request(ML.MlmeJoinRequest(SelectedBSS=self.bss, JoinFailureTimeout=4))
         elif isinstance(p, ML.MlmeJoinConfirm):
@@ -143,8 +165,7 @@ class StaSme(_Sme):
             if self.addba == 'ul' and not self.ul_bytes:
                 self._data()
                 return
-            self.mac.mlme_request(ML.MlmeAddbaRequest(PeerSTAAddress=self.bss.BSSID, DialogToken=0x21, TID=0,
-                                                      BufferSize=64))
+            self._request(ML.MlmeAddbaRequest(PeerSTAAddress=self.bss.BSSID, DialogToken=0x21, TID=0, BufferSize=64))
         elif isinstance(p, ML.MlmeAddbaConfirm) and p.ResultCode == ML.SUCCESS:
             self._data()
 
@@ -173,4 +194,10 @@ class StaSme(_Sme):
 
     def _associate(self):
         self.state = 'assoc'
-        self.mac.mlme_request(ML.MlmeAssociateRequest(PeerSTAAddress=self.bss.BSSID))
+        self._request(ML.MlmeAssociateRequest(PeerSTAAddress=self.bss.BSSID))
+
+    def _request(self, req):
+        if self.pause_us:
+            self.mac.sim.after(self.pause_us, self.mac.mlme_request, req)
+        else:
+            self.mac.mlme_request(req)

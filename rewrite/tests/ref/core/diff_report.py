@@ -8,6 +8,14 @@
     python3 -m ref.core.diff_report --scenario sls-1sta --against core            # ядро против ядра (без прошивки)
     python3 -m ref.core.diff_report --list
 
+Этап 3 (адаптер Sparrow, tests/unit/adapter_sparrow.py) — режимы --against:
+    core-sparrow   ядро на адаптере Sparrow против ядра в идеальной среде: где железо/модель MAC (точки разгрузки,
+                   допущения H-*) расходятся со стандартом; прошивка не нужна;
+    fw-sparrow     прошивка против ядра на адаптере Sparrow: где прошивка расходится со стандартом при том же железе
+                   (нарушения модели MAC у обеих сторон — «модель MAC эмулятора»);
+    mixed-ap       смешанная пара «точка-ядро + станция-прошивка» против ядра в идеальной среде;
+    mixed-sta      смешанная пара «точка-прошивка + станция-ядро» против ядра в идеальной среде.
+
 Сравнитель — не ядро: эмулятор и мост (tests/unit) он подключает лениво, внутри функций (unit_modules), поэтому
 импорт модулей ref.core по-прежнему не тянет tests/unit (test_core_boundary). Прошивку в эмуляторе выгоднее гонять под
 PyPy (tests/unit/README.md)."""
@@ -51,6 +59,17 @@ def unit_modules(fw=False):
     return RB, importlib.import_module('fw_scenario')
 
 
+def sparrow_module():
+    """Сценарий с ядром на адаптере Sparrow (tests/unit/sparrow_scenario) — лениво, как unit_modules."""
+    unit_modules()
+    import importlib
+    return importlib.import_module('sparrow_scenario')
+
+
+MODES = ('fw', 'core', 'core-sparrow', 'fw-sparrow', 'mixed-ap', 'mixed-sta')
+NEED_FW = ('fw', 'fw-sparrow', 'mixed-ap', 'mixed-sta')
+
+
 # =====================================================================================================================
 def core_side(scn, RB, label='ядро'):
     from .scenario import AP_ADDR
@@ -83,6 +102,51 @@ def fw_side_from(scn, snap, RB, FS, label='прошивка', meta=None):
         names[bytes(m)] = 'STA' if len(stas) == 1 else f'STA{i + 1}'
     air = DC.snapshot_air(snap, ap, names)
     return DC.Side(label, air, snap, F.mac_str(ap), scn.bi_tu, RB=RB, emulator=True, meta=meta or {})
+
+
+def _names(snap, ap):
+    names = {ap: 'AP'}
+    stas = [m for m in snap['nodes'] if bytes(m) != ap]
+    for i, m in enumerate(stas):
+        names[bytes(m)] = 'STA' if len(stas) == 1 else f'STA{i + 1}'
+    return names
+
+
+def sparrow_side_from(scn, r, RB, label, impl, core_nodes=()):
+    """Сторона по прогону sparrow_scenario (ядро на адаптере или смешанная пара): снимок → Air, модель MAC — у всех
+    узлов (emulator=True)."""
+    from .. import fields as F
+    SS = sparrow_module()
+    ap = bytes(SS.F.AP_MAC)
+    snap = r.snapshot
+    air = DC.snapshot_air(snap, ap, _names(snap, ap))
+    meta = dict(done=r.done, notes=list(r.notes), frames=len(snap['frames']))
+    if getattr(r, 'delivered', None):
+        meta['delivered'] = r.delivered
+    side = DC.Side(label, air, snap, F.mac_str(ap), scn.bi_tu, RB=RB, emulator=True, meta=meta, impl=impl,
+                   core_nodes=core_nodes)
+    if impl == 'mixed':
+        from collections import Counter
+        by = Counter(side.evs[v.idx].tx_node for v in side.viol if 0 <= v.idx < len(side.evs))
+        meta['нарушения судей по передатчику'] = {f'{n}({"ядро" if n in core_nodes else "прошивка"})': k
+                                                  for n, k in sorted(by.items())}
+    side.run = r
+    return side
+
+
+def core_sparrow_side(scn, RB, label='ядро-Sparrow'):
+    return sparrow_side_from(scn, sparrow_module().run_core(scn), RB, label, 'core')
+
+
+def mixed_side(scn, role, build, RB, preset='core'):
+    """Смешанная пара по сценарию: role 'ap' — точка-ядро, 'sta' — станция-ядро; preset — набор выбора реализации
+    ядра (sparrow_scenario.PRESETS: 'core' — как в идеальной среде, 'compat' — ближе к узлам прошивки)."""
+    SS = sparrow_module()
+    r = SS.run_mixed_cfg(scn, role, build, **SS.PRESETS[preset])
+    label = ('пара точка-ядро' if role == 'ap' else 'пара станция-ядро') + ('' if preset == 'core' else f' ({preset})')
+    side = sparrow_side_from(scn, r, RB, label, 'mixed', core_nodes=('AP',) if role == 'ap' else ('STA',))
+    side.meta['preset'] = preset
+    return side
 
 
 def compare_sides(scn, A, B):
@@ -151,14 +215,25 @@ def to_text(scn, A, B, diffs, examples=2):
     return '\n'.join(L)
 
 
-def run_scenario(name, build=None, against='fw', RB=None, FS=None, save=None, load=None):
-    """Сценарий name: сторона A — прошивка (build; load — готовый снимок pickle от --save-snapshot) или ядро."""
+def run_scenario(name, build=None, against='fw', RB=None, FS=None, save=None, load=None, preset='core'):
+    """Сценарий name: сторона A — прошивка (build; load — готовый снимок pickle от --save-snapshot), ядро, ядро на
+    адаптере Sparrow или смешанная пара; сторона B — ядро в идеальной среде (fw-sparrow: ядро на адаптере Sparrow).
+    Смешанные пары — только сценарии с одной станцией (иначе None)."""
     scn = SCENARIOS[name]
     if RB is None:
-        RB, FS = unit_modules(fw=(against == 'fw'))
-    B = core_side(scn, RB)
+        RB, FS = unit_modules(fw=(against in NEED_FW))
+    if against.startswith('mixed') and scn.n_sta != 1:
+        return None
+    if against == 'fw-sparrow':
+        B = core_sparrow_side(scn, RB)
+    else:
+        B = core_side(scn, RB)
     if against == 'core':
         A = core_side(scn, RB, 'ядро-A')
+    elif against == 'core-sparrow':
+        A = core_sparrow_side(scn, RB)
+    elif against in ('mixed-ap', 'mixed-sta'):
+        A = mixed_side(scn, against.split('-')[1], build, RB, preset)
     elif load:
         import pickle
         with open(load, 'rb') as f:
@@ -174,7 +249,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description='Отчёт расхождений по эфиру: прошивка в эмуляторе против ядра DMG MAC')
     ap.add_argument('--scenario', default='sls-1sta', help='имя сценария или all')
     ap.add_argument('--build', help='каталог сборки (fw.elf, uc.elf); по умолчанию SPARRAW_UNIT_BUILD')
-    ap.add_argument('--against', choices=('fw', 'core'), default='fw', help='сторона A: прошивка (fw) или ядро')
+    ap.add_argument('--against', choices=MODES, default='fw',
+                    help='fw — прошивка против ядра; core — ядро против ядра; core-sparrow — ядро на Sparrow против '
+                         'ядра; fw-sparrow — прошивка против ядра на Sparrow; mixed-ap/mixed-sta — смешанная пара '
+                         'против ядра')
+    ap.add_argument('--mixed-preset', choices=('core', 'compat'), default='core',
+                    help='смешанная пара: выбор реализации ядра — как в идеальной среде (core) или ближе к узлам '
+                         'прошивки (compat: пауза SME, кадры управления на MCS 0, ответ через 4,95 мкс)')
     ap.add_argument('--json', help='файл JSON (для одного сценария)')
     ap.add_argument('--out-dir', help='каталог: <сценарий>.txt и <сценарий>.json')
     ap.add_argument('--examples', type=int, default=2)
@@ -189,16 +270,20 @@ def main(argv=None):
         return 0
     names = list(SCENARIOS) if a.scenario == 'all' else [a.scenario]
     build = a.build or os.environ.get('SPARRAW_UNIT_BUILD')
-    if a.against == 'fw' and not build and not a.load_snapshot:
+    if a.against in NEED_FW and not build and not a.load_snapshot:
         ap.error('нужен --build (или SPARRAW_UNIT_BUILD) с fw.elf и uc.elf')
-    RB, FS = unit_modules(fw=(a.against == 'fw'))
+    RB, FS = unit_modules(fw=(a.against in NEED_FW))
     total, allj = {}, {}
     for n in names:
         save = os.path.join(a.out_dir or '.', n + '.pkl') if a.save_snapshot else None
         load = a.load_snapshot
         if load and os.path.isdir(load):
             load = os.path.join(load, n + '.pkl')
-        scn, A, B, diffs = run_scenario(n, build, a.against, RB, FS, save=save, load=load)
+        res = run_scenario(n, build, a.against, RB, FS, save=save, load=load, preset=a.mixed_preset)
+        if res is None:
+            print(f'=== Сценарий {n}: пропущен (смешанная пара — одна станция) ===\n')
+            continue
+        scn, A, B, diffs = res
         txt = to_text(scn, A, B, diffs, a.examples)
         js = to_json(scn, A, B, diffs)
         print(txt)

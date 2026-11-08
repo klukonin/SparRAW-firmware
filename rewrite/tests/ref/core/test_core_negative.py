@@ -74,7 +74,7 @@ def test_beacon_duration_caught(RB):
 
 class ApLateSifs(DmgApMac):
     """Немедленный ответ через 5 мкс вместо SIFS (10.3.2.3.3)."""
-    def _respond(self, mpdu, mcs, beam):
+    def _respond(self, mpdu, mcs, beam, kind=None):
         if self._resp_ev is not None or self.tx_on:
             return
         self._resp_ev = self.sim.at(self.sim.now + 5, self._resp_tx, mpdu, mcs, beam)

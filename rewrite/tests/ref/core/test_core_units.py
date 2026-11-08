@@ -240,12 +240,122 @@ def test_sap_primitive_names():
     assert P.data_symbol_offset(1) < P.data_symbol_offset(0)
 
 
-def test_offload_ideal_only():
-    """Этап 1: идеальная среда — пустой набор разгрузки; иной — этап 3."""
+def test_offload_sets():
+    """Этап 3: пустой набор — идеальная среда; набор Sparrow принят; SSW_SWEEP — этап 4; SIFS_RESPONSE без
+    BA_SCOREBOARD (и наоборот) — отказ: BlockAck — ответ через SIFS."""
     assert O.require_supported(O.AdapterCaps()).offload == O.IDEAL
     assert set(O.TABLE) == {f for f in O.Offload if f is not O.Offload.NONE}
-    with pytest.raises(NotImplementedError):
-        DmgMac(Sim(), A, caps=O.AdapterCaps('sparrow', O.Offload.SIFS_RESPONSE))
+    assert O.require_supported(O.AdapterCaps('sparrow', O.SPARROW)).offload == O.SPARROW
+    for bad in (O.Offload.SSW_SWEEP, O.Offload.SIFS_RESPONSE, O.Offload.BA_SCOREBOARD):
+        with pytest.raises(NotImplementedError):
+            DmgMac(Sim(), A, caps=O.AdapterCaps('sparrow', bad))
+
+
+class _OffPhy:
+    """PHY адаптера-заглушки: PhySap + OffloadSap, без эфира; записывает вызовы ядра."""
+    def __init__(self, sim, nav_end=0):
+        self.sim, self.calls, self.nav_end, self.tx = sim, [], Fr(nav_end), []
+        self.dur = None
+
+    def phy_config_request(self, v):
+        pass
+
+    def phy_txstart_request(self, txv):
+        self.txv = txv
+        self.mac.phy_txstart_confirm(P.TxStatus())
+
+    def phy_data_request(self, d):
+        self.tx.append((self.sim.now, self.txv, bytes(d)))
+        self.mac.phy_data_confirm()
+
+    def phy_txend_request(self):
+        if self.dur is not None:
+            self.mac.offload_duration(self.dur)
+        self.sim.after(P.ppdu_time(self.txv), self.mac.phy_txend_confirm)
+
+    def offload_access_request(self):
+        self.calls.append(('access', self.sim.now))
+
+    def offload_nav_busy(self, t):
+        return self.nav_end > t
+
+    def offload_nav_idle_from(self):
+        return self.nav_end
+
+    def offload_nav_idle_for_rts(self, t, ta):
+        return not self.offload_nav_busy(t)
+
+
+def _off_mac(nav_end=0):
+    sim = Sim()
+    mac = DmgMac(sim, A, caps=O.AdapterCaps('sparrow', O.SPARROW))
+    phy = _OffPhy(sim, nav_end)
+    phy.mac = mac
+    mac.phy = phy
+    mac.set_cbap(0, 10 ** 6)
+    return sim, mac, phy
+
+
+def _rx(mac, mpdu, mcs=1):
+    psdu = FR.psdu([mpdu], False)
+    mac.phy_rxstart_indication(P.RxVector(MCS=mcs, LENGTH=len(psdu), SNR=20.0))
+    mac.phy_data_indication(psdu)
+    mac.phy_rxend_indication(P.NO_ERROR)
+
+
+def test_offload_sifs_response_not_sent_by_core():
+    """SIFS_RESPONSE: на кадр управления и RTS себе ядро не передаёт Ack/DMG CTS — их передаёт адаптер; NAV — адаптера
+    (OffloadNav), обновлений по кадрам у ядра нет."""
+    sim, mac, phy = _off_mac()
+    assert isinstance(mac.nav, O.OffloadNav)
+    sim.run(10)
+    _rx(mac, FR.mgmt('Action', 7, A, B, B, 0, bytes([3, 0, 1, 2, 0x10, 0, 0, 0, 0])))
+    _rx(mac, FR.rts(100, A, B), 0)
+    sim.run(100)
+    assert phy.tx == [] and mac._resp_ev is None
+    # кадр не себе — NAV ведёт адаптер: у ядра конец NAV — адаптера
+    _rx(mac, FR.rts(500, B, '02:00:00:00:00:0c'), 0)
+    assert mac.nav.idle_from() == 0
+    # ответ адаптера: ядро занято со «ответ назначен» до конца ответа
+    mac.offload_response_pending()
+    assert not mac._own_idle()
+    mac.offload_tx_start('Ack')
+    assert mac.tx_on
+    mac.offload_tx_end()
+    assert not mac.tx_on and mac._own_idle()
+
+
+def test_offload_edca_arbiter_and_duration():
+    """EDCA_BACKOFF: работа очереди (кадр управления с Ack) — запрос доступа адаптеру, передача только по
+    offload_access_granted; DURATION: Duration, поставленное адаптером, — основа TXNAV."""
+    sim, mac, phy = _off_mac()
+    sim.run(50)
+    job = mac.send_mgmt('Action', B, lambda t: bytes([3, 0, 1, 2, 0x10, 0, 0, 0, 0]))
+    assert job.queue
+    sim.run(200)
+    assert phy.tx == [] and phy.calls and phy.calls[0][0] == 'access'
+    phy.dur = 1900
+    mac.offload_access_granted()
+    assert len(phy.tx) == 1 and phy.tx[0][1].MCS == mac.mgmt_mcs
+    assert mac._last_tx_dur == 1900
+    # SLS — не работа очереди: доступ EDCA ядра, без арбитра адаптера
+    sls = mac.start_sls(B)
+    assert not sls.queue and not mac._arbiter_job(sls)
+
+
+def test_offload_ideal_unchanged():
+    """Идеальная среда: работа очереди — EDCAF ядра (арбитра нет), NAV — свой."""
+    mac = DmgMac(Sim(), A)
+    assert isinstance(mac.nav, C.Nav) and not mac.off
+    j = mac.send_mgmt('Action', B, lambda t: b'')
+    assert j.queue and not mac._arbiter_job(j)
+
+
+def test_brp_txtime_with_trn():
+    """BRP-RX PPDU (20.9.2.2, 20.11.3): TXTIME с полями TRN — ppdu_time по TRN_LEN."""
+    from .. import brp as BRP
+    txv = P.TxVector(MCS=0, LENGTH=42, TRN_LEN=4, PPDU_TYPE=BRP.TRN_R)
+    assert P.ppdu_time(txv) == txtime_control(42) + 4 * BRP.T_TRN_UNIT
 
 
 # ------------------------------------------------------------------------------------------------ журнал

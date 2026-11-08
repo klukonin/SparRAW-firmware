@@ -126,8 +126,10 @@ class PhySapUser(Protocol):
 
 # ---------------------------------------------------------------------------------------- времена PPDU
 def ppdu_time(txv):
-    """TXTIME PPDU (20.11.3) по TXVECTOR; TRN-поля здесь не используются (этап 1 — без BRP с TRN)."""
-    assert txv.TRN_LEN == 0
+    """TXTIME PPDU (20.11.3) по TXVECTOR; с полями TRN (TRN_LEN > 0, BRP PPDU 20.9.2.2) — ref/brp.brp_txtime."""
+    if txv.TRN_LEN:
+        from ..brp import brp_txtime
+        return brp_txtime(txv.LENGTH, txv.MCS, txv.TRN_LEN)
     return txtime(txv.LENGTH, txv.MCS)
 
 

@@ -25,7 +25,14 @@ tests/unit не импортирует.
                            допущения H-*: ответ через SIFS, Duration RTS/кадров очереди, отсрочка EDCA, содержимое
                            ответов MAC, вставка TA/Timestamp/BIC, RA CF-End в эфире > 2 узлов);
   «трактовка»           — нарушение зависит от трактовки (вердикт судьи 'model', ref/PLAN.md);
-  «неопределённо»       — обе стороны в рамках стандарта (выбор реализации) или стандарт не даёт номинала."""
+  «неопределённо»       — обе стороны в рамках стандарта (выбор реализации) или стандарт не даёт номинала;
+  «ядро на Sparrow ≠ стандарт» — этап 3: сторона A — ядро на адаптере Sparrow (impl='core'), судья отвергает её, а
+                           допущением модели MAC это не объясняется (ошибка адаптера или кода разгрузки ядра).
+
+Стороны (Side): emulator=True — сторона идёт на модели MAC эмулятора (прошивка или ядро на адаптере Sparrow);
+impl — кто исполняет MAC: 'fw' (прошивка), 'core' (ядро), 'mixed' (смешанная пара; core_nodes — имена узлов ядра).
+Если на модели MAC идёт и сторона B (прошивка против ядра на Sparrow), нарушение стороны B, которое объясняется
+допущением модели (b_hyp), — «модель MAC эмулятора», а не «ядро ≠ стандарт»: железо у сторон одно."""
 import difflib
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
@@ -44,7 +51,8 @@ from .sap_phy import data_symbol_offset
 
 FW_STD, CORE_STD, MODEL, INTERP, UNDEF = ('прошивка ≠ стандарт', 'ядро ≠ стандарт', 'модель MAC эмулятора',
                                           'трактовка', 'неопределённо')
-CLASSES = (FW_STD, CORE_STD, MODEL, INTERP, UNDEF)
+SPARROW_CORE = 'ядро на Sparrow ≠ стандарт'
+CLASSES = (FW_STD, CORE_STD, MODEL, INTERP, UNDEF, SPARROW_CORE)
 ASPECTS = ('прогон', 'судьи', 'обмены', 'поля', 'Duration', 'промежутки', 'доступ', 'роли', 'счётчики', 'параметры BSS')
 
 GAP_EXCH = Fr(12)                 # кадры одного обмена: промежуток < AIFS[AC_VO] = 13 мкс (10.3.2.3, 10.23.2.4)
@@ -154,9 +162,11 @@ class Viol:
 class Side:
     """Журнал одной стороны с разбором: роли узлов, фазы, обмены, нарушения судей.
     emulator=True — сторона идёт на модели MAC эмулятора (атрибуция точек разгрузки и H-*)."""
-    def __init__(self, label, air, snap, ap, bi_tu, RB=None, emulator=False, meta=None):
+    def __init__(self, label, air, snap, ap, bi_tu, RB=None, emulator=False, meta=None, impl=None, core_nodes=()):
         self.label, self.air, self.snap, self.ap, self.bi_tu = label, air, snap, ap, bi_tu
         self.emulator, self.meta = emulator, meta or {}
+        self.impl = impl or 'fw'              # проверяемая сторона по умолчанию — прошивка (этап 2)
+        self.core_nodes = tuple(core_nodes)
         self.evs = air.events
         # TSF узла = время журнала + сдвиг (журнал эмулятора — ось с TBTT, кратным BI; ref_bridge2.time_base)
         self.tsf_shift = 0
@@ -342,11 +352,12 @@ def _jsonable(x):
     return str(x)
 
 
-def classify(a_bad, b_bad, hyp='', interp=''):
+def classify(a_bad, b_bad, hyp='', interp='', b_hyp=''):
     """Класс по доказательствам: b_bad — стандарт отвергает ядро; hyp — расхождение в работе модели MAC эмулятора;
-    interp — зависит от трактовки; a_bad — стандарт отвергает сторону A."""
+    interp — зависит от трактовки; a_bad — стандарт отвергает сторону A; b_hyp — нарушение стороны B объясняется
+    допущением модели MAC (сторона B тоже на эмуляторе: ядро на адаптере Sparrow)."""
     if b_bad:
-        return CORE_STD
+        return MODEL if b_hyp else CORE_STD
     if hyp:
         return MODEL
     if interp:
@@ -471,6 +482,7 @@ def cmp_judges(A, B):
         j, r, mk = key
         hyps = Counter(viol_hyp(A, v) for v in va)
         hyp = hyps.most_common(1)[0][0] if hyps else ''
+        b_hyp = _all_hyp([viol_hyp(B, v) for v in vb])
         interp = 'вердикт судьи «model» — зависит от трактовки (ref/PLAN.md)' if va and all(
             v.verdict == 'model' for v in va) else RULE_INTERP.get(r, '')
         if vb and all(v.verdict == 'model' for v in vb):
@@ -482,13 +494,20 @@ def cmp_judges(A, B):
                       '(10.3.2.1)')
             cls = INTERP
         else:
-            cls = classify(bool(va), bool(vb), hyp, interp)
+            cls = classify(bool(va), bool(vb), hyp, interp, b_hyp)
+        hyp = hyp or b_hyp
         ex = [(A.label, A.evs[v.idx].where() if 0 <= v.idx < len(A.evs) else '-', v.msg) for v in va[:3]]
         ex += [(B.label, B.evs[v.idx].where() if 0 <= v.idx < len(B.evs) else '-', v.msg) for v in vb[:3]]
         out.append(Diff('судьи', f'{j}/{r}: {mk}', len(va), len(vb), cls, _clause_of(r, va + vb),
                         f'нарушений: {A.label} {len(va)}, {B.label} {len(vb)}' +
                         (f'; трактовка: {interp}' if interp and cls == INTERP else ''), hyp, ex))
     return out
+
+
+def _all_hyp(hs):
+    """Допущение модели, если им объясняются все нарушения (иначе пусто)."""
+    hs = [h for h in hs]
+    return Counter(hs).most_common(1)[0][0] if hs and all(hs) else ''
 
 
 def _hidden(side, v):
@@ -524,9 +543,9 @@ def cmp_exchanges(A, B):
             bad_a = _x_bad(A, xa)
             bad_b = _x_bad(B, xb)
             out.append(Diff('обмены', f'вид «{kind}» только у {side.label}', dict(sa), dict(sb),
-                            classify(bad_a, bad_b, _x_hyp(A, xa), ''), '',
+                            classify(bad_a, bad_b, _x_hyp(A, xa), '', _x_hyp(B, xb)), '',
                             'обмены этого вида есть только у одной стороны' + _bad_note(A, xa, B, xb),
-                            _x_hyp(A, xa), [(side.label, _xwhere(x), x.sig) for x in xs[:2]]))
+                            _x_hyp(A, xa) or _x_hyp(B, xb), [(side.label, _xwhere(x), x.sig) for x in xs[:2]]))
             continue
         only_a = [s for s in sa if s not in sb]
         only_b = [s for s in sb if s not in sa]
@@ -537,12 +556,13 @@ def cmp_exchanges(A, B):
             tb = {token(A, e) for x in xa for e in x.evs}
             bad_a, bad_b = _x_bad(A, xa1, ta), _x_bad(B, xb1, tb)
             hyp = _x_hyp(A, xa1, ta)
+            b_hyp = _x_hyp(B, xb1, tb)
             out.append(Diff('обмены', f'«{kind}»: сигнатуры различаются', {s: sa[s] for s in only_a},
-                            {s: sb[s] for s in only_b}, classify(bad_a, bad_b, hyp, ''), '',
+                            {s: sb[s] for s in only_b}, classify(bad_a, bad_b, hyp, '', b_hyp), '',
                             'сигнатура — кто → кому и кадры обмена, повторы свёрнуты; доводы — нарушения судей на '
                             'кадрах, которых у другой стороны в обменах этого вида нет' +
                             _bad_note(A, xa1, B, xb1, ta, tb),
-                            hyp, [(A.label, _xwhere(x), x.sig) for x in xa1[:2]] +
+                            hyp or b_hyp, [(A.label, _xwhere(x), x.sig) for x in xa1[:2]] +
                             [(B.label, _xwhere(x), x.sig) for x in xb1[:2]]))
     # порядок фаз каждой станции
     for sta in sorted({x.pair for x in A.exchanges + B.exchanges if x.pair}):
@@ -824,27 +844,34 @@ def cmp_fields(A, B):
         evs_b = [eb[(kind, name, v)] for v in ob]
         bad_a = field_evidence(A, evs_a, kind, name) + [m for v in oa for m in [FIELD_STD.get(name, _ok)(v)] if m]
         bad_b = field_evidence(B, evs_b, kind, name) + [m for v in ob for m in [FIELD_STD.get(name, _ok)(v)] if m]
-        hyp = ''
-        if A.emulator:
-            if any(e.by_mac for e in evs_a):
-                hyp = H_RESP
-            elif kind == 'DMG Beacon' and name.startswith('Timestamp'):
-                hyp = H_BIC
-            elif kind == 'CF-End' and 'RA' in name and all(e.dst == BCAST for e in evs_a):
-                hyp = H_CFEND
-            elif kind == 'A-MPDU' and name.startswith('MPDU'):
-                hyp = H_AMPDU
+        hyp = _field_hyp(A, evs_a, kind, name)
+        b_hyp = _field_hyp(B, evs_b, kind, name)
         rules_a = {b.split('/')[-1] for b in bad_a if '/' in b}
         interp = '; '.join(sorted({RULE_INTERP[r] for r in rules_a if r in RULE_INTERP})) \
             if rules_a and all(r in RULE_INTERP for r in rules_a) and len(rules_a) == len(bad_a) else ''
-        out.append(Diff('поля', f'{kind}: {name}', dict(va), dict(vb), classify(bool(bad_a), bool(bad_b), hyp, interp),
-                        FIELD_CLAUSE.get(name, ''),
+        out.append(Diff('поля', f'{kind}: {name}', dict(va), dict(vb),
+                        classify(bool(bad_a), bool(bad_b), hyp, interp, b_hyp), FIELD_CLAUSE.get(name, ''),
                         ('значения только у ' + A.label + f': {oa}; только у ' + B.label + f': {ob}') +
                         (f'; судьи на кадрах {A.label}: {bad_a}' if bad_a else '') +
                         (f'; судьи на кадрах {B.label}: {bad_b}' if bad_b else '') +
-                        (f'; трактовка: {interp}' if interp else ''), hyp,
+                        (f'; трактовка: {interp}' if interp else ''), hyp or b_hyp,
                         [(A.label, e.where(), '') for e in evs_a[:2]] + [(B.label, e.where(), '') for e in evs_b[:2]]))
     return out
+
+
+def _field_hyp(side, evs, kind, name):
+    """Допущение модели MAC, которое строит значение поля у стороны на эмуляторе (пусто — кадр строит MAC стороны)."""
+    if not side.emulator:
+        return ''
+    if any(e.by_mac for e in evs):
+        return H_RESP
+    if kind == 'DMG Beacon' and name.startswith('Timestamp'):
+        return H_BIC
+    if kind == 'CF-End' and 'RA' in name and evs and all(e.dst == BCAST for e in evs):
+        return H_CFEND
+    if kind == 'A-MPDU' and name.startswith('MPDU'):
+        return H_AMPDU
+    return ''
 
 
 # ------------------------------------------------------------------------------------------------------ Duration
@@ -887,9 +914,10 @@ def cmp_duration(A, B):
                         if 'dur' in v.rule or 'duration' in v.judge or 'Duration' in v.msg})
         hyps = Counter(ev_dur_hyp(A, e) for e in evs_a)
         hyp = hyps.most_common(1)[0][0] if hyps else ''
-        out.append(Diff('Duration', f'{key[0]}: {key[1]}', sa, sb, classify(bool(bad_a), bool(bad_b), hyp, ''),
+        b_hyp = _all_hyp([ev_dur_hyp(B, e) for e in evs_b])
+        out.append(Diff('Duration', f'{key[0]}: {key[1]}', sa, sb, classify(bool(bad_a), bool(bad_b), hyp, '', b_hyp),
                         '9.2.5', 'мкс: min/медиана/max' + (f'; судьи у {A.label}: {bad_a}' if bad_a else '') +
-                        (f'; судьи у {B.label}: {bad_b}' if bad_b else ''), hyp,
+                        (f'; судьи у {B.label}: {bad_b}' if bad_b else ''), hyp or b_hyp,
                         [(A.label, evs_a[0].where(), ''), (B.label, evs_b[0].where(), '')]))
     return out
 
@@ -951,6 +979,7 @@ def cmp_gaps(A, B):
         if not out_a and not out_b:
             continue
         hyp = h if (A.emulator and out_a) else ''
+        b_hyp = h if (B.emulator and out_b) else ''
         exa = [(A.label, ea[key][i][1].where(), f'{float(g):.3f} мкс') for i, g in enumerate(a or ())
                if not lo <= g <= hi][:2]
         exb = [(B.label, eb[key][i][1].where(), f'{float(g):.3f} мкс') for i, g in enumerate(b or ())
@@ -959,8 +988,8 @@ def cmp_gaps(A, B):
                f'{len(a or ())}, {B.label} {len(out_b)}/{len(b or ())}'
         if A.emulator and out_a and not h:
             note += '; момент передачи uc в эмуляторе зависит от H-ORIGIN/H-ORIGIN-RX (machw)'
-        out.append(Diff('промежутки', f'{key} ({name})', sa, sb, classify(bool(out_a), bool(out_b), hyp, ''), clause,
-                        note, hyp, exa + exb))
+        out.append(Diff('промежутки', f'{key} ({name})', sa, sb, classify(bool(out_a), bool(out_b), hyp, '', b_hyp),
+                        clause, note, hyp or b_hyp, exa + exb))
     return out
 
 
@@ -1025,6 +1054,7 @@ def cmp_access(A, B):
         hyp = ''
         if A.emulator and all(e.what.startswith('queue') or e.kind == 'RTS' for e in evs_a):
             hyp = H_BACKOFF
+        b_hyp = H_BACKOFF if B.emulator and all(e.what.startswith('queue') or e.kind == 'RTS' for e in evs_b) else ''
         note = (f'остаток = промежуток от конца занятости − AIFS[{key[0]}]; min: {A.label} {float(min(a)):.2f}, '
                 f'{B.label} {float(min(b)):.2f} мкс; остаток mod aSlotTime: {A.label} {dict(fa)}, {B.label} {dict(fb)}')
         if bad_a:
@@ -1036,8 +1066,9 @@ def cmp_access(A, B):
         bad_a = bad_a or (['раньше AIFS'] if early_a else [])
         bad_b = bad_b or (['раньше AIFS'] if early_b else [])
         out.append(Diff('доступ', f'{key[0]}: {key[1]}', _stat(a), _stat(b),
-                        classify(bool(bad_a), bool(bad_b), hyp, ''),
-                        '10.23.2.4', note, hyp, [(A.label, evs_a[0].where(), ''), (B.label, evs_b[0].where(), '')]))
+                        classify(bool(bad_a), bool(bad_b), hyp, '', b_hyp),
+                        '10.23.2.4', note, hyp or b_hyp,
+                        [(A.label, evs_a[0].where(), ''), (B.label, evs_b[0].where(), '')]))
     return out
 
 
@@ -1154,8 +1185,24 @@ def cmp_bss(A, B):
 # =====================================================================================================================
 def compare(A, B, n_sta=1):
     """→ [Diff] по всем аспектам."""
-    return (cmp_judges(A, B) + cmp_exchanges(A, B) + cmp_fields(A, B) + cmp_duration(A, B) + cmp_gaps(A, B) +
-            cmp_access(A, B) + cmp_roles(A, B) + cmp_counters(A, B, n_sta) + cmp_bss(A, B))
+    out = (cmp_judges(A, B) + cmp_exchanges(A, B) + cmp_fields(A, B) + cmp_duration(A, B) + cmp_gaps(A, B) +
+           cmp_access(A, B) + cmp_roles(A, B) + cmp_counters(A, B, n_sta) + cmp_bss(A, B))
+    for d in out:
+        if d.cls == FW_STD:
+            d.cls = _a_std_class(A, d)
+    return out
+
+
+def _a_std_class(A, d):
+    """Кто на стороне A «≠ стандарт»: прошивка, ядро на адаптере Sparrow или (смешанная пара) узел, чьи кадры в
+    примерах."""
+    if A.impl == 'core':
+        return SPARROW_CORE
+    if A.impl == 'mixed':
+        tx = {w.split('[', 1)[1].split(' ', 1)[0] for lab, w, _ in d.examples if lab == A.label and '[' in w}
+        if tx and tx <= set(A.core_nodes):
+            return SPARROW_CORE
+    return FW_STD
 
 
 def summary(diffs):

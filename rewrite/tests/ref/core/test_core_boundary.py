@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Граница импорта: ядро (модули ref/core, кроме тестов) не импортирует ничего из tests/unit (эмулятор, модели
-железа, мост) — только стандартную библиотеку, эталон ref/* и себя. Проверяется статически (AST) и динамически
-(в отдельном процессе после импорта всех модулей ядра в sys.modules нет модулей tests/unit). Сравнитель этапа 2
-(diff_report) мост и эмулятор подключает только внутри функций (unit_modules) — импорт модуля их не тянет."""
+железа, мост, адаптер Sparrow этапа 3) — только стандартную библиотеку, эталон ref/* и себя. Проверяется статически
+(AST) и динамически (в отдельном процессе после импорта всех модулей ядра в sys.modules нет модулей tests/unit).
+Сравнитель (diff_report) мост, эмулятор и адаптер подключает только внутри функций (unit_modules, sparrow_module) —
+импорт модуля их не тянет."""
 import ast
 import os
 import subprocess
@@ -20,6 +21,8 @@ def test_core_modules_listed():
     assert {'sap_phy', 'sap_mac', 'sap_mlme', 'offload', 'mac', 'ap', 'sta', 'medium_ideal', 'journal',
             'scenario', 'sme', 'judge_run', 'frames', 'sim', 'diff_scenario', 'diff_compare',
             'diff_report'} <= set(CORE)
+    # этап 3: адаптер Sparrow и его сценарии живут в tests/unit — ядро их не импортирует (проверки ниже)
+    assert {'adapter_sparrow', 'sparrow_scenario', 'air', 'machw'} <= set(UNIT_MODS)
 
 
 def test_static_imports():

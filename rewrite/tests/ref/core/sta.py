@@ -273,6 +273,14 @@ class DmgStaMac(DmgMac):
             caps = _caps_of(els)
             if caps is not None:
                 self.peer(f.ta).max_ampdu = ampdu_limit(caps)
+            if cfg:
+                # 11.3.5.2 d): MIB ← DMG BSS Parameter Configuration; значение вне SYNTAX MIB установить нельзя —
+                # поле не принимается (MIB прежний), ответ точки — не повод рвать ассоциацию
+                bad = {k: v for k, v in cfg.items() if k in M.BSS_PARAM_TO_MIB and
+                       not M.BSS_PARAM_TO_MIB[k][1] <= v <= M.BSS_PARAM_TO_MIB[k][2]}
+                if bad:
+                    self.log('dmg_bss_param_invalid', fields=bad)
+                    cfg = {k: v for k, v in cfg.items() if k not in bad}
             st = self.mlme.on_assoc_resp(f.ta, self.sim.now, fx['status'], dmg_op_cfg=cfg)
             if st is None:
                 return
