@@ -266,12 +266,14 @@ class Ppdu:
     """Событие эфира. kind — 'BRP' или иной кадр ('SSW-Ack', 'SSW-Feedback', 'Data', 'Ack', …).
     trn_len — N (Training Length, единицы TRN), ppdu_type — TRN-R / TRN-T (20.9.2.2.3).
     lost — адресат не принял. dur — поле Duration (мкс) или None. ampdu — виды кадров в одном A-MPDU с этим.
-    tx_awv / trn_awv — AWV преамбулы/данных и полей TRN-R (10.42.6.4.4). phase — 'setup'/'MID'/'BC'/None."""
+    tx_awv / trn_awv — AWV преамбулы/данных и полей TRN-R (10.42.6.4.4). phase — 'setup'/'MID'/'BC'/None.
+    bt — TXVECTOR BEAM_TRACKING_REQUEST = BEAM-TRACKING-REQUESTED (запрос сопровождения луча, 10.42.7)."""
     __slots__ = ('t', 'src', 'dst', 'kind', 'frame', 'mcs', 'length', 'trn_len', 'ppdu_type', 'lost', 'dur',
-                 'ampdu', 'tx_awv', 'trn_awv', 'phase')
+                 'ampdu', 'tx_awv', 'trn_awv', 'phase', 'bt')
 
     def __init__(self, t, src, dst, kind='BRP', frame=None, mcs=1, length=None, trn_len=0, ppdu_type=None,
-                 lost=False, dur=None, ampdu=(), tx_awv=None, trn_awv=None, phase=None):
+                 lost=False, dur=None, ampdu=(), tx_awv=None, trn_awv=None, phase=None, bt=False):
+        self.bt = bt
         self.t, self.src, self.dst, self.kind, self.frame, self.mcs = Fr(t), src, dst, kind, frame, mcs
         self.length = length if length is not None else (frame.length if frame is not None else 14)
         self.trn_len, self.ppdu_type, self.lost, self.dur, self.ampdu = trn_len, ppdu_type, lost, dur, tuple(ampdu)
@@ -731,7 +733,9 @@ def check_brp_log(events, params=None):
     """Проверка журнала эфира двух STA с кадрами BRP (транзакции 10.42.3.1, 10.42.6.4). Возвращает [Violation]:
       frame       — поля: L-RX ≤ 16 (9.5.4), Training Length 1..16 при PPDU_TYPE и 0 без (20.9.2.2.3),
                     TXSS-FBCK-REQ и TX-TRN-REQ не вместе, Sector ID Order Requested = 0 при TX-TRN-REQ (10.42.6.4.1);
-                    BS-FBCK = 0, если последний принятый PPDU не BRP-TX (9.4.2.129);
+                    BS-FBCK = 0, если последний принятый PPDU не BRP-TX (9.4.2.129) — кроме обратной связи
+                    сопровождения луча: TX-train-response после PPDU пира с запросом TRN-T (10.42.7 «set the BS-FBCK
+                    field to the index of the TRN-T subfield that was received with the best quality»; PLAN.md №111);
       ampdu       — не два BRP в A-MPDU; BRP — только с одним Ack, BA или QoS Null (10.42.6.4.1);
       ack         — BRP — Action No Ack (9.6.21.3): Ack на него не передаётся;
       duration    — Duration = остаток SP/TXOP (10.42.6.4.1);
@@ -753,6 +757,7 @@ def check_brp_log(events, params=None):
     last_rx = {}                    # STA → последний принятый PPDU
     last_tx = {}                    # STA → последний переданный PPDU
     owe_trn_t = set()
+    last_bt = {}                    # STA → последний принятый PPDU с запросом сопровождения TRN-T (10.42.7)
     txn = None                      # {'init': имя, 'resp': имя}
     for k, (i, e) in enumerate(ev):
         if e.kind == 'Ack' and last_rx.get(e.src) is not None and last_rx[e.src].is_brp \
@@ -760,6 +765,8 @@ def check_brp_log(events, params=None):
             out.append(Violation(i, 'ack', 'Ack на кадр BRP (Action No Ack, 9.6.21.3)'))
         if P.alloc_end is not None and e.end > P.alloc_end:
             out.append(Violation(i, 'alloc', 'PPDU выходит за конец SP/TXOP'))
+        if not e.lost and e.bt and e.is_brp_tx():
+            last_bt[e.dst] = e
         if not e.is_brp:
             last_tx[e.src] = e
             if not e.lost:
@@ -780,7 +787,9 @@ def check_brp_log(events, params=None):
         prx = last_rx.get(e.src)
         lt = last_tx.get(e.src)
         fresh = prx is not None and (lt is None or prx.t > lt.t)   # кадр пира принят после своей передачи
-        if e.phase not in ('MID', 'BC') and f.bre.bs_fbck and not (prx is not None and prx.is_brp_tx()):
+        bt_fb = f.bre.tx_train_resp and last_bt.get(e.src) is not None and last_bt[e.src].src == e.dst
+        if e.phase not in ('MID', 'BC') and f.bre.bs_fbck and not (prx is not None and prx.is_brp_tx()) and \
+                not bt_fb:
             out.append(Violation(i, 'frame', 'BS-FBCK ≠ 0, а последний принятый PPDU — не BRP-TX (9.4.2.129)'))
         # ---- агрегация ----
         if 'BRP' in e.ampdu:

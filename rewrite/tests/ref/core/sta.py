@@ -90,8 +90,9 @@ class DmgStaMac(DmgMac):
 
     def dmg_capabilities(self):
         sc = dict(num_rx_dmg_antennas=0, total_num_sectors=len(self.sectors) - 1, max_sc_rx_mcs=12, max_sc_tx_mcs=12,
-                  code_rate_13_16=1, max_ampdu_len_exp=MAX_AMPDU_EXP)
-        return E.encode_dmg_capabilities(E.DmgCapabilities(self.addr, self.aid or 0, sc, {}, 0, {}, 0, 0))
+                  code_rate_13_16=1, max_ampdu_len_exp=MAX_AMPDU_EXP, grant_ack=self.grant_ack_supported)
+        return E.encode_dmg_capabilities(E.DmgCapabilities(self.addr, self.aid or 0, sc, {}, self.bf.bt_time_limit,
+                                                           {}, 0, 0))
 
     # ------------------------------------------------------------------ MLME-JOIN (6.3.4, 11.1.4.5)
     def _req_MlmeJoinRequest(self, prim):
@@ -117,6 +118,11 @@ class DmgStaMac(DmgMac):
                     LocalTime=int(self.tsf(t0)), best_sector=(b.ssw.sector_id, b.ssw.antenna_id, rxv.SNR))
         if self.bssid is None or b.bssid != self.bssid:
             return                                         # 11.1.3.7: только свой BSSID
+        if self.joined and b.beacon_interval != self.bi_tu:
+            # 11.29.3: новый BI — по полю Beacon Interval маяка (TSF точки сброшен в 0 — индексы BI с нуля)
+            self.log('bss_bi_change', bi=b.beacon_interval)
+            self.bi_tu = b.beacon_interval
+            self.bti = {}
         # 11.1.3.1: Timestamp = TSF точки в начале символа данных с первым битом кадра → свой TSF к нему
         t_sym = t0 + P.data_symbol_offset(rxv.MCS)
         if self.join is not None and not self.joined:
@@ -141,6 +147,7 @@ class DmgStaMac(DmgMac):
                 del self.bti[kk]
         if rxv.SNR > info['best'][2]:
             info['best'] = (b.ssw.sector_id, b.ssw.antenna_id, rxv.SNR)
+        self._sta_rx_ecsa(k, b.elements)               # смена канала (bsschg.py, 11.8.8.6)
 
     def _bti_info(self, k, b, t0):
         """Первый принятый маяк BTI k: конец BTI, A-BFT, CBAP."""
@@ -157,10 +164,14 @@ class DmgStaMac(DmgMac):
             L = info['layout'] = A.AbftLayout.from_bic(bic, end)
             cs = L.end
             self.sim.at(L.start, self._abft_begin, k)
+        # 11.27.1: таймеры связи останавливаются в BTI и A-BFT (BTI — с TBTT по своему TSF)
+        self.add_halt(self.t_of_tsf(k * bi), cs)
         if b.params.cbap_only:
             # 10.39.6.3: CBAP Only — после guard до следующего TBTT по своему TSF; обмен должен укладываться с запасом
             # aTSFResolution (TSF и Timestamp — целые мкс, 11.1.3.1: свой TSF отстаёт от точки до 1 мкс + распространение)
             self.set_cbap(cs + B.guard_between(False, True, bi), self.t_of_tsf((k + 1) * bi), margin=aTSFResolution)
+        else:
+            self._sta_schedule(k, b, t0, end, cs)  # Extended Schedule (10.39.6.1, dti.py)
         return info
 
     # ------------------------------------------------------------------ A-BFT (10.42.5.2)
@@ -214,8 +225,10 @@ class DmgStaMac(DmgMac):
         if fb is not None and fb.dst == self.addr and self.resp.fb is fb:
             # 10.42.2.4: Sector Select / DMG Antenna Select — лучший сектор передачи к точке
             self.peer(self.bssid).tx_beam = P.Beam(fb.sector_select, fb.ant_select)
+            self.peer(self.bssid).rx_beam = None
             self.need_bf = False
             self.log('bf_abft', sector=fb.sector_select)
+            self._bf_snr_reset(self.bssid)
             self._indicate(ML.MlmeBfTrainingIndication(PeerSTAAddress=self.bssid, ResultCode=ML.SUCCESS))
         if s + 1 < L.n_slots and self.resp.state in ('backoff', 'tx'):
             self._abft_slot(s + 1)
@@ -224,20 +237,25 @@ class DmgStaMac(DmgMac):
             self.cur_abft = None
 
     # ------------------------------------------------------------------ MLME-BF-TRAINING (6.3.91, 10.42.6.2)
-    def _req_MlmeBfTrainingRequest(self, prim):
-        if prim.RequestBRP:
-            raise NotImplementedError('MLME-BF-TRAINING с RequestBRP = true (BRP) — этап 4')
-        peer = prim.PeerSTAAddress
+    def _bf_training_done(self, peer, ok):
+        """MLME-BF-TRAINING.request (SLS / SLS + BRP — mac.py) завершён."""
+        if ok:
+            self.need_bf = False
 
-        def done(ok):
-            if ok:
-                self.need_bf = False
-            self._confirm(ML.MlmeBfTrainingConfirm(PeerSTAAddress=peer,
-                                                   ResultCode=ML.SUCCESS if ok else ML.BF_TIMEOUT))
-        self.sls_job = self.start_sls(peer, done=done, n_resp_guess=self._peer_sectors(peer))
+    def _rebf(self, peer, why):
+        """Повторное BF с точкой (политика деградации/истечения таймера связи, bf.py): 11.27.1 — станция, которая ещё
+        принимает DMG Beacon с Next A-BFT = 0, «should improve the link quality by performing RSS during the A-BFT»;
+        иначе — SLS в DTI."""
+        if peer == self.bssid and not getattr(self, 'rebf_dti', False) and self._abft_announced():
+            if not self.need_bf:
+                self.need_bf = True
+                self.log('rebf_abft', peer=peer, why=why)
+            return
+        super()._rebf(peer, why)
 
-    def _peer_sectors(self, peer):
-        return getattr(self, 'ap_sectors', None)
+    def _abft_announced(self):
+        k = max(self.bti) if self.bti else None
+        return k is not None and self.bti[k]['layout'] is not None
 
     # ------------------------------------------------------------------ MLME-ASSOCIATE (6.3.7, 11.3.5.2)
     def _req_MlmeAssociateRequest(self, prim):
@@ -250,8 +268,9 @@ class DmgStaMac(DmgMac):
         # 11.8.2.2: «When it (re)associates, the STA shall provide to the AP … a list of channels» — Supported
         # Channels (9.4.2.17): канал 2 (20.3.1: «shall support channel number 2»; PHYCONFIG OPERATING_CHANNEL 3)
         body = E.encode_body(E.ASSOC_REQ, {'capability': {'dmg_params': {}}, 'listen_interval': prim.ListenInterval},
-                             [E.encode_ssid(self.ssid), CS.encode_supported_channels(SUPPORTED_CHANNELS),
-                              self.dmg_capabilities()])
+                             [E.encode_ssid(self.ssid), CS.encode_supported_channels(SUPPORTED_CHANNELS)] +
+                             ([self.rm_enabled_el()] if self.rm_link_meas else []) +    # табл. 9-34: RM — 10-й
+                             [self.dmg_capabilities()])
         self.send_mgmt(E.ASSOC_REQ, ap, lambda t: body, name='Association Request')
         self.sim.after(self.mlme.assoc_timeout_tu * TU + 1, self._assoc_tick)
 
@@ -273,6 +292,7 @@ class DmgStaMac(DmgMac):
             caps = _caps_of(els)
             if caps is not None:
                 self.peer(f.ta).max_ampdu = ampdu_limit(caps)
+                self.peer(f.ta).caps = caps
             if cfg:
                 # 11.3.5.2 d): MIB ← DMG BSS Parameter Configuration; значение вне SYNTAX MIB установить нельзя —
                 # поле не принимается (MIB прежний), ответ точки — не повод рвать ассоциацию
@@ -299,6 +319,7 @@ class DmgStaMac(DmgMac):
             caps = _caps_of(els)
             if caps is not None:
                 self.peer(f.ta).max_ampdu = ampdu_limit(caps)
+                self.peer(f.ta).caps = caps
             ssid = next((e.info for e in els if e.eid == E.EID_SSID), b'')
             self.probe['resp'] = ML.BSSDescription(BSSID=f.ta, SSID=ssid, BeaconPeriod=fx['beacon_interval'],
                                                    Timestamp=fx['timestamp'], LocalTime=int(self.tsf()))

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Protocol, Tuple
 
 SUCCESS, TIMEOUT, REFUSED, INVALID_PARAMETERS = 'SUCCESS', 'TIMEOUT', 'REFUSED', 'INVALID_PARAMETERS'
+UNSPECIFIED_FAILURE = 'UNSPECIFIED_FAILURE'                       # 6.3.32.3.2
 BF_TIMEOUT = 'BF_TIMEOUT'                                       # 6.3.91.3.2
 INFRASTRUCTURE = 'INFRASTRUCTURE'                               # BSSType (6.3.3.2.2, 6.3.11.2.2)
 PASSIVE, ACTIVE = 'PASSIVE', 'ACTIVE'                           # ScanType (6.3.3.2.2)
@@ -208,11 +209,63 @@ class MlmeBfTrainingIndication(_Prim):
     ResultCode: str = SUCCESS
 
 
+# -------------------------------------------------------------------------------- 6.3.32 LINKMEASURE (этап 4)
+@dataclass
+class MlmeLinkMeasureRequest(_Prim):
+    """6.3.32.2: PeerMACAddress, DialogToken (1–255), Transmit Power, Max Transmit Power (9.6.6.4)."""
+    NAME, CLAUSE = 'MLME-LINKMEASURE.request', '6.3.32.2'
+    PeerMACAddress: str = ''
+    DialogToken: int = 1
+    TransmitPower: int = 10
+    MaxTransmitPower: int = 10
+
+
+@dataclass
+class MlmeLinkMeasureConfirm(_Prim):
+    """6.3.32.3: ResultCode, DialogToken, TransmitPower, LinkMargin, RCPI/RSNI, антенны; DMGLinkMargin — элемент
+    DMG Link Margin отчёта (9.4.2.142, ref/linkadapt.LinkMargin) — для DMG (10.43.1)."""
+    NAME, CLAUSE = 'MLME-LINKMEASURE.confirm', '6.3.32.3'
+    ResultCode: str = SUCCESS
+    DialogToken: int = 0
+    PeerMACAddress: str = ''
+    TransmitPower: Optional[int] = None
+    LinkMargin: Optional[int] = None
+    RCPI: Optional[int] = None
+    RSNI: Optional[int] = None
+    ReceiveAntennaID: Optional[int] = None
+    TransmitAntennaID: Optional[int] = None
+    DMGLinkMargin: Optional[object] = None
+
+
+# -------------------------------------------------------------------------------- 6.3.35 EXTCHANNELSWITCH (этап 4)
+@dataclass
+class MlmeExtChannelSwitchRequest(_Prim):
+    """6.3.35.2: Channel Switch Mode, New Operating Class, New Channel Number, Channel Switch Count (TBTT)."""
+    NAME, CLAUSE = 'MLME-EXTCHANNELSWITCH.request', '6.3.35.2'
+    ChannelSwitchMode: int = 0
+    NewOperatingClass: int = 180
+    NewChannelNumber: int = 2
+    ChannelSwitchCount: int = 5
+
+
+@dataclass
+class MlmeExtChannelSwitchConfirm(_Prim):
+    NAME, CLAUSE = 'MLME-EXTCHANNELSWITCH.confirm', '6.3.35.3'
+    ResultCode: str = SUCCESS
+
+
+@dataclass
+class MlmeExtChannelSwitchIndication(_Prim):
+    NAME, CLAUSE = 'MLME-EXTCHANNELSWITCH.indication', '6.3.35.4'
+    NewChannelNumber: int = 2
+
+
 PRIMITIVES = {c.NAME: c for c in (
     MlmeStartRequest, MlmeStartConfirm, MlmeScanRequest, MlmeScanConfirm, MlmeJoinRequest, MlmeJoinConfirm,
     MlmeAssociateRequest, MlmeAssociateConfirm, MlmeAssociateIndication, MlmeAssociateResponse, MlmeAddbaRequest,
     MlmeAddbaConfirm, MlmeAddbaIndication, MlmeAddbaResponse, MlmeBfTrainingRequest, MlmeBfTrainingConfirm,
-    MlmeBfTrainingIndication)}
+    MlmeBfTrainingIndication, MlmeLinkMeasureRequest, MlmeLinkMeasureConfirm, MlmeExtChannelSwitchRequest,
+    MlmeExtChannelSwitchConfirm, MlmeExtChannelSwitchIndication)}
 
 
 class MlmeSap(Protocol):

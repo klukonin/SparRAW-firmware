@@ -70,8 +70,10 @@ def _holder_bf(e):
     return e.kind == 'SSW-Feedback'
 
 
-def cbap_ac(evs, ap, sched, RB, txop_limit=0):
-    """RB.judge_cbap с AIFSN по AC кадра и окнами CBAP (см. докстроку модуля)."""
+def cbap_ac(evs, ap, sched, RB, txop_limit=0, rx_err=None, sensed=None):
+    """RB.judge_cbap с AIFSN по AC кадра и окнами CBAP (см. докстроку модуля); rx_err — {индекс события: STA с ошибкой
+    приёма} (журнал ядра: EIFS, 10.3.2.3.7)."""
+    rx_err, sensed = rx_err or {}, sensed or {}
     ev, idx, wins = [], [], set()
     for e in evs:
         per = sched.period_of(e.t)
@@ -81,7 +83,7 @@ def cbap_ac(evs, ap, sched, RB, txop_limit=0):
         kind = e.kind
         if (e.raw[0] >> 2) & 3 == 0 and kind not in ('BRP', 'Action No Ack') and e.dst != C.BCAST:
             kind = 'Data'
-        ev.append((e.t, e.te, e.src, e.dst, kind, e.dur, per.end))
+        ev.append((e.t, e.te, e.src, e.dst, kind, e.dur, per.end, rx_err.get(e.i, ()), sensed.get(e.i)))
         idx.append(e.i)
     for k in list(sched.bti):
         for per in sched.periods(k):
@@ -93,7 +95,7 @@ def cbap_ac(evs, ap, sched, RB, txop_limit=0):
             for v in C.check_air_log(ev, p)]
 
 
-def duration_ac(evs, found, RB, txop_limit=None):
+def duration_ac(evs, found, RB, txop_limit=None, sched=None):
     """Duration по AC кадра. RB.judge_duration (а) применяет к кадрам управления лимит TXOP AC_BE, (б) считает
     «обменом» держателя кадры пары с промежутками ≤ SIFS + 10 мкс — туда попадает и следующий доступ на
     AIFS[AC_VO] = 13 мкс (новый TXOP), что завышает TPENDING. Здесь:
@@ -103,7 +105,7 @@ def duration_ac(evs, found, RB, txop_limit=None):
         TXOP промежутки — SIFS, после сбоя — PIFS, 10.23.2.8; новый доступ — не раньше AIFS).
     Находки RB по этим кадрам заменяются; остальные (ответы, CF-End, SSW, маяки) — как у RB."""
     from .. import duration as D
-    from ..timing import PIFS, txtime
+    from ..timing import PIFS, SIFS, txtime
     from fractions import Fraction as Fr
     data_kinds = ('RTS', 'Data', 'A-MPDU')
     out = [f for f in found if not (f.judge == 'duration' and evs[f.idx].kind != 'BRP' and
@@ -112,13 +114,26 @@ def duration_ac(evs, found, RB, txop_limit=None):
 
     def exchange_end(e):
         end, peer = e.te, {e.src, e.dst}
+        per0 = sched.period_of(e.t) if sched is not None else None
         for q in evs[e.i + 1:]:
             if q.t - end > gap_max or {q.src, q.dst} != peer or q.kind in ('CF-End', 'DMG Beacon'):
                 break
+            if sched is not None and sched.period_of(q.t) is not per0:
+                break                         # другой период расписания (SP после CBAP) — уже не этот TXOP
             end = q.te
         return end
     txop = {}
+    ext = sp_ext_windows(evs, _ap_of(evs), sched) if sched is not None else []
     for e in evs:
+        per = sched.period_of(e.t) if sched is not None else None
+        if per is not None and per.kind == BI.SP and e.kind in data_kinds:
+            # SP — не TXOP EDCA (лимит TXOP не действует): Duration покрывает немедленный ответ (9.2.5.2 a))
+            resp = D.response_txtime('ba' if e.kind == 'A-MPDU' else 'ack', e.mcs, 32 if e.kind == 'A-MPDU' else 14)
+            sp_end = max([per.end] + [en for s0, en, m in ext if s0 == per.end and e.src in m])
+            if e.dur < D.field(SIFS + resp) or e.te + e.dur > sp_end + 1:
+                out.append(RB.Finding('duration', e.kind, '9.2.5.2 a)', f'{e.kind} в SP: Duration {e.dur} не покрывает '
+                                      f'SIFS + ответ или выходит за конец SP', e.i))
+            continue
         if (e.raw[0] >> 2) & 3 == 0 and e.kind not in ('BRP', 'Action No Ack') and e.dst != C.BCAST:
             t_ack = txtime(14, D.response_mcs('ack', e.mcs))
             m = D.check_duration('mgmt', e.dur, {'resp_txtime': t_ack})
@@ -180,6 +195,111 @@ def sls_pairs(evs, ap, sched, RB):
     return out
 
 
+def _ap_of(evs):
+    """MAC точки — передатчик DMG Beacon."""
+    return next((e.src for e in evs if e.kind == 'DMG Beacon'), None)
+
+
+def _aids(evs, ap):
+    """MAC → AID по Association Response точки (9.4.1.8; AP — 0)."""
+    out = {ap: 0}
+    for e in evs:
+        if e.kind in (E.ASSOC_RESP, E.REASSOC_RESP) and e.src == ap:
+            try:
+                fx, _ = E.parse_body(e.kind, e.raw[24:])
+            except (ValueError, KeyError, IndexError):
+                continue
+            if fx.get('status') == 0:
+                out[e.dst] = fx['aid'] & 0x3fff
+    return out
+
+
+def bi_ac(evs, ap, sched, RB):
+    """RB.judge_bi с AID станций (Association Response) и окнами динамического распределения (Grant, 10.39.7) и
+    возвращённого времени SP (10.39.8.1, 10.39.6.7) по ref/sp.check_dti — иначе ответы получателя SP и передачи в
+    выделенном Grant окне — «чужие» (мост рассчитан на CBAP Only)."""
+    from .. import bi as BIm
+    from .. import sp as SPm
+    aids = _aids(evs, ap)
+    dyn = []
+    for k, c in list(sched.cfg.items()):
+        if not c.allocations:
+            continue
+        t0, t1 = BIm.tbtt(k, sched.bi_tu), BIm.tbtt(k + 1, sched.bi_tu)
+        log = [(e.t, e.te, e.src, e.dst, e.kind, e.dur,
+                dict(e.info(), mcs=e.mcs, frame=e.p if e.kind in ('Poll', 'SPR', 'Grant', 'Grant Ack') else None))
+               for e in evs if t0 <= e.t < t1 and e.kind != 'DMG Beacon']
+        if not log:
+            continue
+        b = sched.bti.get(k)
+        try:
+            _, wins, per = SPm.check_dti(log, k, sched.bi_tu, [_entry(a) for a in c.allocations], aids, ap,
+                                         bti_end=b[1] if b else None, bic=c.bic, params=c.params)
+        except (ValueError, KeyError, AttributeError):
+            continue
+        dyn += [(w.start, w.end, set(w.members) | ({ap} if w.everyone else set())) for w in wins]
+    ev = [(e.t, e.te, e.src, e.dst, e.kind, e.dur, e.info()) for e in evs]
+    secs = {e.p.ssw.sector_id for e in evs if e.kind == 'DMG Beacon' and e.src == ap and e.p is not None}
+    ext = sp_ext_windows(evs, ap, sched)
+    bss = BIm.Bss(ap, aids, bi_tu=sched.bi_tu, configs=lambda k: sched.config(k), sectors=secs or None,
+                  dynamic=dyn + ext)
+    out = []
+    for v in BIm.check_air_log(ev, bss):
+        e = evs[v.idx]
+        if v.rule == 'period_end' and any(s <= e.te <= en and e.src in m for s, en, m in ext):
+            continue                          # продлённый SP (10.39.9): конец — с продлением
+        if v.rule == 'sp_foreign' and e.kind == 'SPR' and any(
+                q.kind == 'Poll' and q.src == ap and q.dst == e.src and 0 <= e.t - q.te <= 1000 for q in evs[:v.idx]):
+            continue                          # SPR на Poll (10.39.7.2) — через Response Offset; сроки — dynalloc
+        out.append(RB.Finding('bi', v.rule, RB._bi_clause(v.rule), v.msg, v.idx))
+    return out
+
+
+def sp_ext_windows(evs, ap, sched):
+    """Продления SP (10.39.9): Grant точки с Allocation Duration > 0 через SIFS после SPR в SP → [(конец SP, конец +
+    продление, {пара SP})]."""
+    from .. import bi as BIm
+    out = []
+    for j, e in enumerate(evs):
+        if e.kind != 'Grant' or e.src != ap or e.p is None or not e.p.dai.alloc_duration or j == 0:
+            continue
+        q = evs[j - 1]
+        if q.kind != 'SPR' or q.src != e.dst or e.t - q.te > 4:
+            continue
+        per = sched.period_of(q.t)
+        if per is None or per.kind != BIm.SP:
+            continue
+        out.append((per.end, per.end + e.p.dai.alloc_duration, {e.dst, ap, q.dst}))
+    return out
+
+
+def _entry(a):
+    from .. import schedule as S
+    return S.Entry(a, S.BF_NONE)
+
+
+def _schedule_allocations(sched, evs, ap, bi_tu):
+    """Мост строит периоды BI по BIC и DMG Parameters маяка без Extended Schedule (эмулятор раньше — только CBAP Only):
+    добавить распределения Extended Schedule первого маяка каждого BI (9.4.2.131, 10.39.6.1) — иначе при CBAP Only = 0
+    весь DTI — «вне периодов» (одни правила для ядра и прошивки: простой TDMA прошивки — тоже Extended Schedule)."""
+    from .. import schedule as S
+    seen = set()
+    for e in evs:
+        if e.kind != 'DMG Beacon' or e.src != ap or e.p is None:
+            continue
+        k = BI.bi_index(e.t, bi_tu)
+        if k in seen or k not in sched.cfg:
+            continue
+        seen.add(k)
+        try:
+            ent = S.from_elements(e.p.elements)
+        except ValueError:
+            continue
+        if ent:
+            sched.cfg[k].allocations = [x.alloc for x in ent]
+            sched.cfg[k].has_es_in_beacon = True
+
+
 def bridge(journal, ap, RB, bi_tu=None):
     """→ (события RB.Ev, [RB.Finding]) — все судьи RB.judge_all, доступ CBAP — cbap_ac."""
     bi_tu = bi_tu or journal.bi_tu
@@ -191,10 +311,15 @@ def bridge_snapshot(snap, ap, RB, bi_tu):
     прошивки (этап 2, diff_compare)."""
     from .. import fields as F
     evs = RB.events(snap, F.mac_bytes(ap))
+    # ошибки приёма по узлам (снимок журнала ядра несёт rx_err; эмулятора — нет): порядок RB.events — по (start, end)
+    srt = sorted(snap['frames'], key=lambda f: (f['start'], f['end']))
+    rx_err = {i: {F.mac_str(m) for m in f.get('rx_err', ())} for i, f in enumerate(srt) if f.get('rx_err')}
+    sensed = {i: {F.mac_str(m) for m in f['sensed']} for i, f in enumerate(srt) if 'sensed' in f}
     sched = RB.Schedule(evs, ap, bi_tu)
+    _schedule_allocations(sched, evs, ap, bi_tu)
     lim = RB.edca_txop_limit(evs, ap)
     found = (RB.judge_fields(evs, ap, sched) + RB.judge_elements(evs, ap) +
-             duration_ac(evs, RB.judge_duration(evs, ap, sched, lim), RB, lim) +
-             RB.judge_bi(evs, ap, sched) + RB.judge_abft(evs, ap, sched) + sls_pairs(evs, ap, sched, RB) +
-             cbap_ac(evs, ap, sched, RB, lim) + RB.judge_addba(evs, ap))
+             duration_ac(evs, RB.judge_duration(evs, ap, sched, lim), RB, lim, sched) +
+             bi_ac(evs, ap, sched, RB) + RB.judge_abft(evs, ap, sched) + sls_pairs(evs, ap, sched, RB) +
+             cbap_ac(evs, ap, sched, RB, lim, rx_err, sensed) + RB.judge_addba(evs, ap))
     return evs, found

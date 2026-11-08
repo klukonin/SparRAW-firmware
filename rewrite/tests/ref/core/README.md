@@ -1,4 +1,4 @@
-# Ядро DMG MAC (этапы 1–3)
+# Ядро DMG MAC (этапы 1–4)
 
 Исполняемое ядро DMG MAC по 802.11-2020 на Python: точка (AP, BSS Type 3) и станция (non-AP STA) как событийные
 автоматы с интерфейсами стандарта, идеальная среда и журнал эфира в формате судей. Ядро не знает про регистры, очереди
@@ -299,7 +299,215 @@ H-DURQ, Timestamp H-BIC, слоты H-BACKOFF; против ядра в идеа
 ядра — момент PHY-TXSTART (H-ORIGIN/H-ORIGIN-RX не добавляются); смешанные пары — одна станция; SSW_SWEEP не
 разгружается (этап 4).
 
+## Этап 4: расширение ядра
+
+Функции, которые модели `ref/*` уже описывали как проверки, ядро теперь исполняет. Каждый пункт — исполняется в ядре,
+тесты ядро ↔ ядро в идеальной среде (оба судьи — 0 нарушений), сценарии сравнения с прошивкой (`diff_scenario`).
+
+### 4.1 BRP с TRN, сопровождение луча, поддержание направленной связи (`bf.py`)
+
+```
+cd rewrite/tests && python3 -m pytest ref/core/test_core_bf.py -q -p no:xdist
+```
+
+| Что исполняется | Пункт | Как |
+|---|---|---|
+| MLME-BF-TRAINING.request(RequestBRP = true) | 6.3.91, 11.36 | SLS в DTI, затем фаза BRP в том же TXOP |
+| свои запросы BRP в SSW-Feedback / SSW-Ack | 9.3.1.16, 10.42.2.5 | L-RX — единиц TRN-R под свои AWV приёма, TX-TRN-REQ; Duration SSW-Feedback — SSW-Ack + 2·MBIFS (9.3.1.16 a)); ответчик — по `BfConfig.brp_on_sls` |
+| транзакция уточнения | 10.42.6.4.1–10.42.6.4.3 | первый BRP — через MBIFS после SSW-Ack; при L-RX в SSW-Ack — BRP-RX; содержимое кадров — `ref/brp.Participant` (BRP-RX на L-RX, TX-TRN-OK/TX-train-response, BS-FBCK, FBCK-TYPE и Channel Measurement Feedback 9.4.2.136 на TRN-T); ответы через SIFS; конец по 10.42.3.1 a) или b) (повтор кадра через BRPIFS, 10.42.6.4.1); Duration — остаток TXOP; бит Initiator — по 10.42.6.4.1 (последний принятый / переданный PPDU) |
+| BRP в отдельном TXOP | 10.42.3.1 | `start_brp` (EDCA AC_VO); ответчик SLS начинает транзакцию только в следующем распределении (в CBAP-only DTI — после BTI, PLAN №20) |
+| итог BRP | 10.42.6.4.4 | AWV передачи — по BS-FBCK пира, AWV приёма — лучший SNR на TRN-R; приём ответов в транзакции — уточнённой AWV |
+| сопровождение передачи | 10.42.7, табл. 10-31 | PPDU данных с BEAM_TRACKING_REQUEST, PPDU_TYPE TRN-T и подполями TRN-T (если пир объявил предел ≠ 0 и выполнено условие повтора); ответчик — BRP с обратной связью через EDCA не позже предела (FBCK-TYPE — как в последнем BRP инициатора с TX-TRN-REQ, иначе 0 и BS-FBCK); опоздавший ответ инициатор игнорирует |
+| поддержание связи | 11.27.1, 9.5.6 | dot11BeamLinkMaintenanceTime по полям BLM (табл. 9-345); таймер на связь: ставят SLS/BRP, принятый немедленный ответ (инициатор), переданный ответ (получатель); стоит в BTI и A-BFT; без MSDU — QoS Null (Normal Ack); истечение — приём квази-омни, инициатор связи — ISS |
+| деградация связи (политика) | 11.27.1 (последние абзацы) | `BfConfig.degrade_db`: падение SNR от пира против опоры (после BF, та же диаграмма приёма) → уточнение (сопровождение при данных, иначе BRP); после уточнения снова падение или ≥ `resls_db` / `fail_limit` неудач подряд → повторное BF: станция — RSS в A-BFT, если маяки объявляют A-BFT («should»), иначе SLS в DTI; неудачное SLS — снова через BI |
+
+Когда стандарт **требует** переобучения (вопрос частых SLS на стенде): никогда. 11.27.1 и 10.42 только **разрешают**:
+ISS «may» — в любой момент, в том числе до истечения таймера связи; при деградации «can use beam tracking or beam
+refinement»; станция, ещё принимающая маяки с Next A-BFT = 0, «should» улучшать связь RSS в A-BFT. Обязательно: QoS
+Null, если таймер связи определён и MSDU нет («shall transmit QoS Null frames to maintain a beamformed link»), приём
+квази-омни у ответчика после истечения, BRP после SLS при запросах в SSW-Ack (10.42.6.4.3). Повторное SLS без
+деградации и без истечения таймера — выбор реализации, не требование.
+
+Расширение модели PHY-SAP (`sap_phy`, стандарт оставляет выбор AWV и измерение на TRN реализации): `Beam.awv`
+(уточняющая AWV внутри сектора), `TXVECTOR.TRN_AWVS` (AWV подполей TRN-T), `PHYCONFIG_VECTOR.RX_TRN_AWVS` (перебор AWV
+приёма на TRN-R), `RXVECTOR.TRN_SNR` (SNR на каждом подполе). Идеальная среда: положение луча = сектор + awv·¼
+сектора; лучшее положение пары может быть дробным (SLS находит ближайший сектор, BRP — AWV); `move` — смена лучших
+положений во времени (деградация), `block` — затенение.
+
+Найдено и исправлено в ядре по ходу (поведение этапов 1–3, проявлялось только за пределами прежних сценариев):
+- больше 4096 MSDU в очереди под соглашением BA: SN по модулю 4096 совпадали с неподтверждёнными, MSDU терялись
+  (передача вставала на 4096-й) — SN выдаются только в окне передачи (10.25.6.2, `_ba_refill`);
+- адаптация MCS: SNR на чувствительности MCS 0 входил с минусом — MCS выбиралась на 1 дБ ниже чувствительности
+  (`la_mcs`, `LA_SNR_MCS0_DB`); журнал `Bss(n_sta=2)` изменился;
+- Duration RTS: на оси передатчика TPENDING длиннее суммы TXTIME и SIFS на распространение (ответы начинаются через
+  SIFS после конца приёма) — при целом pend Duration была меньше TPENDING; запас 3·aAirPropagationTime (журнал
+  `sls-1sta-burst` изменился).
+
+Уточнения судей (журнал ядра знает больше, чем запись PMC; на записях стенда поведение прежнее):
+- `AirEv.trn` — TXVECTOR (TRN_LEN, PPDU_TYPE, запрос сопровождения, подполя добавлены): `air_judge.r_brp` с ним
+  проверяет правила TRN (BRP-RX на L-RX, TRN-T, BS-FBCK, CMF) и «последний принятый PPDU» по всем PPDU;
+  `r_beam_track` — `ref/beamtrack.check_bt_log` по парам; `brp.check_brp_log` — BS-FBCK обратной связи сопровождения
+  (PLAN №111); `r_brp_role` — обратная связь сопровождения и ответ на неё — не начало уточнения;
+- `r_blm` — успешный BRP тоже ставит таймер (11.27.1); `linkmaint.check_blm_log` — истечение после переданных, но не
+  подтверждённых кадров (затенение) — не нарушение «shall transmit QoS Null» (PLAN №112), одно замечание на истечение;
+- `r_sls` — кадры A-BFT не SLS в DTI (A-BFT после SLS в DTI склеивался с ним);
+- `cbap.check_air_log` — необязательные ошибки приёма по STA (EIFS, 10.3.2.3.7) и кто PPDU обнаружил (скрытая STA при
+  затенении: чужой PPDU не занимает её среду и NAV); `judge_run.cbap_ac` берёт их из снимка журнала ядра
+  (`rx_err`, `sensed`); `r_responder` — узел, не принявший ни одного кадра TXOP, не «ответчик» в нём.
+
+Трактовки и ограничения: BRP по политике MAC после ассоциации (не MLME-BF-TRAINING) судья `bf_training` по эфиру не
+отличает от обучения по MLME и даёт вердикт model (тесты его допускают явно); уточнённая AWV приёма применяется только в
+транзакциях BRP (10.42.6.4.4) — в обменах данными приём квази-омни (адаптация MCS ядра опирается на взаимность канала,
+верную при одинаковых диаграммах приёма); QoS Null поддержания связи шлёт станция (у точки запас вдвое меньше — её QoS
+Null нужен, только если станция не успела); не исполняются MIDC (MID/BC), TXSS-FBCK, сопровождение приёма (TRN-R,
+добавляемые ответчиком к следующему PPDU), Other_AID, несколько DMG-антенн, RXSS.
+
+Тесты `test_core_bf.py`: юниты (TRN во TXVECTOR и TXTIME, AWV и TRN_SNR среды, кодек CMF, исключение BS-FBCK, правила
+инициатора сопровождения), SLS + BRP (кадры, промежутки MBIFS/SIFS, AWV +¼ сектора у обеих сторон, судьи 0),
+сопровождение луча при уходе луча на ½ сектора (обе стороны, AWV +½, судьи 0), уход на 2 сектора — повторное BF (A-BFT
+и SLS в DTI), BLM — QoS Null, затенение 22 мс, истечение и восстановление (A-BFT и DTI), негативные (нет QoS Null —
+судья `blm`; неверная длина TRN-R — судья `brp`).
+
+### 4.2 Расписание DTI: SP, PP/GP, продление, усечение, восстановление (`dti.py`)
+
+```
+cd rewrite/tests && python3 -m pytest ref/core/test_core_dti.py -q -p no:xdist
+```
+
+| Что исполняется | Пункт | Как |
+|---|---|---|
+| Extended Schedule точки | 9.4.2.131, 10.39.6.1–10.39.6.5 | политика SME (`DmgApMac.sched_policy`: BI → [schedule.Req]); `schedule.plan` от конца BHI + guard: guard time, aDMGPPMinListeningTime между SP с общей STA, Allocation Start — младшие 32 бита TSF; элемент в каждом DMG Beacon (табл. 9-45: после DMG Capabilities), CBAP Only = 0; без политики — CBAP Only (этапы 1–3). Политики: `policy_sp` (CBAP для входа, SP STA → AP и AP → STA, SP broadcast под PP/GP, CBAP на остаток), `policy_cbap_split` (как простой TDMA прошивки: общее CBAP + CBAP {STA → AP} поровну, псевдостатичные, при ≥ 2 STA) |
+| расписание у станции | 10.39.6.1, 10.39.6.4 | `schedule.StaView` по маякам своего BSS (obsolete allocation, псевдостатичные при пропуске маяка) → периоды `bi.layout` по своему TSF |
+| доступ EDCA | 10.39.5 | только в CBAP-распределениях, где STA вправе начинать обмен (broadcast или свой Source/Destination AID); окна по очереди, NAV и EDCAF между ними заморожены |
+| SP: источник | 10.39.6.2 | обмен в начале SP без RTS: A-MPDU + BlockAck (MSDU + Ack) через SIFS, каждый с ответом до конца SP; повтор без ответа — через PIFS; Duration — SIFS + ответ (SP — не TXOP EDCA) |
+| усечение SP | 10.39.8.1 | очередь пуста, SP Truncatable, время на обмен есть: CF-End к AP (если AP не пир), затем CF-End пиру |
+| продление SP | 10.39.9 | к концу Extendable SP очередь не пуста — SPR к AP (Duration — остаток SP, Allocation Duration — сколько нужно, ≤ 4 мс); AP — Grant через SIFS, гарантирует только при следующем SP broadcast/broadcast длиннее запрошенного; Grant партнёру, если он не AP; PP точки сдвигается за продлённый SP |
+| восстановление SP | 10.39.6.7 | AP-получатель Truncatable SP без кадров источника за dot11SPIdleTimeout — Grant источнику на остаток (10.39.7) |
+| PP/GP | 10.39.7.2, 10.39.7.3, 10.39.4 | в SP broadcast/broadcast: Poll каждой связанной STA через SBIFS (Duration и Response Offset — ур. (10-18)); SPR станции через Response Offset (DAI — время под свою очередь); GP «SIFS following the end of a PP» (PLAN №47): Grant каждой запросившей, начало выделения — PHY-TXEND Grant + Duration (0 или SIFS + Grant Ack); станция — Grant Ack через SIFS при Grant Ack Supported, обмены в окне как источник SP; следующий GP — после конца окна |
+
+Найдено и исправлено в ядре: ответчик SLS, принявший кадры ISS, мог начать свой обмен EDCA до RSS (оставшиеся кадры
+ISS направленной развёртки не слышны — среда «свободна»), и RSS не начинался (10.42.6.2: «shall begin an RSS MBIFS
+following the completion of an ISS») — до RSS ответчик в EDCA не участвует (журнал `sls-2sta` изменился).
+
+Уточнения судей (журнал ядра; на записях стенда CBAP Only — без изменений):
+- мост `judge_run`: периоды BI — с распределениями Extended Schedule маяков (мост знал только CBAP Only — при CBAP Only
+  = 0 весь DTI был «вне периодов»; относится и к простому TDMA прошивки); `bi_ac` — AID станций и окна Grant /
+  продления (ref/sp.check_dti); SPR на Poll — не «чужой»; Duration кадров в SP — правило SP (не лимит TXOP), конец
+  обмена TXOP в Duration RTS — в пределах периода;
+- `air_judge`: TXOP (`_txops`: txop_limit, nav_txop, holder_gap, responder_tx) — только вне SP по расписанию;
+  `responder_tx` — SPR на Poll, Grant Ack на Grant, Grant точки на SPR продления — ответы; `access` — статистика
+  «фактический AIFS» только по доступам, которые мог задержать backoff (idle ≤ AIFS + CW·aSlotTime): после долгого
+  простоя очередь была пуста.
+
+Не исполняется: ATI (Announce, Poll в ATI, восстановление по ATI), DMG protected period (DTS), уступка SP Grant-ом,
+усечение Grant-ом с CBAP, Heartbeat, BF в SP по Beamforming Training, PCP Active = 0, распределения из нескольких
+блоков, spatial sharing.
+
+Тесты `test_core_dti.py`: политики (`schedule.check` без нарушений, «как TDMA прошивки»), SP (обмены без RTS, усечение,
+ни один кадр за концом SP), PP/GP с двумя станциями, продление, восстановление (маяки BTI затенены), CBAP {STA → AP}
+двух станций, негативные (передача в чужом SP, обмен за концом SP — судья `sp_access`).
+
+### 4.3 Link Measurement, DMG Link Margin, LA Ack, Information Request/Response (`lm.py`)
+
+```
+cd rewrite/tests && python3 -m pytest ref/core/test_core_lm.py -q -p no:xdist
+```
+
+| Что исполняется | Пункт | Как |
+|---|---|---|
+| MLME-LINKMEASURE.request/.confirm | 6.3.32 | Link Measurement Request (9.6.6.4, Action с Ack, токен ≠ 0); после Ack — кадр измерения (QoS Null, если данных к пиру нет); confirm с полями отчёта и DMG Link Margin; нет отчёта за 20 TU — UNSPECIFIED_FAILURE |
+| отвечающая STA | 10.43.1, 11.10.11 | `rm_link_meas` (dot11RMLinkMeasurementActivated, бит RM Enabled Capabilities в Association Request/Response и Probe Response): отчёт `ref/linkadapt.LinkMeasResponder` — TPC Report, RCPI/RSNI и антенна кадра запроса, DMG Link Margin по следующему кадру запросившей (Activity, MCS, Link Margin, SNR, Reference Timestamp — конец PPDU измерения); выключено — запрос игнорируется (у точки — обязательно) |
+| рекомендация MCS | 10.43.1, 9.4.2.142 | Activity «Change MCS» — верхняя граница своей MCS к пиру (`_la`: обратная связь о канале пира вместо одной взаимности) |
+| DMG TPC | 10.43.2 | на совет «уменьшить/увеличить мощность» (отвечающая STA советует при `lm_power_advice` и запасе ≥ 10 дБ) — ядро мощность не меняет: отчёт с DMG LA Ack, Activity 0, токен 0, не позже 2·aPPDUMaxTime после Ack на полученный отчёт (`ref/linkadapt.TpcPeer`) |
+| Information Request/Response | 11.28.1, 11.28.2 | `info_request(peer, subject, requested, presence)` (MLME-примитива в 6.3 нет — метод MAC для SME); ответ `ref/discovery.InfoStation`: точка — только при 11.28.2 a–c, о себе, о члене BSS, обо всех (DMG Capabilities членов); non-AP не о себе — «без элементов»; RCPI/RSNI — при dot11RadioMeasurementActivated; поддерживаемые элементы — RM Enabled Capabilities, DMG Operation (точка) |
+
+Не исполняется: быстрая адаптация (10.43.3 — требует RD, у нас выключен, PLAN №35), управление мощностью по совету,
+Radio Measurement, unsolicited Information Response, robust-защита Action (RSNA).
+
+Тесты `test_core_lm.py`: обмен STA → AP и AP → STA (токен ≠ 0, кадр измерения, Reference Timestamp, совет мощности и LA
+Ack с Activity 0, рекомендация MCS), Information Request о точке/обо всех/о чужой STA у non-AP/проверка присутствия,
+точка без dot11RMLinkMeasurementActivated игнорирует запрос, RM Enabled Capabilities в ассоциации, негативные (отчёт
+без DMG Link Margin — `link_meas`, LA Ack без совета мощности — `link_margin`).
+
+### 4.4 Децентрализованная кластеризация AP (`cluster_ap.py`)
+
+```
+cd rewrite/tests && python3 -m pytest ref/core/test_core_cluster.py -q -p no:xdist
+```
+
+| Что исполняется | Пункт | Как |
+|---|---|---|
+| S-AP | 10.40.1, 10.40.2.1 | Clustering Control в каждом DMG Beacon (Beacon SP Duration = ⌈dot11BeaconSPDuration / 8⌉, PLAN №80; Cluster ID — свой MAC; роль S-AP; ClusterMaxMem — BI / ClusterMaxMem целое число мкс), CC Present = 1, ECAPC Policy Enforced = 0; DMG Capabilities: Decentralized AP or PCP Clustering = 1 |
+| вход членом | 10.40.2.1 | MLME-START → прослушивание aMinChannelTime без своих маяков; S-AP децентрализованного кластера и пустой Beacon SP (`cluster.empty_beacon_sps`) — член: BI, Beacon SP Duration, ClusterMaxMem — копии S-AP; свой TBTT — TBTT S-AP (по Timestamp, 11.1.3.1) + ClusterTimeOffset_{n−1}, свой TSF сдвинут (11.1.3.3.1); пустых нет — S-AP своего кластера («may», PLAN №90) |
+| расписание | 10.40.2.1, 10.39.6.5 | Extended Schedule — Beacon SP других AP (SP 255→255, PLAN №83) и CBAP broadcast в промежутках с guard time; в чужих Beacon SP ни точка, ни её станции не передают; Beacon SP не берутся под PP/GP |
+| сопровождение | 10.40.3.2 | маяки S-AP — `DecentralizedAp.on_beacon`; конец BI — `end_bi` (потеря S-AP, периоды мониторинга, становление S-AP) |
+
+Сценарий — `scenario.ClusterNet`: точка 1 (S-AP) и точка 2 (член), у каждой станция; судьи — по журналу каждого BSS
+(`Journal.view`: свои узлы и маяки другой точки как чужие, время — TSF своей точки), мост — только свой BSS (рассчитан
+на одну точку).
+
+Не исполняется: централизованная кластеризация (ECAPC, CCSR, 10.40.2.2), Cluster Report станций (10.40.4), Cluster
+Request (10.40.5), смена параметров BSS в кластере (11.29.4), CDMG (10.41). Сравнения с прошивкой нет — кластеризацию
+она не поддерживает (Decentralized/Centralized Clustering = 0), смешанные пары — одна точка.
+
+Тесты `test_core_cluster.py`: вход в пустой Beacon SP после aMinChannelTime, маяки каждой точки — в своём Beacon SP,
+поля Clustering Control и Beacon SP в Extended Schedule, ни одной передачи в чужом Beacon SP, судьи обоих BSS — 0,
+ClusterMaxMem 1 — точка 2 становится S-AP, негативный (маяки члена вне своего Beacon SP — судья `cluster`).
+
+### 4.5 Смена канала (ECSA) и длительности BI (`bsschg.py`)
+
+```
+cd rewrite/tests && python3 -m pytest ref/core/test_core_bsschg.py -q -p no:xdist
+```
+
+| Что исполняется | Пункт | Как |
+|---|---|---|
+| MLME-EXTCHANNELSWITCH.request/.confirm/.indication | 6.3.35, 11.8.8.6 | решение — только точка (`ecs_activated` = dot11ExtendedChannelSwitchActivated, бит Extended Channel Switching в Extended Capabilities — 11.9.1); ECSA (9.4.2.52) в каждом DMG Beacon до смены, Count — число TBTT, одинаков в BI, −1 на TBTT (`ref/chswitch.ApChannelSwitch`); смена канала перед TBTT (PHY-CONFIG OPERATING_CHANNEL); станция — к тому же TBTT (`StaChannelSwitch`), ECSA не передаёт |
+| смена длительности BI | 11.29.3, 11.1.3.3.1 | `request_bss_change(new_bi_tu)` (метод SME): план `ref/bssparams.ApBssParamChange` — dot11NbrOfChangeBeacons (5 > dot11MaxLostBeacons, PLAN №38) TBTT с DMG BSS Parameter Change (табл. 9-45: после DMG Operation), на TBTT N+1 — новый BI и сброс TSF в 0; станция — BI по полю Beacon Interval маяка, TSF по Timestamp |
+
+Идеальная среда: PPDU доставляется только PHY на том же OPERATING_CHANNEL (20.2.3). Судьи при смене BI — по участкам до
+и после вступления (`Journal.view(t_from, t_to, shift, bi_tu)`: сетка BI судей постоянна), ряд маяков — `bss_params` по
+всему журналу.
+
+Не исполняется: перенос TBTT (11.29.2: BI N+1 = разность — станции нужен счёт BI по маякам, не по TSF), рекомендация STA
+(11.29.5), кадр ECSA и ECSA в Announce/Information Response, Max Channel Switch Time. Сравнения с прошивкой нет: в
+эмуляторе (`air.Air`) нет каналов, команд смены канала/параметров сценарий прошивки не задаёт.
+
+Тесты `test_core_bsschg.py`: ECSA (Count 3, 2, 1 в маяках BI 3–5, смена у обеих сторон перед TBTT BI 6, данные после
+смены, бит Extended Channel Switching), смена BI 100 → 50 TU (вступление после 5 объявлений, станция следует, судьи по
+участкам — 0), негативный (объявление оборвано до смены — судья `ecsa`).
+
+### Результат этапа 4: сравнение с прошивкой (сборка open, эмулятор)
+
+Новые сценарии `diff_scenario`: `brp-1sta`, `idle-1sta` (п. 1), `tdma-2sta`, `sp-1sta`, `ppgp-1sta` (п. 2, последние два —
+BI 10 TU), `lm-1sta` (п. 3). Ядро против ядра — 0 расхождений во всех 13 сценариях; «ядро ≠ стандарт» — 0 во всех
+сравнениях с прошивкой.
+
+```
+pypy3 -m ref.core.diff_report --scenario all --build <dir> --out-dir <dir> --save-snapshot          # прошивка против ядра
+pypy3 -m ref.core.diff_report --scenario brp-1sta --against mixed-ap --mixed-preset compat --build <dir>
+```
+
+| Сценарий / режим | Итог |
+|---|---|
+| все 13, прошивка против ядра | «прошивка ≠ стандарт» 1 (1-STA: BTI через 12–14 мкс после TBTT), `sls-2sta`/`tdma-2sta` 5, `sls-1sta-bi10` 5, `brp-1sta` 8, `sp-1sta` 4; модель MAC 45–63, трактовка 2 |
+| `brp-1sta` | прошивка: L-RX 16 в SSW-Feedback и SSW-Ack, TX-TRN-REQ не просит, 4 SLS за подключение (одна — точкой); ядро: L-RX 2 + TX-TRN-REQ, транзакция с TRN-T и TRN-R, 1 SLS. «Прошивка ≠ стандарт» 8 — SLS точки и станции после ассоциации начаты на одной границе слота: ISS обеих чередуются поверх друг друга (судьи: «оборван на CDOWN», Total Sectors); это коллизия двух доступов, а модель эфира эмулятора коллизии не разбирает — по сути «неопределённо», решает стенд (прежние судьи дают то же — не следствие уточнений) |
+| `idle-1sta` | за 250 мс простоя прошивка SLS не повторяет и QoS Null не шлёт (BLM у неё не определён — обязанности нет); ядро с BLM 10 мс — 27 QoS Null, повторного BF нет. Частые SLS стенда в эмуляторе с идеальным каналом не воспроизводятся — причина вне простоя (качество канала, которого эмулятор не моделирует) |
+| `tdma-2sta` | прошивка падает до включения TDMA: вторая станция подключилась на 116 мс, uc_assert(0x6002) в txop_await_cts_ppdu на 128 мс (известно с этапа 2 для 2 STA) — простой TDMA прошивки с расписанием ядра не сравнён |
+| `sp-1sta`, `ppgp-1sta` | прошивка (1 STA) — CBAP Only, SP/PP/GP не делает; в `sp-1sta` — две одновременные RTS (коллизия, та же оговорка) |
+| `lm-1sta` | прошивка Link Measurement / Information Request не начинает (по сценарию не может) |
+| `mixed-ap` compat, `brp-1sta` | точка-ядро + станция-прошивка: соединение, данные в обе стороны; «ядро на Sparrow ≠ стандарт» 3 — нарушения на кадрах ядра, вызванные станцией-прошивкой: на BRP setup она отвечает лишь с ~20-й попытки (этап 3) и не отвечает на BRP точки с запросами в транзакции после SLS (10.42.6.4.2: «shall respond») |
+| `mixed-ap`, `sp-1sta` | preset core: uc_assert(0x26) станции-прошивки в txop_await_cts_ppdu (17 мс, как `sls-1sta-dl` этапа 3); compat: срыв эмуляции — в регистр uc попадает дробное значение времени (TypeError в arcemu write_reg) — ограничение адаптера, не исправлялось |
+| `mixed-ap`, `ppgp-1sta` | срыв эмулятора: «отчёт приёма кадра ядра FC 0x0264 (Poll) не моделируется» — PP/GP со станцией-прошивкой в эмуляторе не проверить |
+| `mixed-sta`, `brp-1sta`, `lm-1sta` | точка-прошивка срывается до данных (uc_assert 0x6019 в bcon_txss_sweep_step; compat — machw ModelGap «закрыт кадр FIFO») — известные срывы этапа 3; Link Measurement и Information Request к прошивке не дошли |
+
+Уточнение судьи, изменившее вывод этапа 2: `air_judge.r_brp` брал «последний принятый PPDU» (бит Initiator,
+10.42.6.4.1) только среди кадров BRP — SSW-Ack перед первым BRP не учитывался. После уточнения (все PPDU с известным
+временем; BS-FBCK без полей TRN — «не проверяемо») находка «BRP точки к STA2 с Initiator = 0» (`sls-2sta`) исчезла — это
+был артефакт судьи.
+
 ## Дальше
 
-- **Этап 4.** BRP по запросу SME и обучение передачи, сопровождение луча, SP/PP/GP, кластеризация, Link Measurement,
-  SSW_SWEEP — в ядре, сравнении и парах; стенд — по находкам этапа 3 (таблица выше).
+- Этап 4: SSW_SWEEP не разгружается; не исполняются — ATI, DMG protected period, централизованный кластер, быстрая
+  адаптация (RD), перенос TBTT, MIDC. (расписание DTI, Link Measurement, кластеризация, смена канала/параметров BSS) — ниже по мере
+  исполнения; SSW_SWEEP не разгружается.

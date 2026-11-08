@@ -115,6 +115,10 @@ class StaSme(_Sme):
         self.ul = []
         # MLME-ADDBA.request станции: 'always' — после ассоциации всегда (по умолчанию); 'ul' — только при данных вверх
         self.addba = 'always'
+        # MLME-BF-TRAINING.request с RequestBRP = true (SLS, затем BRP — 6.3.91.2, 11.36)
+        self.request_brp = False
+        # действия SME после начала данных: [(через мкс, вызов)] — напр. MLME-LINKMEASURE, Information Request
+        self.on_data = []
         if bf == 'dti':
             mac.need_bf = False            # модель: станция не участвует в A-BFT (BF — только SLS в DTI)
 
@@ -145,13 +149,13 @@ class StaSme(_Sme):
                 return
             if self.bf == 'dti':
                 self.state = 'bf'
-                self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID))
+                self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID, RequestBRP=self.request_brp))
             else:
                 self.state = 'bf'          # ждём MLME-BF-TRAINING.indication (A-BFT)
         elif isinstance(p, ML.MlmeBfTrainingConfirm):
             if p.ResultCode != ML.SUCCESS:
                 if self.state == 'bf':
-                    self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID))
+                    self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID, RequestBRP=self.request_brp))
                 return
             if self.state == 'bf':
                 self._after_bf()
@@ -171,8 +175,10 @@ class StaSme(_Sme):
 
     def _data(self):
         self.state = 'data'
+        for dt, fn in self.on_data:
+            self.mac.sim.after(dt, fn)
         if self.bf == 'both':
-            self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID))
+            self.mac.mlme_request(ML.MlmeBfTrainingRequest(PeerSTAAddress=self.bss.BSSID, RequestBRP=self.request_brp))
         self.ul = msdus(self.ul_bytes, seed=0x10)
         self._send(self.bss.BSSID, self.ul)
 

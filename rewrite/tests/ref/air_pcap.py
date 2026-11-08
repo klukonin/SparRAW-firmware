@@ -249,10 +249,12 @@ class AirEv:
     src — TA (передатчик), dst — RA (DMG Beacon — BCAST); kind — вид ('A-MPDU' — агрегат, first — вид первого MPDU);
     dur — Duration (None — неизвестен); mcs/length — MCS и длина PSDU с FCS; raw — MPDU без FCS (у synth — FC/RA/TA и
     нули); p/err — разбор ref/fields (DMG Beacon, Control Frame Extension); by_mac — ответ MAC (метка TX испорчена).
-    tx_node — узел, записавший кадр как свой TX; rx_nodes — узлы, принявшие (записи RX); recs — записи."""
+    tx_node — узел, записавший кадр как свой TX; rx_nodes — узлы, принявшие (записи RX); recs — записи.
+    trn — (TRN_LEN, PPDU_TYPE, запрос сопровождения луча, подполя TRN добавлены к PPDU) из TXVECTOR, если известны
+    (журнал ядра: 20.9.2.2.3, 10.42.7); запись PMC заголовок PHY не несёт — None."""
     __slots__ = ('i', 't', 'te', 'src', 'dst', 'kind', 'first', 'dur', 'mcs', 'raw', 'fc', 'p', 'err', 'action',
                  'by_mac', 'what', 'mpdus', 'length', 'agg', 't_ok', 't_lo', 't_hi', 't_from', 'dur_ok', 'body_ok',
-                 'synth', 'mcs_ok', 'tx_node', 'rx_nodes', 'recs', 'cal_ok')
+                 'synth', 'mcs_ok', 'tx_node', 'rx_nodes', 'recs', 'cal_ok', 'trn')
 
     def __init__(self, **kw):
         for k in self.__slots__:

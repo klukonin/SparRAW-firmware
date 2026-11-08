@@ -27,6 +27,9 @@ from ..timing import DOT11_MAX_LOST_BEACONS, TU, aMinBTIPeriod, txtime_control
 from . import frames as FR
 from . import sap_mlme as ML
 from . import sap_phy as P
+from .. import schedule as S
+from .cluster_ap import ClusterMixin
+from .dti import _bic_bi
 from .mac import MAX_AMPDU_EXP, DmgMac, ampdu_limit
 
 # EDCA Parameter Set точки (9.4.2.28): {ACI: (AIFSN, CWmin, CWmax, TXOP мкс)}. AIFSN/CW — табл. 9-155;
@@ -59,7 +62,7 @@ def apply_edca(mac, params):
             mac.txop_limit[ac] = Fr(txop)
 
 
-class DmgApMac(DmgMac):
+class DmgApMac(ClusterMixin, DmgMac):
     ROLE = 'AP'
 
     def __init__(self, sim, addr, sectors=8, seed=0, max_sta=8, **kw):
@@ -74,6 +77,8 @@ class DmgApMac(DmgMac):
         self.assoc_req = {}
         self.brp_pending = set()
         self.edca_params = dict(EDCA_ADVERTISED)
+        self.cur_entries = None                    # Extended Schedule текущего BI (dti.py); None — CBAP Only
+        self._cluster_init()
 
     # ------------------------------------------------------------------ MLME-START (6.3.11, 11.1.4.4)
     def _req_MlmeStartRequest(self, prim):
@@ -83,45 +88,78 @@ class DmgApMac(DmgMac):
             self.edca_params = dict(prim.EDCAParameterSet)
         apply_edca(self, self.edca_params)
         bi = self.bi_tu * TU
+        self._confirm(ML.MlmeStartConfirm(ResultCode=ML.SUCCESS))
+        if self.clustering and self._cluster_start(prim):
+            return                                # кластеризация: сначала прослушивание канала (10.40.2.1)
         k = ceil(self.sim.now / bi)
         self.sim.at(k * bi, self._tbtt, k)
-        self._confirm(ML.MlmeStartConfirm(ResultCode=ML.SUCCESS))
 
     def dmg_capabilities(self):
         """9.4.2.127: одна RX DMG-антенна, Total Number of Sectors = число − 1, SC MCS до 12."""
         sc = dict(num_rx_dmg_antennas=0, total_num_sectors=len(self.sectors) - 1, max_sc_rx_mcs=12, max_sc_tx_mcs=12,
-                  code_rate_13_16=1, max_ampdu_len_exp=MAX_AMPDU_EXP)
-        return E.encode_dmg_capabilities(E.DmgCapabilities(self.addr, 0, sc, dict(max_associated_sta=self.max_sta),
-                                                           0, {}, 0, 0))
+                  code_rate_13_16=1, max_ampdu_len_exp=MAX_AMPDU_EXP, grant_ack=self.grant_ack_supported)
+        return E.encode_dmg_capabilities(E.DmgCapabilities(self.addr, 0, sc, dict(max_associated_sta=self.max_sta,
+                                                                                **self.cluster_caps()),
+                                                           self.bf.bt_time_limit, {}, 0, 0))
 
     def dmg_operation(self):
         return E.encode_dmg_operation(dict(tddti=0, pseudo_static=0, pcp_handover=0), bss_cfg())
 
     def _beacon_elements(self):
-        els = [self.dmg_capabilities(), self.dmg_operation(), E.encode_ssid(self.ssid)]
+        # табл. 9-45: DMG Capabilities (7), Extended Schedule (8), DMG Operation (11), DMG BSS Parameter Change (13),
+        # SSID (18), Extended Channel Switch Announcement (27)
+        es = [S.encode(self.cur_entries)] if self.cur_entries else []
+        ecsa = self._ecsa_element(self.k or 0)
+        bpc = getattr(self, '_bpc_el', None)
+        els = [self.dmg_capabilities()] + es + [self.dmg_operation()] + ([bpc] if bpc is not None else []) + \
+            [E.encode_ssid(self.ssid)] + ([ecsa] if ecsa is not None else [])
         return tuple((e.eid, e.ext, e.info) for e in E.parse_elements(b''.join(els)))
 
     def _bic(self):
-        return F.Bic(ati_present=0, abft_length=self.abft_slots - 1, fss=self.fss - 1, is_resp_txss=1, next_abft=0,
-                     txss_span=1, n_bis_abft=1)
+        return F.Bic(cc_present=1 if self._cluster_cc() is not None else 0, ati_present=0,
+                     abft_length=self.abft_slots - 1, fss=self.fss - 1, is_resp_txss=1, next_abft=0, txss_span=1,
+                     n_bis_abft=1)
 
     def _beacon(self, ts_tsf, sector, cdown, dur):
         f = F.DmgBeacon(duration=int(dur), bssid=self.addr, timestamp=int(ts_tsf),
                         ssw=F.Ssw(direction=F.DIR_INITIATOR, cdown=cdown, sector_id=sector, antenna_id=0),
-                        beacon_interval=self.bi_tu, bic=self._bic(),
-                        params=F.DmgParams(bss_type=3, cbap_only=1, cbap_source=0), cc=None,
+                        beacon_interval=getattr(self, '_bi_field', None) or self.bi_tu, bic=self._bic(),
+                        params=F.DmgParams(bss_type=3, cbap_only=0 if self.cur_entries else 1, cbap_source=0),
+                        cc=self._cluster_cc(),
                         elements=self._beacon_elements())
         return F.encode_dmg_beacon(f, with_fcs=False, role='ap', pcp=False, rx_antennas=1)
 
     # ------------------------------------------------------------------ BI
     def _tbtt(self, k):
         self.k = k
+        self._ap_tbtt_channel(k)                  # смена канала по ECSA — перед TBTT (bsschg.py, 11.8.8.6)
+        # смена параметров BSS (bsschg.py, 11.29.3): поле Beacon Interval и элемент этого BI, на TBTT вступления —
+        # новый BI и сброс TSF в 0 (11.1.3.3.1)
+        x = self._bpc_beacon_k(k)
+        if x is not None and x[3].change is None and x[3].tsf == 0:
+            self.tsf_off, self.bi_tu = -self.sim.now, x[0]
+            self.log('bss_change_effective', bi=self.bi_tu)
+            self._bpc_shift = k                   # индексы BI после сброса TSF — от 0
+        kk = k - getattr(self, '_bpc_shift', 0)
+        self._bi_field, self._bpc_el = (x[0], x[1]) if x is not None else (None, None)
         bi = self.bi_tu * TU
-        t0, t1 = B.tbtt(k, self.bi_tu), B.tbtt(k + 1, self.bi_tu)
-        n_len = len(self._beacon(0, 0, 0, 0)) + 4
-        t_b = txtime_control(n_len)
+        # TBTT — по своему TSF (11.1.3.3.1: TSF 0 — TBTT); у S-AP/без кластера TSF = модельное время
+        t0, t1 = self.t_of_tsf(B.tbtt(kk, self.bi_tu)), self.t_of_tsf(B.tbtt(kk + 1, self.bi_tu))
+        if x is not None and x[2] is not None:
+            t1 = x[2]
+        self._cluster_end_bi()
         _, _, btis = B.txss_plan(self.sectors)
-        beacons, bti_end = B.bti_beacons(t0, btis[0], t_b)
+        # Extended Schedule (dti.py): длина маяка зависит от числа распределений, начало DTI — от длины маяка: два
+        # прохода (число распределений от начала не зависит)
+        self.cur_entries = None
+        for _ in range(2):
+            n_len = len(self._beacon(0, 0, 0, 0)) + 4
+            t_b = txtime_control(n_len)
+            beacons, bti_end = B.bti_beacons(t0, btis[0], t_b)
+            L0 = A.AbftLayout(A.abft_start(bti_end), self.abft_slots, self.fss, True)
+            bhi = self.tsf(L0.end + B.guard_between(False, True, bi))
+            self.cur_entries = self._cluster_entries(kk, self.tsf(L0.end)) if self.cl is not None else \
+                self._dti_entries(kk, bhi)
         for ts, te, sec, cd, dur in beacons:
             self.sim.at(ts, self._tx_beacon, sec, cd, dur)
         L = A.AbftLayout(A.abft_start(bti_end), self.abft_slots, self.fss, True)
@@ -132,7 +170,14 @@ class DmgApMac(DmgMac):
             self.sim.at(L.fb_start(s), self._abft_fb, s)
         # 10.39.6.3: CBAP Only — DTI = один CBAP после guard (bi.guard_between(False, True, BI)) до TBTT
         cs = L.end + B.guard_between(False, True, bi)
-        self.set_cbap(cs, t1)
+        self.add_halt(t0, L.end)                  # 11.27.1: таймеры связи стоят в BTI и A-BFT
+        if self.cur_entries:
+            # 10.39.6.1: DTI — распределения Extended Schedule (dti.py)
+            periods = self._dti_periods(kk, self.cur_entries, _bic_bi(self._bic()), B.DmgParameters(3, 0, 0),
+                                        self.tsf(bti_end))
+            self._dti_apply(kk, periods)
+        else:
+            self.set_cbap(cs, t1)
         self.sim.at(t1, self._tbtt, k + 1)
 
     def _tx_beacon(self, sector, cdown, dur):
@@ -140,6 +185,11 @@ class DmgApMac(DmgMac):
             return
         ts = self.tsf() + P.data_symbol_offset(0)         # 11.1.3.1
         self._phy_tx([self._beacon(int(ts), sector, cdown, dur)], 0, P.Beam(sector))   # TSF — целые мкс
+
+    def _rx_beacon(self, f, rxv, t0):
+        """DMG Beacon другой точки — кластеризация (cluster_ap.py)."""
+        if self.clustering:
+            self._cluster_rx_beacon(f, rxv, t0)
 
     # ------------------------------------------------------------------ A-BFT (10.42.5.2)
     def _rx_bf(self, f, rxv, t0):
@@ -170,6 +220,8 @@ class DmgApMac(DmgMac):
         ant, sec = fb.tx_sector
         beam = P.Beam(sec, ant)
         self.peer(sta).tx_beam = beam             # 10.42.5.2: связь с ответчиком — через его Sector Select
+        self.peer(sta).rx_beam = None
+        self._bf_snr_reset(sta)
         self._phy_tx([raw], 0, beam)
         self.log('abft_feedback', sta=sta, slot=s, sector=sec)
         if sta not in self.brp_pending:
@@ -197,9 +249,13 @@ class DmgApMac(DmgMac):
         def body(t_sym):
             return E.encode_body(E.PROBE_RESP, {'timestamp': int(self.tsf(t_sym)),
                                                 'beacon_interval': self.bi_tu,
-                                                'capability': {'dmg_params': {'bss_type': 3, 'cbap_only': 1}}},
-                                 [E.encode_ssid(self.ssid), FR.edca_parameter_set(self.edca_params),
-                                  self.dmg_capabilities(), self.dmg_operation()])
+                                                'capability': {'dmg_params': {'bss_type': 3,
+                                                                              'cbap_only': 0 if self.cur_entries
+                                                                              else 1}}},
+                                 [E.encode_ssid(self.ssid), FR.edca_parameter_set(self.edca_params)] +
+                                 ([self.rm_enabled_el()] if self.rm_link_meas else []) +
+                                 ([self.ext_cap_el()] if self.ecs_activated else []) +      # табл. 9-39: 35 < 54
+                                 [self.dmg_capabilities(), self.dmg_operation()])
         self.send_mgmt(E.PROBE_RESP, sta, body)
 
     def _on_assoc_req(self, f, rxv):
@@ -222,10 +278,13 @@ class DmgApMac(DmgMac):
         if caps is not None:
             p.max_mcs = min(12, caps.sta_cap.get('max_sc_rx_mcs', 12))
             p.max_ampdu = ampdu_limit(caps)
+            p.caps = caps
         body = E.encode_body(E.ASSOC_RESP, {'capability': {'dmg_params': {'bss_type': 3, 'cbap_only': 1}},
                                             'status': status, 'aid': aid or 0},
-                             [FR.edca_parameter_set(self.edca_params), self.dmg_capabilities(),
-                              self.dmg_operation()])
+                             [FR.edca_parameter_set(self.edca_params)] +
+                             ([self.rm_enabled_el()] if self.rm_link_meas else []) +    # табл. 9-35: RM после EDCA
+                             ([self.ext_cap_el()] if self.ecs_activated else []) +      # Extended Capabilities (19)
+                             [self.dmg_capabilities(), self.dmg_operation()])
 
         def done(ok):
             if status != E.SUCCESS:

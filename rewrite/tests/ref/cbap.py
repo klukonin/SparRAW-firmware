@@ -784,8 +784,11 @@ def check_air_log(events, params=None):
       t_start/t_end — начало первого символа преамбулы и конец последнего символа PPDU на эфире (10.3.7);
       src/dst — TA/RA (широковещательный — BCAST); kind — 'RTS' | 'DMG CTS' | 'CTS' | 'Data' | 'A-MPDU' | 'Ack' |
       'BlockAck' | 'BlockAckReq' | 'CF-End' | 'Beacon' | …; DMG CTS с dst == src — DMG CTS-to-self;
-      duration_field_us — значение поля Duration; cbap_end_us — конец CBAP, в котором кадр передан (None — нет).
-    Модель эфира: все STA слышат всех; PPDU, перекрытый другим, никем не принят.
+      duration_field_us — значение поля Duration; cbap_end_us — конец CBAP, в котором кадр передан (None — нет);
+      8-й элемент (необязательный) — STA, у которых приём этого PPDU кончился ошибкой (журнал ядра знает): для них
+      после него — EIFS (10.3.2.3.7); 9-й (необязательный) — STA, которые PPDU обнаружили (направленный эфир, журнал
+      ядра); прочие его не учитывают ни в занятости, ни в NAV (скрытая STA).
+    Модель эфира (без 9-го элемента): все STA слышат всех; PPDU, перекрытый другим, никем не принят.
 
     Возвращает список Violation(idx — индекс во входном списке, rule, msg); rule:
       'busy'     — начало доступа при занятой среде (чужой PPDU на эфире; 10.3.2.1);
@@ -802,10 +805,12 @@ def check_air_log(events, params=None):
       'cf_end_dur' — DMG CF-End с Duration ≠ 0 при остатке < 2×TCF-End + 2×SIFS (10.23.2.10);
       'collision' — одновременное начало (только при report_collisions)."""
     p = params or LogParams()
+    rx_err = [set(e[7]) if len(e) > 7 and e[7] else set() for e in events]
+    sensed = [set(e[8]) if len(e) > 8 and e[8] is not None else None for e in events]
     ev = [tuple(e[:5]) + (e[5], e[6] if len(e) > 6 else None) for e in events]
     order = sorted(range(len(ev)), key=lambda i: (Fr(ev[i][0]), Fr(ev[i][1])))
     R = [dict(i=i, ts=Fr(ev[i][0]), te=Fr(ev[i][1]), src=ev[i][2], f=_frame(ev[i]),
-              cbap=None if ev[i][6] is None else Fr(ev[i][6])) for i in order]
+              cbap=None if ev[i][6] is None else Fr(ev[i][6]), rx_err=rx_err[i], sensed=sensed[i]) for i in order]
     n = len(R)
     out = []
 
@@ -838,6 +843,11 @@ def check_air_log(events, params=None):
     wins = p.cbaps
     wstate = {'wi': 0}
 
+    def heard(x, j):
+        """STA x обнаружила PPDU j (без сведений — да: все слышат всех)."""
+        s = R[j]['sensed']
+        return s is None or x in s or R[j]['src'] == x
+
     def mine_overlap(x, k):
         return any(R[j]['src'] == x and R[j]['ts'] < R[k]['te'] and R[k]['ts'] < R[j]['te'] for j in range(n))
 
@@ -861,9 +871,11 @@ def check_air_log(events, params=None):
             for x, nv in navs.items():
                 if x == R[k]['src']:
                     continue
+                if not heard(x, k):
+                    continue
                 if kind == 0:
                     nv.rx_start(tt)
-                elif not over[k] and not mine_overlap(x, k) and not in_gap(tt):
+                elif not over[k] and not mine_overlap(x, k) and not in_gap(tt) and x not in R[k]['rx_err']:
                     nv.rx(tt, R[k]['f'])
         advance_windows(t)
 
@@ -920,7 +932,7 @@ def check_air_log(events, params=None):
         else:
             # новый доступ по EDCA
             same = [j for j in range(k) if R[j]['ts'] == t and R[j]['src'] != x]
-            busy = [j for j in range(k) if R[j]['ts'] < t < R[j]['te'] and R[j]['src'] != x]
+            busy = [j for j in range(k) if R[j]['ts'] < t < R[j]['te'] and R[j]['src'] != x and heard(x, j)]
             if busy:
                 v(r, 'busy', f'{f} начат во время {R[busy[0]]["f"]}')
             if same and p.report_collisions:
@@ -932,7 +944,7 @@ def check_air_log(events, params=None):
             li = last_init.get(x)
             if li is not None and t < R[li]['te'] + response_timeout(R[li]['f'].mcs):
                 v(r, 'timeout', f'{f}: до истечения таймаута ответа на {R[li]["f"]}')
-            ended = [j for j in range(k) if R[j]['te'] <= t]
+            ended = [j for j in range(k) if R[j]['te'] <= t and heard(x, j)]
             if ended and not busy:
                 jb = max(ended, key=lambda j: R[j]['te'])
                 a = p.aifs_of(x, r['i'])
@@ -957,7 +969,7 @@ def check_air_log(events, params=None):
                     if R[j]['te'] < lo:
                         break
                     lo = min(lo, R[j]['ts'])
-                    if over[j] and R[j]['src'] != x and not any(
+                    if (over[j] or x in R[j]['rx_err']) and R[j]['src'] != x and not any(
                             R[q]['src'] == x and R[q]['ts'] <= R[j]['ts'] < R[q]['te'] for q in range(n)):
                         err = True
                 if err:

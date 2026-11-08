@@ -21,13 +21,14 @@ from . import sap_phy as P
 
 
 class PpduRec:
-    __slots__ = ('i', 't', 'te', 'node', 'addr', 'txv', 'psdu', 'mpdus', 'receivers', 'heard', 'what')
+    __slots__ = ('i', 't', 'te', 'node', 'addr', 'txv', 'psdu', 'mpdus', 'receivers', 'heard', 'rx_err', 'sensed',
+                 'what')
 
     def __init__(self, i, t, te, node, addr, txv, psdu):
         self.i, self.t, self.te, self.node, self.addr, self.txv, self.psdu = i, t, te, node, addr, txv, psdu
         agg = txv.AGGREGATION == P.AGGREGATED
         self.mpdus = [m for m, _ in FR.split_psdu(psdu, agg)]
-        self.receivers, self.heard = set(), set()
+        self.receivers, self.heard, self.rx_err, self.sensed = set(), set(), set(), set()
         self.what = ''
 
     @property
@@ -61,7 +62,9 @@ class Journal:
         bi = (bi_tu or self.bi_tu) * TU
         frames = [dict(start=r.t * CLK_MHZ, end=r.te * CLK_MHZ, src=F.mac_bytes(r.addr), frame=r.mpdus[0],
                        mpdus=list(r.mpdus) if r.agg else None, dur_us=int.from_bytes(r.mpdus[0][2:4], 'little'),
-                       mcs=r.txv.MCS, what=f'ядро {r.node}: {r.kind}') for r in self.recs]
+                       mcs=r.txv.MCS, what=f'ядро {r.node}: {r.kind}',
+                       rx_err=sorted(F.mac_bytes(self.nodes[n]) for n in r.rx_err),
+                       sensed=sorted(F.mac_bytes(self.nodes[n]) for n in r.sensed)) for r in self.recs]
         nodes = {F.mac_bytes(a): dict(tsf0_us=0, tbtt_us=0, bi_us=bi) for a in self.nodes.values()}
         return dict(frames=frames, nodes=nodes)
 
@@ -78,8 +81,33 @@ class Journal:
                 dur=int.from_bytes(raw[2:4], 'little'), mcs=r.txv.MCS, raw=raw, fc=fc, p=p, err=err, action=act,
                 by_mac=False, what=f'ядро {r.node}', mpdus=list(r.mpdus), length=r.txv.LENGTH, agg=r.agg,
                 t_ok=True, t_lo=r.t, t_hi=r.t, t_from='tx', dur_ok=True, body_ok=True, synth=False, mcs_ok=True,
-                tx_node=r.node, rx_nodes=tuple(sorted(r.receivers)), recs=[], cal_ok=True))
+                tx_node=r.node, rx_nodes=tuple(sorted(r.receivers)), recs=[], cal_ok=True,
+                trn=(r.txv.TRN_LEN, r.txv.PPDU_TYPE, r.txv.BEAM_TRACKING_REQUEST == P.BT_REQUESTED,
+                     P.trn_appended(r.txv))))
         return AP.Air(evs, dict(self.nodes), ap_addr, None, {'events': len(evs)}, {})
+
+    def view(self, keep=None, foreign_beacons=(), shift=0, t_from=None, t_to=None, bi_tu=None):
+        """Журнал одного BSS для судей (рассчитаны на одну точку): PPDU узлов keep и DMG Beacon узлов foreign_beacons
+        как чужие (их узлы — не «свои»: правила кластеризации видят их маяки как маяки другой AP); shift — время
+        журнала в TSF точки этого BSS (TSF точки = время журнала + shift; у члена кластера TSF сдвинут); t_from/t_to —
+        участок (до/после сброса TSF при смене BI, 11.29.3), bi_tu — BI участка."""
+        keep = set(self.nodes) if keep is None else keep
+        j = Journal()
+        j.bi_tu = bi_tu or self.bi_tu
+        j.nodes = {n: a for n, a in self.nodes.items() if n in keep}
+        for r in self.recs:
+            if (t_from is not None and r.t < t_from) or (t_to is not None and r.t >= t_to):
+                continue                      # участок журнала (напр. до и после смены BI, 11.29)
+            if r.node in keep or (r.node in foreign_beacons and r.kind == 'DMG Beacon'):
+                if r.t + shift < 0:
+                    continue
+                x = PpduRec(len(j.recs), r.t + shift, r.te + shift, r.node, r.addr, r.txv, r.psdu)
+                x.receivers = {n for n in r.receivers if n in keep}
+                x.heard = {n for n in r.heard if n in keep}
+                x.rx_err = {n for n in r.rx_err if n in keep}
+                x.sensed = {n for n in r.sensed if n in keep}
+                j.recs.append(x)
+        return j
 
     def __len__(self):
         return len(self.recs)

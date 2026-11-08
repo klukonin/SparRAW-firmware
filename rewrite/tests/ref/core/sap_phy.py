@@ -22,7 +22,15 @@
     ANT_CONFIG TXVECTOR (табл. 20-1: «Values are implementation dependent»); луч приёма — расширение модели
     PHYCONFIG_VECTOR.RX_ANT_CONFIG (20.2.3 задаёт только OPERATING_CHANNEL; как DMG-приёмник выбирает диаграмму,
     стандарт оставляет реализации). Ядро не знает, какие антенны у железа: только номера секторов и качество из
-    RXVECTOR (SNR, RCPI)."""
+    RXVECTOR (SNR, RCPI).
+
+Расширения модели для BRP и сопровождения луча (этап 4; стандарт оставляет выбор AWV и измерение на TRN реализации,
+10.42.6.4.1 «implementation dependent», 20.9.2.2):
+  - Beam.awv — уточняющая AWV внутри сектора (None — сам сектор, как в SLS);
+  - TXVECTOR.TRN_AWVS — AWV, которыми передаются подполя TRN-T (по кругу); подполя TRN-R передаются AWV преамбулы
+    (10.42.6.4.4);
+  - PHYCONFIG_VECTOR.RX_TRN_AWVS — AWV приёма, которые приёмник перебирает на подполях TRN-R (по кругу);
+  - RXVECTOR.TRN_SNR — SNR на каждом подполе TRN принятого PPDU (основа BS-FBCK и Channel Measurement Feedback)."""
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
@@ -37,6 +45,8 @@ NO_ERROR, FORMAT_VIOLATION, CARRIER_LOST, UNSUPPORTED_RATE, FILTERED = (
 AGGREGATED, NOT_AGGREGATED = 'AGGREGATED', 'NOT_AGGREGATED'
 NO_ADD_PPDU = 'NO-ADD-PPDU'
 BT_NOT_REQUESTED = 'BEAM-TRACKING-NOT-REQUESTED'
+BT_REQUESTED = 'BEAM-TRACKING-REQUESTED'
+TRN_R, TRN_T = 'TRN-R', 'TRN-T'               # PPDU_TYPE (табл. 20-1)
 
 
 @dataclass(frozen=True)
@@ -45,13 +55,20 @@ class Beam:
     «quasi-omni antenna pattern»)."""
     sector: Optional[int] = None
     antenna: int = 0
+    awv: Optional[int] = None                 # уточняющая AWV внутри сектора (BRP, сопровождение луча; модель)
 
     @property
     def quasi_omni(self):
         return self.sector is None
 
+    def refined(self, awv):
+        """Та же диаграмма сектора с уточняющей AWV awv (модель BRP)."""
+        return Beam(self.sector, self.antenna, awv)
+
     def __repr__(self):
-        return 'QO' if self.sector is None else f'S{self.sector}/A{self.antenna}'
+        if self.sector is None:
+            return 'QO'
+        return f'S{self.sector}/A{self.antenna}' + ('' if self.awv is None else f'/W{self.awv:+d}')
 
 
 QUASI_OMNI = Beam(None, 0)
@@ -70,6 +87,7 @@ class TxVector:
     BEAM_TRACKING_REQUEST: str = BT_NOT_REQUESTED
     LAST_RSSI: int = 0
     TURNAROUND: int = 0
+    TRN_AWVS: tuple = ()                      # расширение модели: AWV подполей TRN-T (по кругу)
 
 
 @dataclass(frozen=True)
@@ -88,6 +106,7 @@ class RxVector:
     BEAM_TRACKING_REQUEST: str = BT_NOT_REQUESTED
     LAST_RSSI: int = 0
     TURNAROUND: int = 0
+    TRN_SNR: tuple = ()                       # расширение модели: SNR на каждом подполе TRN (дБ)
 
 
 @dataclass(frozen=True)
@@ -102,6 +121,7 @@ class PhyConfigVector:
     RX_ANT_CONFIG — расширение модели: диаграмма приёма (см. докстроку модуля)."""
     OPERATING_CHANNEL: int = 3
     RX_ANT_CONFIG: Beam = QUASI_OMNI
+    RX_TRN_AWVS: tuple = ()                   # расширение модели: AWV приёма на подполях TRN-R (по кругу)
 
 
 class PhySap(Protocol):
@@ -125,9 +145,15 @@ class PhySapUser(Protocol):
 
 
 # ---------------------------------------------------------------------------------------- времена PPDU
+def trn_appended(v):
+    """К PPDU добавлены AGC и подполя TRN (20.9.2.2): TRN_LEN > 0, кроме запроса сопровождения луча с PPDU_TYPE
+    TRN-R — там TRN_LEN — число запрошенных у ответчика подполей, в самом PPDU их нет (10.42.7)."""
+    return v.TRN_LEN > 0 and not (v.BEAM_TRACKING_REQUEST == BT_REQUESTED and v.PPDU_TYPE == TRN_R)
+
+
 def ppdu_time(txv):
-    """TXTIME PPDU (20.11.3) по TXVECTOR; с полями TRN (TRN_LEN > 0, BRP PPDU 20.9.2.2) — ref/brp.brp_txtime."""
-    if txv.TRN_LEN:
+    """TXTIME PPDU (20.11.3) по TXVECTOR; с полями TRN (BRP PPDU 20.9.2.2, trn_appended) — ref/brp.brp_txtime."""
+    if trn_appended(txv):
         from ..brp import brp_txtime
         return brp_txtime(txv.LENGTH, txv.MCS, txv.TRN_LEN)
     return txtime(txv.LENGTH, txv.MCS)
@@ -157,4 +183,5 @@ def data_symbol_offset(mcs):
 
 __all__ = ['Beam', 'QUASI_OMNI', 'TxVector', 'RxVector', 'TxStatus', 'PhyConfigVector', 'PhySap', 'PhySapUser',
            'BUSY', 'IDLE', 'NO_ERROR', 'FORMAT_VIOLATION', 'CARRIER_LOST', 'UNSUPPORTED_RATE', 'FILTERED',
-           'AGGREGATED', 'NOT_AGGREGATED', 'ppdu_time', 'rx_start_delay', 'response_wait', 'data_symbol_offset']
+           'AGGREGATED', 'NOT_AGGREGATED', 'BT_REQUESTED', 'BT_NOT_REQUESTED', 'TRN_R', 'TRN_T', 'trn_appended',
+           'ppdu_time', 'rx_start_delay', 'response_wait', 'data_symbol_offset']

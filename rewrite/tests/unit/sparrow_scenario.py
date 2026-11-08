@@ -21,7 +21,7 @@ from machw import ModelGap
 
 from ref import fields as RF
 from ref.core.ap import DmgApMac
-from ref.core.diff_scenario import _trickle
+from ref.core.diff_scenario import _trickle, apply_bf
 from ref.core.sme import ApSme, StaSme
 from ref.core.sta import DmgStaMac
 from ref.timing import TU
@@ -56,6 +56,7 @@ def _core_ap(scn, ssid, t0_clk=0):
     sme = ApSme(ap.core, ssid=ssid, bi_tu=scn.bi_tu, abft_slots=scn.abft_slots, fss=scn.fss, dl_bytes=scn.dl_bytes)
     sme.edca = dict(scn.edca)
     sme.addba_on_assoc = True
+    apply_bf(scn, [ap.core], ap=ap.core)
     return ap, sme
 
 
@@ -66,6 +67,7 @@ def _core_sta(scn, i, ssid, t0_clk=0, bssid=None):
     s.core.ap_sectors = scn.ap_sectors
     sme = StaSme(s.core, ssid=ssid, ul_bytes=scn.ul_bytes, bf=scn.bf, probe=scn.probe, bssid=bssid)
     sme.addba = 'ul'
+    apply_bf(scn, [s.core], [sme])
     return s, sme
 
 
@@ -204,6 +206,8 @@ def _run_mixed(r, scn, core_role, fw_elf, build_dir, uc_fw, step_us, FS, sme_pau
     if mgmt_mcs is not None:
         core.core.mgmt_mcs = mgmt_mcs
     core.resp_cmd_delay_clk = resp_cmd_delay_clk
+    if scn.batch:
+        _trickle(sme, sme.mac.sim, scn.batch, scn.batch_gap_us)    # данные ядра — пачками, как у узла прошивки
     r.core_nodes, r.fw_nodes = [core], [fw]
     r.core_sme = sme
     air = r.air = MixedAir([fw], [core])

@@ -131,28 +131,40 @@ LogEv = namedtuple('LogEv', 't te kind src dst', defaults=())
 def check_blm_log(events, a, b, dur, halts=(), bf_kinds=('SSW-Ack',)):
     """Журнал связи a↔b по времени (LogEv); dur — согласованное dot11BeamLinkMaintenanceTime (None — не определено:
     таймера нет, нарушений нет). Таймер ставят: конец SLS/BRP (кадр из bf_kinds), немедленные ответы Ack/BlockAck/DMG
-    CTS/DMG DTS между a и b (11.27.1). Нарушение 'blm_expired' — таймер истёк, а следующий кадр пары — не начало
-    восстановления ISS (SSW): «To prevent expiration of the beam link maintenance timer when a DMG STA does not have
-    MSDUs to send, the STA shall transmit QoS Null frames» (обмен после истечения — уже без поддержания связи).
-    Возвращает (нарушения, сводка {'sets': n, 'expired': m, 'max_gap_us': …})."""
+    CTS/DMG DTS между a и b (11.27.1). Нарушение 'blm_expired' — таймер истёк, а пара после его установки ничего не
+    передавала (ни QoS Null, ни других кадров) и следующий кадр — не начало восстановления ISS (SSW): «To prevent
+    expiration of the beam link maintenance timer when a DMG STA does not have MSDUs to send, the STA shall transmit QoS
+    Null frames». Истечение после переданных, но не подтверждённых кадров, начинающих обмен (QoS Null, данные, RTS;
+    не ответы и не CF-End) (связь потеряна — затенение, уход луча) —
+    не нарушение «shall transmit» (кадры переданы), учитывается в сводке 'expired_after_tx' (PLAN.md №112). Одно
+    замечание на истечение. Возвращает (нарушения, сводка {'sets': n, 'expired': m, 'max_gap_us': …})."""
     out = []
     if dur is None:
         return out, dict(sets=0, expired=0, defined=False)
     tm = LinkTimer(dur, halts)
-    sets, exp, gaps = 0, 0, []
+    sets, exp, exp_tx, gaps = 0, 0, 0, []
+    tx_since, handled = False, False
     for i, e in enumerate(events):
         if {e.src, e.dst} != {a, b}:
             continue
         if tm.t_set is not None:
             x = tm.expires_at()
-            if e.t > x and e.kind != 'SSW':
-                exp += 1
-                out.append(Violation(i, 'blm_expired', f'таймер связи {a}↔{b} истёк в {float(x):.1f} (установлен '
-                                                       f'{float(tm.t_set):.1f}, {float(dur)} мкс), следующий кадр '
-                                                       f'{e.kind} — не SSW восстановления (11.27.1)'))
+            if e.t > x and not handled:
+                handled = True
+                if tx_since:
+                    exp_tx += 1
+                elif e.kind != 'SSW':
+                    exp += 1
+                    out.append(Violation(i, 'blm_expired', f'таймер связи {a}↔{b} истёк в {float(x):.1f} (установлен '
+                                                           f'{float(tm.t_set):.1f}, {float(dur)} мкс) без передач '
+                                                           f'пары, следующий кадр {e.kind} — не SSW восстановления '
+                                                           f'(11.27.1)'))
+            if e.t <= x and e.kind not in RESP_KINDS + ('CF-End',):
+                tx_since = True                 # попытка обмена (QoS Null, данные, RTS, …), не закрытие TXOP
             gaps.append(active_time(tm.t_set, e.t, halts))
         if e.kind in RESP_KINDS or e.kind in bf_kinds:
             tm.set(e.te)
             sets += 1
-    return out, dict(sets=sets, expired=exp, defined=True,
+            tx_since, handled = False, False
+    return out, dict(sets=sets, expired=exp, expired_after_tx=exp_tx, defined=True,
                      max_gap_us=float(max(gaps)) if gaps else None)

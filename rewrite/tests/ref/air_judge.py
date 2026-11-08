@@ -566,10 +566,16 @@ def _txops(c):
     """TXOP по событиям с известным временем. Новый TXOP — кадр, который не ответ на предыдущий и начат не раньше
     DIFS после конца занятости (внутри TXOP промежутки — SIFS/MBIFS/SBIFS, 10.23.2.8, 10.42.2), или RTS / DMG
     CTS-to-self. Держатель — передатчик первого кадра. Возвращает [(держатель, [события])]."""
+    if getattr(c, '_txops', None) is not None:
+        return c._txops
+    sps = _sp_windows(c)
     out, cur = [], None
     for e in c.k:
         if e.kind == 'DMG Beacon':
             cur = None
+            continue
+        if sps and any(s <= e.t < en for s, en in sps):
+            cur = None                        # SP по расписанию (10.39.6.2) — не TXOP EDCA: правила sp_access
             continue
         p = c.prev.get(e.i)
         resp = p is not None and is_response_pair(p, e) and e.t - p.te <= RESP_WINDOW
@@ -584,6 +590,24 @@ def _txops(c):
             out.append(cur)
         else:
             cur[1].append(e)
+    c._txops = out
+    return out
+
+
+def _sp_windows(c):
+    """[(начало, конец)] SP по Extended Schedule маяков (air_sched): там доступ не EDCA — TXOP не строятся."""
+    if getattr(c, '_spw', None) is not None:
+        return c._spw
+    from . import air_sched as AS
+    from . import schedule as SCH
+    out = []
+    try:
+        dti = AS._dti(c)
+    except (ValueError, KeyError, AttributeError):
+        dti = {}
+    for k, (v, idx, err, per) in dti.items():
+        out += [(p.start, p.end) for p in per or [] if p.kind == SCH.SP]
+    c._spw = out
     return out
 
 
@@ -830,9 +854,11 @@ def r_access(c):
         # 10.23.2.4 + 10.23.2.2: после AIFS[AC] — backoff, равномерный в [0, CW], CW = CWmin после успешного TXOP. Если
         # ни один из n доступов не начат в первые k слотов, а вероятность этого при равномерном backoff ничтожна, —
         # фактический AIFS больше объявленного
-        allv = [x for v in groups.values() for x in v]
-        kmin = int((min(allv) - a + slack_s) // SLOT) if allv else 0
         cw = (2 ** c.edca['AC_BE']['ecwmin'] - 1) if c.edca and 'AC_BE' in c.edca else T.aCWmin
+        # только доступы, которые мог задержать backoff (idle ≤ AIFS + CW·aSlotTime): после долгого простоя очередь
+        # была пуста (кадр пришёл позже) — о AIFS такой доступ ничего не говорит (поток не насыщен)
+        allv = [x for v in groups.values() for x in v if x <= a + (cw + 1) * SLOT + slack_s]
+        kmin = int((min(allv) - a + slack_s) // SLOT) if allv else 0
         if kmin >= 1:
             pr = (Fr(cw + 1 - min(kmin, cw + 1), cw + 1)) ** len(allv)
             r.info['min_backoff_slots_seen'] = kmin
@@ -849,6 +875,9 @@ def r_access(c):
                       'Нарушения '
                       'выравнивания — model (зависят от допуска).')
     return r
+
+
+DYN_RESPONSES = {('SPR', 'Poll'), ('Grant Ack', 'Grant'), ('Grant', 'SPR')}
 
 
 def r_responder(c):
@@ -869,12 +898,35 @@ def r_responder(c):
             if p.src == holder and is_response_pair(p, e) and e.t - p.te <= RESP_WINDOW:
                 r.ok()
                 continue
+            if (e.kind, p.kind) in DYN_RESPONSES and e.dst == p.src and p.dst == e.src:
+                # динамическое распределение (10.39.7, 10.39.9): SPR на Poll — через Response Offset, Grant Ack на
+                # Grant (10.39.4), Grant точки на SPR продления — ответы; сроки — правило dynalloc / sp_access
+                r.ok()
+                continue
             if c.hidden_possible(p, e):
                 r.skip('промежуток вмещает невидимый PPDU держателя (данные не записаны)')
+                continue
+            if _full_journal(c) and not any(_node_of(c, e.src) in q.rx_nodes for q in seq if q.t < e.t):
+                # журнал знает приёмники: узел не принял ни одного кадра этого TXOP (направленный эфир, затенение) —
+                # для него среда свободна, это его доступ, а не ответ в чужом TXOP
+                r.skip('узел не принимал кадров TXOP держателя (скрытая STA, журнал приёмников) — его доступ — '
+                       'правило access')
                 continue
             r.bad(e, f'{e.kind} ответчика через {float(e.t - p.te):.1f} мкс после {p.kind} {_who(c, p.src)} — не '
                      f'ответ, места для невидимого кадра держателя нет')
     return r
+
+
+def _full_journal(c):
+    """Журнал с полным знанием (ядро: TXVECTOR и приёмники каждого PPDU) — AirEv.trn известен у всех событий."""
+    v = getattr(c, '_full_journal', None)
+    if v is None:
+        v = c._full_journal = bool(c.evs) and all(getattr(e, 'trn', None) is not None for e in c.evs)
+    return v
+
+
+def _node_of(c, mac):
+    return next((n for n, m in c.air.nodes.items() if m == mac), None)
 
 
 def r_resp_seq(c):
@@ -1492,8 +1544,21 @@ def r_brp(c):
         r.skip('BRP в захвате нет')
         return r
     from . import brp as B
+    # поля TRN заголовка PHY известны (журнал ядра/эмулятора, AirEv.trn) — правила TRN проверяются, и «последний
+    # принятый PPDU» (бит Initiator, BS-FBCK) — по всем PPDU, а не только по кадрам BRP
+    trn_known = all(getattr(e, 'trn', None) is not None for e in c.evs)
     pp, idx = [], []
-    for e in frames:
+    # «последний принятый / переданный PPDU» (бит Initiator, BS-FBCK, 10.42.6.4.1, 9.4.2.129) — по всем PPDU с
+    # известным временем (SSW-Ack перед первым BRP — не BRP), а не только по кадрам BRP
+    for e in c.evs:
+        if e.kind != 'BRP':
+            if e.t_ok and e.kind != 'DMG Beacon':
+                n, pt, bt, app = e.trn if trn_known else (0, None, False, False)
+                pp.append(B.Ppdu(e.t, e.src, e.dst, kind=e.kind, mcs=e.mcs or 0, length=e.length or 14,
+                                 trn_len=n if app else 0, ppdu_type=pt if app else None, bt=bt,
+                                 lost=_lost(c, e) if trn_known else False))
+                idx.append(e.i)
+            continue
         if not e.body_ok:
             r.skip('тело BRP усечено')
             continue
@@ -1508,34 +1573,42 @@ def r_brp(c):
         if not e.t_ok:
             r.skip('время BRP неизвестно (метка TX испорчена, пир не принял)')
             continue
-        pp.append(B.Ppdu(e.t, e.src, e.dst, frame=f, mcs=e.mcs or 0, length=e.length, dur=e.dur))
+        kw = {}
+        if trn_known:
+            n, pt, bt, app = e.trn
+            kw = dict(trn_len=n if app else 0, ppdu_type=pt if app else None, bt=bt, lost=_lost(c, e))
+        pp.append(B.Ppdu(e.t, e.src, e.dst, frame=f, mcs=e.mcs or 0, length=e.length, dur=e.dur, **kw))
         idx.append(e.i)
     # BRP setup (10.42.3.2): последовательность, начатая кадром с Capability Request = 1, — brp.check_setup, кадры —
     # phase 'setup' (их запросы — намерение, не запрос немедленного ответа, как в dmg_sta.judge)
+    bi = [j for j, q in enumerate(pp) if q.is_brp]          # индексы кадров BRP в pp
     k = 0
-    while k < len(pp):
-        if pp[k].frame.bre.cap_req and pp[k].frame.bre.initiator:
+    while k < len(bi):
+        q = pp[bi[k]]
+        if q.frame.bre.cap_req and q.frame.bre.initiator:
             seq = [k]
-            while seq[-1] + 1 < len(pp) and pp[seq[-1] + 1].t - pp[seq[-1]].end <= T.BRPIFS + SIFS_TOL and \
-                    {pp[seq[-1] + 1].src, pp[seq[-1] + 1].dst} == {pp[k].src, pp[k].dst}:
+            while seq[-1] + 1 < len(bi) and pp[bi[seq[-1] + 1]].t - pp[bi[seq[-1]]].end <= T.BRPIFS + SIFS_TOL and \
+                    {pp[bi[seq[-1] + 1]].src, pp[bi[seq[-1] + 1]].dst} == {q.src, q.dst}:
                 seq.append(seq[-1] + 1)
-            lost = len(seq) == 1 and not any(c.air.nodes.get(n) == pp[k].dst for n in c.evs[idx[k]].rx_nodes)
-            vs, end = ([], None) if lost else B.check_setup([pp[j] for j in seq], pp[k].src)
+            lost = len(seq) == 1 and not any(c.air.nodes.get(n) == q.dst for n in c.evs[idx[bi[k]]].rx_nodes)
+            vs, end = ([], None) if lost else B.check_setup([pp[bi[j]] for j in seq], q.src)
             if lost:
                 r.skip('BRP setup не принят адресатом (запись RX пира) — ответа нет, setup не начат')
             for v in vs:
-                r.bad(c.evs[idx[seq[v.idx]]], f'{v.rule}: {v.msg}')
+                r.bad(c.evs[idx[bi[seq[v.idx]]]], f'{v.rule}: {v.msg}')
             last = seq[-1] if end is None else seq[end]
             for j in seq:
                 if j <= last:
-                    pp[j].phase = 'setup'
+                    pp[bi[j]].phase = 'setup'
             k = last + 1
         else:
             k += 1
     if pp:
         trn = Counter()
         for v in B.check_brp_log(pp):
-            if v.rule in TRN_RULES:
+            # BS-FBCK ≠ 0 против «последний принятый PPDU — не BRP-TX» (9.4.2.129) зависит от поля TRN того PPDU
+            trn_dep = v.rule in TRN_RULES or (v.rule == 'frame' and v.msg.startswith('BS-FBCK'))
+            if trn_dep and not trn_known:
                 trn[v.rule] += 1
                 continue
             e = c.evs[idx[v.idx]]
@@ -1547,8 +1620,16 @@ def r_brp(c):
             r.skip(f'TRN-поля PPDU (Training Length, PPDU Type) запись не несёт — правила {sorted(trn)}',
                    sum(trn.values()))
     r.info['brp_frames'] = len(frames)
-    r.info['with_time'] = len(pp)
+    r.info['with_time'] = sum(1 for q in pp if q.is_brp)
+    r.info['trn_known'] = trn_known
     return r
+
+
+def _lost(c, e):
+    """Адресат не принял PPDU (известно, когда у события есть приёмники: журнал ядра)."""
+    if e.dst is None or e.dst == T.BCAST:
+        return False
+    return not any(c.air.nodes.get(n) == e.dst for n in (e.rx_nodes or ()))
 def _bic(b):
     return BI.BeaconIntervalControl(
         cc_present=b.cc_present, discovery_mode=b.discovery, next_beacon=b.next_beacon, ati_present=b.ati_present,
@@ -1589,7 +1670,10 @@ def r_sls(c):
         r.skip('кадры SLS без времени (метка TX AP испорчена, пир кадр не принял)', len(lost))
         r.info['frames_without_time'] = [f'{e.kind} {_who(c, e.src)} CDOWN {e.p.ssw.cdown}'
                                          if e.p is not None and e.kind == 'SSW' else e.kind for e in lost]
-    known = sorted((e for e in bf if e.t_ok and e.p is not None), key=lambda e: e.t)
+    # кадры A-BFT (RSS станции и SSW-Feedback точки по слотам, 10.42.5) — не SLS в DTI: их судит правило abft
+    wins = _abft_windows(c)
+    known = sorted((e for e in bf if e.t_ok and e.p is not None and
+                    not any(s - Q <= e.t < en for s, en, _ in wins)), key=lambda e: e.t)
     # последовательности — по каждой паре отдельно (одновременные ISS двух станций — коллизия на одной границе слота —
     # чередуются в журнале); новый SLS — ISS после других кадров пары или повтор ISS (CDOWN снова растёт, 10.42.6.2)
     runs, by_pair = [], {}
@@ -1932,11 +2016,20 @@ def r_brp_role(c):
                 req, bre = _brp_fields(e)
             except (AssertionError, IndexError, ValueError):
                 continue
-            if e.src == resp and bre.initiator:
+            if e.src == resp and bre.initiator and bre.tx_train_resp and _bt_request_before(c, e, ini):
+                # 10.42.7: обратная связь сопровождения луча — BRP ответчика сопровождения с Initiator = 1 по 10.42.6.4.1
+                # (предыдущий принятый кадр — PPDU данных с запросом TRN-T), не начало уточнения (PLAN.md №111)
+                seen['bt_feedback'] += 1
+                r.ok()
+            elif e.src == resp and bre.initiator:
                 seen['resp_initiator'] += 1
                 r.bad(e, f'ответчик SLS {_who(c, resp)} шлёт BRP с Initiator = 1 в распределении SLS, где инициатор — '
                          f'{_who(c, ini)} (10.42.3.1: «the SLS initiator is the beam refinement initiator»; '
                          f'10.42.6.4.2)')
+            elif e.src == ini and not bre.initiator and not sent_by_ini and _bt_feedback_before(c, e, resp, ini):
+                seen['bt_feedback_reply'] += 1  # ответ BRP на обратную связь сопровождения (10.42.6.4.2) — не начало
+                r.ok()
+                continue
             elif e.src == ini and not bre.initiator and not sent_by_ini:
                 seen['ini_first_not_initiator'] += 1
                 r.bad(e, f'первый BRP инициатора SLS {_who(c, ini)} с Initiator = 0 (10.42.6.4.2: транзакцию '
@@ -1960,6 +2053,30 @@ def r_brp_role(c):
                       'полю Initiator (9.4.2.129) TX-записей и по инициатору SLS (Direction первого SSW ISS); '
                       '«распределение» в CBAP-only DTI — до следующего BTI.')
     return r
+
+
+def _bt_feedback_before(c, e, resp, ini):
+    """Перед BRP e (ini → resp) — BRP resp → ini с TX-train-response после запроса сопровождения ini (обратная связь,
+    10.42.7)."""
+    for q in reversed(c.evs[:e.i]):
+        if q.kind == 'BRP' and q.src == resp and q.dst == ini and q.body_ok:
+            try:
+                _, b = _brp_fields(q)
+            except (AssertionError, IndexError, ValueError):
+                return False
+            return bool(b.initiator and b.tx_train_resp) and _bt_request_before(c, q, ini)
+    return False
+
+
+def _bt_request_before(c, e, ini):
+    """Перед BRP e был PPDU ini → e.src с запросом сопровождения передачи (BEAM_TRACKING_REQUEST, TRN-T добавлены —
+    AirEv.trn; запись PMC заголовок PHY не несёт — нет)."""
+    for q in reversed(c.evs[:e.i]):
+        if q.src == ini and q.dst == e.src and getattr(q, 'trn', None) is not None:
+            n, pt, bt, app = q.trn
+            if bt and app and pt == 'TRN-T':
+                return True
+    return False
 
 
 INIT_GAP = SIFS + SLOT          # PIFS: начало после такой паузы среды — новый доступ, не ответ/продолжение TXOP
@@ -2069,9 +2186,12 @@ def r_blm(c):
         a, b = fbe.src, ack.src
         evs = [LM.LogEv(e.t, e.te, e.kind, e.src, e.dst) for e in c.k if e.t >= ack.te and {e.src, e.dst} == {a, b}]
         evs.insert(0, LM.LogEv(ack.t, ack.te, 'SSW-Ack', ack.src, ack.dst))
-        vs, s = LM.check_blm_log(evs, a, b, dur, halts)
+        # 11.27.1: таймер ставит и успешный BRP — конец транзакции = последний кадр BRP пары
+        vs, s = LM.check_blm_log(evs, a, b, dur, halts, bf_kinds=('SSW-Ack', 'BRP'))
         for v in vs:
             r.bad(None, v.msg)
+        if s.get('expired_after_tx'):
+            res['истечение после неподтверждённых передач'] += s['expired_after_tx']
     r.info['blm(fb_us, ack_us, negotiated)'] = {str(k): n for k, n in res.items()}
     if all(k[2] is None for k in res):
         r.verdict_note = ('BeamLink Maintenance Value = 0 у обеих сторон: dot11BeamLinkMaintenanceTime не определён '
@@ -2116,12 +2236,42 @@ def r_beam_track(c):
             info[f'{_who(c, a)}→{_who(c, b)}'] = ('TX beam tracking не поддержан' if lim is None else float(lim))
     r.info['field'] = {_who(c, s): dict(v) for s, v in vals.items()}
     r.info['table_10_31'] = info
-    r.skip('запросы в PPDU (BEAM_TRACKING_REQUEST, PPDU_TYPE, TRN_LEN — заголовок PHY) запись PMC не несёт: '
-           'ref/beamtrack.check_bt_log по эфиру не применить', 1)
+    if all(getattr(e, 'trn', None) is not None for e in c.evs):
+        # журнал знает TXVECTOR (AirEv.trn): ref/beamtrack.check_bt_log по парам STA; распределение — BI (CBAP-only DTI)
+        fields = {s: next(iter(v)) for s, v in vals.items()}
+        bi_us = (_bi_tu(c) or 0) * T.TU
+        nb = 0
+        for pair in {frozenset((e.src, e.dst)) for e in c.evs if e.t_ok and e.dst != T.BCAST and e.src != e.dst}:
+            if len(pair) != 2 or not pair <= set(fields):
+                continue
+            ppdus = [_bt_ppdu(e, bi_us) for e in c.evs if e.t_ok and frozenset((e.src, e.dst)) == pair]
+            nb += sum(1 for q in ppdus if q.bt == BT.REQUESTED)
+            for v in BT.check_bt_log(ppdus, fields):
+                r.bad(None, f'{v.rule}: {v.msg}')
+        r.ok(max(1, nb))
+        r.info['bt_requests'] = nb
+    else:
+        r.skip('запросы в PPDU (BEAM_TRACKING_REQUEST, PPDU_TYPE, TRN_LEN — заголовок PHY) запись PMC не несёт: '
+               'ref/beamtrack.check_bt_log по эфиру не применить', 1)
     if any(0 in v for v in vals.values()):
         r.verdict_note = ('Поле = 0 — «Transmit beam tracking is not supported» (табл. 10-31); такая сигнализация '
                           'устарела (10.42.7 NOTE 2), но допустима.')
     return r
+
+
+def _bt_ppdu(e, bi_us):
+    """AirEv с известным TXVECTOR (trn) → beamtrack.Ppdu: запрос, TRN, BI как распределение, поля BRP."""
+    n, pt, bt, app = e.trn
+    k = int(e.t // bi_us) if bi_us else 0
+    kw = {}
+    if e.kind == 'BRP' and e.body_ok:
+        try:
+            req, bre = _brp_fields(e)
+            kw = dict(brp=True, tx_trn_req=req.tx_trn_req, fbck_type=bre.fbck_type.value(), bs_fbck=bre.bs_fbck,
+                      fbck=bool(bre.tx_train_resp))
+        except (AssertionError, IndexError, ValueError):
+            pass
+    return BT.Ppdu(e.t, e.te, e.src, e.dst, e.mcs or 0, BT.REQUESTED if bt else BT.NOT_REQUESTED, pt, n, app, k, **kw)
 
 
 # ---------------------------------------------------------------------------------------------------- A-MSDU, DMS

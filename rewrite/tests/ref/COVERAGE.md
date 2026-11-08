@@ -20,6 +20,20 @@
 одна строка, повторов нет). Волна 5 (PLAN.md №100–№107): 15 «Ч» и 2 «Н» закрыты до М+С; добавлены строки 9.4.2.15,
 9.4.2.217, 9.6.2.4, 9.6.2.5, 10.2.6, 10.28.4, 11.17 (М+С) и 11.11 (ВНЕ).
 
+## Исполняется ядром (`ref/core`, этап 4)
+
+Пометка **ядро исполняет** в примечании строки — пункт не только проверяется, но и исполняется MAC ядра (точка и
+станция в идеальной среде, README ядра — «Этап 4»). Этапы 1–3 (BTI, A-BFT, SLS в DTI, ассоциация, CBAP/EDCA, Block Ack)
+— README ядра.
+
+| Пункт этапа 4 | Где в ядре |
+|---|---|
+| 10.42.6.4, 10.42.7, 11.27.1 | core/bf.py (BRP с TRN, сопровождение луча, поддержание связи, политика деградации) |
+| 10.39.5–10.39.9 | core/dti.py (Extended Schedule, SP, PP/GP, усечение, продление, восстановление SP) |
+| 10.43.1, 10.43.2, 11.10.11, 11.28 | core/lm.py (Link Measurement, DMG Link Margin, LA Ack, Information Request/Response) |
+| 10.40.1, 10.40.2.1, 10.40.3.2 | core/cluster_ap.py (децентрализованный кластер: S-AP, вход членом, Beacon SP) |
+| 11.8.8.6, 11.29.1, 11.29.3 | core/bsschg.py (ECSA, смена длительности BI) |
+
 ## 9.2 Общий формат MAC-кадра (DMG-особенности)
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
@@ -261,17 +275,17 @@
 | 10.39.2 | 1878 | Access periods within a beacon interval | М+С | bi.layout / period_at / check_schedule; bi.rx_advance_time | bi |  |
 | 10.39.3 | 1879 | ATI transmission rules | М+С | mlme.AtiAp / ati_sta_response / ati_start_earliest / check_ati_frame; bi (ATI) | ati | новое правило ati; в захватах ATI Present = 0 |
 | 10.39.4 | 1882 | DTI transmission rules | М+С | bi; cbap; sp.check_dti (кто начинает, LP SC); dynalloc (Grant Ack) | bi, cbap_end, sp_access, dynalloc |  |
-| 10.39.5 | 1882 | Contention based access period (CBAP) transmission rules | М+С | cbap.Station (CBAP-окна, приостановка EDCAF); bi; sp.check_dti (CBAP расписания) | cbap_end, access, sp_access | PLAN №9 |
-| 10.39.6.1 | 1884 | General | М+С | bi.Allocation, full_tsf; schedule.check / check_repeats / StaView (obsolete) | bi, schedule | PLAN №12 |
-| 10.39.6.2 | 1885 | Service period (SP) allocation | М+С | sp.check_sp / check_dti / sp_exchange; schedule (BF Training, aDMGPPMinListeningTime) | sp_access, bi | в захватах SP нет (CBAP Only); RD в SP — выключен намеренно |
-| 10.39.6.3 | 1886 | Contention based access period (CBAP) allocation | М+С | bi (CBAP-распределения); schedule.check (CBAP Only); sp.check_dti (CBAP расписания) | bi, schedule, sp_access |  |
-| 10.39.6.4 | 1887 | Pseudo-static allocations | М+С | bi.pseudo_static_valid, obsolete; schedule.check_history / StaView | schedule (история по BI) | PLAN №34 |
-| 10.39.6.5 | 1888 | Guard time | М+С | bi.guard_time / guard_between; schedule.plan / check | schedule |  |
+| 10.39.5 | 1882 | Contention based access period (CBAP) transmission rules | М+С | cbap.Station (CBAP-окна, приостановка EDCAF); bi; sp.check_dti (CBAP расписания) | cbap_end, access, sp_access | PLAN №9; **ядро исполняет: EDCA только в разрешённых CBAP-распределениях (core/dti.py)** |
+| 10.39.6.1 | 1884 | General | М+С | bi.Allocation, full_tsf; schedule.check / check_repeats / StaView (obsolete) | bi, schedule | PLAN №12; **ядро исполняет: Extended Schedule точки по политике, StaView станции (core/dti.py)** |
+| 10.39.6.2 | 1885 | Service period (SP) allocation | М+С | sp.check_sp / check_dti / sp_exchange; schedule (BF Training, aDMGPPMinListeningTime) | sp_access, bi | в захватах SP нет (CBAP Only); RD в SP — выключен намеренно; **ядро исполняет: обмены источника в SP без RTS, конец SP, повтор через PIFS (core/dti.py)** |
+| 10.39.6.3 | 1886 | Contention based access period (CBAP) allocation | М+С | bi (CBAP-распределения); schedule.check (CBAP Only); sp.check_dti (CBAP расписания) | bi, schedule, sp_access |; **ядро исполняет: CBAP-распределения (core/dti.py)** |
+| 10.39.6.4 | 1887 | Pseudo-static allocations | М+С | bi.pseudo_static_valid, obsolete; schedule.check_history / StaView | schedule (история по BI) | PLAN №34; **ядро исполняет: псевдостатичные (StaView) (core/dti.py)** |
+| 10.39.6.5 | 1888 | Guard time | М+С | bi.guard_time / guard_between; schedule.plan / check | schedule |; **ядро исполняет: guard time в schedule.plan (core/dti.py)** |
 | 10.39.6.6 | 1888 | DMG and CMMG protected period | М+С | protperiod.PpStation / check_rts / check_dts / check_cts_answer / interference_constraints / rts_timeout; duration.duration_dts*; nav.MultiNav (DTS) | prot_period | в захватах SP нет (CBAP Only) — «не проверяемо»; прослушивание и NAV — NOT_CHECKABLE pp_listening; PLAN №69, №70 |
-| 10.39.6.7 | 1895 | Service period recovery | М+С | sp.check_sp (AP-получатель после dot11SPIdleTimeout, только Truncatable); sprecovery.ati_responders / reclaimable / may_reclaim; sp.check_dti(reclaimed) | sp_access, sp_recovery | возврат SP по ответам в ATI — PLAN №103; в захватах SP нет |
-| 10.39.7 | 1896 | Dynamic allocation of service period | М+С | dynalloc.pp / gp / check_dyn_log; duration.pp_schedule / duration_grant_* | dynalloc | PLAN №26–№29; в захватах нет — «не проверяемо» |
-| 10.39.8 | 1900 | Dynamic truncation of service period | М+С | sp.check_sp, truncation_cf_end / truncation_grant; duration.duration_grant_truncation | sp_access | PLAN №32; CDMG (10.39.8.2) — вне охвата |
-| 10.39.9 | 1901 | Dynamic extension of service period | М+С | sp.check_sp, extension; duration.duration_grant_ext_* | sp_access | PLAN №30 |
+| 10.39.6.7 | 1895 | Service period recovery | М+С | sp.check_sp (AP-получатель после dot11SPIdleTimeout, только Truncatable); sprecovery.ati_responders / reclaimable / may_reclaim; sp.check_dti(reclaimed) | sp_access, sp_recovery | возврат SP по ответам в ATI — PLAN №103; в захватах SP нет; **ядро исполняет: AP-получатель через dot11SPIdleTimeout — Grant источнику (core/dti.py)** |
+| 10.39.7 | 1896 | Dynamic allocation of service period | М+С | dynalloc.pp / gp / check_dyn_log; duration.pp_schedule / duration_grant_* | dynalloc | PLAN №26–№29; в захватах нет — «не проверяемо»; **ядро исполняет: PP/GP в SP broadcast/broadcast, Grant Ack (core/dti.py)** |
+| 10.39.8 | 1900 | Dynamic truncation of service period | М+С | sp.check_sp, truncation_cf_end / truncation_grant; duration.duration_grant_truncation | sp_access | PLAN №32; CDMG (10.39.8.2) — вне охвата; **ядро исполняет: усечение CF-End (core/dti.py)** |
+| 10.39.9 | 1901 | Dynamic extension of service period | М+С | sp.check_sp, extension; duration.duration_grant_ext_* | sp_access | PLAN №30; **ядро исполняет: SPR продления, Grant точки, пересылка партнёру (core/dti.py)** |
 | 10.39.10 | 1902 | Updating multiple NAVs | М | nav.MultiNav (псевдокод буквально), nav.check_nav_log(multi=True) |  | новое; поддержка нескольких NAV у узла не видна — судья ведёт единый NAV (nav_multi) |
 | 10.39.11 | 1370 | and is set to 0 otherwise. | ВНЕ |  |  | CDMG |
 
@@ -279,11 +293,11 @@
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
-| 10.40.1 | 1908 | General (DMG and CMMG AP or PCP clustering) | М+С | cluster.cluster_time_offset / beacon_sp / beacon_sp_of / maxmem_ok / check_cluster_params / check_own_beacon / check_beacon_series; fields.check/encode/parse_cc | beacon_fields, cluster | Beacon SP_n, ClusterMaxMem (целые мкс), предел Beacon SP Duration, роль/Cluster ID, CC в каждом маяке члена; CC без бит кластеризации — PLAN №87 |
-| 10.40.2.1 | 1909 | Decentralized AP or PCP cluster formation | М+С | cluster.DecentralizedAp (start_sap, join, schedule, may_tx), empty_beacon_sps, beacon_sp_entries, check_beacon_sps_scheduled, check_member_vs_sap | cluster | PLAN №80, №83; прослушивание — NOT_CHECKABLE cluster_monitor |
+| 10.40.1 | 1908 | General (DMG and CMMG AP or PCP clustering) | М+С | cluster.cluster_time_offset / beacon_sp / beacon_sp_of / maxmem_ok / check_cluster_params / check_own_beacon / check_beacon_series; fields.check/encode/parse_cc | beacon_fields, cluster | Beacon SP_n, ClusterMaxMem (целые мкс), предел Beacon SP Duration, роль/Cluster ID, CC в каждом маяке члена; CC без бит кластеризации — PLAN №87; **ядро исполняет: Clustering Control S-AP и члена (core/cluster_ap.py)** |
+| 10.40.2.1 | 1909 | Decentralized AP or PCP cluster formation | М+С | cluster.DecentralizedAp (start_sap, join, schedule, may_tx), empty_beacon_sps, beacon_sp_entries, check_beacon_sps_scheduled, check_member_vs_sap | cluster | PLAN №80, №83; прослушивание — NOT_CHECKABLE cluster_monitor; **ядро исполняет: прослушивание aMinChannelTime, вход в пустой Beacon SP, Beacon SP в расписании (core/cluster_ap.py)** |
 | 10.40.2.2 | 1910 | Centralized AP or PCP cluster formation | М+С | cluster.CcsrConfig / check_ccsr_config / verification_ok / ecapc_blind / must_react_to_ecapc / CentralizedSap / CentralizedMember / select_cto | cluster | CCSR — «not defined» (NOT_CHECKABLE cluster_ccsr), слепота — cluster_blind; реакция любой точки на S-AP с ECAPC = 1 (join/cease) — судья, вердикт capture; ECAPC Policy в табл. 9-35 нет — PLAN №89 |
 | 10.40.3.1 | 1914 | General cluster maintenance | М | cluster.tbtt_from_beacon (TBTT S-AP — опора) |  |  |
-| 10.40.3.2 | 1914 | Decentralized AP or PCP cluster maintenance | М | cluster.DecentralizedAp.on_beacon / end_bi (периоды мониторинга, наименьший MAC, dot11MaxNumberOfClusteringMonitoringPeriods, встреча двух S-AP) |  | NOT_CHECKABLE cluster_handover (одна точка на стенде) |
+| 10.40.3.2 | 1914 | Decentralized AP or PCP cluster maintenance | М | cluster.DecentralizedAp.on_beacon / end_bi (периоды мониторинга, наименьший MAC, dot11MaxNumberOfClusteringMonitoringPeriods, встреча двух S-AP) |  | NOT_CHECKABLE cluster_handover (одна точка на стенде); **ядро исполняет: on_beacon/end_bi (core/cluster_ap.py)** |
 | 10.40.3.3 | 1915 | Centralized AP or PCP cluster maintenance | М | cluster.CentralizedSap.reconfigure / CentralizedMember.on_sap_beacon / end_bi | cluster | ECAPC = 1 до конца BSS, после ухода ECAPC = 0 и без ECAPC Policy — судья (по маякам и кадрам) |
 | 10.40.3.4 | 1916 | Centralized AP or PCP cluster MAC requirements | М | cluster.bhi_deadline / txss_cbap_windows |  | PLAN №85; NOT_CHECKABLE cluster_txss_cbap |
 | 10.40.4 | 1917 | Cluster report and rescheduling | М+С | cluster.report_condition / make_reports / check_sta_report | cluster | «should send» — не нарушение; «shall not send» и копии полей — нарушения; PLAN №84 |
@@ -310,11 +324,11 @@
 | 10.42.6.1 | 1952 | General | М+С | sls | sls |  |
 | 10.42.6.2 | 1952 | SLS phase execution | М+С | sls (SP/CBAP, MBIFS, повтор Feedback, PIFS) | sls |  |
 | 10.42.6.3 | 1953 | Multiple sector ID capture (MIDC) subphase | М | brp.check_mid / check_bc / midc_subphases |  | MIDC в захватах нет |
-| 10.42.6.4.1 | 1961 | General | М+С | brp.check_brp_log, _check_response_content | brp, brp_role (бит Initiator) |  |
-| 10.42.6.4.2 | 1962 | Beam refinement transaction | М+С | brp.run_transaction | brp, brp_role |  |
-| 10.42.6.4.3 | 1963 | Beam refinement transaction after SLS | М+С | brp.first_brp_after_sls_ok | brp_role (обязан послать BRP) | тип PPDU (BRP-RX) — не виден |
-| 10.42.6.4.4 | 1963 | Antenna configuration setting during a beam refinement transaction | М | brp.rx_config_*, trn_r_tx_awv, reciprocity_awv |  | AWV не записываются |
-| 10.42.7 | 1964 | Beam tracking | М | beamtrack.bt_time_limit (табл. 10-31), Initiator, Responder, check_bt_log | beam_track (поле) | новое; запросы в PPDU не видны (beam_tracking_ppdu); наше поле = 0 — «не поддерживается» |
+| 10.42.6.4.1 | 1961 | General | М+С | brp.check_brp_log, _check_response_content | brp, brp_role (бит Initiator) | **ядро исполняет: транзакция BRP с TRN (core/bf.py)** |
+| 10.42.6.4.2 | 1962 | Beam refinement transaction | М+С | brp.run_transaction | brp, brp_role | **ядро исполняет (core/bf.py)** |
+| 10.42.6.4.3 | 1963 | Beam refinement transaction after SLS | М+С | brp.first_brp_after_sls_ok | brp_role (обязан послать BRP) | тип PPDU (BRP-RX) — не виден; **ядро исполняет: BRP после SLS по запросам SSW-Ack (core/mac.py, bf.py)** |
+| 10.42.6.4.4 | 1963 | Antenna configuration setting during a beam refinement transaction | М | brp.rx_config_*, trn_r_tx_awv, reciprocity_awv |  | AWV не записываются; **ядро исполняет: AWV передачи/приёма по TRN (модель Beam.awv)** |
+| 10.42.7 | 1964 | Beam tracking | М | beamtrack.bt_time_limit (табл. 10-31), Initiator, Responder, check_bt_log | beam_track (поле) | новое; запросы в PPDU не видны (beam_tracking_ppdu); наше поле = 0 — «не поддерживается»; **ядро исполняет: сопровождение передачи (TRN-T, обратная связь через EDCA); судья beam_track — check_bt_log по журналу ядра (AirEv.trn)** |
 | 10.42.8 | 1966 | State machines | М+С | sls.Initiator / Responder (рис. 10-91/10-92) | sls |  |
 | 10.42.9 | 1967 | CDMG enhanced beam tracking | ВНЕ |  |  | CDMG enhanced beam tracking |
 
@@ -322,8 +336,8 @@
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
-| 10.43.1 | 1970 | General | М+С | linkadapt.LinkMeasResponder (токен ≠ 0 — следующий кадр, 0 — любой), check_report_reply, unsolicited | link_meas | выбор MCS/Activity — «implementation specific»; значения — lm_measure |
-| 10.43.2 | 1971 | DMG TPC | М+С | linkadapt.TpcPeer, check_la_ack_reply, LA_ACK_DEADLINE (2·aPPDUMaxTime) | link_margin | выполнение рекомендации не видно (tpc_applied); PLAN №37 |
+| 10.43.1 | 1970 | General | М+С | linkadapt.LinkMeasResponder (токен ≠ 0 — следующий кадр, 0 — любой), check_report_reply, unsolicited | link_meas | выбор MCS/Activity — «implementation specific»; значения — lm_measure; **ядро исполняет: запрос, отчёт с DMG Link Margin, рекомендация MCS (core/lm.py)** |
+| 10.43.2 | 1971 | DMG TPC | М+С | linkadapt.TpcPeer, check_la_ack_reply, LA_ACK_DEADLINE (2·aPPDUMaxTime) | link_margin | выполнение рекомендации не видно (tpc_applied); PLAN №37; **ядро исполняет: LA Ack с Activity 0 на совет мощности (core/lm.py)** |
 | 10.43.3 | 1971 | Fast link adaptation | М+С | linkadapt.check_fla_caps / fla_may_initiate / is_fla_request / check_fla_exchange / fla_respond (рис. 10-95, aMinPPDUDurationForDMGMeasurement) | link_meas | RD-роль и кадры с немедленным ответом — fla_immediate; откат на 10.43.1 — заметка, не нарушение; PLAN №35 |
 | 10.44 | 1972 | Link adaptation using the CMMG link measurement | ВНЕ |  |  | CMMG |
 | 10.45 | 1975 | DMG relay operation | ВНЕ |  | opt_caps | DMG relay — relay — необязательно, не поддерживается (решение 2026-11-07) (нет ни в open, ни в pro) |
@@ -380,9 +394,9 @@
 | 11.4.9.2 | 2160 | Peer-to-peer TS deletion and deletion of an allocation | М | tspec.AllocationTable.on_delts / on_disassoc |  | точка шлёт DELTS второй стороне (не broadcast) |
 | 11.4.13 | 2165 | DMG allocation formats | М+С | tspec.check_isochronous / check_schedule_has (11.4.13.2–3) | addts | распределение после SUCCESS — в Extended Schedule; Minimum Allocation/Duration — should (NOT_CHECKABLE tspec_admission) |
 | 11.8.2.2 | 2178 | Providing supported channels upon association in a DMG BSS | М+С | chswitch.check_association_channels, check_bcast_supported_channels | supp_channels | PLAN №41 (11.8.2.2 выше условия табл. 9-34/9-36); Country — не проверяется |
-| 11.8.8.6 | 2188 | Selecting and advertising a new channel in a DMG BSS | М+С | chswitch.ApChannelSwitch / StaChannelSwitch / check_ecsa_sequence / check_sta_no_ecsa | ecsa | сам переход на канал не виден (ecsa_switch); PLAN №42 |
+| 11.8.8.6 | 2188 | Selecting and advertising a new channel in a DMG BSS | М+С | chswitch.ApChannelSwitch / StaChannelSwitch / check_ecsa_sequence / check_sta_no_ecsa | ecsa | сам переход на канал не виден (ecsa_switch); PLAN №42; **ядро исполняет: ECSA в маяках, смена канала точки и станции (core/bsschg.py)** |
 | 11.9 | 2189 | Extended channel switching (ECS) | М+С | chswitch (11.9.1: бит Extended Channel Switching, Address 1 кадра ECSA; 11.9.2: Current Operating Class; 11.9.3.2: ECSA только от AP); ecs.encode/parse_mcst, check_mcst_in_frame, check_switch_gap, ocv_required, check_after_switch | ecsa, supp_channels, ecs | DSE/enabling STA — диапазон 3650 МГц (11.11.1), у DMG не применимо; IBSS/MBSS (11.9.3.3–11.9.3.4) — вне open; Max Channel Switch Time у DMG — PLAN №104 |
-| 11.10.11 | 2217 | Link measurement | М+С | linkadapt.LinkMeasResponder (activated / is_ap), rm_link_meas | link_meas | срок ответа не задан — REPLY_WAIT, вердикт model |
+| 11.10.11 | 2217 | Link measurement | М+С | linkadapt.LinkMeasResponder (activated / is_ap), rm_link_meas | link_meas | срок ответа не задан — REPLY_WAIT, вердикт model; **ядро исполняет: MLME-LINKMEASURE, отвечающая STA, игнор у AP без dot11RMLinkMeasurementActivated (core/lm.py)** |
 | 11.11 | 2223 | DSE procedures | ВНЕ |  |  | DSE — регуляторный механизм диапазона 3650 МГц (11.11.1); у DMG STA dot11DSERequired false; Public Action DSE — nondmg (ref/actions) |
 | 11.17 | 2244 | Public Action frame addressing | М+С | addrs.check_addresses (Address 3: BSSID своей BSS, wildcard для групповых и чужих) | addr |  |
 
@@ -400,12 +414,12 @@
 
 | Пункт | Стр. | Предмет | Статус | Модель | Судья | Примечание |
 |---|---|---|---|---|---|---|
-| 11.27.1 | 2355 | Beamformed link maintenance | М+С | linkmaint.negotiate / LinkTimer / expiry / sets_timer / check_blm_log | blm | новое; у нас BLM Value = 0 — dot11BeamLinkMaintenanceTime не определён |
+| 11.27.1 | 2355 | Beamformed link maintenance | М+С | linkmaint.negotiate / LinkTimer / expiry / sets_timer / check_blm_log | blm | новое; у нас BLM Value = 0 — dot11BeamLinkMaintenanceTime не определён; **ядро исполняет: таймер связи, QoS Null, истечение, восстановление ISS / RSS в A-BFT; политика деградации (core/bf.py)** |
 | 11.27.2 | 2357 | PCP Handover | М+С | handover.HandoverPcp / HandoverMember / ImplicitCandidate / choose_new_pcp / check_handover_beacons / check_pseudo_static_kept / check_member_contact | pcp_handover | явная и неявная передача; MIB dot11NbrOfChangeBeacons/dot11ImplicitHandoverLostBeacons — PLAN №65, №66; неявная — NOT_CHECKABLE handover_implicit |
-| 11.28 | 2359 | DMG BSS peer and service discovery | М+С | discovery.InfoStation (on_request, presence_probe), ap_should_respond, check_answer_content | info_req | PLAN №60, №61; поддержка элементов отвечающим — NOT_CHECKABLE info_resp_supported; Supported Channels (11.8.2.2) — ref/linkadapt |
-| 11.29.1 | 2361 | General | М+С | bssparams.ApBssParamChange / check_beacon_sequence (элемент в каждом маяке до вступления) | bss_params | Announce и доставка STA с псевдостатичными SP/PS — нет (SP — pro, PS удалён) |
+| 11.28 | 2359 | DMG BSS peer and service discovery | М+С | discovery.InfoStation (on_request, presence_probe), ap_should_respond, check_answer_content | info_req | PLAN №60, №61; поддержка элементов отвечающим — NOT_CHECKABLE info_resp_supported; Supported Channels (11.8.2.2) — ref/linkadapt; **ядро исполняет: Information Request/Response, критерии ответа точки 11.28.2 (core/lm.py)** |
+| 11.29.1 | 2361 | General | М+С | bssparams.ApBssParamChange / check_beacon_sequence (элемент в каждом маяке до вступления) | bss_params | Announce и доставка STA с псевдостатичными SP/PS — нет (SP — pro, PS удалён); **ядро исполняет: элемент в маяках до вступления (core/bsschg.py)** |
 | 11.29.2 | 2361 | Moving the TBTT | М+С | bssparams.ApBssParamChange.plan(move_to) / check_beacon_sequence / sta_tx_crosses_new_tbtt (рис. 11-47) | bss_params | PLAN №38, №39, №40; после сброса TSF — bss_params_tsf |
-| 11.29.3 | 2362 | Changing beacon interval duration | М+С | bssparams.ApBssParamChange.plan(new_bi_tu) / check_beacon_sequence / check_schedule_fits (рис. 11-48) | bss_params | PLAN №38 |
+| 11.29.3 | 2362 | Changing beacon interval duration | М+С | bssparams.ApBssParamChange.plan(new_bi_tu) / check_beacon_sequence / check_schedule_fits (рис. 11-48) | bss_params | PLAN №38; **ядро исполняет: смена длительности BI со сбросом TSF (core/bsschg.py)** |
 | 11.29.4 | 2363 | Maintaining synchronization in an AP or PCP cluster | М+С | cluster.change_moves_beacon_sps / member_change / check_change_beacons | cluster | Clustering Control S-AP в каждом маяке с DMG BSS Parameter Change; член вставляет свой элемент сразу |
 | 11.29.5 | 2363 | Recommending DMG BSS parameters to the AP or PCP | М+С | bssparams.recommend / ap_answer / check_recommendation_answer | bss_params | в захватах нет |
 | 11.30 | 2364 | Spatial sharing and interference mitigation for DMG STAs | М+С | spsh.assessment_requests / monitor_request / answer / check_dcq_req / check_dcq_rep / check_rm_pair / check_overlap_allowed / measurement_antenna / SwitchBackoff (11.30.1–11.30.4) | spsh | значения ANIPI/RSNI — NOT_CHECKABLE spsh_measure; совмещение SP — should (вердикт model) |

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Общая часть DMG MAC ядра (точка и станция): сторона MAC интерфейса PHY-SAP, доступ EDCA в CBAP, NAV, последовательности
 обмена (инициатор), немедленные ответы через SIFS, Block Ack (отправитель и получатель), MAC-SAP, кадры управления
-с Ack, SLS в DTI (инициатор и ответчик), BRP setup (Capability Request).
+с Ack, SLS в DTI (инициатор и ответчик), BRP setup (Capability Request); этап 4 — BRP с TRN, сопровождение луча,
+поддержание направленной связи и политика деградации (bf.py, примесь BfMixin).
 
 Время — модельное (Fraction, мкс), решения — по событиям PHY-SAP. Сроки — ref/timing (SIFS, SBIFS, MBIFS, aSlotTime,
 AIFS, TXTIME). Правила — пункты 802.11-2020 в комментариях; принятые трактовки — README.md ядра.
@@ -30,12 +31,16 @@ from .. import cbap as C
 from .. import duration as D
 from .. import fields as F
 from ..medium import SENSITIVITY_DBM
-from ..timing import (aSlotTime, BCAST, BRPIFS, DIFS, MBIFS, SBIFS, SIFS, T_SSW, T_SSW_ACK, T_SSW_FB, txtime,
+from ..timing import (aAirPropagationTime, aSlotTime, BCAST, BRPIFS, DIFS, MBIFS, SBIFS, SIFS, T_SSW, T_SSW_ACK, T_SSW_FB, txtime,
                       txtime_control)
 from . import frames as FR
 from . import sap_mac as MS
 from . import sap_mlme as ML
 from . import sap_phy as P
+from .bf import BfMixin
+from .dti import DtiMixin
+from .bsschg import BssChangeMixin
+from .lm import LmMixin
 from .offload import AdapterCaps, Offload as OF, OffloadNav, require_supported
 from .sim import P_MAC
 
@@ -56,6 +61,7 @@ LEN = {'RTS': 20, 'DMG CTS': 20, 'CF-End': 20, 'Ack': 14, 'BlockAck': 32}
 TID = 0
 MSDU_MAX = 7920                               # табл. 9-19 (DMG): максимальная MSDU
 LA_MARGIN_DB = 3                              # запас адаптации MCS (модель)
+LA_SNR_MCS0_DB = 2                            # SNR RXVECTOR на чувствительности MCS 0 (модель: −78 дБм при шуме −80)
 DOT11_SHORT_RETRY_LIMIT = C.DOT11_SHORT_RETRY_LIMIT
 MAX_AMPDU_EXP = 5                             # DMG Capabilities: Maximum A-MPDU Length Exponent (табл. 9-251) — 2^18 − 1
 
@@ -77,10 +83,12 @@ def response_timeout(resp_mcs, gap=SIFS):
 
 def la_mcs(snr_db, max_mcs=12):
     """Адаптация MCS (модель, стандарт не задаёт): наибольшая SC MCS 1…max, для которой SNR из RXVECTOR не меньше
-    чувствительности табл. 20-3 относительно MCS 0 (−78 дБм ↔ SNR приёма control mode) плюс запас."""
+    SNR на чувствительности MCS (табл. 20-3: чувствительность MCS − чувствительность MCS 0 + SNR на чувствительности
+    MCS 0) плюс запас. (Этапы 1–3: слагаемое SNR MCS 0 стояло с минусом — MCS выбиралась на 1 дБ ниже
+    чувствительности; при сильном сигнале сценариев это не проявлялось.)"""
     best = 1
     for m in range(1, max_mcs + 1):
-        need = SENSITIVITY_DBM[str(m)] - SENSITIVITY_DBM['0'] + LA_MARGIN_DB - 2
+        need = SENSITIVITY_DBM[str(m)] - SENSITIVITY_DBM['0'] + LA_SNR_MCS0_DB + LA_MARGIN_DB
         if snr_db is not None and snr_db >= need:
             best = m
     return best
@@ -91,11 +99,17 @@ class Tx:
     """Шаг последовательности: передать PPDU. Момент — at (абсолютный) или gap после конца предыдущего события
     последовательности (своей передачи или принятого кадра); первый шаг — немедленно. expect(frames) — ожидаемый
     немедленный ответ (тайм-аут — response_timeout(resp_mcs)). trn — единиц TRN-R (BRP-RX PPDU, 20.9.2.2)."""
-    __slots__ = ('mpdus', 'mcs', 'beam', 'gap', 'at', 'agg', 'expect', 'resp_mcs', 'what', 'build', 'resp_gap', 'trn')
+    __slots__ = ('mpdus', 'mcs', 'beam', 'gap', 'at', 'agg', 'expect', 'resp_mcs', 'what', 'build', 'resp_gap', 'trn',
+                 'ptype', 'trn_awvs', 'bt', 'rx_beam', 'rx_trn', 'on_txend')
 
     def __init__(self, mpdus, mcs, beam, gap=SIFS, at=None, agg=False, expect=None, resp_mcs=0, what='', build=None,
-                 resp_gap=SIFS, trn=0):
+                 resp_gap=SIFS, trn=0, ptype=None, trn_awvs=(), bt=None, rx_beam=None, rx_trn=(), on_txend=None):
+        """ptype — PPDU_TYPE (TRN-R по умолчанию при trn > 0); trn_awvs — AWV подполей TRN-T; bt — запрос
+        сопровождения луча (BEAM_TRACKING_REQUEST); rx_beam/rx_trn — диаграмма приёма и AWV TRN-R на время ожидания
+        ответа; on_txend(t) — после PHY-TXEND.confirm."""
         self.resp_gap, self.trn = resp_gap, trn
+        self.ptype, self.trn_awvs, self.bt, self.rx_beam, self.rx_trn, self.on_txend = (ptype, trn_awvs, bt, rx_beam,
+                                                                                       rx_trn, on_txend)
         self.mpdus, self.mcs, self.beam, self.gap, self.at, self.agg = mpdus, mcs, beam, gap, at, agg
         self.expect, self.resp_mcs, self.what, self.build = expect, resp_mcs, what, build
 
@@ -128,12 +142,18 @@ class Peer:
         self.snr = None                       # SNR последнего принятого от пира PPDU (RXVECTOR)
         self.sn = 0                           # следующий SN данных TID 0 (10.3.2.14.2: <Address 1, TID>)
         self.msdus = deque()                  # MSDU без соглашения: (sn, data, sa, da, retries)
+        self.backlog = deque()                # MSDU под соглашением, ещё без SN: (data, sa, da)
         self.orig = None                      # (BA.Originator, {sn: (data, sa, da)}, AddbaReq)
         self.recip = None                     # BA.Recipient
         self.addba_wait = None                # AddbaReq, ждущий ответа
         self.max_mcs = 12
         self.max_ampdu = 8191                 # 10.12.2: до DMG Capabilities получателя — наименьший предел (exp 0)
         self.aid = None
+        self.caps = None                      # DMG Capabilities пира (9.4.2.127)
+        self.rx_beam = None                   # диаграмма приёма от пира (BRP RX-обучение; None — квази-омни)
+        self.bf_role = None                   # 'ini' / 'resp' — роль в последнем SLS (11.27.1: инициатор связи)
+        self.blm_timer = None                 # таймер поддержания связи (11.27.1, linkmaint.LinkTimer)
+        self.fails = 0                        # неудачных обменов подряд (политика деградации)
 
 
 class EdcaAc:
@@ -144,9 +164,12 @@ class EdcaAc:
 
 
 # ===================================================================================================== MAC
-class DmgMac:
+class DmgMac(BfMixin, DtiMixin, LmMixin, BssChangeMixin):
     """Общий DMG MAC. Подклассы: ap.DmgApMac, sta.DmgStaMac (кадры и процедуры роли)."""
     ROLE = None
+    Tx, Rx, Job = Tx, Rx, Job                 # для примесей (bf.py, dti.py)
+    AC_VO, AC_BE = AC_VO, AC_BE
+    _BA = BA
 
     def __init__(self, sim, addr, sectors=8, seed=0, caps=AdapterCaps(), name=None):
         self.caps = require_supported(caps)
@@ -194,6 +217,10 @@ class DmgMac:
         self._dup = {}
         self.events = []                      # (t, событие) — для тестов и отчётов
         self.counters = dict(tx_ppdu=0, rx_ok=0, rx_err=0, collisions_seen=0)
+        self._bf_init()
+        self._dti_init()
+        self._lm_init()
+        self._bsschg_init()
 
     # ------------------------------------------------------------------ служебное
     @property
@@ -226,10 +253,12 @@ class DmgMac:
         p = self.peers.get(addr)
         return p.tx_beam if p is not None and p.tx_beam is not None else P.QUASI_OMNI
 
-    def set_rx_beam(self, beam):
-        if beam != self.rx_beam:
-            self.rx_beam = beam
-            self.phy.phy_config_request(P.PhyConfigVector(RX_ANT_CONFIG=beam))
+    def set_rx_beam(self, beam, trn_awvs=()):
+        """PHY-CONFIG.request: диаграмма приёма (и AWV на подполях TRN-R — расширение модели sap_phy)."""
+        trn_awvs = tuple(trn_awvs)
+        if beam != self.rx_beam or trn_awvs != getattr(self, '_rx_trn', ()):
+            self.rx_beam, self._rx_trn = beam, trn_awvs
+            self.phy.phy_config_request(P.PhyConfigVector(RX_ANT_CONFIG=beam, RX_TRN_AWVS=trn_awvs))
 
     def next_mgmt_sn(self):
         sn = self.mgmt_sn
@@ -289,19 +318,31 @@ class DmgMac:
         frames = [FR.classify(m) for m in good]
         f0 = frames[0]
         self._nav_update(f0)
+        if f0.ra == self.addr:
+            self._last_rx_brp = f0.action == 'BRP'      # для бита Initiator (10.42.6.4.1)
+        self._sp_note_rx(f0)
         if f0.ta is not None and f0.ta in self.peers:
             self.peers[f0.ta].snr = rxv.SNR
+            self._bf_on_rx(f0, rxv)
+        if f0.ra == self.addr:
+            self._lm_rx_measure(f0, rxv)      # кадр измерения для Link Measurement (10.43.1) — lm.py
+        if getattr(self, '_rx_trn', ()) and self.seq is None:
+            self.set_rx_beam(self.rx_beam)    # AWV TRN-R — только на ожидаемый BRP-RX
         self._dispatch(frames, rxv, t0)
         self._medium_changed()
 
     # ------------------------------------------------------------------ передача
-    def _phy_tx(self, mpdus, mcs, beam, agg=False, on_end=None, trn=0):
+    def _phy_tx(self, mpdus, mcs, beam, agg=False, on_end=None, trn=0, ptype=None, trn_awvs=(), bt=None):
         assert not self.tx_on, f'{self.name}: передача поверх своей передачи'
         psdu = FR.psdu(mpdus, agg)
         self._last_tx_dur = int.from_bytes(mpdus[0][2:4], 'little')
-        # trn — BRP-RX PPDU (20.9.2.2): TRN_LEN единиц TRN-R (10.42.6.4.1)
+        f0 = FR.classify(mpdus[0])
+        self._last_tx_brp_init = f0.action == 'BRP' and bool(BRP.BeamRefinement.parse(mpdus[0][31:38]).initiator)
+        # trn — BRP PPDU (20.9.2.2): TRN_LEN единиц TRN-R (BRP-RX, 10.42.6.4.1) или TRN-T (BRP-TX: ptype TRN-T,
+        # trn_awvs — AWV подполей); bt — запрос сопровождения луча (10.42.7)
         txv = P.TxVector(MCS=mcs, LENGTH=len(psdu), AGGREGATION=P.AGGREGATED if agg else P.NOT_AGGREGATED,
-                         ANT_CONFIG=beam, TRN_LEN=trn, PPDU_TYPE=BRP.TRN_R if trn else None)
+                         ANT_CONFIG=beam, TRN_LEN=trn, PPDU_TYPE=(ptype or BRP.TRN_R) if trn else None,
+                         TRN_AWVS=tuple(trn_awvs), BEAM_TRACKING_REQUEST=bt or P.BT_NOT_REQUESTED)
         self.tx_on = True
         self._tx_cb = on_end
         self.counters['tx_ppdu'] += 1
@@ -362,7 +403,14 @@ class DmgMac:
         # 10.23.2.2 a) 4): среда занята и при ненулевом TXNAV (держатель TXOP)
         return (not self.tx_on and not self.rx_on and self.cca == P.IDLE and self.seq is None and
                 self._resp_ev is None and not self._off_resp and not self.nav.busy(now) and self.txnav_end <= now and
-                self.in_cbap(now))
+                self.in_cbap(now) and not self._sls_rss_pending())
+
+    def _sls_rss_pending(self):
+        """Ответчик SLS принял кадры ISS и ждёт её конца, чтобы начать RSS через MBIFS (10.42.6.2: «shall begin an
+        RSS MBIFS following the completion of an ISS»): своих обменов EDCA до RSS не начинать (оставшиеся кадры ISS
+        могут быть не слышны — направленная развёртка)."""
+        st = getattr(self, '_sls_rx', None)
+        return st is not None and st['ev'] is not None
 
     def _ref(self):
         r = self.phys_idle_since
@@ -403,6 +451,8 @@ class DmgMac:
         x = self.acs[ac]
         if ac == AC_BE:
             j = self._data_job()
+            if j is None and x.jobs:
+                j = x.jobs[0]                 # QoS Null поддержания связи (11.27.1), когда MSDU нет
             return j
         return x.jobs[0] if x.jobs else None
 
@@ -470,7 +520,7 @@ class DmgMac:
         """Ядро готово начать обмен со своей стороны: не передаёт, не принимает, нет своей последовательности и
         назначенного ответа, момент внутри CBAP (10.39.5). Среду, NAV и отсрочку проверяет арбитр адаптера."""
         return (not self.tx_on and not self.rx_on and self.seq is None and self._resp_ev is None and
-                not self._off_resp and self.in_cbap())
+                not self._off_resp and self.in_cbap() and not self._sls_rss_pending())
 
     def _arbiter_pick(self):
         """Работа очереди старшей AC (10.23.2.3), укладывающаяся с ответами в остаток CBAP с этого момента (10.39.5)."""
@@ -502,8 +552,9 @@ class DmgMac:
         self._off_resp = True
         self._medium_changed()
 
-    def offload_tx_start(self, kind):
+    def offload_tx_start(self, kind, ra=None):
         """Ответ адаптера в эфире (полудуплекс): своя передача и приём невозможны до offload_tx_end."""
+        self._off_kind = (kind, ra)
         self.tx_on = True
         self.counters['tx_ppdu'] += 1
         self.log('offload_response', kind=kind)
@@ -512,6 +563,8 @@ class DmgMac:
     def offload_tx_end(self):
         self.tx_on = False
         self._off_resp = False
+        kind, ra = getattr(self, '_off_kind', (None, None))
+        self._bf_on_resp_sent(kind, ra)
         if self.cca == P.IDLE and not self.rx_on:
             self.phys_idle_since = self.sim.now
         self._medium_changed()
@@ -522,14 +575,19 @@ class DmgMac:
         self._last_tx_dur = int(value)
 
     # ------------------------------------------------------------------ последовательности обмена
-    def _seq_start(self, gen, job=None, ac=None):
+    def _seq_start(self, gen, job=None, ac=None, txop_end=None):
         assert self.seq is None
+        # конец TXOP держателя (Duration BRP, 10.42.6.4.1) — оценка обмена при доступе; в SP — конец SP
+        if txop_end is None:
+            txop_end = self.sim.now + job.est(self.sim.now) if job is not None and job.est is not None else self.sim.now
         self.seq = dict(gen=gen, job=job, ac=ac, ref=self.sim.now, wait=None, timer=None, coll=None, started=False,
-                        late=False)
+                        late=False, txop_end=txop_end)
         self._seq_step(None)
 
     def _seq_step(self, value):
         s = self.seq
+        if self.rx_beam != P.QUASI_OMNI or getattr(self, '_rx_trn', ()):
+            self.set_rx_beam(P.QUASI_OMNI)    # вне ожидания ответа — квази-омни (CBAP: приём от любой STA)
         try:
             step = s['gen'].send(value)
         except StopIteration as e:
@@ -560,13 +618,18 @@ class DmgMac:
             self._medium_changed()
             return
         mpdus = step.build(self.sim.now) if step.build is not None else step.mpdus
-        self._phy_tx(mpdus, step.mcs, step.beam, step.agg, on_end=lambda: self._seq_txend(step), trn=step.trn)
+        self._phy_tx(mpdus, step.mcs, step.beam, step.agg, on_end=lambda: self._seq_txend(step), trn=step.trn,
+                     ptype=step.ptype, trn_awvs=step.trn_awvs, bt=step.bt)
 
     def _seq_txend(self, step):
         s = self.seq
         if s is None:
             return
         s['ref'] = s['tx_end'] = self.sim.now
+        if step.on_txend is not None:
+            step.on_txend(self.sim.now)
+        if step.expect is not None and (step.rx_beam is not None or step.rx_trn):
+            self.set_rx_beam(step.rx_beam or P.QUASI_OMNI, step.rx_trn)   # приём ответа (BRP, 10.42.6.4.4)
         # 10.23.2.2: TXNAV — из Duration кадра, «most recently successfully transmitted» держателем TXOP, от конца
         # PPDU: кадр без ответа — сразу, с ответом — по получении ответа (неудача TXNAV не ставит)
         s['txnav'] = (self.sim.now + self._last_tx_dur) if s['job'] is not None and self._last_tx_dur is not None \
@@ -614,6 +677,7 @@ class DmgMac:
             if w.expect(frames):
                 if s.get('txnav') is not None:
                     self.txnav_end = s['txnav']
+                self._bf_on_response(frames, rxv)
                 if s['timer'] is not None:
                     s['timer'].cancel()
                 s['wait'], s['timer'], s['ref'] = None, None, self.sim.now
@@ -649,7 +713,9 @@ class DmgMac:
         ok = bool(result)
         x = self.acs[ac]
         arb = self._arbiter_job(job)
-        if ac != AC_BE:
+        if result is not None or ac != AC_BE:
+            self._bf_on_job_done(job, ok)
+        if ac != AC_BE or job in x.jobs:
             if ok or job.retries >= DOT11_SHORT_RETRY_LIMIT or result is None:
                 if x.jobs and x.jobs[0] is job:
                     x.jobs.popleft()
@@ -661,25 +727,27 @@ class DmgMac:
             self._txop_done(ac, ok)           # отсрочку работы очереди ведёт арбитр адаптера
 
     # ------------------------------------------------------------------ немедленные ответы (10.3.2.3.3)
-    def _respond(self, mpdu, mcs, beam, kind=None, trn=0):
+    def _respond(self, mpdu, mcs, beam, kind=None, trn=0, ptype=None, trn_awvs=()):
         """Ответ через SIFS после PHY-RXEND (10.3.2.3.3). Ack/BlockAck/DMG CTS при разгрузке SIFS_RESPONSE передаёт
         адаптер (решение и кадр — его), ядро — нет."""
         if kind in ('Ack', 'BlockAck', 'DMG CTS') and self.off & OF.SIFS_RESPONSE:
             return
         if self._resp_ev is not None or self.tx_on:
             return
-        self._resp_ev = self.sim.at(self.sim.now + SIFS, self._resp_tx, mpdu, mcs, beam, trn)
+        self._resp_ev = self.sim.at(self.sim.now + SIFS, self._resp_tx, mpdu, mcs, beam, trn, ptype, trn_awvs, kind)
         self._medium_changed()
 
-    def _resp_tx(self, mpdu, mcs, beam, trn=0):
+    def _resp_tx(self, mpdu, mcs, beam, trn=0, ptype=None, trn_awvs=(), kind=None):
         if self.tx_on or self.rx_on:
             self._resp_ev = None
             self._medium_changed()
             return
+        ra = FR.classify(mpdu).ra
 
         def end():
             self._resp_ev = None
-        self._phy_tx([mpdu], mcs, beam, on_end=end, trn=trn)
+            self._bf_on_resp_sent(kind, ra)
+        self._phy_tx([mpdu], mcs, beam, on_end=end, trn=trn, ptype=ptype, trn_awvs=trn_awvs)
 
     # ------------------------------------------------------------------ приём
     def _dispatch(self, frames, rxv, t0):
@@ -695,6 +763,13 @@ class DmgMac:
             return
         if f.ra != self.addr:
             return
+        if f.kind in ('Poll', 'Grant'):
+            self._rx_dyn(f, rxv)              # динамическое распределение (10.39.7) — dti.py
+            return
+        if f.kind == 'SPR':
+            if self.ROLE == 'AP':
+                self._ap_rx_spr(f, rxv)       # продление SP (10.39.9) — dti.py
+            return
         if f.kind == 'RTS':
             # 10.3.2.9: DMG CTS через SIFS, если NAV свободен (или NAV поставил держатель TXOP — TA RTS)
             if self.nav.idle_for_rts(self.sim.now, f.ta):
@@ -708,7 +783,14 @@ class DmgMac:
                 self._respond(FR.cf_end(D.duration_cf_end(1), f.ta, self.addr), 0, self._beam_to(f.ta))
             return
         if f.kind == 'QoS Data':
+            self._bt_rx_data(f.ta, rxv)
             self._rx_qos_data(frames, rxv)
+            return
+        if f.kind == 'QoS Null':
+            # Normal Ack (табл. 9-13) через SIFS; MSDU нет (11.27.1: QoS Null — поддержание связи)
+            if self._may_rx_data(f.ta) and FR.qos_fields(f.raw)[2] == 0:
+                m = D.response_mcs('ack', rxv.MCS)
+                self._respond(FR.ack(D.duration_ack(f.dur, txtime(14, m)), f.ta), m, self._beam_to(f.ta), 'Ack')
             return
         if f.fc.type == F.TYPE_MGMT:
             if f.kind != 'Action No Ack':
@@ -770,7 +852,13 @@ class DmgMac:
             self._rx_addba(f)
             return
         if f.kind == 'Action No Ack' and f.action == 'BRP':
-            self._rx_brp(f, rxv)
+            self._rx_brp(f, rxv, self._rx_t0)
+            return
+        if f.action in ('Link Measurement Request', 'Link Measurement Report'):
+            self._rx_lm(f, rxv)               # 10.43, 11.10.11 — lm.py
+            return
+        if f.action in ('Information Request', 'Information Response'):
+            self._rx_info(f, rxv)             # 11.28 — lm.py
             return
         self._rx_mgmt_role(f, rxv)
 
@@ -831,9 +919,9 @@ class DmgMac:
                 p.orig = (orig, {}, req)
                 # MSDU, ждавшие соглашения, — под соглашение (номера — с SSN подряд, 10.25.2)
                 for (sn, data, sa, da, _r) in list(p.msdus):
-                    s = orig.enqueue(1)[0]
-                    p.orig[1][s] = (data, sa, da)
+                    p.backlog.append((data, sa, da))
                 p.msdus.clear()
+                self._ba_refill(p)
             p.addba_wait = None
             self._confirm(ML.MlmeAddbaConfirm(PeerSTAAddress=f.ta, DialogToken=resp.token, TID=resp.params.tid,
                                               ResultCode=ML.SUCCESS if ok else ML.REFUSED,
@@ -850,8 +938,8 @@ class DmgMac:
             return
         p = self.peer(ra)
         if p.orig is not None:
-            sn = p.orig[0].enqueue(1)[0]
-            p.orig[1][sn] = (req.data, req.source_address, da)
+            p.backlog.append((req.data, req.source_address, da))
+            self._ba_refill(p)
         else:
             p.msdus.append((p.sn, req.data, req.source_address, da, 0))
             p.sn = (p.sn + 1) % BA.SN_MOD
@@ -859,6 +947,14 @@ class DmgMac:
 
     def _ra_for(self, da):
         return None
+
+    def _ba_refill(self, p):
+        """SN MSDU под соглашением — только в пределах окна передачи (WinStartO … WinStartO + WinSizeO − 1, 10.25.6.2):
+        дальше SN по модулю 4096 совпали бы с ещё не подтверждёнными (10.3.2.14.2), MSDU ждут в очереди без SN."""
+        o, store, _ = p.orig
+        while p.backlog and BA.sn_off(o.next_sn, o.start) < o.size:
+            data, sa, da = p.backlog.popleft()
+            store[o.enqueue(1)[0]] = (data, sa, da)
 
     def _status(self, req_or_tuple, status):
         if isinstance(req_or_tuple, MS.MaUnitdataRequest):
@@ -899,23 +995,33 @@ class DmgMac:
         return Job(lambda mac, t: mac._seq_data(p, t), lambda t: self._data_est(p, t), ra=p.addr, name='TXOP',
                    queue=True)
 
-    def _ampdu_plan(self, p, t):
-        """Сколько MPDU в A-MPDU: в окне Block Ack (≤ 64), aPPDUMaxTime, aPSDUMaxLength, лимит TXOP и остаток CBAP."""
+    def _la(self, p):
+        """MCS к пиру: адаптация по своему SNR (взаимность канала), не выше рекомендации пира из DMG Link Margin
+        (10.43.1, lm.py)."""
+        m = la_mcs(p.snr, p.max_mcs)
+        lm = getattr(p, 'lm_mcs', None)
+        return min(m, lm) if lm else m
+
+    def _ampdu_plan(self, p, t, fits=None, rts=True, cf_end=True):
+        """Сколько MPDU в A-MPDU: в окне Block Ack (≤ 64), aPPDUMaxTime, aPSDUMaxLength, лимит TXOP и остаток CBAP.
+        fits(t, ex) — своё условие «обмен ex умещается» (SP: до конца SP); rts — с RTS/DMG CTS; cf_end — запас под
+        обмен CF-End (только TXOP EDCA)."""
+        fits = fits or self._fits
         o, store, _ = p.orig
         cand = sorted((s for s, v in o.state.items() if v in (BA.NEW, BA.RETRY) and o.in_window(s)),
                       key=lambda s: (o.state[s] != BA.RETRY, BA.sn_off(s, o.start)))
-        mcs = la_mcs(p.snr, p.max_mcs)
-        only = self._only_peer(p)
+        mcs = self._la(p)
+        only = self._only_peer(p) and cf_end
         best, plen, res = 0, 0, False
         for n in range(1, len(cand) + 1):          # длина и время растут с n — первый неподходящий n останавливает
             sub = FR.DELIM + FR.QOS_HDR + len(store[cand[n - 1]][0]) + FR.FCS_LEN
             nl = plen + (-plen % 4 if n > 1 else 0) + sub   # дополнение предыдущего подкадра до 4 октетов
-            ex = self._exchange_time(nl, mcs, True, empties=(n == len(cand) and only))
-            if not (nl <= p.max_ampdu and txtime(nl, mcs) <= 2000 and self._fits(t, ex)):
+            ex = self._exchange_time(nl, mcs, True, empties=(n == len(cand) and only), rts=rts)
+            if not (nl <= p.max_ampdu and txtime(nl, mcs) <= 2000 and fits(t, ex)):
                 if n < len(cand):
                     break
-                ex = self._exchange_time(nl, mcs, True, empties=False)
-                if nl <= p.max_ampdu and txtime(nl, mcs) <= 2000 and self._fits(t, ex):
+                ex = self._exchange_time(nl, mcs, True, empties=False, rts=rts)
+                if nl <= p.max_ampdu and txtime(nl, mcs) <= 2000 and fits(t, ex):
                     best, plen, res = n, nl, False  # последняя MSDU влезает, но без запаса под CF-End
                 break
             best, plen, res = n, nl, n == len(cand) and only
@@ -924,9 +1030,9 @@ class DmgMac:
     def _only_peer(self, p):
         return len(self._data_peers()) <= 1
 
-    def _exchange_time(self, plen, mcs, agg, empties):
+    def _exchange_time(self, plen, mcs, agg, empties, rts=True):
         resp = D.response_txtime('ba' if agg else 'ack', mcs, 32 if agg else 14)
-        t = T_RTS + SIFS + T_CTS + SIFS + txtime(plen, mcs) + SIFS + resp
+        t = (T_RTS + SIFS + T_CTS + SIFS if rts else 0) + txtime(plen, mcs) + SIFS + resp
         return t + (CF_END_RESERVE if empties else 0)
 
     def _fits(self, t, ex):
@@ -942,7 +1048,7 @@ class DmgMac:
                 return Fr(10 ** 9)
             return self._exchange_time(plen, mcs, True, res)
         sn, data, sa, da, _ = p.msdus[0]
-        mcs = la_mcs(p.snr, p.max_mcs)
+        mcs = self._la(p)
         return self._exchange_time(FR.QOS_HDR + len(data) + 4, mcs, False, True)
 
     def _ds_bits(self):
@@ -968,7 +1074,7 @@ class DmgMac:
             items = [(s, store[s], s in retry) for s in sns]
         else:
             sn, data, sa, da, r = p.msdus[0]
-            mcs = la_mcs(p.snr, p.max_mcs)
+            mcs = self._la(p)
             items = [(sn, (data, sa, da), r > 0)]
             plen = FR.QOS_HDR + len(data) + 4
             agg, res = False, False
@@ -977,10 +1083,22 @@ class DmgMac:
         resp_mcs = D.response_mcs(resp_kind, mcs, 32 if agg else 14)
         t_resp = txtime(32 if agg else 14, resp_mcs)
         t_data = txtime(plen, mcs)
+        # 10.42.7: запрос сопровождения передачи — к PPDU данных AGC и TRN-T (TXTIME — 20.11.3), если обмен с ними
+        # укладывается в CBAP и лимит TXOP
+        bt_trn, bt_awvs = self._bt_data_vector(p)
+        if bt_trn:
+            t_bt = BRP.brp_txtime(plen, mcs, bt_trn)
+            if self._fits(t, self._exchange_time(plen, mcs, agg, empties) + t_bt - t_data):
+                t_data = t_bt
+            else:
+                bt_trn, bt_awvs = 0, ()
+                p.bt_req = 'tx'                   # не уложился — на следующем PPDU
         pend = SIFS + T_CTS + SIFS + t_data + SIFS + t_resp
         # 9.2.5.2 b) 3) (TEND-NAV = 0, лимит TXOP > 0): min(TPENDING, TTXOP − TPPDU) ≤ D ≤ TTXOP − TPPDU; запас под
         # CF-End-обмен (10.23.2.10) — в пределах лимита
-        d_rts = D.field(pend + (CF_END_RESERVE if empties else 0))
+        # + 3·aAirPropagationTime: каждый ответ начинается через SIFS после конца приёма (10.3.7) — на оси передатчика
+        # TPENDING длиннее суммы TXTIME и SIFS на распространение (иначе при целом pend Duration < TPENDING)
+        d_rts = D.field(pend + 3 * aAirPropagationTime + (CF_END_RESERVE if empties else 0))
         r = yield Tx([FR.rts(d_rts, ra, self.addr)], 0, beam,
                      expect=lambda fr: fr[0].kind == 'DMG CTS' and fr[0].ra == self.addr and fr[0].ta == ra,
                      resp_mcs=0, what='RTS')
@@ -1003,7 +1121,10 @@ class DmgMac:
             return out
         exp = (lambda fr: fr[0].kind == 'BlockAck' and fr[0].ra == self.addr and fr[0].ta == ra) if agg else \
             (lambda fr: fr[0].kind == 'Ack' and fr[0].ra == self.addr)
-        r = yield Tx(None, mcs, beam, agg=agg, build=build, expect=exp, resp_mcs=resp_mcs, what='Data')
+        r = yield Tx(None, mcs, beam, agg=agg, build=build, expect=exp, resp_mcs=resp_mcs, what='Data',
+                     trn=bt_trn, ptype=P.TRN_T if bt_trn else None, trn_awvs=bt_awvs,
+                     bt=P.BT_REQUESTED if bt_trn else None,
+                     on_txend=(lambda te: self._bt_sent(p, te)) if bt_trn else None)
         if r is None:
             if agg:
                 p.orig[0].on_blockack_lost()          # 10.25.6.7: BlockAck потерян — MPDU к повтору
@@ -1022,6 +1143,7 @@ class DmgMac:
             for s in acked:
                 data, sa, da = p.orig[1].pop(s)
                 self._status((sa, da), MS.SUCCESSFUL)
+            self._ba_refill(p)
         else:
             sn, data, sa, da, _ = p.msdus.popleft()
             self._status((sa, da), MS.SUCCESSFUL)
@@ -1087,17 +1209,41 @@ class DmgMac:
     def _sls_time(self, n_init, n_resp):
         return ((n_init + n_resp) * (T_SSW + SBIFS) - 2 * SBIFS + MBIFS + MBIFS + T_SSW_FB + MBIFS + T_SSW_ACK)
 
-    def start_sls(self, peer_addr, done=None, n_resp_guess=None):
-        """SLS в DTI инициатором (MLME-BF-TRAINING.request, RequestBRP = false): ISS-TXSS по своим секторам → RSS
-        ответчика через MBIFS → SSW-Feedback через MBIFS после конца RSS → SSW-Ack (10.42.2, 10.42.6.2). Доступ —
-        EDCA (AC_VO; 10.39.5: начинать, только если SLS укладывается в CBAP)."""
+    def start_sls(self, peer_addr, done=None, n_resp_guess=None, brp=False):
+        """SLS в DTI инициатором (MLME-BF-TRAINING.request): ISS-TXSS по своим секторам → RSS ответчика через MBIFS →
+        SSW-Feedback через MBIFS после конца RSS → SSW-Ack (10.42.2, 10.42.6.2); brp (RequestBRP = true) — затем фаза
+        BRP (bf.py, 10.42.6.4.3). Доступ — EDCA (AC_VO; 10.39.5: начинать, только если SLS укладывается в CBAP)."""
         n_resp = n_resp_guess or len(self.sectors)
-        job = Job(None, lambda t: self._sls_time(len(self.sectors), n_resp), done, peer_addr, 'SLS')
-        job.gen = lambda mac, t: mac._seq_sls_init(peer_addr)
+        extra = self._brp_txn_time() + MBIFS if (brp or self.bf.brp_on_sls) else 0
+        job = Job(None, lambda t: self._sls_time(len(self.sectors), n_resp) + extra, done, peer_addr, 'SLS')
+        job.gen = lambda mac, t: mac._seq_sls_init(peer_addr, brp)
         self._enqueue(AC_VO, job)
         return job
 
-    def _seq_sls_init(self, ra):
+    def _req_MlmeBfTrainingRequest(self, prim):
+        """MLME-BF-TRAINING.request (6.3.91.2): SLS в DTI; RequestBRP = true — SLS и BRP (11.36)."""
+        peer = prim.PeerSTAAddress
+
+        def done(ok):
+            self._bf_training_done(peer, ok)
+            self._confirm(ML.MlmeBfTrainingConfirm(PeerSTAAddress=peer,
+                                                   ResultCode=ML.SUCCESS if ok else ML.BF_TIMEOUT))
+        self.sls_job = self.start_sls(peer, done=done, n_resp_guess=self._peer_sectors(peer), brp=prim.RequestBRP)
+
+    def _bf_training_done(self, peer, ok):
+        pass
+
+    def _peer_sectors(self, peer):
+        return getattr(self, 'ap_sectors', None)
+
+    def _brp_req_mine(self, on):
+        """Свои запросы BRP (поле BRP Request, 9.5.4): L-RX — единиц TRN-R для своих AWV приёма, TX-TRN-REQ — при
+        AWV передачи (10.42.2.4/10.42.2.5)."""
+        if not on:
+            return F.BrpReq()
+        return F.BrpReq(l_rx=self._rx_units(), tx_trn_req=1 if self._tx_units() else 0)
+
+    def _seq_sls_init(self, ra, brp=False):
         secs = self.sectors
         n = len(secs)
         self.set_rx_beam(P.QUASI_OMNI)
@@ -1131,17 +1277,35 @@ class DmgMac:
         my_sel = pb.fb.sector_select
         self.peer(ra).tx_beam = P.Beam(my_sel)
         snr = F.snr_quantize(Fr(best[1].SNR).limit_denominator(1000))
-        d_fb = D.duration_ssw_fb(False, False)
+        mine = self._brp_req_mine(brp)
+        # 9.3.1.16: BRP запрошен (свои L-RX/TX-TRN-REQ) — SSW-Ack + 2·MBIFS, иначе SSW-Ack + MBIFS
+        d_fb = D.duration_ssw_fb(False, bool(mine.l_rx or mine.tx_trn_req))
         fb = F.encode_frame(F.SswFbFrame(duration=d_fb, ra=ra, ta=self.addr,
                                          fb=F.SswFb(sector_select=pb.ssw.sector_id, antenna_select=pb.ssw.antenna_id,
                                                     snr_report=F.snr_report_raw(snr)),
-                                         brp=F.BrpReq(), blm=F.Blm()), with_fcs=False, abft=False)
+                                         brp=mine, blm=self.bf.blm), with_fcs=False, abft=False)
         r = yield Tx([fb], 0, P.Beam(my_sel), at=rss_end + MBIFS,
                      expect=lambda fr: fr[0].kind == 'SSW-Ack' and fr[0].ta == ra and fr[0].ra == self.addr,
                      resp_mcs=0, resp_gap=MBIFS, what='SSW-Feedback')
         # 10.42.6.2: ответ SSW-Ack ожидается через MBIFS; тайм-аут — как у немедленного ответа
-        self.peer(ra).rx_beam = P.QUASI_OMNI
-        return r is not None
+        p = self.peer(ra)
+        p.rx_beam = None
+        if r is None:
+            return False
+        ack = F.parse_frame(r[0][0].raw, with_fcs=False)
+        p.bf_role = 'ini'                     # 11.27.1: инициатор направленной связи (в CBAP — может начать ISS)
+        p.sls_alloc = self.cbap
+        self._blm_negotiated(ra, ack.blm)
+        if not (mine.l_rx or mine.tx_trn_req or ack.brp.l_rx or ack.brp.tx_trn_req):
+            self._bf_complete(ra, 'sls')
+            return True
+        # фаза BRP через MBIFS после SSW-Ack (9.3.1.16 a)); 10.42.6.4.3 — первый кадр по запросам SSW-Ack
+        req = BRP.BrpRequest(l_rx=ack.brp.l_rx, tx_trn_req=ack.brp.tx_trn_req)
+        me = self._participant(bool(mine.l_rx), bool(mine.tx_trn_req))
+        ok = yield from self._brp_txn_init(ra, req, first_gap=MBIFS, me=me)
+        if ok:
+            self._bf_complete(ra, 'brp')
+        return True
 
     def _sls_responder_rx(self, f, rxv, t0):
         """Ответчик SLS: ISS (Direction 0, адресован себе) → RSS через MBIFS после конца ISS по CDOWN."""
@@ -1162,6 +1326,7 @@ class DmgMac:
     def _sls_rss_start(self, ini):
         st = self._sls_rx
         st['done'], st['ev'] = True, None
+        self._medium_changed()
         if self.seq is not None or self.tx_on:
             return
         self._seq_start(self._seq_sls_resp(ini, st['frames']))
@@ -1183,14 +1348,30 @@ class DmgMac:
         if r is None:
             return False
         p = F.parse_frame(r[0][0].raw, with_fcs=False)
-        self.peer(ini).tx_beam = P.Beam(p.fb.sector_select, p.fb.antenna_select)   # 10.42.2.4
+        peer = self.peer(ini)
+        peer.tx_beam = P.Beam(p.fb.sector_select, p.fb.antenna_select)   # 10.42.2.4
+        peer.rx_beam = None
         snr = F.snr_quantize(Fr(r[1].SNR).limit_denominator(1000))
+        # 10.42.2.5: ответчик «may include transmit training» — свои L-RX/TX-TRN-REQ в SSW-Ack (политика brp_on_sls)
+        mine = self._brp_req_mine(self.bf.brp_on_sls)
         ack = F.encode_frame(F.SswAck(duration=D.duration_ssw_ack(p.duration), ra=ini, ta=self.addr,
                                       fb=F.SswFb(sector_select=best_p.ssw.sector_id,
                                                  antenna_select=best_p.ssw.antenna_id,
                                                  snr_report=F.snr_report_raw(snr)),
-                                      brp=F.BrpReq(), blm=F.Blm()), with_fcs=False)
-        yield Tx([ack], 0, self.peer(ini).tx_beam, gap=MBIFS, what='SSW-Ack')
+                                      brp=mine, blm=self.bf.blm), with_fcs=False)
+        yield Tx([ack], 0, peer.tx_beam, gap=MBIFS, what='SSW-Ack')
+        peer.bf_role = 'resp'
+        peer.sls_alloc = self.cbap
+        self._blm_negotiated(ini, p.blm)
+        brp = bool(mine.l_rx or mine.tx_trn_req or p.brp.l_rx or p.brp.tx_trn_req)
+        peer.brp_needs = (bool(mine.l_rx), bool(mine.tx_trn_req))
+        peer.brp_resp_done = True
+        if mine.l_rx:
+            # 10.42.6.4.3: первый BRP инициатора — BRP-RX; приём его TRN-R — перебором своих AWV (10.42.6.4.4)
+            peer.brp_st = {'rx_awvs': self._trn_r_awvs(ini)}
+            self.set_rx_beam(P.QUASI_OMNI, peer.brp_st['rx_awvs'])
+        if not brp:
+            self._bf_complete(ini, 'sls')
         self.log('sls_responder_done', peer=ini)
         self._indicate(ML.MlmeBfTrainingIndication(PeerSTAAddress=ini, ResultCode=ML.SUCCESS))
         return True
@@ -1241,19 +1422,15 @@ class DmgMac:
         except Exception:
             return 0
 
-    def _rx_brp(self, f, rxv):
+    def _rx_brp(self, f, rxv, t0=None):
         body = f.raw[24:]
         bre = BRP.BeamRefinement.parse(body[7:14])
-        n = self._brp_l_rx(f)
-        if n and not bre.cap_req and f.ra == self.addr:
-            # 10.42.6.4.1: запрос обучения приёма (L-RX > 0) — ответ BRP PPDU с L-RX·4 подполями TRN-R и
-            # RX-train-response = 1; Initiator = 0 (предыдущий принятый кадр — BRP, свой последний — не BRP с
-            # Initiator = 1); через SIFS (≥ SIFS, ≤ BRPIFS, 10.3.2.3.9). Обучение передачи (TX-TRN-REQ) — этап 4
-            m, fr = self._brp_mpdu(f.ta, 0, 0, 0, rx_train_resp=1)
-            te = self.sim.now + SIFS + BRP.brp_txtime(fr.length, 0, n)
-            m = m[:2] + BRP_dur(te, max(te, self.sim.now + f.dur)) + m[4:]
-            self._respond(m, 0, self._beam_to(f.ta), trn=n)
-            self.log('brp_rx_training_responder', peer=f.ta, l_rx=n)
+        if f.ra != self.addr:
+            return
+        if not bre.cap_req:
+            # транзакция уточнения (10.42.6.4.2) — bf.py: ответ на L-RX (BRP-RX), TX-TRN-REQ (TX-TRN-OK/обратная
+            # связь), конец setup (кадр инициатора без запросов — без ответа)
+            self._rx_brp_txn(f, rxv, self.sim.now if t0 is None else t0)
             return
         if bre.cap_req and bre.initiator:
             # 10.42.3.2: «Upon receiving a BRP PPDU with the Capability Request subfield set to 1, the responder shall
@@ -1262,6 +1439,7 @@ class DmgMac:
             te = self.sim.now + SIFS + txtime_control(fr.length)
             m = m[:2] + BRP_dur(te, self.sim.now + f.dur) + m[4:]
             self._respond(m, 0, self._beam_to(f.ta))
+            self.peer(f.ta).setup_end_wait = True    # следующий кадр инициатора — конец setup (10.42.3.2)
             self.log('brp_setup_responder', peer=f.ta)
 
 

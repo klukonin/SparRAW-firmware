@@ -23,8 +23,11 @@ CTL_NAME = {v: k for k, v in CTL_SUBTYPE.items()}
 CFE_NAME = {'dmg_cts': 'DMG CTS', 'ssw': 'SSW', 'ssw_fb': 'SSW-Feedback', 'ssw_ack': 'SSW-Ack', 'grant': 'Grant',
             'spr': 'SPR', 'poll': 'Poll', 'dmg_dts': 'DMG DTS', 'grant_ack': 'Grant Ack'}
 # Action (9.6): (Category, Action) → имя
-ACTION_NAME = {(3, 0): 'ADDBA Request', (3, 1): 'ADDBA Response', (3, 2): 'DELBA', (20, 1): 'BRP'}
+ACTION_NAME = {(3, 0): 'ADDBA Request', (3, 1): 'ADDBA Response', (3, 2): 'DELBA', (20, 1): 'BRP',
+               (5, 2): 'Link Measurement Request', (5, 3): 'Link Measurement Report',
+               (16, 2): 'Information Request', (16, 3): 'Information Response'}
 QOS_DATA = 8                    # табл. 9-1: Type 10, Subtype 1000 — QoS Data
+QOS_NULL = 12                   # табл. 9-1: Type 10, Subtype 1100 — QoS Null (no data)
 MGMT_HDR = 24                   # рис. 9-23 (без HT Control: +HTC = 0 у DMG, 9.2.4.1.10)
 QOS_HDR = 26                    # рис. 9-63: 24 + QoS Control 2 (Address 4 нет)
 FCS_LEN = 4
@@ -113,6 +116,13 @@ def qos_data(dur, a1, a2, a3, sn, payload, to_ds, from_ds, tid=0, ackpol=0, retr
     return m
 
 
+def qos_null(dur, a1, a2, a3, sn, to_ds, from_ds, tid=0, retry=0):
+    """QoS Null (9.3.2.1, табл. 9-1): заголовок QoS без тела (табл. 9-30: у DMG — только QoS Data/QoS Null);
+    Ack Policy Normal Ack (табл. 9-13)."""
+    m = qos_data(dur, a1, a2, a3, sn, b'', to_ds, from_ds, tid=tid, retry=retry)
+    return fc_bytes(F.TYPE_DATA, QOS_NULL, to_ds, from_ds, retry=retry) + m[2:]
+
+
 def ampdu_psdu(mpdus):
     """9.7.1: A-MPDU — подкадры «разделитель + MPDU (с FCS) + дополнение до 4 октетов»; у последнего подкадра
     дополнения нет (9.7.1: «except the last»)."""
@@ -179,7 +189,7 @@ def classify(raw):
         if kind == 'Ack':
             ta = None
     elif fc.type == F.TYPE_DATA:
-        kind = 'QoS Data' if fc.subtype == QOS_DATA else f'Data {fc.subtype}'
+        kind = {QOS_DATA: 'QoS Data', QOS_NULL: 'QoS Null'}.get(fc.subtype, f'Data {fc.subtype}')
     else:
         kind = MGMT_NAME.get(fc.subtype, f'Mgmt {fc.subtype}')
         if kind in ('Action', 'Action No Ack') and len(raw) >= 26:
