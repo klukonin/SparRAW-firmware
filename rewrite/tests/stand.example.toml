@@ -13,7 +13,7 @@ host = "root@192.0.2.11"
 ip = "10.60.0.11"
 ssid = "SPARRAW-STAND"        # SSID точки peer
 fw_backup = "/lib/firmware/wil6210.fw.backup"   # своя прошивка peer-точки (копируется в /tmp/sparraw-fw при загрузке)
-# modparams = "uc_trace_ms=100 fw_log_level=7"   # параметры insmod peer-точки (бывший rc.local)
+# modparams = ""              # параметры insmod peer-точки; отладку (uc_trace_ms, fw_log_level) — только в итерации, где она нужна: меняет условия прогона
 power = { kind = "tapo", addr = "192.0.2.104" }
 
 [tools]
@@ -27,5 +27,5 @@ min_down_mbps = 500
 irq_cpu = "2"                 # маска CPU прерываний wil6210 на обоих узлах (cpu1; не ядро iperf и не ядро RPS wifi)
 iperf_cpu = "4"               # маска CPU для iperf3 (taskset)
 brd_md5 = ""                  # md5 /lib/firmware/wil6210.brd обоих узлов (плата малой мощности); пусто — не проверять
-modparams = "uc_trace_ms=100 fw_log_level=7"   # параметры insmod узлов на проверяемом образе (станция peer в тесте AP — ещё no_fw_recovery=Y)
+modparams = ""                # параметры insmod узлов на проверяемом образе (станция peer в тесте AP — ещё no_fw_recovery=Y)
 max_power_cycles = 1          # снятий питания на узел за прогон, только если узел не отвечает по ssh (docs/STAND.md)
