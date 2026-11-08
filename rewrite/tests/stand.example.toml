@@ -29,3 +29,5 @@ iperf_cpu = "4"               # маска CPU для iperf3 (taskset)
 brd_md5 = ""                  # md5 /lib/firmware/wil6210.brd обоих узлов (плата малой мощности); пусто — не проверять
 modparams = ""                # параметры insmod узлов на проверяемом образе (станция peer в тесте AP — ещё no_fw_recovery=Y)
 max_power_cycles = 1          # снятий питания на узел за прогон, только если узел не отвечает по ssh (docs/STAND.md)
+reboot = "force"              # force — sync; reboot -f мимо procd (по умолчанию), init — обычный reboot
+max_fw_starts = 1             # стартов прошивки (FW ver. в dmesg) за подъём роли; больше — ошибка стенда

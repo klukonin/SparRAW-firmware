@@ -2,9 +2,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2016
 # stand_lib.sh — общее для ручных записей на стенде (rdrun.sh, bcrun.sh, assocrun.sh; подключается через «.»).
-# Узлы — node_boot.sh (docs/STAND.md): reboot, затем драйвер командой с прошивкой итерации (tmpfs, роль без commit,
-# insmod, wifi up). Однократно на каждом узле: node_boot.sh --install <host>. После загрузки — адреса 10.60.0.x,
-# sysctl, iperf3 -s: обычные команды.
+# Узлы — node_boot.sh (docs/STAND.md): reboot -f, затем драйвер командой с прошивкой итерации (tmpfs, роль без commit,
+# network reload до insmod, insmod, network.wireless up). Однократно на каждом узле: node_boot.sh --install <host>.
+# После загрузки — адреса 10.60.0.x, sysctl, iperf3 -s: обычные команды.
 #
 # Переменные (со значениями по умолчанию):
 #   AP=root@192.168.1.11  STA=root@192.168.1.12  SSID=WL60TEST  STA_NET=wl60  AP_IP=10.60.0.11  STA_IP=10.60.0.12

@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Без стенда: узел стенда (tools/stand/nodeboot.py) и загрузка ролей (stand.Stand) на подставном узле.
 
-Правило docs/STAND.md: после загрузки системы wil6210 не грузится сам; итерация — reboot → проверка lsmod →
-прошивка итерации в tmpfs → firmware_class.path → роль в uci без commit → insmod с параметрами → wifi up radio0;
-смена — только новой перезагрузкой: ни rmmod, ни modprobe -r, ни wifi down/reload; питание — только при неответе
-по ssh и не больше одного раза.
+Правило docs/STAND.md: после загрузки системы wil6210 не грузится сам; итерация — reboot -f → проверка lsmod →
+прошивка итерации в tmpfs → firmware_class.path → роль в uci без commit + один network reload (netifd без phy) →
+ожидание netifd → insmod с параметрами → phy ↔ radio0 → network.wireless up radio0 (идемпотентно, hotplug делает
+то же) → проверки, в т. ч. прошивка стартовала один раз; смена — только новой перезагрузкой: ни rmmod, ни
+modprobe -r, ни wifi down/reload/up; питание — только при неответе по ssh и не больше одного раза.
 """
 import hashlib, itertools, os, re, struct
 
@@ -17,6 +18,7 @@ BACKUP = b'vendor-fw-backup'
 SYSFW = b'flash-fw'
 LOWPWR = 'e17714311e27' + '0' * 20
 SEQ = itertools.count()     # общий порядок событий узлов стенда
+RADIO_PATH = 'platform/soc/40000000.pci/pci0000:00/0000:00:00.0/0000:01:00.0'
 
 
 def md5(b):
@@ -43,11 +45,18 @@ class Clock:
 class FakeNode:
     """Узел OpenWrt в памяти. Флеш: /lib/firmware (wil6210.fw, .brd, бэкап), /etc/modules.d/wil6210 (autoload),
     закоммиченный uci. tmpfs (пропадает с перезагрузкой): /tmp/sparraw-*, дельта uci, модули, firmware_class.path.
-    wifi up берёт роль из дельты поверх commit, прошивку — из firmware_class.path, если файл там есть, иначе из
+    setup netifd берёт роль из дельты поверх commit, прошивку — из firmware_class.path, если файл там есть, иначе из
     /lib/firmware (как fw_path[] ядра). events — шаги итерации по порядку.
 
+    netifd (wireless.uc / wireless-device.uc): конфиг радио берётся при загрузке и network reload (commit + дельта);
+    setup без phy — «PHY is undefined», set_retry(false): radio0 в down; network.wireless up / retry (hotplug
+    10-wifi-detect при insmod, если hotplug) — setup только из down, повтор — ничего. Каждый setup — старт fw
+    (+ extra_fw_restarts лишних: модель перезапусков при подъёме) и «Starting» в logread.
+
     down_s — сколько узел грузится; dead — не отвечает; dead_until_power — не возвращается после reboot, оживает
-    после снятия питания; hang_reboot — reboot не перезагружает (процесс в D), «reboot -f» — да."""
+    после снятия питания; hang_reboot — reboot не перезагружает (процесс в D), «reboot -f» — да; pending_polls —
+    сколько опросов status netifd ещё занят setup после reload; flap — станция теряет связь сразу после подключения;
+    commit_on_hotplug — hotplug закоммитил wireless; radio_path — config.path radio0 в netifd."""
 
     def __init__(self, name, clock, role='ap', down_s=70, mac='02:00:00:00:00:01', autoload=False):
         self.name, self.host, self.clock, self.down_s, self.mac = name, 'root@' + name, clock, down_s, mac
@@ -62,12 +71,22 @@ class FakeNode:
         self.dead = self.dead_until_power = self.hang_reboot = False
         self.power_cycles = 0
         self.fwerr = 0
+        self.hotplug = True
+        self.extra_fw_restarts = 0
+        self.pending_polls = 0
+        self.flap = False
+        self.commit_on_hotplug = False
+        self.radio_path = RADIO_PATH
+        self.flash[nb.WCONF] = 'cfg-committed'
         self._fresh()
 
     def _fresh(self):
         """Состояние сразу после загрузки системы."""
         self.tmp, self.delta, self.fwpath, self.running, self.insmod_args = {}, {}, '', None, None
         self.modules = {'wil6210', 'cfg80211'} if self.autoload else set()
+        # netifd после загрузки: setup с закоммиченной ролью без phy не прошёл — radio0 в down
+        self.nd_cfg, self.nd_state, self.nd_failed, self.nd_pending = dict(self.committed), 'down', True, 0
+        self.fw_starts, self.fw_ts, self.starts, self.teardowns, self.disc, self.link_calls = 0, [], 0, 0, 0, 0
         if self.autoload:            # автозагрузка: драйвер и роль из commit, прошивка с флеша
             self.running = dict(self.committed, fw=self.flash['/lib/firmware/wil6210.fw'], sig='')
 
@@ -92,6 +111,33 @@ class FakeNode:
     def ver(self):
         return self.vers.get(self.running['fw']) or 'v-' + self.running['fw'][:6]
 
+    def _setup(self):
+        """netifd setup radio0 (из down): без phy — сбой без повторов; с phy — роль из конфига netifd, старт fw."""
+        if 'wil6210' not in self.modules:
+            self.nd_failed, self.nd_state = True, 'down'
+            return
+        fw = self.tmp.get(nb.FW_TMP) if self.fwpath == nb.FWDIR and nb.FW_TMP in self.tmp else \
+            self.flash['/lib/firmware/wil6210.fw']
+        self.running = dict(self.nd_cfg, fw=fw, sig=self.tmp.get(nb.SIG, ''))
+        self.starts += 1
+        for _ in range(1 + self.extra_fw_restarts):
+            self.fw_starts += 1
+            self.fw_ts.append('%.3f' % (20 + self.fw_starts))
+        self.nd_state, self.nd_failed = 'up', False
+        self.events.append('setup')
+        self.up_seq = next(SEQ)
+
+    def _wstatus(self):
+        pending = bool(self.nd_pending)
+        self.nd_pending = max(0, self.nd_pending - 1)
+        phy = 'wil6210' in self.modules
+        out = 'w_up=%s\nw_pending=%s\nw_retry_setup_failed=%s\nw_path=%s\nw_phy=\nw_macaddr=\nphy=%s\n' % (
+            str(self.nd_state == 'up').lower(), str(pending).lower(), str(self.nd_failed).lower(),
+            self.radio_path, 'phy0' if phy else '')
+        if phy:
+            out += 'phypath=/sys/devices/%s\nphymac=%s\n' % (RADIO_PATH, self.mac)
+        return out
+
     def iw(self):
         if not self.running:
             return ''
@@ -115,7 +161,7 @@ class FakeNode:
         if 'reboot -f' in cmd:
             self._do_reboot()
             return ''
-        if re.search(r'\breboot$', cmd):
+        if re.search(r'\breboot$', cmd):     # обычный reboot (через procd)
             if not self.hang_reboot:
                 self._do_reboot()
             return ''
@@ -154,11 +200,19 @@ class FakeNode:
             self.events.append('fwpath')
             return self.fwpath
         if 'echo UCI_SET' in cmd:
-            assert 'uci commit' not in cmd
+            assert 'uci commit' not in cmd and cmd.count('ubus call network reload') == 1
+            assert cmd.index('md5sum %s' % nb.WCONF) < cmd.index('ubus call network reload')
             self.delta['mode'] = re.search(r'\.mode=(\w+)', cmd).group(1)
             self.delta['ssid'] = re.search(r'\.ssid=(\S+)', cmd).group(1).strip("'")
             self.tmp[nb.SIG] = re.search(r'echo (\w+) > ', cmd).group(1)
-            self.events.append('uci')
+            self.tmp[nb.WCONF_MD5] = self.flash[nb.WCONF]
+            self.events += ['uci', 'reload']
+            # network reload: config_init (дельта поверх commit) → config_start → start(): setup из down
+            self.nd_cfg = dict(self.committed, **self.delta)
+            self.nd_failed = False
+            if self.nd_state == 'down':
+                self._setup()
+            self.nd_pending = self.pending_polls
             return 'UCI_SET\n'
         if cmd.startswith('modprobe cfg80211'):
             self.modules.add('cfg80211')
@@ -172,30 +226,48 @@ class FakeNode:
             self.insmod_args = parts[2:]
             self.ko_md5 = self.tmp.get(nb.KO_TMP) if parts[1] == nb.KO_TMP else md5(b'sysko')
             self.events.append('insmod')
+            if self.hotplug:         # 10-wifi-detect: wifi config + network.wireless retry
+                if self.commit_on_hotplug:
+                    self.flash[nb.WCONF] = 'cfg-recommitted'
+                if self.nd_state == 'down':
+                    self._setup()
             return ''
         if cmd == nb.PHY_CMD:
             return 'phy0\n' if 'wil6210' in self.modules else ''
-        if cmd == 'wifi up radio0':
+        if cmd == nb.WSTATUS_CMD:
+            return self._wstatus()
+        if cmd == nb.UP_CMD:
             assert 'wil6210' in self.modules
-            fw = self.tmp.get(nb.FW_TMP) if self.fwpath == nb.FWDIR and nb.FW_TMP in self.tmp else \
-                self.flash['/lib/firmware/wil6210.fw']
-            self.running = dict(self.committed, **self.delta)
-            self.running.update(fw=fw, sig=self.tmp.get(nb.SIG, ''))
-            self.events.append('wifiup')
-            self.wifiup_seq = next(SEQ)
+            self.events.append('up')
+            self.nd_failed = False
+            if self.nd_state == 'down':
+                self._setup()
             return ''
         if cmd == nb.FW_READY_CMD:
             return '[ 20.0] wil6210 x: wmi_evt_ready: FW ver. %s(SW 1)\n' % self.ver() if self.running else ''
         if cmd == 'iw dev':
             return self.iw()
         if cmd == nb.LINK_CMD:
-            return 'phy0-sta0\n' if self.running and self.running['mode'] == 'sta' else ''
+            if not (self.running and self.running['mode'] == 'sta'):
+                return ''
+            self.link_calls += 1
+            if self.flap and self.link_calls >= 2:
+                if self.link_calls == 2:
+                    self.disc += 1
+                return ''
+            return 'phy0-sta0\n'
         if cmd == nb.FACTS_CMD:
             r = self.running
+            ap = r and r['mode'] == 'ap'
             return ('ver=%s\nfwerr=%d\nprobe=\nmod=%d\nfwpath=%s\nfw=%s\nko=%s\nbrd=%s\nsig=%s\n' % (
                 self.ver() if r else '', self.fwerr, 'wil6210' in self.modules, self.fwpath,
                 self.tmp.get(nb.FW_TMP, ''), getattr(self, 'ko_md5', '') if 'wil6210' in self.modules else '',
-                self.tmp.get(nb.BRD_TMP, ''), self.tmp.get(nb.SIG, ''))) + self.iw()
+                self.tmp.get(nb.BRD_TMP, ''), self.tmp.get(nb.SIG, '')) +
+                'fwstarts=%d\nfwts=%s\nstarts=%d\nteardowns=%d\napen=%d\napdis=%d\nconn=%d\ndisc=%d\nrej=0\n'
+                'cfg0=%s\ncfg=%s\n' % (
+                    self.fw_starts, ' '.join(self.fw_ts), self.starts, self.teardowns, self.starts if ap else 0,
+                    0, self.starts if r and not ap else 0, self.disc, self.tmp.get(nb.WCONF_MD5, ''),
+                    self.flash[nb.WCONF])) + self.iw()
         if cmd == 'dmesg':
             return '[   20.000000] wil6210 x: wmi_evt_ready: FW ver. %s(SW 1)\n' % self.ver() if self.running else ''
         if 'station dump' in cmd:
@@ -211,7 +283,7 @@ class FakeNode:
         return ev[i:]
 
 
-ORDER = ['reboot', 'lsmod', 'fw', 'brd', 'fwpath', 'uci', 'modprobe', 'insmod', 'wifiup']
+ORDER = ['reboot', 'lsmod', 'fw', 'brd', 'fwpath', 'uci', 'reload', 'modprobe', 'insmod', 'up']
 
 
 def assert_order(node, with_ko=False, reboot=True):
@@ -220,8 +292,8 @@ def assert_order(node, with_ko=False, reboot=True):
     if with_ko:
         want.insert(want.index('fwpath'), 'ko')
     got = []
-    for e in ev:                 # первые вхождения, проверки lsmod после insmod не в счёт
-        if e not in got:
+    for e in ev:                 # первые вхождения, проверки lsmod после insmod не в счёт; setup netifd — отдельно
+        if e not in got and e != 'setup':
             got.append(e)
     assert got[:len(want)] == want, got
 
@@ -229,6 +301,7 @@ def assert_order(node, with_ko=False, reboot=True):
 def no_restart(node):
     bad = [c for c in node.cmds if nb.FORBIDDEN.search(c) or re.search(r'\buci\s+commit\b', c)]
     assert not bad, bad
+    assert sum('ubus call network reload' in c for c in node.cmds) <= node.boot   # один reload на загрузку
 
 
 @pytest.fixture
@@ -251,7 +324,9 @@ def test_uci_script_without_commit(role, network):
     assert "uci set wireless.default_radio0.ssid='WL 60'" in lines
     assert ('uci set wireless.default_radio0.network=lan' in lines) == (network == 'lan')
     assert ('uci -q delete wireless.default_radio0.network' in lines) == (network == '')
-    assert 'uci commit' not in s and 'ubus call network reload' in lines
+    assert 'uci commit' not in s and lines.count('ubus call network reload') == 1
+    assert lines.index("md5sum /etc/config/wireless | cut -d' ' -f1 > %s" % nb.WCONF_MD5) < \
+        lines.index('ubus call network reload')
     assert lines[-1] == 'echo UCI_SET'
     assert not nb.FORBIDDEN.search(s) and 'reboot' not in s and 'insmod' not in s
 
@@ -278,7 +353,8 @@ def test_spec_needs_explicit_firmware_and_sane_params():
 
 
 @pytest.mark.parametrize('cmd', ['rmmod wil6210', 'modprobe -r wil6210', 'modprobe -qr wil6210', 'wifi down',
-                                 'wifi reload', 'x; wifi down radio0'])
+                                 'wifi reload', 'x; wifi down radio0', 'wifi up radio0', 'wifi', 'true; wifi',
+                                 'wifi reconf', 'a\n  wifi\nb'])
 def test_check_cmd_forbids_restart(cmd):
     with pytest.raises(nb.StandError, match='запрещённая'):
         nb.check_cmd(cmd)
@@ -286,7 +362,8 @@ def test_check_cmd_forbids_restart(cmd):
 
 def test_check_cmd_allows_iteration_commands():
     for c in ('modprobe cfg80211; grep -c x /proc/modules', 'insmod /tmp/sparraw-drv/wil6210.ko no_fw_recovery=Y',
-              'wifi up radio0', nb.FACTS_CMD, nb.install_script(), nb.RC_SETTLE_CMD):
+              nb.UP_CMD, nb.WSTATUS_CMD, nb.FACTS_CMD, nb.install_script(), nb.RC_SETTLE_CMD, 'wifi status',
+              nb.uci_script(nb.Spec('ap', 'X', fw=b'x'), 's')):
         nb.check_cmd(c)
     nb.check_cmd('wifi down radio0', allow_wifi_down=True)
     with pytest.raises(nb.StandError):
@@ -323,7 +400,130 @@ def test_iteration_order(clock):
     assert n.running['mode'] == 'ap' and n.running['fw'] == md5(fw) and n.committed['mode'] == 'sta'  # флеш не тронут
     assert n.flash['/lib/firmware/wil6210.fw'] == md5(SYSFW)
     assert n.power_cycles == 0 and n.boot == 2
+    assert n.fw_starts == 1 and n.starts == 1 and rep.facts['fwstarts'] == '1'
+    assert any('reboot -f' in c for c in n.cmds) and not any(re.search(r'\breboot$', c) for c in n.cmds)
     no_restart(n)
+
+
+def test_reload_once_before_insmod_then_idempotent_up(clock):
+    """Один network reload — до insmod (netifd берёт роль без phy, setup не проходит и прошивку не трогает), затем
+    ожидание netifd, insmod, network.wireless up; hotplug уже поднял радио — up ничего не перезапускает."""
+    n = FakeNode('n', clock, role='sta')
+    n.pending_polls = 3
+    rep = nb.boot(n, nb.Spec('ap', 'X', 'lan', fw=fw_blob('a')))
+    assert rep.ok, rep.problems
+    c = n.cmds
+    ins = next(i for i, x in enumerate(c) if x.startswith('insmod '))
+    rel = [i for i, x in enumerate(c) if 'ubus call network reload' in x]
+    assert len(rel) == 1 and rel[0] < ins
+    assert sum(x == nb.WSTATUS_CMD for x in c[rel[0]:ins]) >= 4          # ждал, пока netifd занят setup без phy
+    assert c.index(nb.UP_CMD) > ins and not any(x.startswith('wifi ') for x in c)
+    ev = n.iteration_events()
+    assert ev.index('setup') < ev.index('up')                            # поднял hotplug, up — no-op
+    assert n.fw_starts == 1 and n.starts == 1
+
+
+def test_up_without_hotplug(clock):
+    """hotplug не сработал — радио поднимает network.wireless up, тоже один раз."""
+    n = FakeNode('n', clock)
+    n.hotplug = False
+    rep = nb.boot(n, nb.Spec('sta', 'X', fw=fw_blob('a')))
+    assert rep.ok and rep.link, rep.problems
+    ev = n.iteration_events()
+    assert ev.index('up') < ev.index('setup') and n.fw_starts == 1
+
+
+def test_fw_restarts_at_bringup_are_error(clock):
+    """Прошивка стартовала 4 раза при подъёме (как на точке-вендоре 2026-11-08) — ошибка стенда."""
+    n = FakeNode('n', clock)
+    n.extra_fw_restarts = 3
+    rep = nb.boot(n, nb.Spec('ap', 'X', fw=fw_blob('a')))
+    assert 'restart' in rep.kinds and rep.hard
+    assert any('прошивка перезапускалась 4 раз при подъёме' in p and '21.000 22.000 23.000 24.000' in p
+               for p in rep.problems), rep.problems
+    m = FakeNode('m', clock)
+    m.extra_fw_restarts = 1
+    assert nb.boot(m, nb.Spec('ap', 'X', fw=fw_blob('a'), max_fw_starts=2)).ok        # настройка допуска
+    k = FakeNode('k', clock)
+    k.extra_fw_restarts, k.fwerr = 1, 1
+    rep = nb.boot(k, nb.Spec('ap', 'X', fw=fw_blob('a')))
+    assert rep.kinds == {'restart', 'fwerr'} and not rep.hard          # восстановление после FW error — предмет тестов
+
+
+def test_role_restart_is_error(clock, monkeypatch):
+    n = FakeNode('n', clock)
+    orig = n._setup
+
+    def twice():
+        orig()
+        if 'wil6210' in n.modules:
+            n.starts += 1
+            n.teardowns += 1
+    monkeypatch.setattr(n, '_setup', twice)
+    rep = nb.boot(n, nb.Spec('ap', 'X', fw=fw_blob('a')))
+    assert rep.hard and any('«Starting» ×2, «Tearing down» ×1' in p for p in rep.problems), rep.problems
+
+
+def test_sta_disconnect_after_link(clock):
+    n = FakeNode('n', clock)
+    n.flap = True
+    rep = nb.boot(n, nb.Spec('sta', 'X', fw=fw_blob('a')))
+    assert rep.kinds == {'link'} and not rep.link
+    assert any('связь пропала за %d с после связи (CTRL-EVENT-DISCONNECTED ×1)' % nb.STABLE_S in p
+               for p in rep.problems), rep.problems
+
+
+def test_peer_sta_without_link_skips_window_link_check(clock):
+    n = FakeNode('n', clock)
+    n.flap = True
+    rep = nb.boot(n, nb.Spec('sta', 'X', fw=fw_blob('a')), link=False)
+    assert rep.ok, rep.problems
+
+
+def test_commit_during_bringup_is_error(clock):
+    n = FakeNode('n', clock)
+    n.commit_on_hotplug = True
+    rep = nb.boot(n, nb.Spec('ap', 'X', fw=fw_blob('a')))
+    assert 'commit' in rep.kinds and rep.hard
+
+
+def test_radio_not_pointing_to_phy_stops_before_up(clock):
+    n = FakeNode('n', clock)
+    n.radio_path = 'platform/soc/other.pci/0000:01:00.0'
+    with pytest.raises(nb.StandError, match='не указывает на phy'):
+        nb.boot(n, nb.Spec('ap', 'X', fw=fw_blob('a')))
+    assert nb.UP_CMD not in n.cmds
+
+
+def test_netifd_without_radio0_stops_before_insmod(clock, monkeypatch):
+    n = FakeNode('n', clock)
+    orig = n._answer
+    monkeypatch.setattr(n, '_answer', lambda c, i: '' if c == nb.WSTATUS_CMD else orig(c, i))
+    with pytest.raises(nb.StandError, match='не знает radio0'):
+        nb.boot(n, nb.Spec('ap', 'X', fw=fw_blob('a')))
+    assert not any(c.startswith('insmod') for c in n.cmds)
+
+
+@pytest.mark.parametrize('w,ok', [
+    ({'phy': 'phy0', 'phypath': '/sys/devices/a/b/0000:01:00.0', 'w_path': 'a/b/0000:01:00.0'}, True),
+    ({'phy': 'phy0', 'phypath': '/sys/devices/a/b/0000:01:00.0', 'w_path': 'a/b/0000:01:00.0+1'}, True),
+    ({'phy': 'phy0', 'phypath': '/sys/devices/a/b/0000:02:00.0', 'w_path': 'a/b/0000:01:00.0'}, False),
+    ({'phy': 'phy0', 'w_phy': 'phy0'}, True),
+    ({'phy': 'phy0', 'w_macaddr': '02:00:00:00:00:AA', 'phymac': '02:00:00:00:00:aa'}, True),
+    ({'phy': 'phy0'}, False),
+    ({'phy': '', 'w_path': 'x'}, False)])
+def test_radio_matches_phy(w, ok):
+    assert nb.radio_matches_phy(w)[0] == ok
+
+
+def test_reboot_modes(clock):
+    n = FakeNode('n', clock)
+    nb.reboot(n)
+    assert n.cmds[-1] == 'sync; sleep 1; sync; reboot -f'
+    nb.reboot(n, mode='init')
+    assert n.cmds[-1] == 'sync; sleep 1; sync; reboot'
+    with pytest.raises(nb.StandError, match='режим перезагрузки'):
+        nb.reboot(n, mode='soft')
 
 
 def test_system_module_when_no_ko(clock):
@@ -411,10 +611,11 @@ def test_no_power_callback_means_error(clock):
 
 
 def test_hung_reboot_forced_once(clock):
+    """Режим 'init' (обычный reboot через procd) завис — один reboot -f."""
     n = FakeNode('n', clock)
     n.hang_reboot = True
     calls = []
-    rep = nb.boot(n, nb.Spec('ap', 'X', fw=b'f'), power=lambda w: calls.append(w))
+    rep = nb.boot(n, nb.Spec('ap', 'X', fw=b'f'), power=lambda w: calls.append(w), reboot_mode='init')
     assert rep.ok and calls == []
     assert sum('reboot -f' in c for c in n.cmds) == 1
 
@@ -487,12 +688,31 @@ def test_stand_boot_ap_and_teardown(mkstand):
     assert fp.insmod_args == ['fw_log_level=7', 'no_fw_recovery=Y']
     assert any('nft insert rule inet fw4 input iifname phy0-ap0 accept' in c for c in fd.cmds)
     # точка грузится раньше станции
-    assert fd.wifiup_seq < fp.wifiup_seq
+    assert fd.up_seq < fp.up_seq
     b = fp.boot
     s.teardown()                                     # peer — станция с драйвером: перезагрузка и точка
     assert fp.boot == b + 1 and fp.running['mode'] == 'ap' and fp.running['fw'] == md5(BACKUP)
     assert_order(fp)
     no_restart(fd), no_restart(fp)
+
+
+def test_stand_reboot_mode_and_fw_starts_from_config(mkstand):
+    s, fd, fp = mkstand()
+    assert s.reboot_mode == 'force' and s.max_fw_starts == 1
+    s.t['reboot'], s.reboot_mode, s.max_fw_starts = 'init', 'init', 3
+    s.boot_sta()
+    assert any(re.search(r'\breboot$', c) for c in fd.cmds) and not any('reboot -f' in c for c in fd.cmds)
+    assert s.dut_sta_spec().max_fw_starts == 3 and s.peer_ap_spec().max_fw_starts == 3
+    cfg = dict(s.cfg, test=dict(s.t, reboot='soft'))
+    with pytest.raises(standlib.StandError, match='reboot'):
+        standlib.Stand(cfg, s.fw_path)
+
+
+def test_stand_fw_restart_is_stand_error(mkstand):
+    s, fd, fp = mkstand()
+    fd.extra_fw_restarts = 3
+    with pytest.raises(standlib.StandError, match='прошивка перезапускалась 4 раз'):
+        s.boot_sta()
 
 
 def test_stand_restart_peer_is_reboot(mkstand):

@@ -5,15 +5,25 @@
 Однократно (install, `node_boot.sh --install <host>`): автозагрузка wil6210 снимается — /etc/modules.d/wil6210 в
 бэкап /etc/sparraw-stand.modules.d.wil6210. После загрузки системы драйвера нет; netifd без phy просто ждёт.
 
-Итерация (boot): reboot → ssh с новым boot_id → проверка «wil6210 не загружен» → прошивка итерации в tmpfs
+Итерация (boot): «sync; sleep 1; sync; reboot -f» (настройка reboot_mode: 'force' по умолчанию, 'init' — обычный
+reboot через procd) → ssh с новым boot_id → проверка «wil6210 не загружен» → прошивка итерации в tmpfs
 (/tmp/sparraw-fw/wil6210.fw, рядом копия платы /lib/firmware/wil6210.brd с проверкой md5), путь поиска прошивки
 ядра firmware_class.path = /tmp/sparraw-fw (ищется ПЕРВЫМ: fw_path[] в drivers/base/firmware_loader/main.c), флеш не
 трогается → роль в uci БЕЗ commit (дельта в /tmp/.uci: netifd читает её — libuci по умолчанию UCI_FLAG_SAVED_DELTA,
-savedir /tmp/.uci; после перезагрузки узел чистый) + `ubus call network reload` → modprobe cfg80211 (зависимости) →
-insmod <модуль> <параметры итерации> → появился phy → `wifi up radio0` (первый подъём, не перезапуск) → проверки:
-версия fw в dmesg, md5 fw и модуля, плата, путь прошивки, интерфейс роли, связь станции.
+savedir /tmp/.uci; после перезагрузки узел чистый) + ОДИН `ubus call network reload` до insmod: netifd получает
+роль, пока phy нет, его попытка setup кончается «PHY is undefined» и set_retry(false) — радио ждёт в down без
+повторов, прошивку это не трогает → дождаться, пока netifd закончит (status radio0: pending false) → modprobe
+cfg80211 → insmod <модуль> <параметры итерации> → появился phy, radio0 netifd указывает на него (config.path) →
+`ubus call network.wireless up '{"device":"radio0"}'` (идемпотентно: start() при setup/up ничего не делает; тот
+же подъём делает hotplug 10-wifi-detect вызовом network.wireless retry — кто первый, тот и поднял, второй — no-op).
+`wifi up` НЕ используется: /sbin/wifi up = network.wireless down + network reload + up, то есть перезапуск
+(teardown → setup), и в гонке с hotplug давал 4 старта прошивки подряд.
+Проверки: radio0 up в netifd, версия fw в dmesg, прошивка стартовала ровно один раз («FW ver.» в dmesg — не больше
+Spec.max_fw_starts), роль поднята один раз (wifi-scripts «Starting» ×1, «Tearing down» ×0, hostapd без AP-DISABLED),
+/etc/config/wireless не изменился (commit не случился), md5 fw и модуля, плата, путь прошивки, интерфейс роли, у
+станции — связь и ни одного Disconnect за STABLE_S секунд после неё.
 
-Запрещено (check_cmd): rmmod, modprobe -r, wifi down/reload — смена прошивки, модуля и роли только новой
+Запрещено (check_cmd): rmmod, modprobe -r, wifi down/reload/up/reconf — смена прошивки, модуля и роли только новой
 перезагрузкой. Питание снимается только если узел не отвечает по ssh после перезагрузки, не больше одного раза
 (колбэк power решает, разрешено ли ещё).
 
@@ -40,6 +50,18 @@ MODCONF = '/etc/modules.conf'
 MODMARK = '# sparraw-stand'
 RADIO = 'wireless.radio0'
 IFACE = 'wireless.default_radio0'
+WCONF = '/etc/config/wireless'
+WCONF_MD5 = '/tmp/sparraw-stand.wireless.md5'   # md5 закоммиченного wireless до подъёма (commit не должен случиться)
+
+# Перезагрузка узла. 'force' (по умолчанию): busybox reboot -f (init/halt.c) — sync() и сразу системный вызов reboot,
+# мимо procd: шаг shutdown inittab (/etc/init.d/rcS K shutdown — network stop → wifi teardown → hostapd снимает
+# интерфейсы → wil_down с fw) не выполняется, зависнуть на остановке драйвера нечему. Флеш: перед вызовом
+# «sync; sleep 1; sync» и sync() самого busybox; итерация на флеш ничего не пишет (роль — дельта в /tmp, прошивка —
+# tmpfs). Ядро всё равно делает device_shutdown() (.shutdown драйверов; у wil6210 его нет). 'init' — обычный reboot
+# (сигнал procd: shutdown-скрипты, SIGTERM/SIGKILL всем, sync, reboot) — на .11 7 раз за 2026-11-08 не вернулся.
+REBOOT_CMDS = {'force': 'sync; sleep 1; sync; reboot -f', 'init': 'sync; sleep 1; sync; reboot'}
+REBOOT_MODE = 'force'
+MAX_FW_STARTS = 1         # wmi_evt_ready за подъём роли: прошивка стартует один раз
 
 # Время (с): узел wAP 60G грузится ~60–90 с
 BOOT_TIMEOUT = 300        # от reboot до ssh с новым boot_id
@@ -50,6 +72,9 @@ PHY_TIMEOUT = 30          # от insmod до /sys/class/ieee80211/phy*
 FW_TIMEOUT = 120          # от wifi up до wmi_evt_ready
 IFACE_TIMEOUT = 60        # от wmi_evt_ready до интерфейса в нужной роли
 LINK_TIMEOUT = 120        # станция: до «Connected»
+NETIFD_IDLE_TIMEOUT = 45  # от network reload до конца попытки setup без phy (таймаут скрипта netifd — 30 с)
+UP_TIMEOUT = 90           # от network.wireless up до radio0 up в netifd
+STABLE_S = 10             # после подъёма: окно без перезапусков fw/роли и без Disconnect станции
 
 _sleep = time.sleep       # подменяются в юнит-тесте
 _now = time.monotonic
@@ -61,12 +86,15 @@ class StandError(Exception):
 
 # ============================== запреты ==============================
 
-FORBIDDEN = re.compile(r'\brmmod\b|\bmodprobe\b[^;&|]*\s-[a-z]*r|\bwifi\s+(down|reload)\b')
+# /sbin/wifi (wifi-scripts): up и голый wifi = network.wireless down + network reload + up — перезапуск радио;
+# reconf = reload + reconf; reload = network reload. Подъём итерации — только network.wireless up (load()).
+FORBIDDEN = re.compile(r'\brmmod\b|\bmodprobe\b[^;&|]*\s-[a-z]*r|\bwifi\s+(down|reload|up|reconf)\b'
+                       r'|(?:^|[;&|(])\s*wifi\s*(?:$|[;&|)])', re.M)
 
 
 def check_cmd(cmd, allow_wifi_down=False):
-    """Команда на узел не перезапускает драйвер: rmmod, modprobe -r, wifi reload — никогда; wifi down — только как
-    предмет проверки (test_ap_stop), allow_wifi_down=True."""
+    """Команда на узел не перезапускает драйвер: rmmod, modprobe -r, wifi up/reload/reconf — никогда; wifi down —
+    только как предмет проверки (test_ap_stop), allow_wifi_down=True."""
     m = FORBIDDEN.search(cmd)
     if m and not (allow_wifi_down and re.fullmatch(r'wifi\s+down', m.group(0))):
         raise StandError('запрещённая команда «%s» в «%s»: смена драйвера, прошивки, роли — только перезагрузкой '
@@ -117,10 +145,12 @@ class Spec:
     modparams параметры insmod («no_fw_recovery=Y fw_log_level=7») или None
     brd_md5   ожидаемый md5 платы (можно префикс от 8 знаков) или None
     wait_link станция: ждать связь с точкой при проверке
+    max_fw_starts  сколько стартов прошивки (wmi_evt_ready) допустимо за подъём роли; больше — ошибка «прошивка
+              перезапускалась N раз при подъёме»
     """
 
     def __init__(self, role, ssid, network=None, fw=None, fw_node=None, ko=None, uci=(), modparams=None,
-                 brd_md5=None, wait_link=True, link_timeout=LINK_TIMEOUT):
+                 brd_md5=None, wait_link=True, link_timeout=LINK_TIMEOUT, max_fw_starts=MAX_FW_STARTS):
         if role not in ('ap', 'sta'):
             raise StandError('роль %r: нужна ap или sta' % role)
         if (fw is None) == (not fw_node):
@@ -135,6 +165,7 @@ class Spec:
         self.modparams = ' '.join(mp) or None
         self.brd_md5 = brd_md5 or None
         self.wait_link, self.link_timeout = wait_link, link_timeout
+        self.max_fw_starts = int(max_fw_starts)
 
     @property
     def fw_ver(self):
@@ -169,8 +200,10 @@ def signature(spec, fw_md5, ko_md5):
 # ============================== команды на узле ==============================
 
 def uci_script(spec, sig):
-    """Роль без commit (дельта в /tmp/.uci), ubus call network reload — netifd берёт роль до появления phy;
-    подпись итерации в /tmp. Последняя строка вывода — UCI_SET."""
+    """Роль без commit (дельта в /tmp/.uci), md5 закоммиченного wireless (проверка «commit не случился»), один
+    ubus call network reload — netifd берёт роль ДО появления phy (config_init → update → setup без phy →
+    «PHY is undefined», set_retry(false): радио ждёт в down, прошивка не трогается; при подъёме после phy роль уже
+    та); подпись итерации в /tmp. Последняя строка вывода — UCI_SET."""
     q = shlex.quote
     L = ['uci set %s.disabled=0' % RADIO,
          'uci set %s.disabled=0' % IFACE,
@@ -181,7 +214,8 @@ def uci_script(spec, sig):
     elif spec.network is not None:
         L.append('uci set %s.network=%s' % (IFACE, q(spec.network)))
     L += spec.uci
-    L += ['ubus call network reload', 'echo %s > %s' % (sig, SIG), 'echo UCI_SET']
+    L += ["md5sum %s | cut -d' ' -f1 > %s" % (WCONF, WCONF_MD5),
+          'ubus call network reload', 'echo %s > %s' % (sig, SIG), 'echo UCI_SET']
     return '\n'.join(L) + '\n'
 
 
@@ -228,12 +262,38 @@ FACTS_CMD = (
     'echo "ko=$( (md5sum %s 2>/dev/null || md5sum %s 2>/dev/null) | cut -d\' \' -f1)"; '
     'echo "brd=$(md5sum %s 2>/dev/null | cut -d\' \' -f1)"; '
     'echo "sig=$(cat %s 2>/dev/null)"; '
-    'iw dev 2>/dev/null' % (FWPATH, FW_TMP, KO_TMP, KO_SYS, BRD_TMP, SIG))
+    # подъём роли: сколько раз стартовала прошивка (wmi_evt_ready) и когда; netifd — запуски скрипта setup
+    # радио (wifi-scripts «Starting»/«Tearing down», строки netifd «radio0 (pid): …»); hostapd/wpa_supplicant
+    'echo "fwstarts=$(dmesg | grep -c \'FW ver\\. \')"; '
+    'echo "fwts=$(dmesg | sed -n \'s/^\\[ *\\([0-9.]*\\)\\].*FW ver\\. .*/\\1/p\' | tr \'\\n\' \' \')"; '
+    'L=$(logread 2>/dev/null); '
+    'echo "starts=$(echo "$L" | grep -c \'radio0 ([0-9]*): wifi-scripts: Starting\')"; '
+    'echo "teardowns=$(echo "$L" | grep -c \'radio0 ([0-9]*): wifi-scripts: Tearing down\')"; '
+    'echo "apen=$(echo "$L" | grep -c \'AP-ENABLED\')"; '
+    'echo "apdis=$(echo "$L" | grep -c \'AP-DISABLED\')"; '
+    'echo "conn=$(echo "$L" | grep -c \'CTRL-EVENT-CONNECTED\')"; '
+    'echo "disc=$(echo "$L" | grep -c \'CTRL-EVENT-DISCONNECTED\')"; '
+    'echo "rej=$(echo "$L" | grep -c \'CTRL-EVENT-ASSOC-REJECT\')"; '
+    'echo "cfg0=$(cat %s 2>/dev/null)"; '
+    'echo "cfg=$(md5sum %s 2>/dev/null | cut -d\' \' -f1)"; '
+    'iw dev 2>/dev/null' % (FWPATH, FW_TMP, KO_TMP, KO_SYS, BRD_TMP, SIG, WCONF_MD5, WCONF))
 
 LINK_CMD = ('for I in $(iw dev | sed -n "s/.*Interface //p"); do iw dev $I link 2>/dev/null | grep -q Connected && '
             'echo $I; done')
 FW_READY_CMD = "dmesg | grep -m1 -E 'FW ver\\. |Firmware error'"
 BOOT_ID_CMD = 'cat /proc/sys/kernel/random/boot_id'
+# Состояние radio0 в netifd (wireless-device.uc status(): up, pending — идёт setup/teardown, retry_setup_failed) и
+# чем radio0 указывает на phy (config.path / phy / macaddr — как find_phy() в wifi/utils.uc), рядом — сам phy
+WSTATUS_CMD = ("S=$(ubus call network.wireless status '{\"device\":\"radio0\"}' 2>/dev/null); "
+               "j() { echo \"$S\" | jsonfilter -e \"$1\" 2>/dev/null; }; "
+               "for k in up pending retry_setup_failed; do echo \"w_$k=$(j @.radio0.$k)\"; done; "
+               "for k in path phy macaddr; do echo \"w_$k=$(j @.radio0.config.$k)\"; done; "
+               "P=$(ls /sys/class/ieee80211 2>/dev/null | head -1); echo \"phy=$P\"; "
+               "[ -z \"$P\" ] || { echo \"phypath=$(readlink -f /sys/class/ieee80211/$P/device)\"; "
+               "echo \"phymac=$(cat /sys/class/ieee80211/$P/macaddress)\"; }")
+# Подъём радио: wireless.uc ubus up → wdev start(): autostart, сброс retry, setup только из state down — повтор и
+# гонка с hotplug (network.wireless retry) ничего не перезапускают. НЕ /sbin/wifi up (= down + reload + up).
+UP_CMD = 'ubus call network.wireless up \'{"device":"radio0"}\''
 PHY_CMD = 'ls /sys/class/ieee80211/ 2>/dev/null | head -1'
 # rc.local узла упоминает wil6210 — дождаться uptime RC_SETTLE и конца «sh /etc/rc.local» (/etc/init.d/done). Имя файла
 # в тексте команды не встречается целиком: ps видит и sh -c самой команды — иначе она нашла бы саму себя
@@ -314,11 +374,15 @@ def uninstall(node, log=None):
     return 'UNINSTALLED' in out
 
 
-def reboot(node, log=None):
-    """sync и reboot. Возвращает boot_id до перезагрузки (ожидание — wait_up)."""
+def reboot(node, log=None, mode=None):
+    """sync и перезагрузка: mode 'force' (по умолчанию REBOOT_MODE) — reboot -f мимо procd, 'init' — обычный reboot
+    (REBOOT_CMDS). Возвращает boot_id до перезагрузки (ожидание — wait_up)."""
+    mode = mode or REBOOT_MODE
+    if mode not in REBOOT_CMDS:
+        raise StandError('режим перезагрузки %r: нужен %s' % (mode, ' или '.join(sorted(REBOOT_CMDS))))
     old = boot_id(node)
-    node.sh('sync; sleep 1; sync; reboot', 20)
-    (log or (lambda s: None))('%s: reboot' % node.name)
+    node.sh(REBOOT_CMDS[mode], 20)
+    (log or (lambda s: None))('%s: %s' % (node.name, REBOOT_CMDS[mode].rsplit('; ', 1)[-1]))
     return old
 
 
@@ -367,9 +431,33 @@ def check_clean(node):
                          '--install %s' % (node.name, getattr(node, 'host', node.name)))
 
 
+def wstatus(node):
+    """Разбор WSTATUS_CMD: w_up/w_pending/w_retry_setup_failed ('true'/'false'/'' — radio0 нет в netifd),
+    w_path/w_phy/w_macaddr — чем radio0 указывает на phy, phy/phypath/phymac — сам phy."""
+    return dict(re.findall(r'^(\w+)=(.*)$', _q(node, WSTATUS_CMD), re.M))
+
+
+def radio_matches_phy(w):
+    """radio0 в netifd указывает на найденный phy — как find_phy() wifi-scripts (wifi/utils.uc): config.path —
+    хвост realpath /sys/class/ieee80211/<phy>/device (до «+»), иначе config.phy — имя, иначе config.macaddr.
+    Возвращает (да/нет, чем сверено)."""
+    if not w.get('phy'):
+        return False, 'phy нет'
+    if w.get('w_path'):
+        path = w['w_path'].split('+')[0]
+        return (w.get('phypath') or '').endswith(path), 'path %s ↔ %s' % (path, w.get('phypath'))
+    if w.get('w_phy'):
+        return w['w_phy'] == w['phy'], 'phy %s ↔ %s' % (w['w_phy'], w['phy'])
+    if w.get('w_macaddr'):
+        return w['w_macaddr'].lower() == (w.get('phymac') or '').lower(), 'macaddr %s ↔ %s' % (w['w_macaddr'],
+                                                                                            w.get('phymac'))
+    return False, 'у radio0 нет ни path, ни phy, ни macaddr'
+
+
 def load(node, spec, log=None):
     """Драйвер итерации на только что загруженном узле: прошивка и плата в tmpfs, путь firmware_class, роль в uci
-    без commit, insmod с параметрами, wifi up radio0. Возвращает ожидаемые md5 {'fw', 'ko'}."""
+    без commit и один network reload (до insmod), ожидание netifd, insmod с параметрами, phy ↔ radio0,
+    network.wireless up radio0. Возвращает ожидаемые md5 {'fw', 'ko'}."""
     log = log or (lambda s: None)
     check_clean(node)
     if not _wait(lambda: _q(node, RC_SETTLE_CMD).strip(), RC_SETTLE + 60, 5):
@@ -400,6 +488,14 @@ def load(node, spec, log=None):
     out = _sh(node, uci_script(spec, signature(spec, want['fw'], want['ko'])), 60)
     if 'UCI_SET' not in out:
         raise StandError('%s: роль в uci не выставлена: %s' % (node.name, out[-300:]))
+    # reload запустил setup radio0 без phy — дождаться его конца, чтобы insmod не попал в середину попытки
+    w = _wait(lambda: (lambda w: w if w.get('w_pending') == 'false' else None)(wstatus(node)),
+              NETIFD_IDLE_TIMEOUT, 1)
+    if not w:
+        w = wstatus(node)
+        raise StandError('%s: netifd %s за %d с после network reload' % (
+            node.name, 'не знает radio0 (network.wireless status пуст)' if not w.get('w_pending')
+            else 'не закончил setup radio0', NETIFD_IDLE_TIMEOUT))
     if _sh(node, "modprobe cfg80211; grep -c '^cfg80211 ' /proc/modules").strip() != '1':
         raise StandError('%s: cfg80211 не загрузился (modprobe cfg80211)' % node.name)
     ko = KO_TMP if spec.ko is not None else KO_SYS
@@ -408,17 +504,22 @@ def load(node, spec, log=None):
         raise StandError('%s: wil6210 не загрузился (insmod %s)' % (node.name, ko))
     if not _wait(lambda: _q(node, PHY_CMD).strip(), PHY_TIMEOUT, 1):
         raise StandError('%s: нет phy wil6210 за %d с после insmod' % (node.name, PHY_TIMEOUT))
-    _sh(node, 'wifi up radio0', 60)
-    log('%s: insmod %s %s; роль %s, SSID %s (uci без commit); wifi up radio0'
-        % (node.name, ko, spec.modparams or '', spec.role, spec.ssid))
+    ok, how = radio_matches_phy(wstatus(node))
+    if not ok:
+        raise StandError('%s: radio0 в netifd не указывает на phy wil6210 (%s) — wifi-scripts ответят «PHY is '
+                         'undefined for device»' % (node.name, how))
+    _sh(node, UP_CMD, 30)
+    log('%s: insmod %s %s; роль %s, SSID %s (uci без commit); network.wireless up radio0 (%s)'
+        % (node.name, ko, spec.modparams or '', spec.role, spec.ssid, how))
     return want
 
 
 class Report:
     """Итог проверки узла: facts — разобранные значения, problems — несоответствия (текст), kinds — их виды
-    ('fw' — FW не загрузилась или не из пути итерации, 'md5' — на узле не те файлы, 'ver', 'iface', 'link',
-    'brd', 'fwerr'), iface, link."""
-    HARD = ('fw', 'md5')     # проверяемый объект не тот или не загрузился — дальнейшие тесты ничего не скажут
+    ('fw' — FW не загрузилась или не из пути итерации, 'md5' — на узле не те файлы, 'commit' — при подъёме
+    изменился закоммиченный wireless, 'restart' — прошивка или роль перезапускались при подъёме, 'ver', 'iface',
+    'link', 'brd', 'fwerr'), iface, link."""
+    HARD = ('fw', 'md5', 'commit')   # проверяемый объект не тот, не загрузился, узел изменён — тесты ничего не скажут
 
     def __init__(self):
         self.facts, self.problems, self.kinds, self.iface, self.link = {}, [], set(), None, False
@@ -433,13 +534,15 @@ class Report:
 
     @property
     def hard(self):
-        return bool(self.kinds & set(self.HARD))
+        """'restart' без Firmware error — сбой процедуры подъёма (стенд), с ним — следствие восстановления fw после
+        сбоя проверяемого образа: это предмет тестов, не стенда."""
+        return bool(self.kinds & set(self.HARD)) or ('restart' in self.kinds and 'fwerr' not in self.kinds)
 
     def line(self, name):
         f = self.facts
-        s = '%s: fw %s md5 %s ko %s brd %s iface %s %s FWERR %s' % (
+        s = '%s: fw %s md5 %s ko %s brd %s iface %s %s FWERR %s стартов fw %s' % (
             name, f.get('ver') or '?', (f.get('fw') or '-')[:12], (f.get('ko') or '-')[:12], (f.get('brd') or '-')[:12],
-            self.iface or '-', f.get('type') or '-', f.get('fwerr'))
+            self.iface or '-', f.get('type') or '-', f.get('fwerr'), f.get('fwstarts', '?'))
         if f.get('type') == 'managed':
             s += ' link %s' % ('да' if self.link else 'нет')
         return s + ('' if self.ok else ' — ' + '; '.join(self.problems))
@@ -476,21 +579,63 @@ def wait_iface(node, spec, timeout=IFACE_TIMEOUT):
     return bool(_wait(lambda: t in _q(node, 'iw dev'), timeout))
 
 
+def _n(f, k):
+    try:
+        return int(f.get(k) or 0)
+    except ValueError:
+        return 0
+
+
+def wait_radio_up(node, timeout=UP_TIMEOUT):
+    """radio0 в netifd: up и не pending (setup закончен, wifi-scripts вызвали set_up)."""
+    return bool(_wait(lambda: (lambda w: w.get('w_up') == 'true' and w.get('w_pending') == 'false')(wstatus(node)),
+                      timeout, 2))
+
+
 def verify(node, spec, want=None, log=None, link=None):
     """Проверки после load(). want — ожидаемые md5 ({'fw', 'ko'}); link — ждать связь станции (по умолчанию
-    spec.wait_link)."""
+    spec.wait_link). После подъёма — окно STABLE_S: перезапуски fw и роли считаются по всей загрузке (dmesg, logread),
+    Disconnect станции — за окно после связи."""
     log = log or (lambda s: None)
     want = want or {}
     rep = Report()
     if not wait_fw(node):
         rep.add('fw', 'нет wmi_evt_ready за %d с (FW не загрузилась)' % FW_TIMEOUT)
+    if not wait_radio_up(node):
+        w = wstatus(node)
+        rep.add('iface', 'netifd: radio0 не поднялось за %d с (up=%s pending=%s retry_setup_failed=%s)'
+                % (UP_TIMEOUT, w.get('w_up'), w.get('w_pending'), w.get('w_retry_setup_failed')))
     if not wait_iface(node, spec):
         rep.add('iface', 'нет интерфейса type %s за %d с' % (role_type(spec), IFACE_TIMEOUT))
-    if spec.role == 'sta' and (spec.wait_link if link is None else link):
+    want_link = spec.role == 'sta' and (spec.wait_link if link is None else link)
+    if want_link:
         rep.link = bool(_wait(lambda: _q(node, LINK_CMD).strip(), spec.link_timeout))
         if not rep.link:
             rep.add('link', 'станция не подключилась к %s за %d с' % (spec.ssid, spec.link_timeout))
+    f0 = facts(node)
+    _sleep(STABLE_S)
+    still = bool(_q(node, LINK_CMD).strip()) if want_link and rep.link else None
     f = rep.facts = facts(node)
+    if still is not None:
+        d = _n(f, 'disc') - _n(f0, 'disc')
+        if d or not still:
+            rep.link = still
+            rep.add('link', 'станция: %s за %d с после связи (CTRL-EVENT-DISCONNECTED ×%d)'
+                    % ('связь пропала' if not still else 'Disconnect', STABLE_S, d))
+    n = _n(f, 'fwstarts')
+    if n > spec.max_fw_starts:
+        rep.add('restart', 'прошивка перезапускалась %d раз при подъёме (FW ver. в dmesg ×%d: %s; допустимо %d)'
+                % (n, n, (f.get('fwts') or '').strip() or '?', spec.max_fw_starts))
+    st, td = _n(f, 'starts'), _n(f, 'teardowns')
+    if st > 1 or td:
+        rep.add('restart', 'роль поднималась не один раз: wifi-scripts «Starting» ×%d, «Tearing down» ×%d (logread)'
+                % (st, td))
+    if spec.role == 'ap' and _n(f, 'apdis'):
+        rep.add('restart', 'hostapd: AP-DISABLED ×%s (AP-ENABLED ×%s)' % (f.get('apdis'), f.get('apen')))
+    if f.get('cfg0') and f.get('cfg') != f.get('cfg0'):
+        rep.add('commit', '%s изменился при подъёме (md5 %s → %s): commit роли на флеш (wifi config из hotplug '
+                '10-wifi-detect делает «uci commit wireless», если не узнал radio0)' % (WCONF, f['cfg0'][:12],
+                                                                                    (f.get('cfg') or '-')[:12]))
     rep.iface, f['type'] = pick_iface(f, spec)
     if f.get('mod') != '1':
         rep.add('fw', 'wil6210 не загружен')
@@ -507,6 +652,9 @@ def verify(node, spec, want=None, log=None, link=None):
         rep.add('brd', 'md5 платы %s, ожидается %s' % (f.get('brd'), spec.brd_md5))
     if f.get('fwerr', '0') not in ('', '0'):
         rep.add('fwerr', 'Firmware error ×%s' % f['fwerr'])
+    if spec.role == 'sta' and (_n(f, 'rej') or _n(f, 'disc')):
+        log('%s: wpa_supplicant за загрузку: ASSOC-REJECT ×%s, DISCONNECTED ×%s, CONNECTED ×%s'
+            % (node.name, f.get('rej'), f.get('disc'), f.get('conn')))
     log(rep.line(node.name))
     return rep
 
@@ -540,9 +688,9 @@ def bring_up(node, spec, log=None, link=None):
     return verify(node, spec, want, log, link)
 
 
-def boot(node, spec, power=None, log=None, link=None):
+def boot(node, spec, power=None, log=None, link=None, reboot_mode=None):
     """Вся итерация на одном узле: reboot → wait_up → load → verify. Возвращает Report."""
-    old = reboot(node, log)
+    old = reboot(node, log, reboot_mode)
     wait_up(node, old, power, log)
     return bring_up(node, spec, log, link)
 
@@ -598,6 +746,10 @@ def main(argv=None):
     ap.add_argument('--brd-md5', default=os.environ.get('BRD_MD5') or None, help='ожидаемый md5 платы (префикс)')
     ap.add_argument('--no-link', action='store_true', help='станция: не ждать связь')
     ap.add_argument('--link-timeout', type=int, default=LINK_TIMEOUT)
+    ap.add_argument('--max-fw-starts', type=int, default=MAX_FW_STARTS,
+                    help='сколько стартов прошивки (FW ver. в dmesg) допустимо за подъём (по умолчанию %(default)s)')
+    ap.add_argument('--reboot-mode', choices=sorted(REBOOT_CMDS), default=REBOOT_MODE,
+                    help="force — sync; reboot -f мимо procd (по умолчанию), init — обычный reboot")
     ap.add_argument('--tapo', help='адрес розетки Tapo: снять питание, если узел не отвечает после reboot (один раз)')
     ap.add_argument('--tapo-tool', default=os.environ.get('TAPO_TOOL') or os.path.normpath(os.path.join(
         os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', 'SparRAW-tools', 'host', 'tapo_plug.py')))
@@ -616,7 +768,7 @@ def main(argv=None):
             return 0
         if a.reboot_only:
             power = tapo_power(a.tapo_tool, a.tapo, node.name) if a.tapo else None
-            wait_up(node, reboot(node, log), power, log)
+            wait_up(node, reboot(node, log, a.reboot_mode), power, log)
             check_clean(node)
             log('%s: загружен, wil6210 не загружен' % node.name)
             return 0
@@ -625,7 +777,8 @@ def main(argv=None):
         network = a.network if a.network is not None else ('lan' if a.role == 'ap' else None)
         spec = Spec(a.role, a.ssid, network, fw=open(a.fw, 'rb').read() if a.fw else None, fw_node=a.fw_node,
                     ko=open(a.ko, 'rb').read() if a.ko else None, uci=a.uci, modparams=' '.join(a.modparam) or None,
-                    brd_md5=a.brd_md5, wait_link=not a.no_link, link_timeout=a.link_timeout)
+                    brd_md5=a.brd_md5, wait_link=not a.no_link, link_timeout=a.link_timeout,
+                    max_fw_starts=a.max_fw_starts)
         power = tapo_power(a.tapo_tool, a.tapo, node.name) if a.tapo else None
         if a.no_reboot:
             rep = verify(node, spec, {'fw': md5(spec.fw) if spec.fw else None,
@@ -633,7 +786,7 @@ def main(argv=None):
         elif a.load_only:
             rep = bring_up(node, spec, log)
         else:
-            rep = boot(node, spec, power, log)
+            rep = boot(node, spec, power, log, reboot_mode=a.reboot_mode)
     except StandError as e:
         print('[node_boot] ОШИБКА: %s' % e, flush=True)
         return 3

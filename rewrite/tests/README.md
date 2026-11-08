@@ -37,12 +37,14 @@ python3 -m pytest tests --fw <образ.fw> --stand tests/stand.toml \
 
 Два узла OpenWrt с wil6210 (Sparrow) по ssh с ключом, питание обоих — розетки Tapo
 (`SparRAW-tools/host/tapo_plug.py`). Драйвер wil6210 сам после загрузки системы не грузится — однократно на каждом
-узле `tools/stand/node_boot.sh --install <host>` (`docs/STAND.md`). Каждая загрузка роли — `reboot`, затем командой
-(`tools/stand/nodeboot.py`): прошивка итерации в `/tmp/sparraw-fw` (`firmware_class.path`, флеш не трогается), роль в
-uci без commit, `insmod` модуля (`--ko` → `/tmp/sparraw-drv`, иначе модуль системы) с параметрами `[test] modparams`,
-`wifi up radio0`, проверки (версия fw в dmesg, md5 fw/модуля/платы, интерфейс роли, связь станции). Смена — только
-новой перезагрузкой: `rmmod`, `modprobe -r`, `wifi down`/`reload` стенд к узлу не отправит. Адреса, nft и `iperf3 -s`
-— командами после загрузки.
+узле `tools/stand/node_boot.sh --install <host>` (`docs/STAND.md`). Каждая загрузка роли — `sync; reboot -f`
+(`[test] reboot`), затем командой (`tools/stand/nodeboot.py`): прошивка итерации в `/tmp/sparraw-fw`
+(`firmware_class.path`, флеш не трогается), роль в uci без commit и один `ubus call network reload` (до insmod),
+`insmod` модуля (`--ko` → `/tmp/sparraw-drv`, иначе модуль системы) с параметрами `[test] modparams`,
+`ubus call network.wireless up` (не `wifi up`), проверки (версия fw в dmesg, прошивка стартовала один раз —
+`[test] max_fw_starts`, роль поднята один раз, md5 fw/модуля/платы, интерфейс роли, связь станции без Disconnect
+10 с). Смена — только новой перезагрузкой: `rmmod`, `modprobe -r`, `wifi down`/`up`/`reload` стенд к узлу не
+отправит. Адреса, nft и `iperf3 -s` — командами после загрузки.
 
 Восстановление: узел не отвечает по ssh — ожидание (мог перезагрузиться сам), затем одно снятие питания через Tapo
 (не больше `[test] max_power_cycles`, по умолчанию 1, за прогон на узел; дальше — ошибка стенда без повторов). Зависла

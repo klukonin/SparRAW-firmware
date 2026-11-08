@@ -30,8 +30,8 @@ def _sta_mac(ap):
 
 def _peer_sta_up(ap, mac, old_boot):
     """peer после reboot -f поднимается без драйвера: тест загружает его сам командой — станция на проверяемом образе
-    (как Stand.boot_ap: прошивка итерации, insmod … no_fw_recovery=Y, роль без commit, wifi up); MAC — прежний
-    (иначе это новая станция, а не возвращение)."""
+    (как Stand.boot_ap: прошивка итерации, insmod … no_fw_recovery=Y, роль без commit, network.wireless up); MAC —
+    прежний (иначе это новая станция, а не возвращение)."""
     p = ap.peer
     nodeboot.wait_up(p, old_boot, p.power_recover)
     p.reset_mark()
