@@ -44,6 +44,7 @@ IFACE = 'wireless.default_radio0'
 # Время (с): узел wAP 60G грузится ~60–90 с
 BOOT_TIMEOUT = 300        # от reboot до ssh с новым boot_id
 REBOOT_HANG = 120         # узел отвечает со старым boot_id дольше — reboot завис (процесс в D), один «reboot -f»
+RCLOCAL_BAK = '/etc/sparraw-stand.rc.local'
 RC_SETTLE = 120           # rc.local узла ждёт /sys/module/wil6210 до 60 с: insmod — после uptime RC_SETTLE
 PHY_TIMEOUT = 30          # от insmod до /sys/class/ieee80211/phy*
 FW_TIMEOUT = 120          # от wifi up до wmi_evt_ready
@@ -198,12 +199,17 @@ def install_script():
         "if [ -f %s ] && grep -q '%s$' %s; then sed -i '/%s$/d' %s; echo LEGACY_MODCONF_REMOVED; fi"
         % (MODCONF, MODMARK, MODCONF, MODMARK, MODCONF),
         'H=$(grep -rlw wil6210 /etc/hotplug.d /etc/hotplug.json 2>/dev/null); [ -z "$H" ] || echo "HOTPLUG $H"',
+        # rc.local прошлой схемы ждал /sys/module/wil6210 и ставил параметры модуля — теперь они в insmod итерации
+        'if grep -qw wil6210 /etc/rc.local 2>/dev/null; then [ -f %s ] || cp /etc/rc.local %s; '
+        'printf "%%s\\n" "# стенд SparRAW: параметры драйвера 60 ГГц — при insmod итерации (rewrite/docs/STAND.md)" "exit 0" '
+        '> /etc/rc.local; echo RCLOCAL_REPLACED; fi' % (RCLOCAL_BAK, RCLOCAL_BAK),
         'grep -qw wil6210 /etc/rc.local 2>/dev/null && echo RCLOCAL',
         'sync', 'echo INSTALLED']) + '\n'
 
 
 def uninstall_script():
-    return ('if [ -f %s ] && [ ! -f %s ]; then cp %s %s; fi; sync; echo UNINSTALLED\n' % (MODD_BAK, MODD, MODD_BAK, MODD))
+    return ('if [ -f %s ] && [ ! -f %s ]; then cp %s %s; fi; if [ -f %s ]; then cp %s /etc/rc.local && rm -f %s; fi; '
+            'sync; echo UNINSTALLED\n' % (MODD_BAK, MODD, MODD_BAK, MODD, RCLOCAL_BAK, RCLOCAL_BAK, RCLOCAL_BAK))
 
 
 def put_cmd(path):
@@ -294,7 +300,8 @@ def install(node, log=None):
     log('%s: автозагрузка wil6210 %s%s' % (node.name, 'снята (бэкап %s)' % MODD_BAK if 'AUTOLOAD_REMOVED' in out
                                           else 'уже снята', ''.join('; ' + n for n in notes)))
     for k, s in (('LEGACY_UCI_RESTORED', 'опции прошлых сценариев возвращены'),
-                 ('LEGACY_MODCONF_REMOVED', 'строка параметров в modules.conf убрана')):
+                 ('LEGACY_MODCONF_REMOVED', 'строка параметров в modules.conf убрана'),
+                 ('RCLOCAL_REPLACED', 'rc.local с ожиданием wil6210 заменён пустым (бэкап %s)' % RCLOCAL_BAK)):
         if k in out:
             log('%s: %s' % (node.name, s))
     return notes
