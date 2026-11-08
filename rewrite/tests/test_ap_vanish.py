@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""dut — точка на проверяемом образе, станция peer пропадает без разъединения (выключение по питанию) в разные
-моменты. Точка не падает, продолжает работать (WMI, маяки — станция снова находит сеть), станция входит снова:
+"""dut — точка на проверяемом образе, станция peer пропадает без разъединения в разные
+моменты (Node.vanish: «sync; reboot -f» — без скриптов остановки, Disassociation не уходит; питание не
+снимается). Точка не падает, продолжает работать (WMI, маяки — станция снова находит сеть), станция входит снова:
 пока точка её ещё считает ассоциированной — переассоциацией на месте (тот же cid, без Disassociation), после срока
 обнаружения — заново. Разбор в эмуляторе — tests/unit/test_fw_peer_vanish.py, test_fw_reassoc.py."""
 import re
 import time
 
 import pytest
+
+from stand import nodeboot     # tools/stand/nodeboot.py
 
 pytestmark = [pytest.mark.stand, pytest.mark.ap, pytest.mark.slow]
 
@@ -25,17 +28,16 @@ def _sta_mac(ap):
     return p.run('cat /sys/class/net/%s/address' % p.iface(), check=False).strip()
 
 
-def _peer_sta_up(ap, mac):
-    """peer после включения: станция с прежним MAC (иначе это новая станция, а не возвращение) на SSID точки (uci
-    без commit, как Stand.boot_ap), адрес для ping."""
+def _peer_sta_up(ap, mac, old_boot):
+    """peer после reboot -f поднимается сам в закоммиченной роли станции (Stand.boot_ap: uci commit, прошивка,
+    no_fw_recovery=Y с самого старта): дождаться FW и интерфейса станции; MAC — прежний (иначе это новая станция,
+    а не возвращение)."""
     p = ap.peer
-    p.wait_alive()
-    _no_recovery(p)
-    ssid = ap.t.get('ap_ssid', 'SPARRAW-TEST')
-    p.run('killall iperf3 2>/dev/null; wifi down; sleep 2; uci set wireless.default_radio0.mode=sta; '
-          'uci delete wireless.default_radio0.network; uci set wireless.default_radio0.ssid=%s; '
-          'uci set wireless.default_radio0.macaddr=%s; ip addr del %s/24 dev br-lan; wifi up radio0'
-          % (ssid, mac, ap.cfg['peer']['ip']), check=False, timeout=60)
+    nodeboot.wait_up(p, old_boot, p.power_recover)
+    spec = ap.peer_sta_spec()
+    assert nodeboot.wait_fw(p) and nodeboot.wait_iface(p, spec), 'peer: нет FW или интерфейса станции после загрузки'
+    got = _sta_mac(ap)
+    assert got == mac, 'MAC станции после загрузки %s, был %s — это другая станция' % (got, mac)
 
 
 def _peer_linked(ap, timeout):
@@ -68,11 +70,10 @@ def _vanish_and_return(ap, check, off_s, during=None):
     ap.peer.mark()
     if during:
         during(ap)
-    ap.peer.power_cycle(off_s)                  # без разъединения: станция просто пропадает
-    ap.peer_dirty = True
-    time.sleep(10)
+    old = ap.peer.vanish()                      # стимул теста: без разъединения, станция просто пропадает
+    time.sleep(off_s + 10)                      # как прежнее «выключено off_s» + 10 с
     _ap_alive(ap, check)
-    _peer_sta_up(ap, mac)
+    _peer_sta_up(ap, mac, old)
     check.is_true(_peer_linked(ap, 150), 'станция не вошла снова')
     check.is_true(ap.peer.fw_errors() == 0, 'ошибка FW на станции')
     _ap_alive(ap, check)
@@ -106,15 +107,15 @@ def test_station_gone_longer_than_detection(ap, check):
     mac = _sta_mac(ap)
     d.mark()
     ap.peer.mark()
-    ap.peer.power_cycle(AP_DETECT_S)
-    ap.peer_dirty = True
+    old = ap.peer.vanish()                      # стимул теста: reboot -f, без разъединения
+    time.sleep(AP_DETECT_S)                     # станции нет дольше срока обнаружения (загрузка всё равно дольше)
     log = d.dmesg_new()
     check.is_true(re.search(r'wmi_evt_disconnect: Disconnect', log) is not None,
                   'точка не сняла пропавшую станцию за %d с' % AP_DETECT_S)
     check.is_true('Station' not in d.run('iw dev %s station dump' % d.iface(), check=False) or
                   'successful connection' in log, 'станция ещё числится у точки')
     _ap_alive(ap, check)
-    _peer_sta_up(ap, mac)
+    _peer_sta_up(ap, mac, old)
     check.is_true(_peer_linked(ap, 150), 'станция не вошла снова')
     check.is_true(ap.peer.fw_errors() == 0, 'ошибка FW на станции')
     _ap_alive(ap, check)

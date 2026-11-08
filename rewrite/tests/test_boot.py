@@ -42,7 +42,7 @@ def test_dut_driver(sta_booted, check):
     probe = re.findall(r'wil6210 (SparRAW-\S+)? ?device found', d.dmesg())
     if not ko:
         pytest.skip('без --ko — драйвер из образа узла: %s' % ((probe[-1] if probe else '') or 'не SparRAW'))
-    check.equal(node_md5(d, '/tmp/drv.ko'), md5(open(ko, 'rb').read()), 'md5 модуля на dut')
+    check.equal(node_md5(d, '/lib/modules/$(uname -r)/wil6210.ko'), md5(open(ko, 'rb').read()), 'md5 модуля на dut')
     check.is_true('wil6210' in d.run('lsmod', check=False), 'модуль wil6210 не загружен')
     want = ko_version(ko)
     check.is_true(want, '%s: нет версии SparRAW в модуле' % ko)

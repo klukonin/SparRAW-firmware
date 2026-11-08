@@ -54,14 +54,15 @@ def test_link_stats_sane(sta):
 
 @pytest.mark.slow
 def test_reconnect_after_peer_restart(sta):
-    """Точка перезапускает радио — станция замечает разрыв и переподключается (пропажа точки по питанию —
+    """Точка перезапускается — перезагрузкой устройства (docs/STAND.md: перезапуск драйвера и fw — только так):
+    станция замечает разрыв и переподключается, когда точка снова в эфире (пропажа точки по питанию —
     test_sta_vanish.py)."""
     before = len(sta.disconnects())
-    sta.peer.run('wifi down; sleep 3; wifi up', check=False, timeout=60)
-    ok = sta._wait(sta.dut, 'iw dev %s link 2>/dev/null | grep Connected' % sta.dut.iface(), 90)
+    sta.restart_peer()           # reboot, ssh, FW точки и интерфейс AP (~1,5 мин), адрес и iperf3
+    ok = sta._wait(sta.dut, 'iw dev %s link 2>/dev/null | grep Connected' % sta.dut.iface(), 120)
     reasons = sta.disconnects()[before:]
     assert reasons, 'разрыв не был замечен'
     if sta.ko:   # имена причин печатает драйвер SparRAW
         assert all(re.search(r'reason \[proto \d+ wmi \d+: [a-z]', r) for r in reasons), 'причина без имени: %s' % reasons
-    assert ok, 'не переподключилась за 90 с; причины: %s' % reasons
+    assert ok, 'не переподключилась за 120 с после загрузки точки; причины: %s' % reasons
     assert sta.ping(5) >= 4

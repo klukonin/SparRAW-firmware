@@ -5,46 +5,29 @@
 состоянии — точка доступа на своей (эталонной) прошивке; для теста AP роли меняются: dut — точка, peer — станция
 на ТОМ ЖЕ тестируемом образе (vendor-станция 6.2 к точке по стандарту не идёт: B43 маяка, 9.3.4.2).
 
-Всё — через ssh и uci без commit: power-cycle возвращает узлы в исходное состояние.
+Смена прошивки, драйвера и роли — только перезагрузкой устройства (docs/STAND.md, tools/stand/nodeboot.py): файлы на
+место, роль в uci с commit, sync, reboot, проверки после загрузки. Никаких rmmod/insmod/wifi down/up. Адреса
+10.60.0.x, правила nft и сервер iperf3 — командами после загрузки (это не перезапуск драйвера). Питание снимается
+только если узел не отвечает по ssh, не больше [test] max_power_cycles раз за прогон (по умолчанию 1). Пропажа узла в
+тестах test_*_vanish — «sync; reboot -f» (Node.vanish), не питание.
 """
 import os, re, shlex, struct, subprocess, sys, time
-
-# Дополнительные команды uci для точки (обе роли: peer-AP и dut-AP), например
-# SPARRAW_AP_UCI="uci set wireless.default_radio0.multicast_to_unicast=1" — проверка опций hostapd набором
-AP_UCI = (os.environ.get('SPARRAW_AP_UCI', '').strip().rstrip(';') + '; ') if os.environ.get('SPARRAW_AP_UCI') else ''
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REWRITE = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REWRITE, 'tools'))
 sys.path.insert(0, os.path.join(REWRITE, 'tools', 'hwdbg'))
+sys.path.insert(0, os.path.join(REWRITE, 'tools', 'stand'))
 
-SSH_OPTS = ['-F', '/dev/null', '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null',
-            '-o', 'ConnectTimeout=8', '-o', 'LogLevel=ERROR']
+import nodeboot
+from nodeboot import StandError, fw_records, fw_version   # noqa: F401 (часть интерфейса модуля: test_image, test_boot)
 
+# Дополнительные команды uci для точки (обе роли: peer-AP и dut-AP), например
+# SPARRAW_AP_UCI="uci set wireless.default_radio0.multicast_to_unicast=1" — проверка опций hostapd набором. Применяются
+# до commit и перезагрузки; следующая подготовка узла возвращает исходные значения этих опций.
+AP_UCI = list(nodeboot.split_uci(os.environ.get('SPARRAW_AP_UCI', '')))
 
-class StandError(Exception):
-    pass
-
-
-# ============================== образ .fw ==============================
-
-def fw_records(blob):
-    """[(type, flags, payload)] записей образа wil6210 .fw."""
-    out, off = [], 0
-    while off + 8 <= len(blob):
-        typ, flags, size = struct.unpack_from('<HHI', blob, off)
-        out.append((typ, flags, blob[off + 8:off + 8 + size]))
-        off += 8 + size
-    return out
-
-
-def fw_version(blob):
-    """Строка версии из файлового заголовка (запись 6, комментарий «FW version: …»)."""
-    for typ, _, p in fw_records(blob):
-        if typ == 6:
-            c = p[20:52].split(b'\0')[0].decode('latin1')
-            return c.split('FW version: ', 1)[-1]
-    return None
+SSH_OPTS = nodeboot.SSH_OPTS
 
 
 def fw_is_pro(blob):
@@ -54,40 +37,72 @@ def fw_is_pro(blob):
 # ============================== узел ==============================
 
 class Node:
-    def __init__(self, name, cfg, tools):
+    def __init__(self, name, cfg, tools, max_power_cycles=1):
         self.name = name
         self.host = cfg['host']
         self.cfg = cfg
         self.tools = tools
-        self.on_recover = None     # колбэк стенда: узел перезагружен — роль потеряна
-        self.recoveries = 0
+        self.on_recover = None     # колбэк стенда: узел перезагрузился — роль стенда потеряна
+        self.recoveries = 0        # снятия питания по неответу (сводка pytest)
+        self.max_power_cycles = max_power_cycles
         self.dmesg_mark = 0        # время ядра (dmesg) начала роли: ошибки FW считаются после него
+        self.mark_boot = None
         self.iperf_cpu = None      # маска CPU для iperf3 (taskset), [test] iperf_cpu
 
+    def sh(self, cmd, timeout, input=None):
+        """Одна попытка ssh без самовосстановления: (код | None при зависании, stdout, stderr). Для nodeboot."""
+        try:
+            r = subprocess.run(['ssh'] + SSH_OPTS + [self.host, cmd], capture_output=True, timeout=timeout,
+                               input=input)
+            return r.returncode, r.stdout, r.stderr
+        except subprocess.TimeoutExpired:
+            return None, b'', b''
+
     def _ssh(self, cmd, timeout, input=None):
-        """ssh с самовосстановлением: узел не отвечает (ssh 255 или зависание) — power-cycle через розетку и повтор."""
+        """ssh. Узел не отвечает (ошибка соединения или зависание, при котором и ssh молчит) — recover() и одна
+        повторная попытка. Зависла команда, а узел отвечает — StandError без перезагрузки и без снятия питания:
+        следующая загрузка роли перезагрузит узел штатно."""
         for attempt in (0, 1):
-            try:
-                r = subprocess.run(['ssh'] + SSH_OPTS + [self.host, cmd], capture_output=True, timeout=timeout,
-                                   input=input)
-                if r.returncode != 255:
-                    return r
-                why = 'ssh: %s' % r.stderr.decode('utf-8', 'replace').strip()[-120:]
-            except subprocess.TimeoutExpired:
-                why = 'зависание %d с' % timeout
+            rc, out, err = self.sh(cmd, timeout, input)
+            if rc is not None and rc != 255:
+                return subprocess.CompletedProcess(cmd, rc, out, err)
+            if rc is None:
+                if self.alive():
+                    raise StandError('%s: команда зависла (%d с): «%s» — узел отвечает по ssh, питание не снимается'
+                                     % (self.name, timeout, cmd[:80]))
+                why = 'зависание %d с, ssh не отвечает' % timeout
+            else:
+                why = 'ssh: %s' % err.decode('utf-8', 'replace').strip()[-120:]
             if attempt == 0:
                 self.recover(why)
-        raise StandError('%s: не отвечает и после перезагрузки (%s)' % (self.name, why))
+        raise StandError('%s: не отвечает и после восстановления (%s)' % (self.name, why))
 
     def recover(self, why):
-        sys.stderr.write('\n[стенд] %s: %s — перезагрузка по питанию\n' % (self.name, why))
-        self.recoveries += 1
-        self.power_cycle()
-        time.sleep(25)
-        self.wait_alive()
-        self.dmesg_mark = 0
+        """Узел не отвечает по ssh: ждать (мог перезагрузиться сам — паника, сторож); не поднялся за 240 с — одно
+        снятие питания (power_recover, в пределах [test] max_power_cycles), дальше StandError. Роль стенда
+        сбрасывается (on_recover): следующая фикстура роли загрузит её заново."""
+        sys.stderr.write('\n[стенд] %s: %s — жду ssh\n' % (self.name, why))
+        if not self.wait_alive(240, fail=False):
+            self.power_recover(why)
+            if not self.wait_alive(300, fail=False):
+                raise StandError('%s: нет ssh и после снятия питания — дальше питание не снимается; проверить узел '
+                                 'вручную (failsafe, загрузка по сети)' % self.name)
+        self.reset_mark()
         if self.on_recover:
             self.on_recover(self)
+
+    def power_recover(self, why):
+        """Снятие питания узла, который не отвечает по ssh (колбэк power для nodeboot.wait_up и recover). Не больше
+        max_power_cycles раз за прогон: серия снятий питания 2026-11-07 оставила узел незагружаемым (восстановлен
+        загрузкой по сети и sysupgrade)."""
+        if self.recoveries >= self.max_power_cycles:
+            raise StandError('%s: %s; питание за прогон уже снималось %d раз (предел [test] max_power_cycles = %d) — '
+                             'больше не снимаю, чтобы не изнашивать флеш; проверить узел вручную'
+                             % (self.name, why, self.recoveries, self.max_power_cycles))
+        self.recoveries += 1
+        sys.stderr.write('\n[стенд] %s: %s — снятие питания (%d из %d)\n'
+                         % (self.name, why, self.recoveries, self.max_power_cycles))
+        self.power_cycle()
 
     def run(self, cmd, timeout=60, check=True, input=None):
         if self.iperf_cpu:   # iperf3 (сервер и клиент) — на своём ядре: на ядре прерываний wil6210 или RPS — до −25 %
@@ -105,34 +120,46 @@ class Node:
         self.run('cat > %s; sync' % shlex.quote(path), input=data, timeout=120)
 
     def alive(self):
-        try:
-            return subprocess.run(['ssh'] + SSH_OPTS + [self.host, 'true'], capture_output=True,
-                                  timeout=15).returncode == 0
-        except subprocess.TimeoutExpired:
-            return False
+        return self.sh('true', 15)[0] == 0
 
-    def wait_alive(self, timeout=240):
+    def wait_alive(self, timeout=240, fail=True):
         t0 = time.time()
         while time.time() - t0 < timeout:
             if self.alive():
-                return
+                return True
             time.sleep(3)
-        raise StandError('%s: нет ssh %d с после включения' % (self.name, timeout))
+        if fail:
+            raise StandError('%s: нет ssh %d с' % (self.name, timeout))
+        return False
 
     def power_cycle(self, off_s=15):
+        """Снятие питания (Tapo) — только power_recover (узел не отвечает по ssh). Для смены роли, прошивки,
+        драйвера и для тестов пропажи — никогда (nodeboot: reboot; Node.vanish: reboot -f)."""
         p = self.cfg['power']
         if p.get('kind') != 'tapo':
             raise StandError('%s: неизвестное управление питанием %r' % (self.name, p))
         # перед снятием питания — сброс записей на флеш, если узел отвечает (2026-11-07 узел .12 после серии
         # power-cycle не грузился даже в failsafe; восстановлен загрузкой по сети и sysupgrade)
-        try:
-            subprocess.run(['ssh'] + SSH_OPTS + [self.host, 'sync; sleep 1; sync'], capture_output=True, timeout=15)
-        except subprocess.TimeoutExpired:
-            pass
+        self.sh('sync; sleep 1; sync', 15)
         r = subprocess.run([sys.executable, self.tools['tapo'], p['addr'], 'cycle', str(off_s)],
                            capture_output=True, timeout=120)
         if r.returncode != 0:
             raise StandError('%s: power-cycle не удался: %s' % (self.name, r.stderr.decode()[-300:]))
+
+    def vanish(self):
+        """Стимул тестов пропажи (test_*_vanish): узел исчезает из эфира без разъединения — «sync; reboot -f» по
+        ssh. busybox reboot -f (init/halt.c) делает sync и сразу системный вызов reboot, минуя procd: скрипты
+        остановки, hostapd/wpa_supplicant и netifd не останавливаются, Deauth/Disassociation не уходят; у wil6210 нет
+        .shutdown (pcie_bus.c), так что device_shutdown() ядра fw не трогает. Питание не снимается. Возвращает
+        boot_id до перезагрузки — для nodeboot.wait_up()."""
+        old = nodeboot.boot_id(self)
+        self.sh('sync; sleep 1; sync; reboot -f', 15)
+        return old
+
+    def reset_mark(self):
+        """Новая загрузка: dmesg_new()/fw_errors() — весь dmesg этой загрузки."""
+        self.dmesg_mark = 0
+        self.mark_boot = None
 
     # --- wil6210 ---
     def iface(self):
@@ -198,32 +225,37 @@ class Node:
         recs = fwlog.decode(self.blob('fw_peri'), tab=fwlog.load_strings(image))
         return [line for _, line in fwlog.chrono(recs)]
 
-    def load_driver(self, ko_path):
-        self.put(open(ko_path, 'rb').read(), '/tmp/drv.ko')
-        self.run('rmmod wil6210; insmod /tmp/drv.ko', timeout=60)
 
 
 # ============================== стенд ==============================
 
 class Stand:
-    """Роли: 'sta' — dut станция у точки peer; 'ap' — dut точка, peer станция (тот же образ)."""
+    """Роли: 'sta' — dut станция у точки peer; 'ap' — dut точка, peer станция (тот же образ). Каждая загрузка роли —
+    перезагрузка узлов по схеме nodeboot (роль в uci с commit): узел, перезагрузившийся сам или после снятия питания,
+    поднимается в той же роли."""
 
     def __init__(self, cfg, fw_path, ko_path=None, peer_fw_path=None):
         tools = dict(cfg.get('tools', {}))
         tools['tapo'] = os.path.normpath(os.path.join(REWRITE, tools.get('tapo', '../../SparRAW-tools/host/tapo_plug.py')))
         self.cfg = cfg
         self.t = cfg.get('test', {})
-        self.dut = Node('dut', cfg['dut'], tools)
-        self.peer = Node('peer', cfg['peer'], tools)
+        mpc = int(self.t.get('max_power_cycles', 1))
+        self.dut = Node('dut', cfg['dut'], tools, mpc)
+        self.peer = Node('peer', cfg['peer'], tools, mpc)
         self.fw_path = fw_path
         self.fw = open(fw_path, 'rb').read()
         self.ko = ko_path
+        self.ko_blob = open(ko_path, 'rb').read() if ko_path else None
         self.peer_fw = open(peer_fw_path, 'rb').read() if peer_fw_path else self.fw
         self.role = None
-        self.peer_dirty = False
+        self.connected = False
         for n in (self.dut, self.peer):
             n.on_recover = self._node_recovered
             n.iperf_cpu = self.t.get('iperf_cpu')
+
+    @staticmethod
+    def log(s):
+        sys.stderr.write('[стенд] %s\n' % s)
 
     def tune_cpu(self):
         """Прерывания wil6210 (tx/rx/misc, с ними NAPI) обоих узлов — на ядро [test] irq_cpu (маска). Без этого GIC
@@ -237,41 +269,68 @@ class Stand:
                   % m, check=False)
 
     def _node_recovered(self, node):
-        """Узел перезагружен по питанию — роль стенда потеряна (следующая фикстура роли загрузит её заново).
-        peer после перезагрузки поднимается со своим сохранённым режимом и залитым файлом прошивки — его точку
-        (прошивка fw_backup, SSID, адрес) надо восстановить."""
+        """Узел перезагрузился (сам или после снятия питания) — поднялся в закоммиченной роли, но адреса, правила
+        nft и iperf3 стенда пропали: следующая фикстура роли загрузит роль заново."""
         self.role = None
-        if node is self.peer:
-            self.peer_dirty = True
+
+    # --- описания ролей (nodeboot.Spec) ---
+    def _brd(self):
+        return self.t.get('brd_md5') or None
+
+    def peer_ap_spec(self):
+        """peer — точка на своей прошивке (fw_backup на узле), SSID стенда, сеть lan, опции SPARRAW_AP_UCI."""
+        c = self.cfg['peer']
+        return nodeboot.Spec('ap', c['ssid'], 'lan', fw_node=c.get('fw_backup'), uci=AP_UCI, brd_md5=self._brd())
+
+    def dut_sta_spec(self, timeout=90):
+        """dut — станция на проверяемом образе (и модуле --ko) у точки peer; сеть — [dut] sta_network (иначе не
+        трогать)."""
+        return nodeboot.Spec('sta', self.cfg['peer']['ssid'], self.cfg['dut'].get('sta_network'), fw=self.fw,
+                             ko=self.ko_blob, brd_md5=self._brd(), link_timeout=timeout)
+
+    def peer_sta_spec(self, timeout=120):
+        """peer — станция на проверяемом образе у точки dut; FW error не восстанавливать с самого старта
+        (no_fw_recovery=Y в /etc/modules.conf): состояние fw на момент сбоя остаётся для артефактов."""
+        return nodeboot.Spec('sta', self.t.get('ap_ssid', 'SPARRAW-TEST'), '', fw=self.peer_fw,
+                             modparams='no_fw_recovery=Y', brd_md5=self._brd(), link_timeout=timeout)
+
+    def dut_ap_spec(self):
+        return nodeboot.Spec('ap', self.t.get('ap_ssid', 'SPARRAW-TEST'), None, fw=self.fw, ko=self.ko_blob,
+                             uci=AP_UCI, brd_md5=self._brd())
+
+    @staticmethod
+    def _hard(node, rep):
+        """Проверяемый объект не загрузился или на узле не те файлы — StandError; остальное (версия, плата, связь,
+        FW error) проверяют тесты."""
+        if rep.hard:
+            raise StandError('%s: %s' % (node.name, '; '.join(rep.problems)))
+        return rep
 
     # --- общие шаги ---
-    def _peer_restore_ap(self):
-        """peer — снова точка на своей прошивке (fw_backup), SSID стенда, адрес и сервер iperf3. После роли станции
-        на тестируемом образе — через перезагрузку по питанию: перезапуска wifi мало (станция dut потом раз за
-        разом не слышала маяк точки, «link up: no beacon from peer»)."""
-        p, c = self.peer, self.cfg['peer']
-        if self.peer_dirty and c.get('fw_backup'):
-            p.run('cp %s /lib/firmware/wil6210.fw; sync' % c['fw_backup'], check=False)
-        if self.peer_dirty and 'power' in c:
-            p.power_cycle()
-            time.sleep(25)
-            p.wait_alive()
-        p.run(("killall iperf3 2>/dev/null; for i in $(iw dev | sed -n 's/.*Interface //p'); do ip addr flush dev $i; done; "
-               "uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.network=lan; "
-               "uci set wireless.default_radio0.ssid=%s; " + AP_UCI + "fw4 reload; wifi down; sleep 2; wifi up radio0; sleep 5; "
-               "ip addr show br-lan | grep -q %s || ip addr add %s/24 dev br-lan; "
-               "sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; iperf3 -s -D")
-              % (c['ssid'], c['ip'], c['ip']), check=False, timeout=90)
-        self.peer_dirty = False
+    @staticmethod
+    def _reach(*nodes):
+        """Перед подготовкой роли узлы отвечают по ssh; нет — recover() (ожидание, не больше одного снятия питания)."""
+        for n in nodes:
+            if not n.alive():
+                n.recover('нет ssh перед загрузкой роли')
 
-    def _dut_boot(self):
-        d = self.dut
-        d.put(self.fw, '/lib/firmware/wil6210.fw')   # завис — _ssh перезагрузит узел и повторит
-        d.power_cycle()
-        time.sleep(25)
-        d.wait_alive()
-        if self.ko:
-            d.load_driver(self.ko)
+    def _peer_ap_runtime(self):
+        """Точка peer после загрузки: адрес стенда на br-lan, sysctl ARP, сервер iperf3 (команды, не перезапуск)."""
+        c = self.cfg['peer']
+        self.peer.run("ip addr show br-lan | grep -q 'inet %s/' || ip addr add %s/24 dev br-lan; "
+                      "sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; "
+                      "killall iperf3 2>/dev/null; iperf3 -s -D" % (c['ip'], c['ip']), check=False, timeout=30)
+
+    def _peer_restore_ap(self):
+        """peer — точка на своей прошивке (fw_backup), SSID стенда, адрес и сервер iperf3. Уже так (подпись
+        подготовки, md5, интерфейс AP; после включения — ждать FW до 120 с) — без перезагрузки; иначе — перезагрузка
+        в эту роль (nodeboot)."""
+        p, spec = self.peer, self.peer_ap_spec()
+        self._reach(p)
+        if not nodeboot.matches(p, spec, wait=nodeboot.FW_TIMEOUT):
+            self._hard(p, nodeboot.boot(p, spec, p.power_recover, self.log))
+            p.mark()
+        self._peer_ap_runtime()
 
     def _wait(self, node, cond_cmd, timeout):
         t0 = time.time()
@@ -283,57 +342,59 @@ class Stand:
 
     # --- роли ---
     def boot_sta(self, timeout=90):
-        p, c = self.peer, self.cfg['peer']
-        # Радио dut — выключить до перезапуска точки: иначе станция прошлого теста успевает переподключиться к
-        # свежей точке, а потом пропадает при перезагрузке dut по питанию без разъединения — vendor-точка после
-        # этого перестаёт слать маяки и принимать WMI («WMI ring full»), новая загрузка dut — «link up: no beacon
-        # from peer» (сюита 2026-10-28, 2 из 4 прогонов; hwboot.sh перезапускает точку уже при выключенном dut).
-        self.dut.run('wifi down radio0 >/dev/null 2>&1', check=False, timeout=30)
-        if self.peer_dirty or p.run('iw dev | grep -c "type AP"', check=False).strip() == '0':
-            self._peer_restore_ap()
-        # точка может держать зависшую запись станции и не слать маяки — перезапуск wifi параллельно загрузке dut
-        p.run('iw dev $(iw dev | sed -n "s/.*Interface //p" | head -1) station del %s' % self.cfg['dut']['mac'], check=False)
-        p.run('wifi down; sleep 2; wifi up; sleep 3; ip addr show br-lan | grep -q %s || ip addr add %s/24 dev br-lan; '
-              'killall iperf3 2>/dev/null; iperf3 -s -D' % (c['ip'], c['ip']), check=False, timeout=60)
-        self._dut_boot()
-        d = self.dut
-        d.run('uci set wireless.radio0.disabled=0; uci set wireless.default_radio0.disabled=0; '
-              'uci set wireless.default_radio0.mode=sta; uci set wireless.default_radio0.ssid=%s; wifi up radio0 >/dev/null 2>&1'
-              % c['ssid'], check=False)
-        if not self._wait(d, "dmesg | grep -m1 'FW ready after'", 60):
-            raise StandError('dut: FW не готова')
+        """dut — станция у точки peer: перезагрузка dut в роль STA на проверяемом образе; peer, если он не точка на
+        своей прошивке (после теста AP, после сбоя), — перезагрузка в роль точки параллельно."""
+        p, d = self.peer, self.dut
+        self.role, self.connected = None, False
+        pspec, dspec = self.peer_ap_spec(), self.dut_sta_spec(timeout)
+        self._reach(p, d)
+        peer_ok = nodeboot.matches(p, pspec)
+        pwant = None if peer_ok else nodeboot.prepare(p, pspec, self.log)
+        dwant = nodeboot.prepare(d, dspec, self.log)
+        pold = None if peer_ok else nodeboot.reboot(p, self.log)
+        dold = nodeboot.reboot(d, self.log)
+        if not peer_ok:
+            nodeboot.wait_up(p, pold, p.power_recover, self.log)
+            self._hard(p, nodeboot.verify(p, pspec, pwant, self.log))
+        self._peer_ap_runtime()
+        # точка может держать запись станции dut прошлой загрузки (vendor-точка с зависшей записью переставала слать
+        # маяки) — снять, пока dut перезагружается
+        p.run('iw dev $(iw dev | sed -n "s/.*Interface //p" | head -1) station del %s' % self.cfg['dut']['mac'],
+              check=False)
+        nodeboot.wait_up(d, dold, d.power_recover, self.log)
+        d.reset_mark()
         p.mark()
+        rep = self._hard(d, nodeboot.verify(d, dspec, dwant, self.log))
         self.role = 'sta'
-        self.connected = self._wait(d, 'iw dev %s link 2>/dev/null | grep Connected' % (d.iface() or 'x'), timeout)
+        self.connected = rep.link
         if self.connected:
             d.run('ip addr add %s/24 dev %s 2>/dev/null; sysctl -qw net.ipv4.conf.all.arp_ignore=1 '
-                  'net.ipv4.conf.all.arp_announce=2' % (self.cfg['dut']['ip'], d.iface()), check=False)
+                  'net.ipv4.conf.all.arp_announce=2' % (self.cfg['dut']['ip'], rep.iface), check=False)
             self.tune_cpu()
         return self.connected
 
     def boot_ap(self, timeout=120):
+        """dut — точка на проверяемом образе, peer — станция на том же образе: оба узла перезагружаются в свои роли
+        параллельно."""
         p, d = self.peer, self.dut
-        ap_ssid = self.t.get('ap_ssid', 'SPARRAW-TEST')
-        # peer — станция на тестируемом образе
-        p.put(self.peer_fw, '/lib/firmware/wil6210.fw')
-        self.peer_dirty = True
-        # станция на проверяемом образе — FW error не восстанавливать с самого подключения: состояние fw на момент
-        # сбоя остаётся для артефактов (редкий сбой станции после Disassociation посреди подключения)
-        p.run('killall iperf3 2>/dev/null; wifi down; echo Y > /sys/module/wil6210/parameters/no_fw_recovery; '
-              'sleep 2; uci set wireless.default_radio0.mode=sta; '
-              'uci delete wireless.default_radio0.network; uci set wireless.default_radio0.ssid=%s; '
-              'ip addr del %s/24 dev br-lan; wifi up radio0' % (ap_ssid, self.cfg['peer']['ip']), check=False, timeout=60)
-        self._dut_boot()
-        d.run('uci set wireless.radio0.disabled=0; uci set wireless.default_radio0.disabled=0; '
-              'uci set wireless.default_radio0.mode=ap; uci set wireless.default_radio0.ssid=%s; ' % ap_ssid + AP_UCI +
-              'wifi up radio0 >/dev/null 2>&1', check=False)
-        if not self._wait(d, "dmesg | grep -m1 'FW ready after'", 60):
-            raise StandError('dut: FW не готова')
-        p.mark()
+        self.role, self.connected = None, False
+        pspec, dspec = self.peer_sta_spec(timeout), self.dut_ap_spec()
+        self._reach(p, d)
+        pwant = nodeboot.prepare(p, pspec, self.log)
+        dwant = nodeboot.prepare(d, dspec, self.log)
+        pold = nodeboot.reboot(p, self.log)
+        dold = nodeboot.reboot(d, self.log)
+        nodeboot.wait_up(d, dold, d.power_recover, self.log)
+        d.reset_mark()
+        drep = self._hard(d, nodeboot.verify(d, dspec, dwant, self.log))
+        nodeboot.wait_up(p, pold, p.power_recover, self.log)
+        p.reset_mark()               # станция на проверяемом образе: ошибки FW считаются с её загрузки
+        self._hard(p, nodeboot.verify(p, pspec, pwant, self.log, link=False))
         self.role = 'ap'
-        self.connected = self._wait(d, 'iw dev %s station dump 2>/dev/null | grep Station' % (d.iface() or 'x'), timeout)
+        di = drep.iface or d.iface() or 'x'
+        self.connected = self._wait(d, 'iw dev %s station dump 2>/dev/null | grep Station' % di, timeout)
         if self.connected:
-            di, pi = d.iface(), p.iface()
+            pi = p.iface()
             d.run('ip addr add %s/24 dev %s 2>/dev/null; nft insert rule inet fw4 input iifname %s accept; '
                   'sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; killall iperf3 2>/dev/null; iperf3 -s -D'
                   % (self.cfg['dut']['ip'], di, di), check=False)
@@ -342,6 +403,14 @@ class Stand:
                   % (self.cfg['peer']['ip'], pi, pi, pi), check=False)
             self.tune_cpu()
         return self.connected
+
+    def restart_peer(self):
+        """Перезапуск точки peer (test_reconnect_after_peer_restart) — перезагрузкой устройства: узел поднимается в
+        закоммиченной роли точки; затем адрес и iperf3."""
+        p = self.peer
+        old = nodeboot.reboot(p, self.log)
+        nodeboot.wait_up(p, old, p.power_recover, self.log)
+        self._peer_restore_ap()
 
     def linked(self):
         """Связь в текущей роли жива (станция подключена / у точки есть станция)."""
@@ -367,8 +436,11 @@ class Stand:
         return self.connected
 
     def teardown(self):
-        if self.peer_dirty:
+        """peer — снова точка на своей прошивке (перезагрузкой, если он не в этой роли)."""
+        try:
             self._peer_restore_ap()
+        except StandError as e:
+            sys.stderr.write('\n[стенд] peer не возвращён в роль точки: %s\n' % e)
 
     # --- измерения ---
     def client_server(self):

@@ -46,7 +46,8 @@ def test_ap_throughput(ap, check):
 
 
 def test_ap_stop(ap):
-    """Останов точки (PCP_STOP) без ошибки; дальше стенду нужна перезагрузка в любую роль."""
+    """Останов точки (PCP_STOP) без ошибки. wifi down здесь — сам предмет проверки, не перезапуск: обратно радио не
+    поднимается, следующая загрузка роли перезагружает узел (docs/STAND.md)."""
     ap.dut.run('wifi down radio0', check=False, timeout=60)
     import time; time.sleep(3)
     d = ap.dut.dmesg()
