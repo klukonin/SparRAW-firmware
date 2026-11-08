@@ -25,7 +25,7 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     for m in ('image: статическая проверка образа', 'tree: проверка дерева исходников (нужен тулчейн ARC)',
               'stand: нужен стенд', 'sta: dut — станция', 'ap: dut — точка доступа',
-              'pro: только образ SparRAW-PRO', 'slow: долгий (iperf, серии)',
+              'pro: только образ SparRAW-PRO', 'slow: долгий (iperf, серии)', 'long: длинный замер (iperf [test] iperf_long_s, по умолчанию 5 мин)',
               'known_issue: известная открытая проблема (ожидаемо может падать)'):
         config.addinivalue_line('markers', m)
 

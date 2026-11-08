@@ -3,6 +3,8 @@
 import re
 import pytest
 
+from stand import long_verdict
+
 pytestmark = [pytest.mark.stand, pytest.mark.sta]
 
 
@@ -25,6 +27,22 @@ def test_throughput_up(sta):
 def test_throughput_down(sta):
     v = sta.iperf(sta.t.get('iperf_s', 8), reverse=True)
     assert v >= sta.t.get('min_down_mbps', 500), 'down %.0f Мбит/с' % v
+
+
+@pytest.mark.slow
+@pytest.mark.long
+def test_throughput_long_up(sta):
+    """Выгрузка станция → точка [test] iperf_long_s секунд (300): ни одного интервала (10 с) ниже
+    iperf_long_min_frac × min_up_mbps, без потерь линка, разрывов и ошибок FW на обоих узлах (стенд 2026-11-08:
+    короткие 8 с проходят, а наша станция → наша точка держит 4–36 Мбит/с с первых секунд)."""
+    long_verdict(sta, False)
+
+
+@pytest.mark.slow
+@pytest.mark.long
+def test_throughput_long_down(sta):
+    """Загрузка точка → станция [test] iperf_long_s секунд: те же проверки, граница — min_down_mbps."""
+    long_verdict(sta, True)
 
 
 @pytest.mark.slow

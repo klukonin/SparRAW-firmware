@@ -488,5 +488,109 @@ class Stand:
         v = [float(x) for x, k in m if k == want]
         return v[-1] if v else 0.0
 
+    def iperf_series(self, seconds, reverse=False, interval=10):
+        """Длинный iperf3 TCP с интервалами: {'intervals': [Мбит/с по интервалам], 'total': Мбит/с итога (sender —
+        вверх, receiver — вниз), 'retr': повторов TCP по интервалам (только вверх: их считает отправитель — клиент),
+        'raw': текст вывода}. Интервал неполной длины в конце (iperf3 добавляет остаток < 1 с) отбрасывается."""
+        cl, ip = self.client_server()
+        out = cl.run('iperf3 -c %s -t %d -i %d -f m %s 2>&1' % (ip, seconds, interval, '-R' if reverse else ''),
+                     check=False, timeout=seconds + 90)
+        iv, retr = [], []
+        for m in re.finditer(r'\]\s+([\d.]+)-([\d.]+)\s+sec\s+[\d.]+\s+\S+\s+([\d.]+) Mbits/sec(?:\s+(\d+))?'
+                             r'(?!.*(?:sender|receiver))', out):
+            a, b = float(m.group(1)), float(m.group(2))
+            if b - a < 0.5 * interval:
+                continue
+            iv.append(float(m.group(3)))
+            retr.append(int(m.group(4)) if m.group(4) is not None else None)
+        tot = re.findall(r'([\d.]+) Mbits/sec\s+\S*\s*(sender|receiver)', out)
+        want = 'receiver' if reverse else 'sender'
+        v = [float(x) for x, k in tot if k == want]
+        return dict(intervals=iv, total=v[-1] if v else 0.0, retr=retr, raw=out)
+
+    def long_throughput(self, reverse):
+        """Длинная выгрузка (reverse=False, станция → точка) или загрузка (True): iperf3 [test] iperf_long_s секунд
+        (по умолчанию 300) с интервалами [test] iperf_long_interval_s (10). Итог — dict: series (iperf_series), floor
+        (нижняя граница интервала: [test] iperf_long_min_frac (0,5) × min_up_mbps / min_down_mbps), low (интервалы
+        ниже floor: [(номер, Мбит/с)]), missing (интервалов меньше, чем секунд / интервал — iperf3 оборвался),
+        lost_dut / lost_peer (новые «lost link» и разрывы в dmesg), fwerr_dut / fwerr_peer (новые ошибки FW),
+        peer_vendor (peer на прошивке вендора), report (все интервалы текстом)."""
+        secs = int(self.t.get('iperf_long_s', 300))
+        step = int(self.t.get('iperf_long_interval_s', 10))
+        frac = float(self.t.get('iperf_long_min_frac', 0.5))
+        floor = frac * float(self.t.get('min_down_mbps' if reverse else 'min_up_mbps', 500))
+        lost0 = {n.name: len(self.link_lost(n)) for n in (self.dut, self.peer)}
+        err0 = {n.name: n.fw_errors() for n in (self.dut, self.peer)}
+        boot0 = {n.name: n._boot_id() for n in (self.dut, self.peer)}
+        s = self.iperf_series(secs, reverse, step)
+        iv = s['intervals']
+        low = [(i, v) for i, v in enumerate(iv) if v < floor]
+        want = secs // step
+        rows = ['%4d–%-4d с  %7.1f Мбит/с%s%s' % (i * step, (i + 1) * step, v,
+                                                  '' if s['retr'][i] is None else '  повторов TCP %d' % s['retr'][i],
+                                                  '  < %.0f' % floor if v < floor else '')
+                for i, v in enumerate(iv)]
+        r = dict(series=s, floor=floor, low=low, missing=max(0, want - len(iv)),
+                 lost_dut=self.link_lost(self.dut)[lost0['dut']:], lost_peer=self.link_lost(self.peer)[lost0['peer']:],
+                 fwerr_dut=self.dut.fw_errors() - err0['dut'], fwerr_peer=self.peer.fw_errors() - err0['peer'],
+                 peer_vendor=self.peer_fw_is_vendor(),
+                 rebooted=[n.name for n in (self.dut, self.peer) if n._boot_id() != boot0[n.name]])
+        r['report'] = ('%s %d с, интервалы %d с, граница интервала %.0f Мбит/с, итог %.1f Мбит/с\n%s'
+                       % ('загрузка (к станции)' if reverse else 'выгрузка (от станции)', secs, step, floor,
+                          s['total'], '\n'.join(rows)))
+        return r
+
+    @staticmethod
+    def judge_long(r):
+        """Вердикт длинного замера: ('ok' | 'fail' | 'vendor', текст). 'vendor' — peer на прошивке вендора упал сам
+        (ошибка FW или перезагрузка peer), а у dut ни ошибки FW, ни перезагрузки: замер образа сорван не им."""
+        bad = []
+        if r['low']:
+            bad.append('интервалы ниже %.0f Мбит/с: %s' % (r['floor'], ', '.join('№%d %.1f' % x for x in r['low'])))
+        if r['missing']:
+            bad.append('iperf3 оборвался: нет %d интервалов' % r['missing'])
+        if r['fwerr_dut']:
+            bad.append('ошибок FW на dut: %d' % r['fwerr_dut'])
+        if r['lost_dut']:
+            bad.append('потери линка / разрывы на dut: %s' % r['lost_dut'][:5])
+        if r['fwerr_peer']:
+            bad.append('ошибок FW на peer: %d' % r['fwerr_peer'])
+        if r['lost_peer']:
+            bad.append('потери линка / разрывы на peer: %s' % r['lost_peer'][:5])
+        if r['rebooted']:
+            bad.append('перезагрузились: %s' % r['rebooted'])
+        text = r['report'] + ('\n' + '\n'.join(bad) if bad else '')
+        if not bad:
+            return 'ok', text
+        peer_down = r['fwerr_peer'] or 'peer' in r['rebooted']
+        if r['peer_vendor'] and peer_down and not r['fwerr_dut'] and 'dut' not in r['rebooted']:
+            return 'vendor', text
+        return 'fail', text
+
+    def peer_fw_is_vendor(self):
+        """peer работает на прошивке вендора (последний «FW ver.» в dmesg этой загрузки без «SparRAW»)."""
+        ver = re.findall(r'FW ver\. (\S+?)\(', self.peer.dmesg())
+        return bool(ver) and 'SparRAW' not in ver[-1]
+
+    def link_lost(self, node):
+        """Строки потери линка драйвера SparRAW («lost link: …») и разрывов узла с момента его отметки."""
+        return re.findall(r'.*(?:lost link|wmi_evt_disconnect: Disconnect)[^\n]*', node.dmesg_new())
+
     def disconnects(self, node=None):
         return re.findall(r'wmi_evt_disconnect: Disconnect [^\n]*', (node or self.dut).dmesg())
+
+
+VENDOR_PEER_XFAIL = ('ошибка прошивки вендора под длительной выгрузкой, к проверяемому образу не относится '
+                     '(peer на прошивке вендора упал сам: ошибка FW или перезагрузка; у dut ошибок FW нет)')
+
+
+def long_verdict(s, reverse):
+    """Общая часть длинных замеров test_sta / test_ap: все интервалы — в вывод теста (-s / -rA), вердикт
+    Stand.judge_long; падение peer на прошивке вендора — xfail, не провал образа."""
+    r = s.long_throughput(reverse)
+    verdict, text = s.judge_long(r)
+    print('\n' + text)
+    if verdict == 'vendor':
+        import pytest
+        pytest.xfail(VENDOR_PEER_XFAIL + '\n' + text)
+    assert verdict == 'ok', text

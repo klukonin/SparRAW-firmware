@@ -4,6 +4,7 @@ import re
 import pytest
 
 from stand import nodeboot     # tools/stand/nodeboot.py
+from stand import long_verdict
 
 pytestmark = [pytest.mark.stand, pytest.mark.ap]
 
@@ -45,6 +46,22 @@ def test_ap_throughput(ap, check):
     down = ap.iperf(ap.t.get('iperf_s', 8), reverse=True)
     check.is_true(up >= ap.t.get('min_up_mbps', 500), 'up %.0f Мбит/с' % up)
     check.is_true(down >= ap.t.get('min_down_mbps', 500), 'down %.0f Мбит/с' % down)
+
+
+@pytest.mark.slow
+@pytest.mark.long
+def test_throughput_long_up(ap):
+    """Выгрузка станция peer → точка dut [test] iperf_long_s секунд (300), интервалы 10 с: ни одного ниже
+    iperf_long_min_frac × min_up_mbps, без потерь линка, разрывов и ошибок FW (стенд 2026-11-08: наша станция → наша
+    точка — 4–36 Мбит/с с первых секунд, «lost link: TX stalled» у станции; короткий test_ap_throughput проходил)."""
+    long_verdict(ap, False)
+
+
+@pytest.mark.slow
+@pytest.mark.long
+def test_throughput_long_down(ap):
+    """Загрузка точка dut → станция peer [test] iperf_long_s секунд: те же проверки, граница — min_down_mbps."""
+    long_verdict(ap, True)
 
 
 def test_ap_stop(ap):
