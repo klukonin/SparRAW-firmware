@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# bcrun.sh <fw> <tag> — как rdrun.sh, но без iperf: точка с multicast_to_unicast=0 (опция hostapd до commit и
-# перезагрузки; следующая подготовка вернёт исходное значение), захват 40 с с записями данных (низкая нагрузка), пауза,
+# bcrun.sh <fw> <tag> — как rdrun.sh, но без iperf: точка с multicast_to_unicast=0 (опция hostapd в uci без
+# commit — живёт до следующей перезагрузки), захват 40 с с записями данных (низкая нагрузка), пауза,
 # широковещательный ping точки (15 × 1 с) и ответы станции, затем ping по адресу; проверка TA CTS-to-self точки.
 . "$(dirname "$0")/stand_lib.sh"
 F=${1:?образ .fw}; T=${2:?метка}

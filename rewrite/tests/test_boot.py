@@ -29,7 +29,7 @@ def ko_version(path):
 
 def test_dut_firmware(sta_booted, fw_blob, check):
     d = sta_booted.dut
-    check.equal(node_md5(d, '/lib/firmware/wil6210.fw'), md5(fw_blob), 'md5 /lib/firmware/wil6210.fw на dut')
+    check.equal(node_md5(d, standlib.nodeboot.FW_TMP), md5(fw_blob), 'md5 %s на dut' % standlib.nodeboot.FW_TMP)
     loaded = re.findall(r'FW ver\. (\S+?)\(', d.dmesg())
     check.is_true(loaded, 'в dmesg dut нет wmi_evt_ready (FW не загрузилась?)')
     if loaded:
@@ -42,7 +42,7 @@ def test_dut_driver(sta_booted, check):
     probe = re.findall(r'wil6210 (SparRAW-\S+)? ?device found', d.dmesg())
     if not ko:
         pytest.skip('без --ko — драйвер из образа узла: %s' % ((probe[-1] if probe else '') or 'не SparRAW'))
-    check.equal(node_md5(d, '/lib/modules/$(uname -r)/wil6210.ko'), md5(open(ko, 'rb').read()), 'md5 модуля на dut')
+    check.equal(node_md5(d, standlib.nodeboot.KO_TMP), md5(open(ko, 'rb').read()), 'md5 модуля на dut')
     check.is_true('wil6210' in d.run('lsmod', check=False), 'модуль wil6210 не загружен')
     want = ko_version(ko)
     check.is_true(want, '%s: нет версии SparRAW в модуле' % ko)
@@ -51,20 +51,21 @@ def test_dut_driver(sta_booted, check):
 
 
 def test_board(sta_booted, check):
-    """Оба узла — на заданной плате (md5 /lib/firmware/wil6210.brd из [test] brd_md5): от платы зависят мощность
+    """Оба узла — на заданной плате (md5 копии /lib/firmware/wil6210.brd в пути прошивки итерации, [test] brd_md5): от платы зависят мощность
     TX, уровень сигнала и MCS — замеры на другой плате несравнимы. На стенде узел терял плату после сброса."""
     want = sta_booted.t.get('brd_md5')
     if not want:
         pytest.skip('brd_md5 не задан в stand.toml')
     for n in (sta_booted.dut, sta_booted.peer):
-        check.equal(node_md5(n, '/lib/firmware/wil6210.brd'), want, 'md5 wil6210.brd на %s' % n.name)
+        got = node_md5(n, standlib.nodeboot.BRD_TMP) or ''
+        check.is_true(got.startswith(want), 'md5 wil6210.brd на %s: %s, ожидается %s' % (n.name, got, want))
 
 
 def test_peer_firmware(sta_booted, check):
     """В роли станции peer — точка на своей (эталонной) прошивке fw_backup."""
     p, c = sta_booted.peer, sta_booted.cfg['peer']
     if c.get('fw_backup'):
-        check.equal(node_md5(p, '/lib/firmware/wil6210.fw'), node_md5(p, c['fw_backup']),
+        check.equal(node_md5(p, standlib.nodeboot.FW_TMP), node_md5(p, c['fw_backup']),
                    'прошивка peer = %s' % c['fw_backup'])
     check.is_true('type AP' in p.run('iw dev', check=False), 'peer не в режиме точки')
 

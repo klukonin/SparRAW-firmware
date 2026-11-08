@@ -24,7 +24,7 @@ def _peer_gone_and_back(sta, check, off_s, traffic):
     old = sta.peer.vanish()             # стимул теста: reboot -f — точка пропадает без разъединения, питание не снимается
     time.sleep(off_s)
     nodeboot.wait_up(sta.peer, old, sta.peer.power_recover)
-    sta._peer_restore_ap()              # peer поднимается в закоммиченной роли точки: дождаться FW, адрес, iperf3
+    sta._peer_restore_ap()              # peer поднялся без драйвера: загрузить точку командой, адрес, iperf3
     check.is_true(d.fw_errors() == 0, 'ошибка FW станции после пропажи точки')
     ok = sta._wait(d, 'iw dev %s link 2>/dev/null | grep Connected' % d.iface(), 120)
     log = d.dmesg_new()

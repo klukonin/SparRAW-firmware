@@ -3,6 +3,8 @@
 import re
 import pytest
 
+from stand import nodeboot     # tools/stand/nodeboot.py
+
 pytestmark = [pytest.mark.stand, pytest.mark.ap]
 
 
@@ -11,7 +13,7 @@ def test_ap_nodes_run_image(ap, fw_blob, check):
     import hashlib
     want = hashlib.md5(fw_blob).hexdigest()
     for n in (ap.dut, ap.peer):
-        got = n.run('md5sum /lib/firmware/wil6210.fw', check=False).split()[:1]
+        got = n.run('md5sum %s' % nodeboot.FW_TMP, check=False).split()[:1]
         check.equal(got[0] if got else None, want, 'md5 прошивки на %s' % n.name)
         ver = re.findall(r'FW ver\. (\S+?)\(', n.dmesg())    # последняя загрузка; dmesg_new() её может не содержать
         check.is_true(ver and ver[-1] == ap_version(fw_blob), 'версия FW на %s: %s' % (n.name, ver[-1:] or None))
@@ -48,7 +50,7 @@ def test_ap_throughput(ap, check):
 def test_ap_stop(ap):
     """Останов точки (PCP_STOP) без ошибки. wifi down здесь — сам предмет проверки, не перезапуск: обратно радио не
     поднимается, следующая загрузка роли перезагружает узел (docs/STAND.md)."""
-    ap.dut.run('wifi down radio0', check=False, timeout=60)
+    ap.dut.run('wifi down radio0', check=False, timeout=60, allow_wifi_down=True)
     import time; time.sleep(3)
     d = ap.dut.dmesg()
     ap.role = None

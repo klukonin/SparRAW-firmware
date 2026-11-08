@@ -5,9 +5,11 @@
 состоянии — точка доступа на своей (эталонной) прошивке; для теста AP роли меняются: dut — точка, peer — станция
 на ТОМ ЖЕ тестируемом образе (vendor-станция 6.2 к точке по стандарту не идёт: B43 маяка, 9.3.4.2).
 
-Смена прошивки, драйвера и роли — только перезагрузкой устройства (docs/STAND.md, tools/stand/nodeboot.py): файлы на
-место, роль в uci с commit, sync, reboot, проверки после загрузки. Никаких rmmod/insmod/wifi down/up. Адреса
-10.60.0.x, правила nft и сервер iperf3 — командами после загрузки (это не перезапуск драйвера). Питание снимается
+Драйвер wil6210 после загрузки системы не грузится сам (node_boot.sh --install): каждая итерация — reboot, затем
+командой прошивка итерации в tmpfs (firmware_class.path), роль в uci без commit, insmod с параметрами итерации, wifi
+up radio0, проверки (docs/STAND.md, tools/stand/nodeboot.py). Смена прошивки, модуля, роли — новая перезагрузка;
+rmmod и wifi down/up запрещены (nodeboot.check_cmd). Адреса 10.60.0.x, правила nft и сервер iperf3 — командами после
+загрузки. Питание снимается
 только если узел не отвечает по ssh, не больше [test] max_power_cycles раз за прогон (по умолчанию 1). Пропажа узла в
 тестах test_*_vanish — «sync; reboot -f» (Node.vanish), не питание.
 """
@@ -23,8 +25,8 @@ import nodeboot
 from nodeboot import StandError, fw_records, fw_version   # noqa: F401 (часть интерфейса модуля: test_image, test_boot)
 
 # Дополнительные команды uci для точки (обе роли: peer-AP и dut-AP), например
-# SPARRAW_AP_UCI="uci set wireless.default_radio0.multicast_to_unicast=1" — проверка опций hostapd набором. Применяются
-# до commit и перезагрузки; следующая подготовка узла возвращает исходные значения этих опций.
+# SPARRAW_AP_UCI="uci set wireless.default_radio0.multicast_to_unicast=1" — проверка опций hostapd набором. Без commit:
+# живут до перезагрузки узла.
 AP_UCI = list(nodeboot.split_uci(os.environ.get('SPARRAW_AP_UCI', '')))
 
 SSH_OPTS = nodeboot.SSH_OPTS
@@ -104,7 +106,8 @@ class Node:
                          % (self.name, why, self.recoveries, self.max_power_cycles))
         self.power_cycle()
 
-    def run(self, cmd, timeout=60, check=True, input=None):
+    def run(self, cmd, timeout=60, check=True, input=None, allow_wifi_down=False):
+        nodeboot.check_cmd(cmd, allow_wifi_down)   # rmmod, modprobe -r, wifi reload — никогда; wifi down — только test_ap_stop
         if self.iperf_cpu:   # iperf3 (сервер и клиент) — на своём ядре: на ядре прерываний wil6210 или RPS — до −25 %
             cmd = re.sub(r'(?<!killall )\biperf3 ', 'taskset %s iperf3 ' % self.iperf_cpu, cmd)
         r = self._ssh(cmd, timeout, input)
@@ -114,6 +117,7 @@ class Node:
         return r.stdout.decode('utf-8', 'replace')
 
     def runb(self, cmd, timeout=60):
+        nodeboot.check_cmd(cmd)
         return self._ssh(cmd, timeout).stdout
 
     def put(self, data, path):
@@ -148,7 +152,8 @@ class Node:
 
     def vanish(self):
         """Стимул тестов пропажи (test_*_vanish): узел исчезает из эфира без разъединения — «sync; reboot -f» по
-        ssh. busybox reboot -f (init/halt.c) делает sync и сразу системный вызов reboot, минуя procd: скрипты
+        ssh. После загрузки драйвера нет — тест загружает его сам (Stand._peer_restore_ap, nodeboot.bring_up).
+        busybox reboot -f (init/halt.c) делает sync и сразу системный вызов reboot, минуя procd: скрипты
         остановки, hostapd/wpa_supplicant и netifd не останавливаются, Deauth/Disassociation не уходят; у wil6210 нет
         .shutdown (pcie_bus.c), так что device_shutdown() ядра fw не трогает. Питание не снимается. Возвращает
         boot_id до перезагрузки — для nodeboot.wait_up()."""
@@ -231,8 +236,8 @@ class Node:
 
 class Stand:
     """Роли: 'sta' — dut станция у точки peer; 'ap' — dut точка, peer станция (тот же образ). Каждая загрузка роли —
-    перезагрузка узлов по схеме nodeboot (роль в uci с commit): узел, перезагрузившийся сам или после снятия питания,
-    поднимается в той же роли."""
+    перезагрузка узлов и загрузка драйвера командой (nodeboot): узел, перезагрузившийся сам или после снятия питания,
+    поднимается без драйвера и без роли."""
 
     def __init__(self, cfg, fw_path, ko_path=None, peer_fw_path=None):
         tools = dict(cfg.get('tools', {}))
@@ -269,34 +274,40 @@ class Stand:
                   % m, check=False)
 
     def _node_recovered(self, node):
-        """Узел перезагрузился (сам или после снятия питания) — поднялся в закоммиченной роли, но адреса, правила
-        nft и iperf3 стенда пропали: следующая фикстура роли загрузит роль заново."""
+        """Узел перезагрузился (сам или после снятия питания) — драйвера нет, роль потеряна: следующая фикстура
+        роли загрузит её заново."""
         self.role = None
 
     # --- описания ролей (nodeboot.Spec) ---
     def _brd(self):
         return self.t.get('brd_md5') or None
 
+    def _mp(self, *extra):
+        """Параметры insmod узла на проверяемом образе: [test] modparams + extra."""
+        return ' '.join([self.t.get('modparams', '')] + list(extra)).strip() or None
+
     def peer_ap_spec(self):
-        """peer — точка на своей прошивке (fw_backup на узле), SSID стенда, сеть lan, опции SPARRAW_AP_UCI."""
+        """peer — точка на своей прошивке (fw_backup на узле, иначе /lib/firmware/wil6210.fw), SSID стенда, сеть lan,
+        опции SPARRAW_AP_UCI, параметры [peer] modparams."""
         c = self.cfg['peer']
-        return nodeboot.Spec('ap', c['ssid'], 'lan', fw_node=c.get('fw_backup'), uci=AP_UCI, brd_md5=self._brd())
+        return nodeboot.Spec('ap', c['ssid'], 'lan', fw_node=c.get('fw_backup') or '/lib/firmware/wil6210.fw',
+                             uci=AP_UCI, modparams=c.get('modparams'), brd_md5=self._brd())
 
     def dut_sta_spec(self, timeout=90):
         """dut — станция на проверяемом образе (и модуле --ko) у точки peer; сеть — [dut] sta_network (иначе не
         трогать)."""
         return nodeboot.Spec('sta', self.cfg['peer']['ssid'], self.cfg['dut'].get('sta_network'), fw=self.fw,
-                             ko=self.ko_blob, brd_md5=self._brd(), link_timeout=timeout)
+                             ko=self.ko_blob, modparams=self._mp(), brd_md5=self._brd(), link_timeout=timeout)
 
     def peer_sta_spec(self, timeout=120):
         """peer — станция на проверяемом образе у точки dut; FW error не восстанавливать с самого старта
-        (no_fw_recovery=Y в /etc/modules.conf): состояние fw на момент сбоя остаётся для артефактов."""
+        (insmod … no_fw_recovery=Y): состояние fw на момент сбоя остаётся для артефактов."""
         return nodeboot.Spec('sta', self.t.get('ap_ssid', 'SPARRAW-TEST'), '', fw=self.peer_fw,
-                             modparams='no_fw_recovery=Y', brd_md5=self._brd(), link_timeout=timeout)
+                             modparams=self._mp('no_fw_recovery=Y'), brd_md5=self._brd(), link_timeout=timeout)
 
     def dut_ap_spec(self):
         return nodeboot.Spec('ap', self.t.get('ap_ssid', 'SPARRAW-TEST'), None, fw=self.fw, ko=self.ko_blob,
-                             uci=AP_UCI, brd_md5=self._brd())
+                             uci=AP_UCI, modparams=self._mp(), brd_md5=self._brd())
 
     @staticmethod
     def _hard(node, rep):
@@ -322,13 +333,17 @@ class Stand:
                       "killall iperf3 2>/dev/null; iperf3 -s -D" % (c['ip'], c['ip']), check=False, timeout=30)
 
     def _peer_restore_ap(self):
-        """peer — точка на своей прошивке (fw_backup), SSID стенда, адрес и сервер iperf3. Уже так (подпись
-        подготовки, md5, интерфейс AP; после включения — ждать FW до 120 с) — без перезагрузки; иначе — перезагрузка
-        в эту роль (nodeboot)."""
+        """peer — точка на своей прошивке, SSID стенда, адрес и сервер iperf3. Уже так в этой загрузке (подпись в
+        /tmp, md5, интерфейс AP) — ничего; драйвер не загружен (узел только что загрузился: reboot -f теста пропажи,
+        перезапуск точки) — загрузить командой; загружено другое — перезагрузка и загрузка (rmmod нет)."""
         p, spec = self.peer, self.peer_ap_spec()
         self._reach(p)
         if not nodeboot.matches(p, spec, wait=nodeboot.FW_TIMEOUT):
-            self._hard(p, nodeboot.boot(p, spec, p.power_recover, self.log))
+            if nodeboot._q(p, nodeboot.LOADED_CMD).strip() == '0':
+                rep = nodeboot.bring_up(p, spec, self.log)
+            else:
+                rep = nodeboot.boot(p, spec, p.power_recover, self.log)
+            self._hard(p, rep)
             p.mark()
         self._peer_ap_runtime()
 
@@ -342,20 +357,18 @@ class Stand:
 
     # --- роли ---
     def boot_sta(self, timeout=90):
-        """dut — станция у точки peer: перезагрузка dut в роль STA на проверяемом образе; peer, если он не точка на
-        своей прошивке (после теста AP, после сбоя), — перезагрузка в роль точки параллельно."""
+        """dut — станция у точки peer: перезагрузка dut и загрузка драйвера с проверяемым образом в роли STA; peer,
+        если в этой загрузке он не точка на своей прошивке, — перезагрузка параллельно и загрузка точки первой."""
         p, d = self.peer, self.dut
         self.role, self.connected = None, False
         pspec, dspec = self.peer_ap_spec(), self.dut_sta_spec(timeout)
         self._reach(p, d)
         peer_ok = nodeboot.matches(p, pspec)
-        pwant = None if peer_ok else nodeboot.prepare(p, pspec, self.log)
-        dwant = nodeboot.prepare(d, dspec, self.log)
         pold = None if peer_ok else nodeboot.reboot(p, self.log)
         dold = nodeboot.reboot(d, self.log)
         if not peer_ok:
             nodeboot.wait_up(p, pold, p.power_recover, self.log)
-            self._hard(p, nodeboot.verify(p, pspec, pwant, self.log))
+            self._hard(p, nodeboot.bring_up(p, pspec, self.log))
         self._peer_ap_runtime()
         # точка может держать запись станции dut прошлой загрузки (vendor-точка с зависшей записью переставала слать
         # маяки) — снять, пока dut перезагружается
@@ -364,7 +377,7 @@ class Stand:
         nodeboot.wait_up(d, dold, d.power_recover, self.log)
         d.reset_mark()
         p.mark()
-        rep = self._hard(d, nodeboot.verify(d, dspec, dwant, self.log))
+        rep = self._hard(d, nodeboot.bring_up(d, dspec, self.log))
         self.role = 'sta'
         self.connected = rep.link
         if self.connected:
@@ -374,22 +387,20 @@ class Stand:
         return self.connected
 
     def boot_ap(self, timeout=120):
-        """dut — точка на проверяемом образе, peer — станция на том же образе: оба узла перезагружаются в свои роли
-        параллельно."""
+        """dut — точка на проверяемом образе, peer — станция на том же образе: оба узла перезагружаются параллельно,
+        драйвер грузится командой — сначала точка, затем станция."""
         p, d = self.peer, self.dut
         self.role, self.connected = None, False
         pspec, dspec = self.peer_sta_spec(timeout), self.dut_ap_spec()
         self._reach(p, d)
-        pwant = nodeboot.prepare(p, pspec, self.log)
-        dwant = nodeboot.prepare(d, dspec, self.log)
         pold = nodeboot.reboot(p, self.log)
         dold = nodeboot.reboot(d, self.log)
         nodeboot.wait_up(d, dold, d.power_recover, self.log)
-        d.reset_mark()
-        drep = self._hard(d, nodeboot.verify(d, dspec, dwant, self.log))
         nodeboot.wait_up(p, pold, p.power_recover, self.log)
+        d.reset_mark()
         p.reset_mark()               # станция на проверяемом образе: ошибки FW считаются с её загрузки
-        self._hard(p, nodeboot.verify(p, pspec, pwant, self.log, link=False))
+        drep = self._hard(d, nodeboot.bring_up(d, dspec, self.log))
+        self._hard(p, nodeboot.bring_up(p, pspec, self.log, link=False))
         self.role = 'ap'
         di = drep.iface or d.iface() or 'x'
         self.connected = self._wait(d, 'iw dev %s station dump 2>/dev/null | grep Station' % di, timeout)
@@ -405,8 +416,8 @@ class Stand:
         return self.connected
 
     def restart_peer(self):
-        """Перезапуск точки peer (test_reconnect_after_peer_restart) — перезагрузкой устройства: узел поднимается в
-        закоммиченной роли точки; затем адрес и iperf3."""
+        """Перезапуск точки peer (test_reconnect_after_peer_restart) — перезагрузкой устройства, затем драйвер точки
+        командой, адрес и iperf3."""
         p = self.peer
         old = nodeboot.reboot(p, self.log)
         nodeboot.wait_up(p, old, p.power_recover, self.log)

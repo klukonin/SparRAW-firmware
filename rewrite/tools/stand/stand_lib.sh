@@ -2,13 +2,15 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2016
 # stand_lib.sh — общее для ручных записей на стенде (rdrun.sh, bcrun.sh, assocrun.sh; подключается через «.»).
-# Узлы поднимаются только перезагрузкой — node_boot.sh (docs/STAND.md). После загрузки — адреса 10.60.0.x, sysctl,
-# iperf3 -s: обычные команды, не перезапуск драйвера.
+# Узлы — node_boot.sh (docs/STAND.md): reboot, затем драйвер командой с прошивкой итерации (tmpfs, роль без commit,
+# insmod, wifi up). Однократно на каждом узле: node_boot.sh --install <host>. После загрузки — адреса 10.60.0.x,
+# sysctl, iperf3 -s: обычные команды.
 #
 # Переменные (со значениями по умолчанию):
 #   AP=root@192.168.1.11  STA=root@192.168.1.12  SSID=WL60TEST  STA_NET=wl60  AP_IP=10.60.0.11  STA_IP=10.60.0.12
 #   BRD_MD5=e17714311e27  — ожидаемый md5 платы (префикс) на обоих узлах; пусто — не проверять
 #   TAPO_AP / TAPO_STA    — адрес розетки: node_boot.sh снимет питание (один раз), если узел не поднялся после reboot
+#   MODPARAMS=""          — параметры insmod обоих узлов через пробел (напр. "no_fw_recovery=Y fw_log_level=7")
 #   IRQ_CPU=2             — маска CPU прерываний wil6210 станции; OUT=./standout — каталог результатов
 D0=$(cd "$(dirname "$0")" && pwd)
 R=$(cd "$D0/../.." && pwd)                       # rewrite/
@@ -24,15 +26,17 @@ BRD_MD5=${BRD_MD5-e17714311e27}
 export BRD_MD5
 OUT=${OUT:-$PWD/standout}
 mkdir -p "$OUT"
+MP=()
+for p in $MODPARAMS; do MP+=(--modparam "$p"); done
 
-# boot_ap <fw> [аргументы node_boot.sh…] / boot_sta <fw> [аргументы…] — роль перезагрузкой; код node_boot.sh
+# boot_ap <fw> [аргументы node_boot.sh…] / boot_sta <fw> [аргументы…] — итерация (reboot, драйвер командой); код node_boot.sh
 boot_ap() {
 	local fw=$1; shift
-	"$D0/node_boot.sh" "$AP" --role ap --ssid "$SSID" --fw "$fw" ${TAPO_AP:+--tapo "$TAPO_AP"} "$@"
+	"$D0/node_boot.sh" "$AP" --role ap --ssid "$SSID" --fw "$fw" "${MP[@]}" ${TAPO_AP:+--tapo "$TAPO_AP"} "$@"
 }
 boot_sta() {
 	local fw=$1; shift
-	"$D0/node_boot.sh" "$STA" --role sta --ssid "$SSID" --network "$STA_NET" --fw "$fw" ${TAPO_STA:+--tapo "$TAPO_STA"} "$@"
+	"$D0/node_boot.sh" "$STA" --role sta --ssid "$SSID" --network "$STA_NET" --fw "$fw" "${MP[@]}" ${TAPO_STA:+--tapo "$TAPO_STA"} "$@"
 }
 
 # boot_pair <fw> [uci точки] — оба узла параллельно (точка и станция грузятся одновременно, станция ждёт точку);

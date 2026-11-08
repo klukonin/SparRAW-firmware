@@ -1,41 +1,52 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Подготовка узла стенда: смена прошивки, драйвера и роли — только перезагрузкой устройства (docs/STAND.md).
+"""Узел стенда: драйвер wil6210 грузится только командой, с прошивкой итерации; смена — только перезагрузкой
+(docs/STAND.md).
 
-Одна схема для всех (pytest-стенд tests/stand.py, ручные записи tools/stand/*.sh):
+Однократно (install, `node_boot.sh --install <host>`): автозагрузка wil6210 снимается — /etc/modules.d/wil6210 в
+бэкап /etc/sparraw-stand.modules.d.wil6210. После загрузки системы драйвера нет; netifd без phy просто ждёт.
 
-  1. файлы: /lib/firmware/wil6210.fw и /lib/modules/$(uname -r)/wil6210.ko (если заданы) — запись во временный
-     файл, mv, sync, сверка md5 до перезагрузки;
-  2. роль в uci: опции прошлого сценария возвращаются к исходным значениям (/etc/sparraw-stand.uci), затем
-     mode/ssid/network/disabled=0, затем команды uci сценария (опции hostapd и т. п.) → uci commit;
-  3. параметры модуля wil6210, нужные с самого старта (no_fw_recovery=Y), — строка «options wil6210 …» в
-     /etc/modules.conf с меткой (kmodloader читает её при загрузке модуля); без параметров строка удаляется;
-  4. sync; sleep 1; sync → reboot → ожидание ssh с новым boot_id;
-  5. проверки: строка версии fw (wmi_evt_ready «FW ver. …»), md5 fw/модуля/платы, интерфейс в нужной роли, у
-     станции — связь с точкой.
+Итерация (boot): reboot → ssh с новым boot_id → проверка «wil6210 не загружен» → прошивка итерации в tmpfs
+(/tmp/sparraw-fw/wil6210.fw, рядом копия платы /lib/firmware/wil6210.brd с проверкой md5), путь поиска прошивки
+ядра firmware_class.path = /tmp/sparraw-fw (ищется ПЕРВЫМ: fw_path[] в drivers/base/firmware_loader/main.c), флеш не
+трогается → роль в uci БЕЗ commit (дельта в /tmp/.uci: netifd читает её — libuci по умолчанию UCI_FLAG_SAVED_DELTA,
+savedir /tmp/.uci; после перезагрузки узел чистый) + `ubus call network reload` → modprobe cfg80211 (зависимости) →
+insmod <модуль> <параметры итерации> → появился phy → `wifi up radio0` (первый подъём, не перезапуск) → проверки:
+версия fw в dmesg, md5 fw и модуля, плата, путь прошивки, интерфейс роли, связь станции.
 
-Никаких rmmod/insmod/wifi down/up: rmmod после работы Wi-Fi висел в D, netifd после wifi down/up на перенастроенном
-узле терял PHY, после insmod интерфейс переименовывался в phy1-*. Питание снимается только если узел не отвечает
-по ssh после перезагрузки, не больше одного раза (колбэк power решает, разрешено ли ещё).
+Запрещено (check_cmd): rmmod, modprobe -r, wifi down/reload — смена прошивки, модуля и роли только новой
+перезагрузкой. Питание снимается только если узел не отвечает по ssh после перезагрузки, не больше одного раза
+(колбэк power решает, разрешено ли ещё).
 
 Узел — объект с полем name и методом sh(cmd, timeout, input=None) -> (rc | None при зависании, stdout, stderr):
 одна попытка ssh без самовосстановления. CLI — tools/stand/node_boot.sh.
 """
 import hashlib, re, shlex, struct, subprocess, sys, time
 
-STATE_UCI = '/etc/sparraw-stand.uci'      # «ключ=исходное значение» / «ключ» (не было) опций сценария: откат
-STATE_SIG = '/etc/sparraw-stand.sig'      # подпись подготовленного состояния (matches())
+FWDIR = '/tmp/sparraw-fw'                 # firmware_class.path итерации (tmpfs)
+FW_TMP = FWDIR + '/wil6210.fw'
+BRD_TMP = FWDIR + '/wil6210.brd'
+DRVDIR = '/tmp/sparraw-drv'
+KO_TMP = DRVDIR + '/wil6210.ko'           # свой модуль итерации (tmpfs)
+KO_SYS = '/lib/modules/$(uname -r)/wil6210.ko'
+BRD = '/lib/firmware/wil6210.brd'
+FWPATH = '/sys/module/firmware_class/parameters/path'
+SIG = '/tmp/sparraw-stand.sig'            # подпись загруженного состояния (matches()); пропадает с перезагрузкой
+MODD = '/etc/modules.d/wil6210'
+MODD_BAK = '/etc/sparraw-stand.modules.d.wil6210'
+# прежняя схема (роль с commit, параметры в modules.conf) — install убирает её следы
+LEGACY_UCI = '/etc/sparraw-stand.uci'
+LEGACY_SIG = '/etc/sparraw-stand.sig'
 MODCONF = '/etc/modules.conf'
 MODMARK = '# sparraw-stand'
-FW = '/lib/firmware/wil6210.fw'
-KO = '/lib/modules/$(uname -r)/wil6210.ko'
-BRD = '/lib/firmware/wil6210.brd'
 RADIO = 'wireless.radio0'
 IFACE = 'wireless.default_radio0'
 
 # Время (с): узел wAP 60G грузится ~60–90 с
 BOOT_TIMEOUT = 300        # от reboot до ssh с новым boot_id
 REBOOT_HANG = 120         # узел отвечает со старым boot_id дольше — reboot завис (процесс в D), один «reboot -f»
-FW_TIMEOUT = 120          # от ssh до wmi_evt_ready
+RC_SETTLE = 120           # rc.local узла ждёт /sys/module/wil6210 до 60 с: insmod — после uptime RC_SETTLE
+PHY_TIMEOUT = 30          # от insmod до /sys/class/ieee80211/phy*
+FW_TIMEOUT = 120          # от wifi up до wmi_evt_ready
 IFACE_TIMEOUT = 60        # от wmi_evt_ready до интерфейса в нужной роли
 LINK_TIMEOUT = 120        # станция: до «Connected»
 
@@ -45,6 +56,21 @@ _now = time.monotonic
 
 class StandError(Exception):
     pass
+
+
+# ============================== запреты ==============================
+
+FORBIDDEN = re.compile(r'\brmmod\b|\bmodprobe\b[^;&|]*\s-[a-z]*r|\bwifi\s+(down|reload)\b')
+
+
+def check_cmd(cmd, allow_wifi_down=False):
+    """Команда на узел не перезапускает драйвер: rmmod, modprobe -r, wifi reload — никогда; wifi down — только как
+    предмет проверки (test_ap_stop), allow_wifi_down=True."""
+    m = FORBIDDEN.search(cmd)
+    if m and not (allow_wifi_down and re.fullmatch(r'wifi\s+down', m.group(0))):
+        raise StandError('запрещённая команда «%s» в «%s»: смена драйвера, прошивки, роли — только перезагрузкой '
+                         '(docs/STAND.md)' % (m.group(0), cmd[:80]))
+    return cmd
 
 
 # ============================== образ .fw ==============================
@@ -72,21 +98,22 @@ def md5(b):
     return hashlib.md5(b).hexdigest()
 
 
-# ============================== описание роли ==============================
+# ============================== описание итерации ==============================
+
+MODPARAM = re.compile(r'^[a-z_][a-z0-9_]*=[A-Za-z0-9_.,:-]+$')
+
 
 class Spec:
-    """Что должно быть на узле после перезагрузки.
+    """Что загрузить на узле в этой итерации.
 
     role      'ap' | 'sta'
     ssid      SSID точки (своей или к которой идёт станция)
     network   None — не трогать wireless.default_radio0.network, '' — удалить, иначе — имя сети uci (точка: lan)
-    fw        образ .fw (bytes) или None — не менять
-    fw_node   путь к образу на самом узле (копия на место, напр. fw_backup peer) — вместо fw
-    ko        модуль wil6210.ko (bytes) или None — не менять
-    uci       команды uci сценария (список строк «uci set …»), применяются после роли, до commit; исходные
-              значения ключей «uci set» запоминаются, следующая подготовка их возвращает (или удаляет ключ, которого
-              не было) — опция сценария не переживает его
-    modparams параметры модуля wil6210 с самого старта («no_fw_recovery=Y») или None
+    fw        образ .fw (bytes) — или fw_node: путь к образу на самом узле (напр. fw_backup peer); одно из двух
+              обязательно: прошивка итерации задаётся явно
+    ko        свой модуль wil6210.ko (bytes) или None — модуль системы /lib/modules/$(uname -r)/wil6210.ko
+    uci       команды uci сценария (список «uci set …»), применяются после роли, без commit
+    modparams параметры insmod («no_fw_recovery=Y fw_log_level=7») или None
     brd_md5   ожидаемый md5 платы (можно префикс от 8 знаков) или None
     wait_link станция: ждать связь с точкой при проверке
     """
@@ -95,12 +122,16 @@ class Spec:
                  brd_md5=None, wait_link=True, link_timeout=LINK_TIMEOUT):
         if role not in ('ap', 'sta'):
             raise StandError('роль %r: нужна ap или sta' % role)
-        if fw is not None and fw_node:
-            raise StandError('fw и fw_node вместе')
+        if (fw is None) == (not fw_node):
+            raise StandError('прошивка итерации: нужно ровно одно из fw (файл) и fw_node (путь на узле)')
         self.role, self.ssid, self.network = role, ssid, network
         self.fw, self.fw_node, self.ko = fw, fw_node, ko
         self.uci = list(split_uci(uci))
-        self.modparams = modparams or None
+        mp = (modparams or '').split()
+        bad = [p for p in mp if not MODPARAM.match(p)]
+        if bad:
+            raise StandError('параметры модуля %s: нужен вид имя=значение' % bad)
+        self.modparams = ' '.join(mp) or None
         self.brd_md5 = brd_md5 or None
         self.wait_link, self.link_timeout = wait_link, link_timeout
 
@@ -110,12 +141,11 @@ class Spec:
 
 
 UCI_ALLOWED = re.compile(r'^uci\s+(?:-q\s+)?(set|delete|add_list|del_list)\s+([A-Za-z0-9_]+)\.([^\s=]+)(?:=|\s|$)')
-UCI_SET_KEY = re.compile(r'^uci\s+(?:-q\s+)?set\s+([A-Za-z0-9_]+\.[A-Za-z0-9_@\[\]\-]+(?:\.[A-Za-z0-9_\-]+)?)=')
 
 
 def split_uci(cmds):
-    """Команды uci сценария: строка «a; b» или список. Только uci set/delete/add_list/del_list — ни commit (его
-    делает подготовка), ни wifi/rmmod/reboot."""
+    """Команды uci сценария: строка «a; b» или список. Только uci set/delete/add_list/del_list — ни commit (роль
+    живёт до перезагрузки), ни wifi/rmmod/reboot."""
     if isinstance(cmds, str):
         cmds = [cmds]
     for c in cmds:
@@ -128,16 +158,8 @@ def split_uci(cmds):
             yield part
 
 
-def uci_configs(cmds):
-    return sorted({UCI_ALLOWED.match(c).group(2) for c in cmds})
-
-
-def uci_set_keys(cmds):
-    return [m.group(1) for m in map(UCI_SET_KEY.match, cmds) if m]
-
-
 def signature(spec, fw_md5, ko_md5):
-    """Подпись состояния: роль, SSID, сеть, команды сценария, параметры модуля, md5 образа и модуля."""
+    """Подпись итерации: роль, SSID, сеть, команды сценария, параметры модуля, md5 образа и модуля."""
     s = '|'.join([spec.role, spec.ssid, repr(spec.network), ';'.join(spec.uci), spec.modparams or '',
                   fw_md5 or '-', ko_md5 or '-'])
     return md5(s.encode())
@@ -146,13 +168,10 @@ def signature(spec, fw_md5, ko_md5):
 # ============================== команды на узле ==============================
 
 def uci_script(spec, sig):
-    """Скрипт роли: вернуть опции прошлого сценария, выставить роль и опции сценария (запомнив их исходные
-    значения), commit, параметры модуля, подпись, sync. Последняя строка вывода — PREPARED."""
+    """Роль без commit (дельта в /tmp/.uci), ubus call network reload — netifd берёт роль до появления phy;
+    подпись итерации в /tmp. Последняя строка вывода — UCI_SET."""
     q = shlex.quote
-    L = ['if [ -f %s ]; then while IFS= read -r l; do [ -n "$l" ] || continue; k=${l%%%%=*}; '
-         'if [ "$k" != "$l" ]; then uci set "$l"; else uci -q delete "$k"; fi; uci commit "${k%%%%.*}"; '
-         'done < %s; rm -f %s; fi' % (STATE_UCI, STATE_UCI, STATE_UCI),
-         'uci set %s.disabled=0' % RADIO,
+    L = ['uci set %s.disabled=0' % RADIO,
          'uci set %s.disabled=0' % IFACE,
          'uci set %s.mode=%s' % (IFACE, spec.role),
          'uci set %s.ssid=%s' % (IFACE, q(spec.ssid))]
@@ -160,44 +179,61 @@ def uci_script(spec, sig):
         L.append('uci -q delete %s.network' % IFACE)
     elif spec.network is not None:
         L.append('uci set %s.network=%s' % (IFACE, q(spec.network)))
-    keys = uci_set_keys(spec.uci)
-    if keys:
-        L.append(': > %s.new' % STATE_UCI)
-        L += ["if v=$(uci -q get %s); then printf '%%s=%%s\\n' %s \"$v\"; else printf '%%s\\n' %s; fi >> %s.new"
-              % (q(k), q(k), q(k), STATE_UCI) for k in keys]
     L += spec.uci
-    for cfg in sorted(set(['wireless'] + uci_configs(spec.uci))):
-        L.append('uci commit %s || { echo "uci commit %s failed"; exit 3; }' % (cfg, cfg))
-    if keys:
-        L.append('mv -f %s.new %s' % (STATE_UCI, STATE_UCI))
-    L.append("if [ -f %s ]; then sed -i '/%s$/d' %s; fi" % (MODCONF, MODMARK, MODCONF))
-    if spec.modparams:
-        L.append('echo %s >> %s' % (q('options wil6210 %s %s' % (spec.modparams, MODMARK)), MODCONF))
-    L.append('echo %s > %s' % (sig, STATE_SIG))
-    L += ['sync', 'sleep 1', 'sync', 'echo PREPARED']
+    L += ['ubus call network reload', 'echo %s > %s' % (sig, SIG), 'echo UCI_SET']
     return '\n'.join(L) + '\n'
 
 
+def install_script():
+    """Однократно: снять автозагрузку wil6210 (бэкап), убрать следы прежней схемы (опции сценария с commit —
+    вернуть исходные значения, подпись, параметры в modules.conf), сообщить, что ещё на узле упоминает wil6210."""
+    return '\n'.join([
+        'if [ -f %s ]; then [ -f %s ] || cp %s %s; rm -f %s; echo "AUTOLOAD_REMOVED"; fi' % (MODD, MODD_BAK, MODD,
+                                                                                         MODD_BAK, MODD),
+        'O=$(grep -lw wil6210 /etc/modules.d/* /etc/modules-boot.d/* 2>/dev/null); [ -z "$O" ] || echo "OTHER_AUTOLOAD $O"',
+        'if [ -f %s ]; then while IFS= read -r l; do [ -n "$l" ] || continue; k=${l%%%%=*}; '
+        'if [ "$k" != "$l" ]; then uci set "$l"; else uci -q delete "$k"; fi; uci commit "${k%%%%.*}"; '
+        'done < %s; rm -f %s; echo "LEGACY_UCI_RESTORED"; fi' % (LEGACY_UCI, LEGACY_UCI, LEGACY_UCI),
+        'rm -f %s' % LEGACY_SIG,
+        "if [ -f %s ] && grep -q '%s$' %s; then sed -i '/%s$/d' %s; echo LEGACY_MODCONF_REMOVED; fi"
+        % (MODCONF, MODMARK, MODCONF, MODMARK, MODCONF),
+        'H=$(grep -rlw wil6210 /etc/hotplug.d /etc/hotplug.json 2>/dev/null); [ -z "$H" ] || echo "HOTPLUG $H"',
+        'grep -qw wil6210 /etc/rc.local 2>/dev/null && echo RCLOCAL',
+        'sync', 'echo INSTALLED']) + '\n'
+
+
+def uninstall_script():
+    return ('if [ -f %s ] && [ ! -f %s ]; then cp %s %s; fi; sync; echo UNINSTALLED\n' % (MODD_BAK, MODD, MODD_BAK, MODD))
+
+
 def put_cmd(path):
-    """Запись stdin в path атомарно (временный файл, mv), sync, md5 записанного."""
-    return ('P=%s; cat > "$P.new" && mv -f "$P.new" "$P" && sync && md5sum "$P"' % path)
+    """Запись stdin в path атомарно (каталог, временный файл, mv), md5 записанного. Пути — в tmpfs."""
+    return ('P=%s; mkdir -p "${P%%/*}" && cat > "$P.new" && mv -f "$P.new" "$P" && md5sum "$P"' % path)
 
 
+LOADED_CMD = "grep -c '^wil6210 ' /proc/modules"
 FACTS_CMD = (
     'echo "ver=$(dmesg | sed -n \'s/.*FW ver\\. \\([^(]*\\)(.*/\\1/p\' | tail -1)"; '
     'echo "fwerr=$(dmesg | grep -c \'Firmware error\')"; '
     'echo "probe=$(dmesg | sed -n \'s/.*wil6210 \\(SparRAW-[^ ]*\\) device found.*/\\1/p\' | tail -1)"; '
+    'echo "mod=$(grep -c \'^wil6210 \' /proc/modules)"; '
+    'echo "fwpath=$(cat %s 2>/dev/null)"; '
     'echo "fw=$(md5sum %s 2>/dev/null | cut -d\' \' -f1)"; '
-    'echo "ko=$(md5sum %s 2>/dev/null | cut -d\' \' -f1)"; '
+    'echo "ko=$( (md5sum %s 2>/dev/null || md5sum %s 2>/dev/null) | cut -d\' \' -f1)"; '
     'echo "brd=$(md5sum %s 2>/dev/null | cut -d\' \' -f1)"; '
     'echo "sig=$(cat %s 2>/dev/null)"; '
-    'echo "modconf=$(grep -c \'%s$\' %s 2>/dev/null)"; '
-    'iw dev 2>/dev/null' % (FW, KO, BRD, STATE_SIG, MODMARK, MODCONF))
+    'iw dev 2>/dev/null' % (FWPATH, FW_TMP, KO_TMP, KO_SYS, BRD_TMP, SIG))
 
 LINK_CMD = ('for I in $(iw dev | sed -n "s/.*Interface //p"); do iw dev $I link 2>/dev/null | grep -q Connected && '
             'echo $I; done')
 FW_READY_CMD = "dmesg | grep -m1 -E 'FW ver\\. |Firmware error'"
 BOOT_ID_CMD = 'cat /proc/sys/kernel/random/boot_id'
+PHY_CMD = 'ls /sys/class/ieee80211/ 2>/dev/null | head -1'
+# rc.local узла упоминает wil6210 — дождаться uptime RC_SETTLE и конца «sh /etc/rc.local» (/etc/init.d/done). Имя файла
+# в тексте команды не встречается целиком: ps видит и sh -c самой команды — иначе она нашла бы саму себя
+RC_SETTLE_CMD = ("F=/etc/rc; F=$F.local; grep -qw wil6210 $F 2>/dev/null || { echo ok; exit 0; }; "
+                 "[ $(cut -d. -f1 /proc/uptime) -ge %d ] && ! ps w | grep -q '[s]h /etc/rc[.]local' && echo ok"
+                 % RC_SETTLE)
 
 
 def _out(r):
@@ -206,12 +242,19 @@ def _out(r):
 
 def _sh(node, cmd, timeout=60, input=None):
     """Команда, которая должна пройти: (rc 0) → stdout; иначе StandError (без перезагрузки)."""
+    check_cmd(cmd)
     r = node.sh(cmd, timeout, input)
     if r[0] != 0:
         err = r[2].decode('utf-8', 'replace') if isinstance(r[2], bytes) else (r[2] or '')
         why = 'зависла %d с' % timeout if r[0] is None else 'код %s: %s' % (r[0], err.strip()[-200:])
         raise StandError('%s: «%s» — %s' % (node.name, cmd.splitlines()[0][:80], why))
     return _out(r)
+
+
+def _q(node, cmd, timeout=15):
+    """Опрос без требований к коду возврата: stdout или ''."""
+    check_cmd(cmd)
+    return _out(node.sh(cmd, timeout))
 
 
 def boot_id(node):
@@ -232,35 +275,36 @@ def _wait(cond, timeout, step=3):
 
 # ============================== шаги ==============================
 
-def prepare(node, spec, log=None):
-    """Файлы и роль на узле (без перезагрузки). Возвращает ожидаемые md5 {'fw', 'ko'}."""
+def install(node, log=None):
+    """Однократная подготовка узла (идемпотентно). Возвращает список замечаний; другая автозагрузка wil6210 —
+    StandError."""
     log = log or (lambda s: None)
-    want = {'fw': None, 'ko': None}
-    if spec.fw is not None:
-        want['fw'] = md5(spec.fw)
-        got = _sh(node, put_cmd(FW), 120, spec.fw).split()[:1]
-        if got != [want['fw']]:
-            raise StandError('%s: md5 записанной прошивки %s, ожидается %s' % (node.name, got, want['fw']))
-        log('%s: прошивка записана (%s)' % (node.name, want['fw'][:12]))
-    elif spec.fw_node:
-        want['fw'] = (_sh(node, 'md5sum %s' % shlex.quote(spec.fw_node)).split() or [None])[0]
-        got = _sh(node, 'cp %s %s.new && mv -f %s.new %s && sync && md5sum %s'
-                  % (shlex.quote(spec.fw_node), FW, FW, FW, FW)).split()[:1]
-        if got != [want['fw']]:
-            raise StandError('%s: md5 прошивки после копии %s: %s, ожидается %s' % (node.name, spec.fw_node, got,
-                                                                                   want['fw']))
-        log('%s: прошивка из %s (%s)' % (node.name, spec.fw_node, want['fw'][:12]))
-    if spec.ko is not None:
-        want['ko'] = md5(spec.ko)
-        got = _sh(node, put_cmd(KO), 120, spec.ko).split()[:1]
-        if got != [want['ko']]:
-            raise StandError('%s: md5 записанного модуля %s, ожидается %s' % (node.name, got, want['ko']))
-        log('%s: модуль записан (%s)' % (node.name, want['ko'][:12]))
-    out = _sh(node, uci_script(spec, signature(spec, want['fw'], want['ko'])), 60)
-    if 'PREPARED' not in out:
-        raise StandError('%s: роль в uci не записана: %s' % (node.name, out[-300:]))
-    log('%s: роль %s, SSID %s — в uci (commit)' % (node.name, spec.role, spec.ssid))
-    return want
+    out = _sh(node, install_script(), 60)
+    if 'INSTALLED' not in out:
+        raise StandError('%s: подготовка не завершилась: %s' % (node.name, out[-300:]))
+    notes = []
+    for l in out.splitlines():
+        if l.startswith('OTHER_AUTOLOAD'):
+            raise StandError('%s: wil6210 грузят при старте ещё и %s — убрать вручную' % (node.name, l.split(None, 1)[1]))
+        if l.startswith('HOTPLUG'):
+            notes.append('hotplug упоминает wil6210: %s — проверить, не грузит ли он модуль' % l.split(None, 1)[1])
+        if l == 'RCLOCAL':
+            notes.append('/etc/rc.local ждёт /sys/module/wil6210 (параметры модуля) — insmod будет после uptime %d с, '
+                         'когда rc.local уже закончил' % RC_SETTLE)
+    log('%s: автозагрузка wil6210 %s%s' % (node.name, 'снята (бэкап %s)' % MODD_BAK if 'AUTOLOAD_REMOVED' in out
+                                          else 'уже снята', ''.join('; ' + n for n in notes)))
+    for k, s in (('LEGACY_UCI_RESTORED', 'опции прошлых сценариев возвращены'),
+                 ('LEGACY_MODCONF_REMOVED', 'строка параметров в modules.conf убрана')):
+        if k in out:
+            log('%s: %s' % (node.name, s))
+    return notes
+
+
+def uninstall(node, log=None):
+    """Вернуть автозагрузку wil6210 (из бэкапа)."""
+    out = _sh(node, uninstall_script(), 30)
+    (log or (lambda s: None))('%s: автозагрузка wil6210 возвращена' % node.name)
+    return 'UNINSTALLED' in out
 
 
 def reboot(node, log=None):
@@ -308,9 +352,65 @@ def wait_up(node, old_id, power=None, log=None, timeout=BOOT_TIMEOUT):
                      'вручную (failsafe, загрузка по сети)' % (node.name, timeout))
 
 
+def check_clean(node):
+    """После загрузки системы wil6210 не загружен (автозагрузка снята install)."""
+    n = _q(node, LOADED_CMD).strip()
+    if n != '0':
+        raise StandError('%s: узел загрузил драйвер wil6210 сам (lsmod) — автозагрузка не снята: node_boot.sh '
+                         '--install %s' % (node.name, getattr(node, 'host', node.name)))
+
+
+def load(node, spec, log=None):
+    """Драйвер итерации на только что загруженном узле: прошивка и плата в tmpfs, путь firmware_class, роль в uci
+    без commit, insmod с параметрами, wifi up radio0. Возвращает ожидаемые md5 {'fw', 'ko'}."""
+    log = log or (lambda s: None)
+    check_clean(node)
+    if not _wait(lambda: _q(node, RC_SETTLE_CMD).strip(), RC_SETTLE + 60, 5):
+        raise StandError('%s: /etc/rc.local не закончился за %d с после загрузки' % (node.name, RC_SETTLE + 60))
+    want = {'fw': None, 'ko': None}
+    if spec.fw is not None:
+        want['fw'] = md5(spec.fw)
+        got = _sh(node, put_cmd(FW_TMP), 120, spec.fw).split()[:1]
+    else:
+        want['fw'] = (_sh(node, 'md5sum %s' % shlex.quote(spec.fw_node)).split() or [None])[0]
+        got = _sh(node, 'mkdir -p %s && cp %s %s && md5sum %s' % (FWDIR, shlex.quote(spec.fw_node), FW_TMP,
+                                                                  FW_TMP)).split()[:1]
+    if got != [want['fw']]:
+        raise StandError('%s: md5 прошивки в %s %s, ожидается %s' % (node.name, FW_TMP, got, want['fw']))
+    brd = (_sh(node, 'cp %s %s && md5sum %s' % (BRD, BRD_TMP, BRD_TMP)).split() or [''])[0]
+    if spec.brd_md5 and not brd.startswith(spec.brd_md5):
+        raise StandError('%s: плата %s — md5 %s, ожидается %s (плата малой мощности?) — драйвер не загружаю'
+                         % (node.name, BRD, brd, spec.brd_md5))
+    if spec.ko is not None:
+        want['ko'] = md5(spec.ko)
+        got = _sh(node, put_cmd(KO_TMP), 120, spec.ko).split()[:1]
+        if got != [want['ko']]:
+            raise StandError('%s: md5 модуля в %s %s, ожидается %s' % (node.name, KO_TMP, got, want['ko']))
+    if _sh(node, 'echo -n %s > %s && cat %s' % (FWDIR, FWPATH, FWPATH)).strip() != FWDIR:
+        raise StandError('%s: firmware_class.path не принял %s' % (node.name, FWDIR))
+    log('%s: прошивка %s (%s), плата %s → %s' % (node.name, spec.fw_ver or spec.fw_node or '', want['fw'][:12],
+                                                brd[:12], FWDIR))
+    out = _sh(node, uci_script(spec, signature(spec, want['fw'], want['ko'])), 60)
+    if 'UCI_SET' not in out:
+        raise StandError('%s: роль в uci не выставлена: %s' % (node.name, out[-300:]))
+    if _sh(node, "modprobe cfg80211; grep -c '^cfg80211 ' /proc/modules").strip() != '1':
+        raise StandError('%s: cfg80211 не загрузился (modprobe cfg80211)' % node.name)
+    ko = KO_TMP if spec.ko is not None else KO_SYS
+    _sh(node, ('insmod %s %s' % (ko, spec.modparams or '')).strip(), 60)
+    if _q(node, LOADED_CMD).strip() != '1':
+        raise StandError('%s: wil6210 не загрузился (insmod %s)' % (node.name, ko))
+    if not _wait(lambda: _q(node, PHY_CMD).strip(), PHY_TIMEOUT, 1):
+        raise StandError('%s: нет phy wil6210 за %d с после insmod' % (node.name, PHY_TIMEOUT))
+    _sh(node, 'wifi up radio0', 60)
+    log('%s: insmod %s %s; роль %s, SSID %s (uci без commit); wifi up radio0'
+        % (node.name, ko, spec.modparams or '', spec.role, spec.ssid))
+    return want
+
+
 class Report:
     """Итог проверки узла: facts — разобранные значения, problems — несоответствия (текст), kinds — их виды
-    ('fw' — FW не загрузилась, 'md5' — на узле не те файлы, 'ver', 'iface', 'link', 'brd', 'fwerr'), iface, link."""
+    ('fw' — FW не загрузилась или не из пути итерации, 'md5' — на узле не те файлы, 'ver', 'iface', 'link',
+    'brd', 'fwerr'), iface, link."""
     HARD = ('fw', 'md5')     # проверяемый объект не тот или не загрузился — дальнейшие тесты ничего не скажут
 
     def __init__(self):
@@ -339,7 +439,7 @@ class Report:
 
 
 def facts(node):
-    """Разбор FACTS_CMD: ключи ver/fwerr/probe/fw/ko/brd/sig/modconf; ifaces — [(имя, тип)], iface/type — первый."""
+    """Разбор FACTS_CMD: ключи ver/fwerr/probe/mod/fwpath/fw/ko/brd/sig; ifaces — [(имя, тип)], iface/type — первый."""
     out = _out(node.sh(FACTS_CMD, 30))
     f = dict(re.findall(r'^(\w+)=(.*)$', out, re.M))
     f['ifaces'] = re.findall(r'Interface (\S+)\n(?:[ \t]+(?!type ).*\n)*?[ \t]+type (\S+)', out)
@@ -361,17 +461,17 @@ def pick_iface(f, spec):
 
 def wait_fw(node, timeout=FW_TIMEOUT):
     """Ждать строку wmi_evt_ready («FW ver.») или «Firmware error» в dmesg текущей загрузки."""
-    return bool(_wait(lambda: _out(node.sh(FW_READY_CMD, 15)).strip(), timeout))
+    return bool(_wait(lambda: _q(node, FW_READY_CMD).strip(), timeout))
 
 
 def wait_iface(node, spec, timeout=IFACE_TIMEOUT):
     t = 'type %s' % role_type(spec)
-    return bool(_wait(lambda: t in _out(node.sh('iw dev', 15)), timeout))
+    return bool(_wait(lambda: t in _q(node, 'iw dev'), timeout))
 
 
 def verify(node, spec, want=None, log=None, link=None):
-    """Проверки после загрузки. want — ожидаемые md5 из prepare() ({'fw', 'ko'}); link — ждать связь станции
-    (по умолчанию spec.wait_link)."""
+    """Проверки после load(). want — ожидаемые md5 ({'fw', 'ko'}); link — ждать связь станции (по умолчанию
+    spec.wait_link)."""
     log = log or (lambda s: None)
     want = want or {}
     rep = Report()
@@ -380,11 +480,15 @@ def verify(node, spec, want=None, log=None, link=None):
     if not wait_iface(node, spec):
         rep.add('iface', 'нет интерфейса type %s за %d с' % (role_type(spec), IFACE_TIMEOUT))
     if spec.role == 'sta' and (spec.wait_link if link is None else link):
-        rep.link = bool(_wait(lambda: _out(node.sh(LINK_CMD, 15)).strip(), spec.link_timeout))
+        rep.link = bool(_wait(lambda: _q(node, LINK_CMD).strip(), spec.link_timeout))
         if not rep.link:
             rep.add('link', 'станция не подключилась к %s за %d с' % (spec.ssid, spec.link_timeout))
     f = rep.facts = facts(node)
     rep.iface, f['type'] = pick_iface(f, spec)
+    if f.get('mod') != '1':
+        rep.add('fw', 'wil6210 не загружен')
+    if f.get('fwpath') != FWDIR:
+        rep.add('fw', 'firmware_class.path %r, ожидается %s' % (f.get('fwpath'), FWDIR))
     if not f.get('ver'):
         rep.add('fw', 'в dmesg нет «FW ver.» (wmi_evt_ready)')
     elif spec.fw_ver and f.get('ver') != spec.fw_ver:
@@ -401,9 +505,8 @@ def verify(node, spec, want=None, log=None, link=None):
 
 
 def matches(node, spec, wait=0):
-    """Узел уже в состоянии spec (подпись подготовки, md5 прошивки и модуля, FW загружена, интерфейс роли) —
-    перезагрузка не нужна. wait — сколько ждать загрузки FW и интерфейса, если файлы и подпись сошлись (узел только
-    что включился). Для fw/ko в виде bytes md5 считается здесь, для fw_node — на узле."""
+    """В этой загрузке узла уже загружена итерация spec (подпись в /tmp, md5 прошивки и модуля, FW, интерфейс роли)
+    — перезагрузка не нужна. wait — сколько ждать FW и интерфейса, если подпись и файлы сошлись."""
     try:
         f = facts(node)
     except Exception:
@@ -415,7 +518,7 @@ def matches(node, spec, wait=0):
         if not fw:
             return False
     ko = md5(spec.ko) if spec.ko is not None else None
-    if not (f.get('sig') == signature(spec, fw, ko) and (fw is None or f.get('fw') == fw)
+    if not (f.get('mod') == '1' and f.get('sig') == signature(spec, fw, ko) and f.get('fw') == fw
             and (ko is None or f.get('ko') == ko)):
         return False
     if wait and not (wait_fw(node, wait) and wait_iface(node, spec, wait)):
@@ -424,12 +527,17 @@ def matches(node, spec, wait=0):
     return pick_iface(f, spec)[1] == role_type(spec) and bool(f.get('ver'))
 
 
-def boot(node, spec, power=None, log=None):
-    """Вся схема на одном узле: prepare → reboot → wait_up → verify. Возвращает Report."""
-    want = prepare(node, spec, log)
+def bring_up(node, spec, log=None, link=None):
+    """Узел только что загрузился (reboot, reboot -f): драйвер итерации и проверки. Возвращает Report."""
+    want = load(node, spec, log)
+    return verify(node, spec, want, log, link)
+
+
+def boot(node, spec, power=None, log=None, link=None):
+    """Вся итерация на одном узле: reboot → wait_up → load → verify. Возвращает Report."""
     old = reboot(node, log)
     wait_up(node, old, power, log)
-    return verify(node, spec, want, log)
+    return bring_up(node, spec, log, link)
 
 
 # ============================== CLI (tools/stand/node_boot.sh) ==============================
@@ -443,6 +551,7 @@ class SshNode:
         self.host, self.name = host, name or host
 
     def sh(self, cmd, timeout, input=None):
+        check_cmd(cmd)
         try:
             r = subprocess.run(['ssh'] + SSH_OPTS + [self.host, cmd], capture_output=True, timeout=timeout,
                                input=input)
@@ -469,34 +578,53 @@ def main(argv=None):
     import argparse, os
     ap = argparse.ArgumentParser(prog='node_boot.sh', description=__doc__.split('\n')[0])
     ap.add_argument('host', help='root@192.168.1.11 или 192.168.1.11')
-    ap.add_argument('--role', required=True, choices=('ap', 'sta'))
+    ap.add_argument('--install', action='store_true', help='однократно: снять автозагрузку wil6210 (идемпотентно)')
+    ap.add_argument('--uninstall', action='store_true', help='вернуть автозагрузку wil6210 из бэкапа')
+    ap.add_argument('--role', choices=('ap', 'sta'))
     ap.add_argument('--ssid', default='WL60TEST')
     ap.add_argument('--network', help="сеть uci интерфейса (точка — по умолчанию lan; '' — удалить)")
-    ap.add_argument('--fw', help='образ .fw → /lib/firmware/wil6210.fw')
-    ap.add_argument('--ko', help='модуль → /lib/modules/$(uname -r)/wil6210.ko')
-    ap.add_argument('--uci', action='append', default=[], help='команды uci сценария через «;» (до commit)')
-    ap.add_argument('--modparam', action='append', default=[], help='параметр wil6210 с самого старта, напр. '
-                    'no_fw_recovery=Y (строка в /etc/modules.conf)')
+    ap.add_argument('--fw', help='образ .fw итерации → %s' % FW_TMP)
+    ap.add_argument('--fw-node', help='образ на самом узле (напр. /lib/firmware/wil6210.fw.backup) → %s' % FW_TMP)
+    ap.add_argument('--ko', help='свой модуль → %s (иначе модуль системы)' % KO_TMP)
+    ap.add_argument('--uci', action='append', default=[], help='команды uci сценария через «;» (без commit)')
+    ap.add_argument('--modparam', action='append', default=[], help='параметр insmod, напр. no_fw_recovery=Y')
     ap.add_argument('--brd-md5', default=os.environ.get('BRD_MD5') or None, help='ожидаемый md5 платы (префикс)')
     ap.add_argument('--no-link', action='store_true', help='станция: не ждать связь')
     ap.add_argument('--link-timeout', type=int, default=LINK_TIMEOUT)
     ap.add_argument('--tapo', help='адрес розетки Tapo: снять питание, если узел не отвечает после reboot (один раз)')
-    ap.add_argument('--tapo-tool', default=os.environ.get('TAPO_TOOL') or os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                    '..', '..', '..', '..', 'SparRAW-tools', 'host', 'tapo_plug.py')))
-    ap.add_argument('--no-reboot', action='store_true', help='только проверки (узел уже загружен)')
+    ap.add_argument('--tapo-tool', default=os.environ.get('TAPO_TOOL') or os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', 'SparRAW-tools', 'host', 'tapo_plug.py')))
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument('--load-only', action='store_true', help='без reboot: узел только что загрузился (драйвера нет)')
+    g.add_argument('--reboot-only', action='store_true', help='только reboot, ожидание ssh и проверка «драйвера нет» '
+                   '(драйвер — потом --load-only)')
+    g.add_argument('--no-reboot', action='store_true', help='только проверки (итерация уже загружена)')
     a = ap.parse_args(argv)
     host = a.host if '@' in a.host else 'root@' + a.host
-    network = a.network if a.network is not None else ('lan' if a.role == 'ap' else None)
-    spec = Spec(a.role, a.ssid, network, fw=open(a.fw, 'rb').read() if a.fw else None,
-                ko=open(a.ko, 'rb').read() if a.ko else None, uci=a.uci, modparams=' '.join(a.modparam) or None,
-                brd_md5=a.brd_md5, wait_link=not a.no_link, link_timeout=a.link_timeout)
     node = SshNode(host, host.split('@')[-1])
     log = lambda s: print('[node_boot] ' + s, flush=True)
-    power = tapo_power(a.tapo_tool, a.tapo, node.name) if a.tapo else None
     try:
+        if a.install or a.uninstall:
+            (install if a.install else uninstall)(node, log)
+            return 0
+        if a.reboot_only:
+            power = tapo_power(a.tapo_tool, a.tapo, node.name) if a.tapo else None
+            wait_up(node, reboot(node, log), power, log)
+            check_clean(node)
+            log('%s: загружен, wil6210 не загружен' % node.name)
+            return 0
+        if not a.role:
+            ap.error('нужен --role (или --install)')
+        network = a.network if a.network is not None else ('lan' if a.role == 'ap' else None)
+        spec = Spec(a.role, a.ssid, network, fw=open(a.fw, 'rb').read() if a.fw else None, fw_node=a.fw_node,
+                    ko=open(a.ko, 'rb').read() if a.ko else None, uci=a.uci, modparams=' '.join(a.modparam) or None,
+                    brd_md5=a.brd_md5, wait_link=not a.no_link, link_timeout=a.link_timeout)
+        power = tapo_power(a.tapo_tool, a.tapo, node.name) if a.tapo else None
         if a.no_reboot:
             rep = verify(node, spec, {'fw': md5(spec.fw) if spec.fw else None,
                                       'ko': md5(spec.ko) if spec.ko else None}, log)
+        elif a.load_only:
+            rep = bring_up(node, spec, log)
         else:
             rep = boot(node, spec, power, log)
     except StandError as e:

@@ -29,13 +29,14 @@ def _sta_mac(ap):
 
 
 def _peer_sta_up(ap, mac, old_boot):
-    """peer после reboot -f поднимается сам в закоммиченной роли станции (Stand.boot_ap: uci commit, прошивка,
-    no_fw_recovery=Y с самого старта): дождаться FW и интерфейса станции; MAC — прежний (иначе это новая станция,
-    а не возвращение)."""
+    """peer после reboot -f поднимается без драйвера: тест загружает его сам командой — станция на проверяемом образе
+    (как Stand.boot_ap: прошивка итерации, insmod … no_fw_recovery=Y, роль без commit, wifi up); MAC — прежний
+    (иначе это новая станция, а не возвращение)."""
     p = ap.peer
     nodeboot.wait_up(p, old_boot, p.power_recover)
-    spec = ap.peer_sta_spec()
-    assert nodeboot.wait_fw(p) and nodeboot.wait_iface(p, spec), 'peer: нет FW или интерфейса станции после загрузки'
+    p.reset_mark()
+    rep = nodeboot.bring_up(p, ap.peer_sta_spec(), link=False)
+    assert not rep.hard, 'peer: драйвер станции не загрузился: %s' % rep.problems
     got = _sta_mac(ap)
     assert got == mac, 'MAC станции после загрузки %s, был %s — это другая станция' % (got, mac)
 
