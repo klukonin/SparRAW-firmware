@@ -446,7 +446,7 @@ def test_fw_restarts_at_bringup_are_error(clock):
     assert nb.boot(m, nb.Spec('ap', 'X', fw=fw_blob('a'), max_fw_starts=2)).ok        # настройка допуска
     k = FakeNode('k', clock)
     k.extra_fw_restarts, k.fwerr = 1, 1
-    rep = nb.boot(k, nb.Spec('ap', 'X', fw=fw_blob('a')))
+    rep = nb.boot(k, nb.Spec('sta', 'X', fw=fw_blob('a'), wait_link=False))
     assert rep.kinds == {'restart', 'fwerr'} and not rep.hard          # восстановление после FW error — предмет тестов
 
 
@@ -698,7 +698,7 @@ def test_stand_boot_ap_and_teardown(mkstand):
 
 def test_stand_reboot_mode_and_fw_starts_from_config(mkstand):
     s, fd, fp = mkstand()
-    assert s.reboot_mode == 'force' and s.max_fw_starts == 1
+    assert s.reboot_mode == 'force' and s.max_fw_starts is None
     s.t['reboot'], s.reboot_mode, s.max_fw_starts = 'init', 'init', 3
     s.boot_sta()
     assert any(re.search(r'\breboot$', c) for c in fd.cmds) and not any('reboot -f' in c for c in fd.cmds)
@@ -789,3 +789,10 @@ def test_scripts_have_no_restart_commands():
             for i, l in enumerate(open(os.path.join(d, f)), 1):
                 if not l.lstrip().startswith('#'):
                     assert not nb.FORBIDDEN.search(l), '%s:%d: %s' % (f, i, l)
+
+
+def test_fw_starts_allowance_by_role():
+    """Допуск стартов fw по роли: станция 1, точка 2 (hostapd поднимает интерфейс дважды, стенд 2026-11-08)."""
+    assert nb.Spec('sta', 'X', fw=fw_blob('a')).max_fw_starts == 1
+    assert nb.Spec('ap', 'X', fw=fw_blob('a')).max_fw_starts == 2
+    assert nb.Spec('ap', 'X', fw=fw_blob('a'), max_fw_starts=1).max_fw_starts == 1

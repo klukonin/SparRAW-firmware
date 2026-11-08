@@ -61,7 +61,9 @@ WCONF_MD5 = '/tmp/sparraw-stand.wireless.md5'   # md5 закоммиченног
 # (сигнал procd: shutdown-скрипты, SIGTERM/SIGKILL всем, sync, reboot) — на .11 7 раз за 2026-11-08 не вернулся.
 REBOOT_CMDS = {'force': 'sync; sleep 1; sync; reboot -f', 'init': 'sync; sleep 1; sync; reboot'}
 REBOOT_MODE = 'force'
-MAX_FW_STARTS = 1         # wmi_evt_ready за подъём роли: прошивка стартует один раз
+MAX_FW_STARTS = None     # по роли: станция 1; точка 2 — hostapd поднимает интерфейс, перечитывает конфигурацию
+                         # («Restart interface … new PHY») и поднимает снова: 2 старта fw за 0,4 с (стенд 2026-11-08)
+FW_STARTS_BY_ROLE = {'sta': 1, 'ap': 2}
 
 # Время (с): узел wAP 60G грузится ~60–90 с
 BOOT_TIMEOUT = 300        # от reboot до ssh с новым boot_id
@@ -165,7 +167,7 @@ class Spec:
         self.modparams = ' '.join(mp) or None
         self.brd_md5 = brd_md5 or None
         self.wait_link, self.link_timeout = wait_link, link_timeout
-        self.max_fw_starts = int(max_fw_starts)
+        self.max_fw_starts = int(max_fw_starts) if max_fw_starts is not None else FW_STARTS_BY_ROLE[role]
 
     @property
     def fw_ver(self):

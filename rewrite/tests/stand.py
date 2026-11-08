@@ -261,7 +261,7 @@ class Stand:
             raise StandError('[test] reboot = %r: нужен %s'
                              % (self.reboot_mode, ' или '.join(sorted(nodeboot.REBOOT_CMDS))))
         # стартов прошивки за подъём роли, больше — ошибка «прошивка перезапускалась N раз» (nodeboot.verify)
-        self.max_fw_starts = int(self.t.get('max_fw_starts', nodeboot.MAX_FW_STARTS))
+        self.max_fw_starts = self.t.get('max_fw_starts')   # None — по роли (nodeboot.FW_STARTS_BY_ROLE)
         for n in (self.dut, self.peer):
             n.on_recover = self._node_recovered
             n.iperf_cpu = self.t.get('iperf_cpu')
