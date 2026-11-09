@@ -233,6 +233,15 @@ def test_live_bap_rx_wait_bounded(fw_elf, build_dir, uc_fw, monkeypatch):
     monkeypatch.setattr(air, 'r38_group', lambda ra: 0)
     r = _live_group(fw_elf, build_dir, uc_fw, host_ie=True, max_us=40000)
     sta = r['sta']
+    # _live_group кончает прогон, как только всё доставлено; станция могла войти в ожидание незадолго до этого (open
+    # с fix/uc-spin-bound, 2026-11-07, и позже: одно ожидание с 22557 мкс, прогон кончился в 23165 — предел не успевал истечь, тест падал).
+    # Предел — BAP_RX_WAIT_PASSES проходов, задуман как нижняя граница aPPDUMaxTime + SIFS (проход ≥ 4 тактов); в модели
+    # проход с чтением r53 дороже — выход по пределу через ~3,5 мс (26066 мкс). Досчитываем эфир, пока станция в
+    # ожидании, до 10 мс: одно ожидание, выход по пределу, повторного входа нет.
+    for _ in range(20):
+        if sta.uc.r32(UC_WAIT_MARKER) != 0xff31:
+            break
+        r['air'].run_us(500)
     assert sta.uc.r32(UC_WAIT) >= 1, 'предел не сработал: %s' % sta.uc.where(sta.uc.cpu.pc)
     assert sta.uc.r32(UC_WAIT + 4) == 0xff31
     assert sta.uc.r32(UC_WAIT_MARKER) == 0
