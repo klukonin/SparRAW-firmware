@@ -228,6 +228,9 @@ def install_script():
         'if [ -f %s ]; then [ -f %s ] || cp %s %s; rm -f %s; echo "AUTOLOAD_REMOVED"; fi' % (MODD, MODD_BAK, MODD,
                                                                                          MODD_BAK, MODD),
         'O=$(grep -lw wil6210 /etc/modules.d/* /etc/modules-boot.d/* 2>/dev/null); [ -z "$O" ] || echo "OTHER_AUTOLOAD $O"',
+        'if [ -f /etc/modules.d/netconsole ]; then [ -f /etc/sparraw-stand.modules.d.netconsole ] || '
+        'cp /etc/modules.d/netconsole /etc/sparraw-stand.modules.d.netconsole; rm -f /etc/modules.d/netconsole; '
+        'echo NETCON_UNLOADED_AT_BOOT; fi',
         'if [ -f %s ]; then while IFS= read -r l; do [ -n "$l" ] || continue; k=${l%%%%=*}; '
         'if [ "$k" != "$l" ]; then uci set "$l"; else uci -q delete "$k"; fi; uci commit "${k%%%%.*}"; '
         'done < %s; rm -f %s; echo "LEGACY_UCI_RESTORED"; fi' % (LEGACY_UCI, LEGACY_UCI, LEGACY_UCI),
@@ -456,6 +459,13 @@ def radio_matches_phy(w):
     return False, 'у radio0 нет ни path, ни phy, ни macaddr'
 
 
+# netconsole загружается один раз за загрузку, сразу с целью (rmmod запрещён); автозагрузку снимает install()
+NETCON_CMD = ("if grep -q '^netconsole ' /proc/modules; then echo NETCON_BUSY; else "
+              "insmod /lib/modules/$(uname -r)/netconsole.ko netconsole=+6665@%s/br-lan,%d@%s/%s && "
+              "echo 8 > /proc/sys/kernel/printk && "
+              "echo \"stand netconsole $(cat /proc/sys/kernel/random/boot_id)\" > /dev/kmsg; fi")
+
+
 def netconsole(node, log):
     """Журнал ядра узла по UDP на хост до insmod — чтобы зависание/паника узла оставили след (стенд 2026-11-08:
     «самопроизвольные перезагрузки» оказались паникой, видимой только через netconsole). Включается переменной
@@ -467,9 +477,11 @@ def netconsole(node, log):
     ip, mac = nc.split(',')
     me = node.host.split('@')[-1]
     port = 6600 + int(me.rsplit('.', 1)[-1])
-    _sh(node, 'rmmod netconsole 2>/dev/null; insmod /lib/modules/$(uname -r)/netconsole.ko '
-              'netconsole=+6665@%s/br-lan,%d@%s/%s && echo 8 > /proc/sys/kernel/printk && '
-              'echo "stand netconsole $(cat /proc/sys/kernel/random/boot_id)" > /dev/kmsg' % (me, port, ip, mac), 30)
+    out = _sh(node, NETCON_CMD % (me, port, ip, mac), 30)
+    if 'NETCON_BUSY' in out:
+        log('%s: netconsole уже загружен при старте (без цели) — журнал ядра на хост не идёт; '
+            'node_boot.sh --install снимает его автозагрузку' % node.name)
+        return
     log('%s: netconsole → %s:%d' % (node.name, ip, port))
 
 

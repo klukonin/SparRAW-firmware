@@ -796,3 +796,9 @@ def test_fw_starts_allowance_by_role():
     assert nb.Spec('sta', 'X', fw=fw_blob('a')).max_fw_starts == 1
     assert nb.Spec('ap', 'X', fw=fw_blob('a')).max_fw_starts == 2
     assert nb.Spec('ap', 'X', fw=fw_blob('a'), max_fw_starts=1).max_fw_starts == 1
+
+
+def test_netconsole_cmd_passes_forbidden_check():
+    """Включение netconsole не использует rmmod (2026-11-09: «rmmod netconsole» сорвал ночную матрицу)."""
+    nb.check_cmd(nb.NETCON_CMD % ('192.168.1.11', 6611, '192.168.1.5', '00:11:22:33:44:55'))
+    assert 'netconsole' in nb.install_script()
