@@ -105,13 +105,23 @@ fwsh_peer_aid = 0x857964; /* uc: struct fwsh_peer_aid — AID станций у 
 fwsh_sta_abft = 0x85796c; /* uc: struct fwsh_sta_abft — конец A-BFT BI у станции (SparRAW) */
 fwsh_uc_wait  = 0x857978; /* uc: struct fwsh_uc_wait — срывы ожиданий событий MAC (SparRAW) */
 
-/* Диапазоны, которые обнуляет crt0 (fw/start.S, как vendor). */
-__sram_clr_start = tx_ring_mem_data;        /* 0x840000 */
-__sram_clr_end   = phy_monitor + 0x3c;      /* 0x84e81c: конец struct phy_monitor */
-__fwsh_clr_start = fwsh_diag;               /* 0x857000 */
-__fwsh_clr_end   = fwsh_uc_wait + 0xc;    /* vendor — 0x857828 (конец шаблона FTM, SparRAW-pro); + fwsh_rssi, fwsh_sect_snr, fwsh_peer_aid, fwsh_sta_abft, fwsh_uc_wait */
-__conn_clr_start = conn_mgr;                /* 0x854000 */
-__conn_clr_end   = ll_detectors + 8 * 0xa4; /* 0x8552f4: конец ll_detectors[8] */
+/* Память, которую обнуляет crt0 (fw/start.S). Не vendor: vendor обнуляет только 0x840000..0x84e81c, 0x854000..0x8552f4
+ * и 0x857000..0x857828, а остальное в SRAM периферии остаётся от прошлого запуска fw (тёплая перезагрузка хоста,
+ * перезапуск fw драйвером) или содержит узор включения питания. Пример чтения до записи — таблицы рейтинга секторов uc
+ * fwsh_sls_rank_b1 0x857a00 / fwsh_sls_rank 0x857c1c (uc/dccm.h): rank_b1[cid][0..1] уходит в событие BF_DONE/NEW_LINK
+ * (uc/tail.c → bf_sector, fw/bf_result.c) и даёт антенну в uc/cmd.c set_selected_rf_sector_index.
+ * Поэтому обнуляется вся SRAM периферии fw, 0x840000..0x860000. Размер (128 КБ) — по карте драйвера wil6210:
+ * sparrow_fw_mapping «fw_peri», хост 0x908000. Адреса за 0x860000 не трогаются: обращение к отсутствующему
+ * адресу вешает шину AHB.
+ * Исключение — brd_file_buf (0x84f800, BRD_FILE_BUF_SIZE 0x2400): board-файл туда пишет драйвер до старта fw
+ * (запись данных .brd по адресу хоста 0x917800 = 0x84f800).
+ * Буферы и пулы, которые fw заполняет до чтения (op_mbox_tx_bufs, fw_stats_*, link_stat uc и т. п.), обнулять
+ * не обязательно: это делается ради одинакового состояния при любом старте. Время — около 32 тыс. записей st.di. */
+__peri_clr_a_start = tx_ring_mem_data;             /* 0x840000: начало fw_peri */
+__peri_clr_a_end   = brd_file_buf;                 /* 0x84f800 */
+__peri_clr_b_start = brd_file_buf + 0x2400;        /* 0x851c00: конец brd_file_buf (include/brd_if.h BRD_FILE_BUF_SIZE) */
+__peri_clr_b_end   = 0x860000;                     /* конец fw_peri (wil6210 sparrow_fw_mapping) */
+ASSERT(brd_file_buf == 0x84f800 && __peri_clr_a_start == 0x840000, "fw.ld: раскладка обнуления SRAM периферии")
 
 SECTIONS
 {

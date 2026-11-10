@@ -117,49 +117,40 @@ _reset:
     mov gp, __gp            /* 0x800184 (fw/fw.ld) */
     mov fp, 0
 
-    /* Очистить .bss. */
+    /* Очистить .bss (у fw пуст — ASSERT в fw/fw.ld; прежний цикл со st в слоте задержки писал 0 в
+     * __bss_end = 0x800000, переменную образа). */
     mov r0, __bss_start
     mov r1, __bss_end
     mov r2, 0
 1:  cmp r0, r1
-    bge.d 2f
+    bge 2f
     st r2, [r0]
+    b.d 1b
     add r0, r0, 4
-    b 1b
 2:
 
-    /* Очистить PERIPH-регионы, как vendor crt0 (иначе мусор →
-     * недетерминизм mbox/лога). Пишем UNCACHED (st.di): обычный st оставляет
-     * dirty cache-line, которую ARC вытесняет уже ПОСЛЕ записи host'а по PCIe
-     * и затирает команду WMI нулями (буфер 0x820 пуст). Границы — символы fw/fw.ld:
-     * 0x840000..0x84e81c, общий с uc блок 0x857000..0x857828, 0x854000..0x8552f4. */
-    mov r0, __sram_clr_start
-    mov r1, __sram_clr_end
+    /* Очистить SRAM периферии 0x840000..0x860000, кроме board-файла хоста (границы и обоснование —
+     * fw/fw.ld, __peri_clr_*). Пишем UNCACHED (st.di): обычный st оставляет dirty cache-line, которую ARC
+     * вытесняет уже ПОСЛЕ записи host'а по PCIe и затирает команду WMI нулями (буфер 0x820 пуст).
+     * Проверка до записи: пишется ровно [start, end), прежние циклы со st в слоте задержки bge.d писали и
+     * слово end. */
+    mov r0, __peri_clr_a_start
+    mov r1, __peri_clr_a_end
     mov r2, 0
 3:  cmp r0, r1
-    bge.d 4f
+    bge 4f
     st.di r2, [r0]
+    b.d 3b
     add r0, r0, 4
-    b 3b
 4:
-    mov r0, __fwsh_clr_start
-    mov r1, __fwsh_clr_end
-    mov r2, 0
+    mov r0, __peri_clr_b_start
+    mov r1, __peri_clr_b_end
 5:  cmp r0, r1
-    bge.d 6f
+    bge 6f
     st.di r2, [r0]
+    b.d 5b
     add r0, r0, 4
-    b 5b
 6:
-    mov r0, __conn_clr_start
-    mov r1, __conn_clr_end
-    mov r2, 0
-7:  cmp r0, r1
-    bge.d 8f
-    st.di r2, [r0]
-    add r0, r0, 4
-    b 7b
-8:
 
     /* vendor crt0 0x8c16ec: [gp,146] = 0, затем статические конструкторы (0x8c1d6c →
      * 0x8fc364) — до fw_main. Без них vtable/параметры в bss остаются нулями. */

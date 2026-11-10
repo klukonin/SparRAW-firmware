@@ -12,7 +12,7 @@
  *    RSSI станций fwsh_rssi (0x857828). За ним — SNR по секторам SLS fwsh_sect_snr (0x857860) и AID станций
  *    fwsh_peer_aid (0x857964, до 0x85796c), конец A-BFT BI у станции fwsh_sta_abft (0x85796c, до 0x857978),
  *    срывы ожиданий событий MAC в uc fwsh_uc_wait (0x857978, до 0x857984).
- *    Дальше (0x857a00..) — только uc: рейтинги секторов, link_stat (uc/dccm.h).
+ *    Дальше (0x857a00..) — только uc: рейтинги секторов, link_stat (uc/dccm.h); всю SRAM 0x840000..0x860000, кроме board-файла, обнуляет crt0 fw (fw/fw.ld __peri_clr_*).
  *  - fixed_sched (0x847a3c) — объект fw (символ fw/fw.ld); uc читает его по указателю
  *    fwsh_sets.fsched_tbl.
  *
