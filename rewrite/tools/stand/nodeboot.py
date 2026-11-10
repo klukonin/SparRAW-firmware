@@ -215,6 +215,10 @@ def uci_script(spec, sig):
         L.append('uci -q delete %s.network' % IFACE)
     elif spec.network is not None:
         L.append('uci set %s.network=%s' % (IFACE, q(spec.network)))
+        # сеть роли может отсутствовать на узле, который до этого был только точкой (2026-11-10: .11 без wl60 —
+        # интерфейс станции не поднимался, FW не стартовала): создать без commit, узлы симметричны
+        L.append('uci -q get network.%s >/dev/null || { uci set network.%s=interface; uci set network.%s.proto=none; }'
+                 % ((q(spec.network),) * 3))
     L += spec.uci
     L += ["md5sum %s | cut -d' ' -f1 > %s" % (WCONF, WCONF_MD5),
           'ubus call network reload', 'echo %s > %s' % (sig, SIG), 'echo UCI_SET']
