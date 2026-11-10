@@ -301,9 +301,14 @@ class Stand:
         сеть 60 ГГц вне моста (WNET),
         опции SPARRAW_AP_UCI, параметры [peer] modparams."""
         c = self.cfg['peer']
-        return nodeboot.Spec('ap', c['ssid'], WNET, fw_node=c.get('fw_backup') or '/lib/firmware/wil6210.fw',
-                             uci=AP_UCI, modparams=c.get('modparams'), brd_md5=self._brd(),
-                             max_fw_starts=self.max_fw_starts)
+        # 2026-11-10: точка-peer — наш образ (--peer-fw, иначе тот же, что у dut); прошивка вендора на узле
+        # (fw_backup) — только если явно [peer] vendor_fw = true (вендора сейчас не тестируем)
+        if c.get('vendor_fw'):
+            fwkw = dict(fw_node=c.get('fw_backup') or '/lib/firmware/wil6210.fw')
+        else:
+            fwkw = dict(fw=self.peer_fw)
+        return nodeboot.Spec('ap', c['ssid'], WNET, uci=AP_UCI, modparams=c.get('modparams'), brd_md5=self._brd(),
+                             max_fw_starts=self.max_fw_starts, **fwkw)
 
     def dut_sta_spec(self, timeout=90):
         """dut — станция на проверяемом образе (и модуле --ko) у точки peer; сеть — [dut] sta_network (иначе не
