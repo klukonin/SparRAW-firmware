@@ -1940,9 +1940,8 @@ static __attribute__((noipa)) void bcast_load_group_key(void)
 }
 
 
-void tx_bcast_flow(u32 a) {
-    /* 6.2 asm 0x937844. */
-    (void)a;
+static __attribute__((noipa)) void tx_bcast_flow_once(void) {
+    /* 6.2 asm 0x937844 (tx_bcast_flow). */
     txrx_state1 = 2;
     u32 r1 = bcast.x0c;
     txrx_state2 = 0;
@@ -2005,7 +2004,7 @@ void tx_bcast_flow(u32 a) {
      * 9.3.1.13 — адрес группы следующего кадра, его uc до пуска не знает; стенд 2026-11-04…06 (PMC): TA — MAC станции
      * или 06:00:00:00:00:00 (MAC-STAND «Групповые данные точки без DMG CTS-to-self»). Кадр — первый после CCA:
      * режим 5 (как tx_cca_check_and_send), не 1 (ответ/продолжение после своего кадра). Duration кадра очереди
-     * ставит MAC (H-DURQ).
+     * ставит MAC по остатку лимита TXOP — на время вызова лимит 0 (tx_bcast_flow ниже, H-DURLIM0).
      * ХРУПКО (СРОК, H-TXVEC5): программа TX (mac_program_tx_vector(5)) — первой командой после проверки CCA, как в
      * рабочих путях (vendor-путь CTS-to-self здесь же, tx_cca_check_and_send, internal_tx_keepalive_flow,
      * direct_tx_send_from_desc). Доказательство — стенд 2026-11-06 (образ bnc.fw, точка, групповые данные):
@@ -2084,6 +2083,26 @@ void tx_bcast_flow(u32 a) {
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     bcast.done += 1;
+}
+
+
+/* Duration группового кадра — 0 (802.11-2020 9.2.5.2 a) 6) i): единственный кадр доступа — последний кадр TXOP).
+ * MAC ставит групповому кадру очереди остаток лимита TXOP на начало кадра (H-DURG): HW_MAC_TXOP_LIMIT_0 [31:16] 2000
+ * → 1997 (стенд 2026-11-07: 16 из 16, кадры 118 и 194 Б; 1149 у TBTT); 0x15 перед кадром очереди не действует (стенд
+ * bdur0: 0x15 = 0 — те же 15 × 1997). исправлено: на время вызова лимит TXOP 0 во всех полях обоих регистров
+ * (какое поле отвечает за qid группового кольца, не установлено) — по 9.2.5.2 b) 1) при T_TXOP = 0 и без NAV
+ * держателя D = T_SINGLE-MSDU − T_PPDU = 0 у группового кадра; один групповой MPDU лимит превышать может (10.23.2.9).
+ * H-DURLIM0 (стенд 2026-11-07, bdur1: 14 из 14 групповых кадров с Duration 0, FWERR 0): MAC так и считает и при
+ * лимите 0 кадр отдаёт. Запись — до запроса MTP
+ * (macq_probe_empty) и CCA: опыт 2026-10-31 — лимит, записанный при открытии TXOP, действует со следующего запроса MTP.
+ * Возврат — значения LMAC 0x21 (txop_apply_limits_regs) на выходе. Обёртка снаружи — путь «CCA → 0x19000001»
+ * (ХРУПКО, H-TXVEC5) и его кодогенерация не меняются (codecmp: tx_bcast_flow_once = прежняя tx_bcast_flow). */
+void tx_bcast_flow(u32 a) {
+    (void)a;
+    MMIO32(HW_MAC_TXOP_LIMIT_0) = 0;
+    MMIO32(HW_MAC_TXOP_LIMIT_1) = 0;
+    tx_bcast_flow_once();
+    txop_apply_limits_regs(0);
 }
 
 

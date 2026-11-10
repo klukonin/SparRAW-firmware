@@ -48,11 +48,19 @@ def run(uc, mask, x0c=0):
     uc.w32(BCAST_X0C, x0c)
     uc.w8(BCAST_TX1, 0)
     uc.w16(TX_BCAST_DESC_ID, 0)
+    for i in range(4):
+        uc.w32(TXOP_LIMIT_US + 4 * i, 2000)
     start = len(uc.cpu.trace)
     uc.call('tx_bcast_flow', 0, stub=STUBS, max_steps=400_000)
-    tr = [e for e in uc.cpu.trace[start:] if e[0] == 'extreg' and e[1] == 'w']
+    seq = uc.cpu.trace[start:]
+    tr = [e for e in seq if e[0] == 'extreg' and e[1] == 'w']
     cmds = [e[4] for e in tr if e[2] == 32]
     fifo = [(e[2], e[4]) for e in tr if e[2] in (33, 34)]
+    lim = [(i, e) for i, e in enumerate(seq) if e[0] == 'mmio' and e[1] == 'w']
+    first_cmd = next(i for i, e in enumerate(seq) if e[0] == 'extreg' and e[1] == 'w' and e[2] == 32)
+    assert lim and lim[0][0] < first_cmd, 'лимит TXOP 0 — до первой команды MAC (CCA, MTP)'
+    assert not [c for c in cmds if c >> 24 == 0x15], [hex(c) for c in cmds]
+    check_txop_limit(lim)
     return cmds, fifo
 
 
@@ -72,6 +80,20 @@ def check_group_tx(cmds, fifo, sector):
     cca = cmds.index(0x29000001)
     assert cmds[cca + 1] == 0x1f006000 and cmds[cca + 4] & 0xff0001ff == 0x06000105, \
         'после CCA до программы TX: %s' % [hex(c) for c in cmds[cca + 1:cca + 8]]
+
+
+TXOP_LIMIT_US = 0x80294c                # txop_limit_us[4] (LMAC 0x21)
+HW_MAC_TXOP_LIMIT_0, HW_MAC_TXOP_LIMIT_1 = 0x886f70, 0x886f74
+
+
+def check_txop_limit(lim):
+    """9.2.5.2 a) 6) i): Duration группового кадра — 0. H-DURG: MAC ставит групповому кадру очереди остаток лимита TXOP
+    (стенд 2026-11-07: 1997; 0x15 перед кадром не действует — стенд bdur0). H-DURLIM0: на время вызова лимит 0 в обоих
+    регистрах — до CCA и запроса MTP; после кадра — значения LMAC 0x21; 0x15 в пути нет."""
+    w = [(i, e[2], e[4]) for i, e in lim if e[2] in (HW_MAC_TXOP_LIMIT_0, HW_MAC_TXOP_LIMIT_1)]
+    assert [(a, v) for _, a, v in w[:2]] == [(HW_MAC_TXOP_LIMIT_0, 0), (HW_MAC_TXOP_LIMIT_1, 0)], w
+    assert [(a, v) for _, a, v in w[2:]] == [(HW_MAC_TXOP_LIMIT_0, 2000 << 16 | 2000),
+                                             (HW_MAC_TXOP_LIMIT_1, 2000 | 2000 << 16)], w
 
 
 @pytest.mark.parametrize('mask,idx', [(0x1, 0), (0x2, 1), (0x5, 2), (0x7, 2)])
@@ -143,6 +165,13 @@ def _live_group(fw_elf, build_dir, uc_fw, host_ie=False, max_us=20000):
     n_rx, n_ap_rx, n_frames = len(sta.host_rx), len(ap.host_rx), len(air.frames)
     group = [bytes([0x40 + i]) * (200 + 50 * i) for i in range(len(GROUP))]
     up = [bytes([0x80 + i]) * 1200 for i in range(4)]
+    nav = []                                                # NAV станции по кадрам точки (air → machw.air_rx)
+    rx0 = sta.hw.air_rx
+
+    def air_rx(t, n, what='', nav_us=0, **kw):
+        nav.append((t, what, nav_us))
+        return rx0(t, n, what, nav_us=nav_us, **kw)
+    sta.hw.air_rx = air_rx
     for da, p in zip(GROUP, group):
         ap.host_tx(BCAST_VR, da, p)
     for p in up:                                            # встречный поток: станция → точка в то же время
@@ -153,7 +182,8 @@ def _live_group(fw_elf, build_dir, uc_fw, host_ie=False, max_us=20000):
         air.run_us(500)
         if len(sta.host_rx) - n_rx >= len(group) and len(ap.host_rx) - n_ap_rx >= len(up):
             break
-    return dict(air=air, ap=ap, sta=sta, done=done, t0=t0, group=group, up=up,
+    sta.hw.air_rx = rx0
+    return dict(air=air, ap=ap, sta=sta, done=done, t0=t0, group=group, up=up, nav=nav,
                 rx=sta.host_rx[n_rx:], ap_rx=ap.host_rx[n_ap_rx:], frames=air.frames[n_frames:])
 
 
@@ -192,6 +222,28 @@ def test_live_group_data_no_cts_to_self(live_group):
     grp = [f for f in r['frames'] if f['src'] is ap and f.get('mpdus') is None and len(f['frame']) >= 24 and
            (f['frame'][0] >> 2) & 3 == 2 and f['frame'][4] & 1]
     assert len(grp) >= len(GROUP), [f['what'] for f in r['frames'] if f['src'] is ap]
+
+
+@pytestmark_live
+def test_live_group_data_duration_zero(live_group):
+    """802.11-2020 9.2.5.2 a) 6) i): групповой кадр — последний кадр TXOP (за доступ точка шлёт один кадр), Duration —
+    0; станция по нему NAV не ставит (10.3.2.4: NAV — по Duration кадра не себе). Стенд 2026-11-07 до правки: 1997
+    (остаток лимита TXOP MAC, H-DURG) — станции молчали ~2 мс после каждого группового кадра. Одноадресные TXOP
+    станции и точки при этом идут (данные приняты, test_live_group_data_delivered)."""
+    r = live_group
+    ap = r['ap']
+    grp = [f for f in r['frames'] if f['src'] is ap and f.get('mpdus') is None and len(f['frame']) >= 24 and
+           (f['frame'][0] >> 2) & 3 == 2 and f['frame'][4] & 1]
+    assert grp
+    durs = [int.from_bytes(f['frame'][2:4], 'little') for f in grp]
+    assert durs == [0] * len(grp), list(zip([f['what'] for f in grp], durs))
+    starts = {f['start'] for f in grp}
+    nav = [n for t, _, n in r['nav'] if t in starts]
+    assert len(nav) == len(grp) and not any(nav), (nav, len(grp))
+    sta = r['sta']
+    uni = [int.from_bytes(f['frame'][2:4], 'little') for f in r['frames'] if f['src'] is sta and
+           len(f['frame']) >= 24 and (f['frame'][0] >> 2) & 3 == 2 and not f['frame'][4] & 1]
+    assert uni and all(uni), uni                            # одноадресные данные станции — Duration MAC (H-DURQ)
 
 
 # ---- групповой кадр станции при другом времени обмена; ожидание BAP с пределом ----

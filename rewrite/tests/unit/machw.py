@@ -21,7 +21,9 @@ fw → uc (8, L1) и пробуждение (10, L2); ядро (tools/arcemu/cpu
 H-MTP, H-IRQ, H-TRN, H-TXOPGO, H-RESULTGO, H-SLOT2, H-SLOT (своя передача), H-DATAMCS (MCS 8 — STAMP_TXOP_CONT) — замеры стенда (uc/abft.h, метки
 uc/dbg.h); H-TVEC, H-WAKE, H-FW2UC — по коду и документации; H-GP4, H-T23, H-E27, H-BUSY (режим 2 — по исходу стенда),
 H-QSEL, H-QEMPTY, H-TXGO18F, H-TXAFTERACK, H-RETRY, H-AMPDU (форма — стенд), H-TXOPEVT-CFEND, H-HDR-SC — по смыслу кода и стандарту (непроверено, см. notes вне
-репозитория). Неизвестная семантика (триггеры GP 07/08, неопознанные события движка 0x27) — ModelGap: модель не угадывает.
+репозитория); H-DURG — стенд (RX-запись станции); H-DURLIM0 (лимит TXOP 0 — Duration группового кадра 0) —
+стенд (bdur1).
+Неизвестная семантика (триггеры GP 07/08, неопознанные события движка 0x27) — ModelGap: модель не угадывает.
 
 Замеры стенда, на которых стоят H-TRN, H-TXOPGO, H-RESULTGO, H-SLOT2, H-SLOT (своя передача), H-DATAMCS, сроки ответа и PHY_RX_STATUS, —
 docs/MAC-STAND.md.
@@ -1039,6 +1041,7 @@ class HW:
         elif op == 0x15:                                  # Duration следующего кадра, мкс (H-DUR)
             self.dur_us = arg & 0xffff
             self.dur_new = True                           # H-TXOP: кадр после записи 0x15 начинает TXOP заново
+            self.durq_new = True                          # H-DURG: конец TXOP для следующего группового кадра
         elif op == 0x14 and arg in (5, 7):                # режим Duration маяка: б1 — 0x15 − d буквально, иначе ⌊остаток TXOP⌋
             self.dur_literal = bool(arg & 2)
         elif op == 0x2a:                                  # BI Control: [19:0] → B0..B19, [23:20] → B44..B47
@@ -1493,6 +1496,8 @@ class HW:
         return v.to_bytes(6, 'little')
 
     txopq_end = None                  # H-DURQ: конец TXOP по лимиту MAC (такты)
+    durq_new = False                  # H-DURG: 0x15 записана, своего кадра после неё ещё не было
+    txopg_end = None                  # H-DURG: конец TXOP по 0x15 предыдущего своего кадра (такты) — для группового
 
     def _dur_field(self, p):
         """Duration кадра в эфире и TXOP (H-DUR, H-TXOP, uc/abft.h). Кадр развёртки после записи 0x15 начинает TXOP
@@ -1506,6 +1511,7 @@ class HW:
         0x15 как есть, без вычета TXTIME: стенд dur3 (2026-10-22) — SSW CDOWN 1/0 = 25/9 при 0x15 = 25/9 (SLS_SSW_DUR,
         uc/abft.h), vendor 17/1 при 0x15 = ss_plan_tx_dur 17/1; std4 — первый SSW в A-BFT 275 при 0x15 = 275. Вычет
         ⌈TXTIME⌉ — только у маяка (шаблон без FIFO; rnd1/bcn1: 1269 = 1289 − 20). Вне развёртки — 0x15 буквально."""
+        durq_new, self.durq_new = self.durq_new, False   # H-DURG: 0x15 — кадру FIFO, первому после записи
         if not p['what'].startswith('sweep'):
             # H-DURQ (стенд 2026-10-31, STAMP_RX_DUR): Duration RTS и кадров очереди ставит MAC — остаток лимита TXOP
             # (HW_MAC_TXOP_LIMIT_0 [31:16], мкс) от начала TXOP − SIFS: RTS 2000 − SIFS − TXTIME(RTS) = 1982; запись 0x15
@@ -1513,7 +1519,28 @@ class HW:
             fifo = p.get('fifo')
             rts = fifo is not None and len(fifo) >= 2 and fifo[0] == 0xb4 and fifo[1] == 0
             lim = self._raw(HW_MAC_TXOP_LIMIT_0) >> 16
-            if (rts or p.get('qframe') is not None) and lim:
+            qf = p.get('qframe')
+            if isinstance(qf, (bytes, bytearray)) and len(qf) >= 10 and qf[4] & 1:
+                # H-DURG (стенд 2026-11-07 bcbnc2/bcm9 и 2026-11-04…06 bcm7/bcm2u, RX-запись станции): Duration
+                # группового кадра очереди — остаток TXOP MAC на НАЧАЛО кадра (свой TXTIME не вычитается): по лимиту —
+                # лимит − SIFS (1997 у кадров 118 и 194 Б); после своего кадра FIFO с 0x15 в этом доступе — конец TXOP =
+                # начало того кадра + 0x15 (прежний путь: 0x15 DMG CTS-to-self 48/71 → групповой кадр 30/53 = 0x15 −
+                # ⌈TXTIME(CTS)⌉ − SIFS). 0x15 перед самим кадром очереди не действует (стенд 2026-11-07, bdur0:
+                # 0x15 = 0 — 15 × 1997).
+                # H-DURLIM0 (стенд 2026-11-07, bdur1: 14 из 14 групповых кадров — 0): лимит TXOP 0 —
+                # Duration 0 (802.11-2020 9.2.5.2 b) 1): T_TXOP = 0, NAV держателя
+                # нет — D = T_SINGLE-MSDU − T_PPDU, у группового кадра 0); кадр MAC отдаёт (10.23.2.9)
+                if self.txopg_end is not None and p['start'] < self.txopg_end:
+                    end = self.txopg_end
+                elif lim:
+                    end = p['start'] - SIFS_CLK + lim * CLK_PER_US
+                else:
+                    end = p['start']
+                self.txopg_end = None
+                return max(0, (end - p['start']) // CLK_PER_US)
+            if durq_new and fifo is not None:
+                self.txopg_end = p['start'] + self.dur_us * CLK_PER_US      # H-DURG: 0x15 своего кадра — конец TXOP
+            if (rts or qf is not None) and lim:
                 if rts or self.txopq_end is None or p['start'] >= self.txopq_end:
                     self.txopq_end = p['start'] - SIFS_CLK + lim * CLK_PER_US
                 return max(0, (self.txopq_end - (p['start'] + p['dur'])) // CLK_PER_US)

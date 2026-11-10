@@ -440,6 +440,47 @@ def test_dur18_fifo_frame_duration(uc):
     assert hw._dur_field(dict(cf_end)) == 33
 
 
+def test_durg_group_queue_frame_duration(uc):
+    """H-DURG (RX-запись станции): Duration группового кадра очереди — остаток TXOP MAC на начало кадра. По лимиту —
+    лимит TXOP − SIFS: 1997 у кадров 118 и 194 Б (стенд 2026-11-07, bcbnc2/bcm9). После DMG CTS-to-self с 0x15 = 48/71
+    (прежний путь, bcm7/bcm2u) — 30/53: 0x15 − ⌈TXTIME(CTS)⌉ − SIFS, от длины кадра не зависит. 0x15 = 0 перед самим
+    групповым кадром не действует — 1997 (стенд bdur0). H-DURLIM0 (не снято): лимит TXOP 0 — 0.
+    Одноадресный кадр очереди — по H-DURQ (до конца кадра)."""
+    import machw
+    from machw import SIFS_CLK, sc_txtime_clk
+    hw = HW(uc)
+    uc.w32(machw.HW_MAC_TXOP_LIMIT_0, 2000 << 16 | 2000)
+    grp = lambda n: bytes.fromhex('8801') + bytes(2) + b'\xff' * 6 + bytes(n - 10)
+    t = hw.now
+    for n in (118, 194):
+        t += 10_000 * CLK_PER_US
+        q = dict(what='queue', dur=sc_txtime_clk(n, 1), qframe=grp(n - 4), start=t)
+        assert hw._dur_field(q) == 1997, n
+    cts = ctrl_txtime_clk(20)
+    for d15, want, n in ((48, 30, 118), (71, 53, 194)):
+        t += 10_000 * CLK_PER_US
+        hw._cmd(0x15000000 | d15)
+        hw._cmd(0x14000007)
+        hw._cmd(0x33000001)
+        hw._cmd(0x18001000)
+        hw._dur_field(dict(what='direct 20 B', dur=cts, fifo=b'\x64\x05' + bytes(8), start=t))
+        hw._cmd(0x14000000)
+        g = dict(what='queue', dur=sc_txtime_clk(n, 1), qframe=grp(n - 4), start=t + cts + 640)   # SIFS_CNT 635–667
+        assert hw._dur_field(g) == want, (d15, n)
+    t += 10_000 * CLK_PER_US
+    hw._cmd(0x14000000)
+    hw._cmd(0x15000000)
+    assert hw._dur_field(dict(what='queue', dur=sc_txtime_clk(118, 1), qframe=grp(114), start=t)) == 1997
+    t += 10_000 * CLK_PER_US
+    uc.w32(machw.HW_MAC_TXOP_LIMIT_0, 0)
+    assert hw._dur_field(dict(what='queue', dur=sc_txtime_clk(118, 1), qframe=grp(114), start=t)) == 0
+    uc.w32(machw.HW_MAC_TXOP_LIMIT_0, 2000 << 16 | 2000)
+    t += 10_000 * CLK_PER_US
+    uni = bytes.fromhex('8801') + bytes(2) + bytes.fromhex('24181d26d47b') + bytes(104)
+    d = sc_txtime_clk(118, 1)
+    assert hw._dur_field(dict(what='queue', dur=d, qframe=uni, start=t)) == (2000 * CLK_PER_US - SIFS_CLK - d) // CLK_PER_US
+
+
 def test_sifs_response_not_from_stale_fifo(uc):
     """H-MTPRESP / H-FIFO1: RTS остался закрытым в FIFO прямой передачи (проба CCA в txop_await_cts_ppdu провалилась,
     0x29000002 — среду занял пир). На RTS пира uc запрашивает ответ (mtp_service_dispatch, вид 5: 0x161f0522) —
