@@ -810,7 +810,7 @@ def main(argv=None):
             return 0
         if not a.role:
             ap.error('нужен --role (или --install)')
-        network = a.network if a.network is not None else ('lan' if a.role == 'ap' else None)
+        network = a.network if a.network is not None else 'wl60'   # сеть 60 ГГц отдельная, вне br-lan
         spec = Spec(a.role, a.ssid, network, fw=open(a.fw, 'rb').read() if a.fw else None, fw_node=a.fw_node,
                     ko=open(a.ko, 'rb').read() if a.ko else None, uci=a.uci, modparams=' '.join(a.modparam) or None,
                     brd_md5=a.brd_md5, wait_link=not a.no_link, link_timeout=a.link_timeout,

@@ -53,7 +53,7 @@ boot_pair() {
 
 # ap_up / sta_up — после загрузки: адрес, ARP, (точка) iperf3 -s; (станция) прерывания на IRQ_CPU, ping точки
 ap_up() {
-	$SSH "$AP" "ip addr show br-lan | grep -q 'inet $AP_IP/' || ip addr add $AP_IP/24 dev br-lan; sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; killall iperf3 2>/dev/null; sleep 1; iperf3 -s -D"
+	$SSH "$AP" "I=\$(iw dev | sed -n 's/.*Interface \\(.*ap0\\)/\\1/p'); ip addr show \$I | grep -q 'inet $AP_IP/' || ip addr add $AP_IP/24 dev \$I; nft insert rule inet fw4 input iifname \$I accept; sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; killall iperf3 2>/dev/null; sleep 1; iperf3 -s -D"
 }
 sta_up() {
 	$SSH "$STA" "I=\$(iw dev | sed -n 's/.*Interface \(.*sta0\)/\1/p'); ip addr show \$I | grep -q 'inet $STA_IP/' || ip addr add $STA_IP/24 dev \$I; sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; for i in \$(grep wil6210 /proc/interrupts | cut -d: -f1); do echo $IRQ_CPU > /proc/irq/\$i/smp_affinity; done; sleep 2; ping -c 2 -W 1 $AP_IP | tail -1"

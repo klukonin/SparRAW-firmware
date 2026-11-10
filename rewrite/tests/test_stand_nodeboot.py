@@ -674,7 +674,7 @@ def test_stand_boot_sta_reboots_peer_once_then_reuses(mkstand):
     assert fd.insmod_args == ['fw_log_level=7'] and fp.insmod_args == []
     assert fp.running['mode'] == 'ap' and fp.running['fw'] == md5(BACKUP) and fp.boot == 2
     assert_order(fd), assert_order(fp)
-    assert any('ip addr add 10.60.0.11/24 dev br-lan' in c for c in fp.cmds)
+    assert any('ip addr add 10.60.0.11/24 dev phy0-ap0' in c for c in fp.cmds)   # сеть 60 ГГц вне br-lan
     assert any('ip addr add 10.60.0.12/24 dev phy0-sta0' in c for c in fd.cmds)
     s.boot_sta()                                     # peer в этой загрузке уже точка на своей прошивке
     assert fp.boot == 2 and fd.boot == 3

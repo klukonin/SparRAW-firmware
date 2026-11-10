@@ -28,6 +28,8 @@ from nodeboot import StandError, fw_records, fw_version   # noqa: F401 (част
 # Дополнительные команды uci для точки (обе роли: peer-AP и dut-AP), например
 # SPARRAW_AP_UCI="uci set wireless.default_radio0.multicast_to_unicast=1" — проверка опций hostapd набором. Без commit:
 # живут до перезагрузки узла.
+# сеть 60 ГГц на узлах — отдельная (proto none), вне моста br-lan; адреса стенда 10.60.0.x — на интерфейсах радио
+WNET = 'wl60'
 AP_UCI = list(nodeboot.split_uci(os.environ.get('SPARRAW_AP_UCI', '')))
 
 SSH_OPTS = nodeboot.SSH_OPTS
@@ -295,29 +297,30 @@ class Stand:
         return ' '.join([self.t.get('modparams', '')] + list(extra)).strip() or None
 
     def peer_ap_spec(self):
-        """peer — точка на своей прошивке (fw_backup на узле, иначе /lib/firmware/wil6210.fw), SSID стенда, сеть lan,
+        """peer — точка на своей прошивке (fw_backup на узле, иначе /lib/firmware/wil6210.fw), SSID стенда, отдельная
+        сеть 60 ГГц вне моста (WNET),
         опции SPARRAW_AP_UCI, параметры [peer] modparams."""
         c = self.cfg['peer']
-        return nodeboot.Spec('ap', c['ssid'], 'lan', fw_node=c.get('fw_backup') or '/lib/firmware/wil6210.fw',
+        return nodeboot.Spec('ap', c['ssid'], WNET, fw_node=c.get('fw_backup') or '/lib/firmware/wil6210.fw',
                              uci=AP_UCI, modparams=c.get('modparams'), brd_md5=self._brd(),
                              max_fw_starts=self.max_fw_starts)
 
     def dut_sta_spec(self, timeout=90):
         """dut — станция на проверяемом образе (и модуле --ko) у точки peer; сеть — [dut] sta_network (иначе не
         трогать)."""
-        return nodeboot.Spec('sta', self.cfg['peer']['ssid'], self.cfg['dut'].get('sta_network'), fw=self.fw,
+        return nodeboot.Spec('sta', self.cfg['peer']['ssid'], self.cfg['dut'].get('sta_network', WNET), fw=self.fw,
                              ko=self.ko_blob, modparams=self._mp(), brd_md5=self._brd(), link_timeout=timeout,
                              max_fw_starts=self.max_fw_starts)
 
     def peer_sta_spec(self, timeout=120):
         """peer — станция на проверяемом образе у точки dut; FW error не восстанавливать с самого старта
         (insmod … no_fw_recovery=Y): состояние fw на момент сбоя остаётся для артефактов."""
-        return nodeboot.Spec('sta', self.t.get('ap_ssid', 'SPARRAW-TEST'), '', fw=self.peer_fw,
+        return nodeboot.Spec('sta', self.t.get('ap_ssid', 'SPARRAW-TEST'), WNET, fw=self.peer_fw,
                              modparams=self._mp('no_fw_recovery=Y'), brd_md5=self._brd(), link_timeout=timeout,
                              max_fw_starts=self.max_fw_starts)
 
     def dut_ap_spec(self):
-        return nodeboot.Spec('ap', self.t.get('ap_ssid', 'SPARRAW-TEST'), None, fw=self.fw, ko=self.ko_blob,
+        return nodeboot.Spec('ap', self.t.get('ap_ssid', 'SPARRAW-TEST'), WNET, fw=self.fw, ko=self.ko_blob,
                              uci=AP_UCI, modparams=self._mp(), brd_md5=self._brd(),
                              max_fw_starts=self.max_fw_starts)
 
@@ -338,11 +341,14 @@ class Stand:
                 n.recover('нет ssh перед загрузкой роли')
 
     def _peer_ap_runtime(self):
-        """Точка peer после загрузки: адрес стенда на br-lan, sysctl ARP, сервер iperf3 (команды, не перезапуск)."""
+        """Точка peer после загрузки: адрес стенда на интерфейсе точки (сеть 60 ГГц отдельная, вне br-lan), вход
+        разрешён в fw4, sysctl ARP, сервер iperf3 (команды, не перезапуск)."""
         c = self.cfg['peer']
-        self.peer.run("ip addr show br-lan | grep -q 'inet %s/' || ip addr add %s/24 dev br-lan; "
+        i = self.peer.iface() or 'phy0-ap0'
+        self.peer.run("ip addr show %s | grep -q 'inet %s/' || ip addr add %s/24 dev %s; "
+                      "nft insert rule inet fw4 input iifname %s accept; "
                       "sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; "
-                      "killall iperf3 2>/dev/null; iperf3 -s -D" % (c['ip'], c['ip']), check=False, timeout=30)
+                      "killall iperf3 2>/dev/null; iperf3 -s -D" % (i, c['ip'], c['ip'], i, i), check=False, timeout=30)
 
     def _peer_restore_ap(self):
         """peer — точка на своей прошивке, SSID стенда, адрес и сервер iperf3. Уже так в этой загрузке (подпись в
