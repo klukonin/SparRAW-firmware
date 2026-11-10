@@ -108,7 +108,7 @@ def pytest_runtest_makereport(item, call):
         open(os.path.join(d, 'dut.fwlog.txt'), 'w').write('\n'.join(s.dut.fw_log(s.fw_path)))
     except Exception:
         pass
-    if s.role == 'ap' and s.peer_fw == s.fw:       # peer — станция на проверяемом образе: и её журнал fw
+    if s.peer_fw == s.fw:                          # peer на том же образе: и его журнал fw
         try:
             open(os.path.join(d, 'peer.fwlog.txt'), 'w').write('\n'.join(s.peer.fw_log(s.fw_path)))
         except Exception:

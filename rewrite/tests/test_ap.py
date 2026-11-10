@@ -10,7 +10,7 @@ pytestmark = [pytest.mark.stand, pytest.mark.ap]
 
 
 def test_ap_nodes_run_image(ap, fw_blob, check):
-    """Обе стороны — на проверяемом образе (peer-станция vendor 6.2 к точке по стандарту не идёт)."""
+    """Обе стороны — на проверяемом образе."""
     import hashlib
     want = hashlib.md5(fw_blob).hexdigest()
     for n in (ap.dut, ap.peer):

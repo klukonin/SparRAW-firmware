@@ -62,15 +62,10 @@ def test_board(sta_booted, check):
 
 
 def test_peer_firmware(sta_booted, check):
-    """В роли станции peer — точка на нашем образе (--peer-fw, иначе образ dut); прошивка вендора fw_backup — только
-    при [peer] vendor_fw = true."""
-    p, c = sta_booted.peer, sta_booted.cfg['peer']
-    if c.get('vendor_fw') and c.get('fw_backup'):
-        check.equal(node_md5(p, standlib.nodeboot.FW_TMP), node_md5(p, c['fw_backup']),
-                   'прошивка peer = %s' % c['fw_backup'])
-    else:
-        check.equal(node_md5(p, standlib.nodeboot.FW_TMP), hashlib.md5(sta_booted.peer_fw).hexdigest(),
-                   'прошивка peer = наш образ (--peer-fw / --fw)')
+    """В роли станции peer — точка на проверяемом образе (--peer-fw, иначе образ dut)."""
+    p = sta_booted.peer
+    check.equal(node_md5(p, standlib.nodeboot.FW_TMP), hashlib.md5(sta_booted.peer_fw).hexdigest(),
+               'прошивка peer = проверяемый образ (--peer-fw / --fw)')
     check.is_true('type AP' in p.run('iw dev', check=False), 'peer не в режиме точки')
 
 

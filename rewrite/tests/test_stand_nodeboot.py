@@ -14,7 +14,7 @@ import pytest
 import stand as standlib
 from stand import nodeboot as nb
 
-BACKUP = b'vendor-fw-backup'
+NODEFW = b'node-fw-image'            # образ, уже лежащий на узле (--fw-node)
 SYSFW = b'flash-fw'
 LOWPWR = 'e17714311e27' + '0' * 20
 SEQ = itertools.count()     # общий порядок событий узлов стенда
@@ -61,7 +61,7 @@ class FakeNode:
     def __init__(self, name, clock, role='ap', down_s=70, mac='02:00:00:00:00:01', autoload=False):
         self.name, self.host, self.clock, self.down_s, self.mac = name, 'root@' + name, clock, down_s, mac
         self.cmds, self.events = [], []
-        self.flash = {'/lib/firmware/wil6210.fw': md5(SYSFW), '/lib/firmware/wil6210.fw.backup': md5(BACKUP),
+        self.flash = {'/lib/firmware/wil6210.fw': md5(SYSFW), '/tmp/node.fw': md5(NODEFW),
                       nb.BRD: LOWPWR}
         self.autoload = autoload
         self.committed = {'mode': role, 'ssid': 'OLD'}
@@ -560,8 +560,8 @@ def test_soft_problems_reported(clock):
 
 def test_fw_node_copied_to_tmp(clock):
     n = FakeNode('n', clock)
-    rep = nb.boot(n, nb.Spec('ap', 'X', fw_node='/lib/firmware/wil6210.fw.backup'))
-    assert rep.ok and n.running['fw'] == md5(BACKUP)
+    rep = nb.boot(n, nb.Spec('ap', 'X', fw_node='/tmp/node.fw'))
+    assert rep.ok and n.running['fw'] == md5(NODEFW)
 
 
 def test_md5_mismatch_stops_before_insmod(clock, monkeypatch):
@@ -655,7 +655,7 @@ def mkstand(clock, tmp_path):
         fw = tmp_path / 'test.fw'
         fw.write_bytes(fw_blob('6.4.1.0-SparRAW'))
         cfg = {'dut': {'host': 'd', 'mac': '02:00:00:00:00:12', 'ip': '10.60.0.12'},
-               'peer': {'host': 'p', 'ip': '10.60.0.11', 'ssid': 'STAND', 'fw_backup': '/lib/firmware/wil6210.fw.backup'},
+               'peer': {'host': 'p', 'ip': '10.60.0.11', 'ssid': 'STAND'},
                'test': {'ap_ssid': 'APTEST', 'brd_md5': 'e17714311e27', 'modparams': 'fw_log_level=7'}}
         s = standlib.Stand(cfg, str(fw))
         fd, fp = FakeNode('dut', clock, role='sta', mac='02:00:00:00:00:12'), FakeNode('peer', clock, role='ap')
@@ -672,11 +672,11 @@ def test_stand_boot_sta_reboots_peer_once_then_reuses(mkstand):
     assert s.boot_sta()
     assert s.role == 'sta' and fd.running['mode'] == 'sta' and fd.running['fw'] == md5(s.fw)
     assert fd.insmod_args == ['fw_log_level=7'] and fp.insmod_args == []
-    assert fp.running['mode'] == 'ap' and fp.running['fw'] == md5(BACKUP) and fp.boot == 2
+    assert fp.running['mode'] == 'ap' and fp.running['fw'] == md5(s.fw) and fp.boot == 2
     assert_order(fd), assert_order(fp)
     assert any('ip addr add 10.60.0.11/24 dev phy0-ap0' in c for c in fp.cmds)   # сеть 60 ГГц вне br-lan
     assert any('ip addr add 10.60.0.12/24 dev phy0-sta0' in c for c in fd.cmds)
-    s.boot_sta()                                     # peer в этой загрузке уже точка на своей прошивке
+    s.boot_sta()                                     # peer в этой загрузке уже точка на проверяемом образе
     assert fp.boot == 2 and fd.boot == 3
     no_restart(fd), no_restart(fp)
 
@@ -691,7 +691,7 @@ def test_stand_boot_ap_and_teardown(mkstand):
     assert fd.up_seq < fp.up_seq
     b = fp.boot
     s.teardown()                                     # peer — станция с драйвером: перезагрузка и точка
-    assert fp.boot == b + 1 and fp.running['mode'] == 'ap' and fp.running['fw'] == md5(BACKUP)
+    assert fp.boot == b + 1 and fp.running['mode'] == 'ap' and fp.running['fw'] == md5(s.fw)
     assert_order(fp)
     no_restart(fd), no_restart(fp)
 
@@ -767,7 +767,7 @@ def test_vanish_then_driver_loaded_by_command(mkstand):
     assert 'wil6210' not in fp.modules
     s._peer_restore_ap()
     assert fp.boot == b + 1 and fp.power_cycles == 0 and s.peer.recoveries == 0
-    assert fp.running['mode'] == 'ap' and fp.running['fw'] == md5(BACKUP)
+    assert fp.running['mode'] == 'ap' and fp.running['fw'] == md5(s.fw)
     assert_order(fp)
     no_restart(fp)
 
@@ -802,3 +802,15 @@ def test_netconsole_cmd_passes_forbidden_check():
     """Включение netconsole не использует rmmod (2026-11-09: «rmmod netconsole» сорвал ночную матрицу)."""
     nb.check_cmd(nb.NETCON_CMD % ('192.168.1.11', 6611, '192.168.1.5', '00:11:22:33:44:55'))
     assert 'netconsole' in nb.install_script()
+
+
+def test_peer_ap_is_our_image_by_default():
+    """Точка-peer грузит проверяемый образ: --peer-fw, иначе образ dut."""
+    import stand as standlib
+    cfg = {'dut': {'host': 'd', 'ip': '10.60.0.12'},
+           'peer': {'host': 'p', 'ip': '10.60.0.11', 'ssid': 'STAND'},
+           'test': {}}
+    st = standlib.Stand.__new__(standlib.Stand)
+    st.cfg, st.t, st.peer_fw, st.max_fw_starts = cfg, {}, fw_blob('a'), None
+    spec = st.peer_ap_spec()
+    assert spec.fw == fw_blob('a') and spec.fw_node is None and spec.network == 'wl60'

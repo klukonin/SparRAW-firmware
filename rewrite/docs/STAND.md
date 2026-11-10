@@ -56,8 +56,8 @@ tools/stand/node_boot.sh --install 192.168.1.12
 3. Если `/etc/rc.local` узла ждёт `/sys/module/wil6210` (оверлей SparRAW-driver: до 60 с, затем пишет параметры
    модуля) — insmod после uptime 120 с, когда rc.local уже закончил: иначе параметры зависели бы от того, успел ли
    модуль появиться за 60 с. Нужные параметры — явно аргументами insmod.
-4. **Прошивка итерации — в tmpfs, флеш не трогается:** `/tmp/sparraw-fw/wil6210.fw` (файл с хоста или копия файла
-   на узле — `fw_backup` peer-точки), сверка md5; рядом копия `/lib/firmware/wil6210.brd` — md5 сверяется с
+4. **Прошивка итерации — в tmpfs, флеш не трогается:** `/tmp/sparraw-fw/wil6210.fw` (файл с хоста или копия файла,
+   уже лежащего на узле, — `--fw-node`), сверка md5; рядом копия `/lib/firmware/wil6210.brd` — md5 сверяется с
    `brd_md5` (плата малой мощности, `e17714311e27…`), не та плата — ошибка до insmod.
 5. `echo -n /tmp/sparraw-fw > /sys/module/firmware_class/parameters/path`. Ядро 6.18
    (`drivers/base/firmware_loader/main.c`, `fw_path[]`) ищет файл сначала в этом пути, затем в
@@ -184,7 +184,7 @@ netifd не останавливаются — Deauth/Disassociation не ухо
 драйверов, у wil6210 его нет (`pcie_bus.c`), fw ничего не шлёт. (Если это когда-нибудь окажется не так —
 мгновенная перезагрузка ядром `echo b > /proc/sysrq-trigger` после sync.) Узел поднимается **без драйвера**; тест
 ждёт новый `boot_id` и сам загружает драйвер командой (`nodeboot.bring_up`: станция на проверяемом образе в тесте
-точки, `Stand._peer_restore_ap` — точка на своей прошивке), дальше проверяет как раньше.
+точки, `Stand._peer_restore_ap` — точка на проверяемом образе), дальше проверяет как раньше.
 
 ## Открыто: выгрузка STA→AP встаёт в новой схеме (2026-11-08)
 
@@ -261,7 +261,7 @@ pytest-стенд (`tests/README.md`) — всё само: фикстуры ро
 ```sh
 tools/stand/node_boot.sh 192.168.1.11 --role ap  --fw build/wil6210.fw [--uci "uci set wireless.default_radio0.multicast_to_unicast=0"]
 tools/stand/node_boot.sh 192.168.1.12 --role sta --fw build/wil6210.fw --network wl60 [--ko wil6210.ko] [--modparam no_fw_recovery=Y]
-tools/stand/node_boot.sh 192.168.1.11 --role ap  --fw-node /lib/firmware/wil6210.fw.backup   # образ, лежащий на узле
+tools/stand/node_boot.sh 192.168.1.11 --role ap  --fw-node /tmp/X.fw              # образ, уже лежащий на узле
 tools/stand/node_boot.sh 192.168.1.12 --role sta --fw X.fw --reboot-only   # только reboot и проверка «драйвера нет»
 tools/stand/node_boot.sh 192.168.1.12 --role sta --fw X.fw --load-only     # затем драйвер (узел только что загрузился)
 tools/stand/node_boot.sh 192.168.1.12 --role sta --fw X.fw --no-reboot     # только проверки загруженной итерации

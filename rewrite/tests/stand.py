@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Стенд для тестов прошивки: два узла OpenWrt с wil6210 (Sparrow), управление питанием, роли STA/AP.
 
-Узлы описывает TOML-файл (tests/stand.example.toml): тестируемый узел (dut) и партнёр (peer). Партнёр в обычном
-состоянии — точка доступа на своей (эталонной) прошивке; для теста AP роли меняются: dut — точка, peer — станция
-на ТОМ ЖЕ тестируемом образе (vendor-станция 6.2 к точке по стандарту не идёт: B43 маяка, 9.3.4.2).
+Узлы описывает TOML-файл (tests/stand.example.toml): тестируемый узел (dut) и партнёр (peer). Обе стороны —
+на проверяемом образе (peer — образ --peer-fw, иначе образ dut). Партнёр в обычном состоянии — точка доступа; для
+теста AP роли меняются: dut — точка, peer — станция.
 
 Драйвер wil6210 после загрузки системы не грузится сам (node_boot.sh --install): каждая итерация — перезагрузка
 (sync; reboot -f), затем командой прошивка итерации в tmpfs (firmware_class.path), роль в uci без commit и один
@@ -297,18 +297,11 @@ class Stand:
         return ' '.join([self.t.get('modparams', '')] + list(extra)).strip() or None
 
     def peer_ap_spec(self):
-        """peer — точка на своей прошивке (fw_backup на узле, иначе /lib/firmware/wil6210.fw), SSID стенда, отдельная
-        сеть 60 ГГц вне моста (WNET),
-        опции SPARRAW_AP_UCI, параметры [peer] modparams."""
+        """peer — точка на проверяемом образе (--peer-fw, иначе образ dut), SSID стенда, отдельная сеть 60 ГГц вне
+        моста (WNET), опции SPARRAW_AP_UCI, параметры [peer] modparams."""
         c = self.cfg['peer']
-        # 2026-11-10: точка-peer — наш образ (--peer-fw, иначе тот же, что у dut); прошивка вендора на узле
-        # (fw_backup) — только если явно [peer] vendor_fw = true (вендора сейчас не тестируем)
-        if c.get('vendor_fw'):
-            fwkw = dict(fw_node=c.get('fw_backup') or '/lib/firmware/wil6210.fw')
-        else:
-            fwkw = dict(fw=self.peer_fw)
-        return nodeboot.Spec('ap', c['ssid'], WNET, uci=AP_UCI, modparams=c.get('modparams'), brd_md5=self._brd(),
-                             max_fw_starts=self.max_fw_starts, **fwkw)
+        return nodeboot.Spec('ap', c['ssid'], WNET, fw=self.peer_fw, uci=AP_UCI, modparams=c.get('modparams'),
+                             brd_md5=self._brd(), max_fw_starts=self.max_fw_starts)
 
     def dut_sta_spec(self, timeout=90):
         """dut — станция на проверяемом образе (и модуле --ko) у точки peer; сеть — [dut] sta_network (иначе не
@@ -356,7 +349,7 @@ class Stand:
                       "killall iperf3 2>/dev/null; iperf3 -s -D" % (i, c['ip'], c['ip'], i, i), check=False, timeout=30)
 
     def _peer_restore_ap(self):
-        """peer — точка на своей прошивке, SSID стенда, адрес и сервер iperf3. Уже так в этой загрузке (подпись в
+        """peer — точка на проверяемом образе, SSID стенда, адрес и сервер iperf3. Уже так в этой загрузке (подпись в
         /tmp, md5, интерфейс AP) — ничего; драйвер не загружен (узел только что загрузился: reboot -f теста пропажи,
         перезапуск точки) — загрузить командой; загружено другое — перезагрузка и загрузка (rmmod нет)."""
         p, spec = self.peer, self.peer_ap_spec()
@@ -381,7 +374,7 @@ class Stand:
     # --- роли ---
     def boot_sta(self, timeout=90):
         """dut — станция у точки peer: перезагрузка dut и загрузка драйвера с проверяемым образом в роли STA; peer,
-        если в этой загрузке он не точка на своей прошивке, — перезагрузка параллельно и загрузка точки первой."""
+        если в этой загрузке он не точка на проверяемом образе, — перезагрузка параллельно и загрузка точки первой."""
         p, d = self.peer, self.dut
         self.role, self.connected = None, False
         pspec, dspec = self.peer_ap_spec(), self.dut_sta_spec(timeout)
@@ -393,8 +386,7 @@ class Stand:
             nodeboot.wait_up(p, pold, p.power_recover, self.log)
             self._hard(p, nodeboot.bring_up(p, pspec, self.log))
         self._peer_ap_runtime()
-        # точка может держать запись станции dut прошлой загрузки (vendor-точка с зависшей записью переставала слать
-        # маяки) — снять, пока dut перезагружается
+        # точка может держать запись станции dut прошлой загрузки — снять, пока dut перезагружается
         p.run('iw dev $(iw dev | sed -n "s/.*Interface //p" | head -1) station del %s' % self.cfg['dut']['mac'],
               check=False)
         nodeboot.wait_up(d, dold, d.power_recover, self.log)
@@ -470,7 +462,7 @@ class Stand:
         return self.connected
 
     def teardown(self):
-        """peer — снова точка на своей прошивке (перезагрузкой, если он не в этой роли)."""
+        """peer — снова точка на проверяемом образе (перезагрузкой, если он не в этой роли)."""
         try:
             self._peer_restore_ap()
         except StandError as e:
@@ -525,7 +517,7 @@ class Stand:
         (нижняя граница интервала: [test] iperf_long_min_frac (0,5) × min_up_mbps / min_down_mbps), low (интервалы
         ниже floor: [(номер, Мбит/с)]), missing (интервалов меньше, чем секунд / интервал — iperf3 оборвался),
         lost_dut / lost_peer (новые «lost link» и разрывы в dmesg), fwerr_dut / fwerr_peer (новые ошибки FW),
-        peer_vendor (peer на прошивке вендора), report (все интервалы текстом)."""
+        rebooted (перезагрузившиеся узлы), report (все интервалы текстом)."""
         secs = int(self.t.get('iperf_long_s', 300))
         step = int(self.t.get('iperf_long_interval_s', 10))
         frac = float(self.t.get('iperf_long_min_frac', 0.5))
@@ -544,7 +536,6 @@ class Stand:
         r = dict(series=s, floor=floor, low=low, missing=max(0, want - len(iv)),
                  lost_dut=self.link_lost(self.dut)[lost0['dut']:], lost_peer=self.link_lost(self.peer)[lost0['peer']:],
                  fwerr_dut=self.dut.fw_errors() - err0['dut'], fwerr_peer=self.peer.fw_errors() - err0['peer'],
-                 peer_vendor=self.peer_fw_is_vendor(),
                  rebooted=[n.name for n in (self.dut, self.peer) if n._boot_id() != boot0[n.name]])
         r['report'] = ('%s %d с, интервалы %d с, граница интервала %.0f Мбит/с, итог %.1f Мбит/с\n%s'
                        % ('загрузка (к станции)' if reverse else 'выгрузка (от станции)', secs, step, floor,
@@ -553,8 +544,8 @@ class Stand:
 
     @staticmethod
     def judge_long(r):
-        """Вердикт длинного замера: ('ok' | 'fail' | 'vendor', текст). 'vendor' — peer на прошивке вендора упал сам
-        (ошибка FW или перезагрузка peer), а у dut ни ошибки FW, ни перезагрузки: замер образа сорван не им."""
+        """Вердикт длинного замера: ('ok' | 'fail', текст). Обе стороны на проверяемом образе — ошибка FW, потеря
+        линка или перезагрузка любого узла — провал."""
         bad = []
         if r['low']:
             bad.append('интервалы ниже %.0f Мбит/с: %s' % (r['floor'], ', '.join('№%d %.1f' % x for x in r['low'])))
@@ -571,17 +562,7 @@ class Stand:
         if r['rebooted']:
             bad.append('перезагрузились: %s' % r['rebooted'])
         text = r['report'] + ('\n' + '\n'.join(bad) if bad else '')
-        if not bad:
-            return 'ok', text
-        peer_down = r['fwerr_peer'] or 'peer' in r['rebooted']
-        if r['peer_vendor'] and peer_down and not r['fwerr_dut'] and 'dut' not in r['rebooted']:
-            return 'vendor', text
-        return 'fail', text
-
-    def peer_fw_is_vendor(self):
-        """peer работает на прошивке вендора (последний «FW ver.» в dmesg этой загрузки без «SparRAW»)."""
-        ver = re.findall(r'FW ver\. (\S+?)\(', self.peer.dmesg())
-        return bool(ver) and 'SparRAW' not in ver[-1]
+        return ('fail' if bad else 'ok'), text
 
     def link_lost(self, node):
         """Строки потери линка драйвера SparRAW («lost link: …») и разрывов узла с момента его отметки."""
@@ -591,17 +572,10 @@ class Stand:
         return re.findall(r'wmi_evt_disconnect: Disconnect [^\n]*', (node or self.dut).dmesg())
 
 
-VENDOR_PEER_XFAIL = ('ошибка прошивки вендора под длительной выгрузкой, к проверяемому образу не относится '
-                     '(peer на прошивке вендора упал сам: ошибка FW или перезагрузка; у dut ошибок FW нет)')
-
-
 def long_verdict(s, reverse):
     """Общая часть длинных замеров test_sta / test_ap: все интервалы — в вывод теста (-s / -rA), вердикт
-    Stand.judge_long; падение peer на прошивке вендора — xfail, не провал образа."""
+    Stand.judge_long."""
     r = s.long_throughput(reverse)
     verdict, text = s.judge_long(r)
     print('\n' + text)
-    if verdict == 'vendor':
-        import pytest
-        pytest.xfail(VENDOR_PEER_XFAIL + '\n' + text)
     assert verdict == 'ok', text

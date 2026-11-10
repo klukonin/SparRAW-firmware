@@ -59,9 +59,9 @@ sta_up() {
 	$SSH "$STA" "I=\$(iw dev | sed -n 's/.*Interface \(.*sta0\)/\1/p'); ip addr show \$I | grep -q 'inet $STA_IP/' || ip addr add $STA_IP/24 dev \$I; sysctl -qw net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2; for i in \$(grep wil6210 /proc/interrupts | cut -d: -f1); do echo $IRQ_CPU > /proc/irq/\$i/smp_affinity; done; sleep 2; ping -c 2 -W 1 $AP_IP | tail -1"
 }
 
-# ver <host> — версия загруженной fw (wmi_evt_ready) и md5 файла
+# ver <host> — версия загруженной fw (wmi_evt_ready) и md5 файла итерации (tmpfs, node_boot.sh)
 ver() {
-	$SSH "$1" 'dmesg | sed -n "s/.*FW ver\. \([^(]*\)(.*/\1/p" | tail -1; md5sum /lib/firmware/wil6210.fw | cut -c1-12' | tr '\n' ' '
+	$SSH "$1" 'dmesg | sed -n "s/.*FW ver\. \([^(]*\)(.*/\1/p" | tail -1; md5sum /tmp/sparraw-fw/wil6210.fw | cut -c1-12' | tr '\n' ' '
 }
 
 fwerr() {

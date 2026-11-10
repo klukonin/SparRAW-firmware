@@ -140,7 +140,7 @@ class Spec:
     role      'ap' | 'sta'
     ssid      SSID точки (своей или к которой идёт станция)
     network   None — не трогать wireless.default_radio0.network, '' — удалить, иначе — имя сети uci (точка: lan)
-    fw        образ .fw (bytes) — или fw_node: путь к образу на самом узле (напр. fw_backup peer); одно из двух
+    fw        образ .fw (bytes) — или fw_node: путь к образу на самом узле; одно из двух
               обязательно: прошивка итерации задаётся явно
     ko        свой модуль wil6210.ko (bytes) или None — модуль системы /lib/modules/$(uname -r)/wil6210.ko
     uci       команды uci сценария (список «uci set …»), применяются после роли, без commit
@@ -775,7 +775,7 @@ def main(argv=None):
     ap.add_argument('--ssid', default='WL60TEST')
     ap.add_argument('--network', help="сеть uci интерфейса (точка — по умолчанию lan; '' — удалить)")
     ap.add_argument('--fw', help='образ .fw итерации → %s' % FW_TMP)
-    ap.add_argument('--fw-node', help='образ на самом узле (напр. /lib/firmware/wil6210.fw.backup) → %s' % FW_TMP)
+    ap.add_argument('--fw-node', help='образ, уже лежащий на узле (путь на узле) → %s' % FW_TMP)
     ap.add_argument('--ko', help='свой модуль → %s (иначе модуль системы)' % KO_TMP)
     ap.add_argument('--uci', action='append', default=[], help='команды uci сценария через «;» (без commit)')
     ap.add_argument('--modparam', action='append', default=[], help='параметр insmod, напр. no_fw_recovery=Y')
