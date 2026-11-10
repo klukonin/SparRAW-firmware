@@ -23,6 +23,8 @@ for h in "$AP" "$STA"; do
 	echo "${h##*.} после: $($SSH "$h" "$CNT") FWERR $(fwerr "$h")"
 	cap_fetch "$h" "$OUT/${T}_${h##*.}.pcap"
 	# UCTRACE=1 — журнал uc (debugfs uc_trace; нужен insmod uc_trace_ms=…, напр. MODPARAMS="uc_trace_ms=100")
+	# UCDATA=1 — снимок памяти данных uc (кольцо меток UC_STAMP: последние ~1,5 с)
+	[ -n "$UCDATA" ] && $SSH "$h" 'cat /sys/kernel/debug/ieee80211/phy*/wil6210/blob_uc_data' > "$OUT/${T}_${h##*.}.uc_data.bin"
 	[ -n "$UCTRACE" ] && $SSH "$h" 'cat /sys/kernel/debug/ieee80211/phy*/wil6210/uc_trace' > "$OUT/${T}_${h##*.}.uctrace"
 done
 echo "pcap: $OUT/${T}_${AP##*.}.pcap $OUT/${T}_${STA##*.}.pcap"
