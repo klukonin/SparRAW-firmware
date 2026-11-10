@@ -22,6 +22,8 @@ sleep 15
 for h in "$AP" "$STA"; do
 	echo "${h##*.} после: $($SSH "$h" "$CNT") FWERR $(fwerr "$h")"
 	cap_fetch "$h" "$OUT/${T}_${h##*.}.pcap"
+	# UCTRACE=1 — журнал uc (debugfs uc_trace; нужен insmod uc_trace_ms=…, напр. MODPARAMS="uc_trace_ms=100")
+	[ -n "$UCTRACE" ] && $SSH "$h" 'cat /sys/kernel/debug/ieee80211/phy*/wil6210/uc_trace' > "$OUT/${T}_${h##*.}.uctrace"
 done
 echo "pcap: $OUT/${T}_${AP##*.}.pcap $OUT/${T}_${STA##*.}.pcap"
 [ -n "$ANALYZE" ] && $ANALYZE "$OUT/${T}_${AP##*.}.pcap" "$OUT/${T}_${STA##*.}.pcap"
