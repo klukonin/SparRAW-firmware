@@ -141,6 +141,9 @@ HW_EVT_CH2_MASK = 0x886fbc
 # H-EVT1: EVENT1 (r42) → L1 вектор 9 (l1_task_entry(1): l1_task_on_evt1 крутится while r42 & 0xc0010): линия —
 # r42 & (bi1_event б4 | backoff_event б18 | busy_event б19). Регистр маски не найден; стенд (метка STAMP_L1_EVT,
 # 2026-10-29): на всех 1486 входах режима 1 взведён один из этих битов, а б2/3/7/8/20–23 взведены всегда.
+# ModelGap: busy_event при RX OFF (rx_on_state 0) — на железе вектор 9 тогда не срабатывает (иначе uc_assert 0x27 в
+# l1_task_on_evt1; open грузится), а бит в r42 читается взведённым (стенд 2026-11-10, проверка в тике L1); чем закрыта
+# линия — не известно, модель линию не закрывает.
 EVT1_VEC, EVT1_IRQ_MASK = 9, 0xc0010
 # H-EVT4: EVENT4 (r54) → L1 вектор 12 (l1_task_entry(2): l1__on_event4 разбирает б4/15/17): линия — r54 & регистр
 # 0x886d44 (bi_mode_init_event_timers пишет 0x28010 = б4|15|17; стенд — то же значение; на всех 239 входах режима 2
@@ -1451,7 +1454,14 @@ class HW:
 
     def _tx_close(self, what, dur, fifo=None, mpdu_len=None, qframe=None, qid=None, mcs=0, rdg=False):
         """Кадр закрыт командой uc: старт — в точке ответа (после приёма/события GP) или сразу (инициатор)."""
-        if self.ack_wait is not None and not what.startswith('sweep'):
+        own = self.tx_pending or self.tx
+        own_q = own is not None and own.get('qid') is not None and own.get('qframe') is not None
+        if own_q:
+            f0 = own['qframe'][0] if isinstance(own['qframe'], list) else own['qframe']
+            own_q = not f0[4] & 1                             # одноадресный — будет ждать Ack/BlockAck
+        if (self.ack_wait is not None or own_q) and not what.startswith('sweep'):
+            # H-TXAFTERACK и во время самого кадра: стенд — slot_event и закрытие следующего кадра uc приходятся ещё
+            # на свой кадр в эфире; ожидание Ack начинается с его конца (_q_sent), отложенный кадр — после ответа
             # H-TXAFTERACK: свой кадр ждёт Ack — следующий MAC выпускает после ответа (через IFS от его конца) или
             # тайм-аута; uc закрывает его раньше (стенд: slot_event во время своего кадра, запрос итога — 50–350
             # тактов, столкновений с ответом нет)

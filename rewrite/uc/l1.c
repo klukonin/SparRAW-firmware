@@ -345,6 +345,30 @@ void l1_task_entry(u32 mode)
 }
 #define l1_task_entry l1_task_entry_impl
 #endif
+/* Приём раньше тика L1. исправлено (vendor: тик таймера 0 — вектор 3, тот же уровень L1, что busy_event — вектор 9,
+ * — исполняется целиком, ~330 тактов, и начало PPDU ждёт его конца). ХРУПКО: ответ через SIFS (802.11-2020
+ * 10.3.2.11 Ack, 10.25.3 BlockAck, 10.3.2.9 DMG CTS) на короткий кадр SC (3,4 мкс у ADDBA Response на MCS 1) — срок
+ * от его конца, а путь uc от прерывания до проверки счётчиков PPDU в rx_flow_run ~460 тактов (эмулятор): тик, начатый
+ * перед кадром, сдвигает вход так, что кадр кончается раньше проверки, и ответ уже не укладывается в срок
+ * (SIFS_CNT_RX_LATE_END_SC, ifs.h). Поэтому между шагами тика (и сразу после перевзвода таймеров) — проверка
+ * busy_event (r42 б19): начался приём — сначала обработчик событий L1 (тот же, что вызвал бы вектор 9 сразу после
+ * тика: l1_task_dispatch_evt1), затем оставшиеся шаги тика — каждый ровно один раз за тик, порядок шагов прежний,
+ * всё на уровне L1 (как у vendor, без вложенных прерываний). Задержка начала приёма тиком — не больше самого длинного
+ * шага (rx_nav_check_idle, ~90 тактов) вместо всего тика. Проверка — чтение r42, 3–4 инструкции.
+ * Только при включённом приёме и не остановленном MAC — предусловия l1_task_on_evt1 (uc_assert 0x27 / 0x1314): busy_event
+ * (r42 б19) бывает взведён и при RX OFF (стенд 2026-11-10: загрузка, до LMAC 0x01 — uc_assert 0x27 из тика на обоих узлах),
+ * а вектор 9 тогда не срабатывает (open без этой проверки грузится); при RX OFF ответа через SIFS нет — тик как прежде.
+ * Проверки состояния — в отдельной функции: в теле тика только чтение r42 (без busy тик не меняется). */
+static __attribute__((noinline)) void l1_tick_rx_dispatch(void)
+{
+    if (rx_on_state != 0 && mac_mode_sw.halted == 0)
+        l1_task_dispatch_evt1();
+}
+static inline __attribute__((always_inline)) void l1_tick_rx_first(void)
+{
+    if (mac_evt1() & MAC_EVT1_BUSY)
+        l1_tick_rx_dispatch();
+}
 void l1_task_entry(u32 mode)
 {
     if (mode == 1 || mode == 2)
@@ -387,6 +411,7 @@ void l1_task_entry(u32 mode)
         uc_assert((u32)__builtin_return_address(0), 0x1313);
     arc_sr(uc_timer[0].xc, uc_timer[0].ctrl);   /* sr r3,[r0] */
     arc_sr(0, uc_timer[1].count);               /* sr 0,[r0] */
+    l1_tick_rx_first();
     u32 *r13 = &busy_acct.sig_start_tsf;
     if (*r13 != 0) {
         mac_mon_report.busy_time = mac_mon_report.busy_time + 0xa;
@@ -394,9 +419,13 @@ void l1_task_entry(u32 mode)
     }
     if (phy_signal_gain_adc_in_range() == 1)
         *r13 = uc_read_tsf_lo();
+    l1_tick_rx_first();
     l1_task_check_bf_req_timeout();
+    l1_tick_rx_first();
     power_manager_tick_if_elapsed();
+    l1_tick_rx_first();
     rx_nav_check_idle(0, 0, 1);
+    l1_tick_rx_first();
     l1_task_sel_nbr_update();
     if (*r13 == 0 && phy_signal_gain_adc_in_range() == 1)
         *r13 = uc_read_tsf_lo();

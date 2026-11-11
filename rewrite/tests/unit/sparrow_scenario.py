@@ -155,17 +155,19 @@ def _msdus(n_bytes, msdu_len, seed):
 
 
 def run_mixed(scn, core_role, fw_elf, build_dir, uc_fw, step_us=500, sme_pause_us=0, mgmt_mcs=None,
-              resp_cmd_delay_clk=0):
+              resp_cmd_delay_clk=0, setup=None):
     """Смешанная пара (одна станция): core_role 'ap' — точка на ядре, станция на прошивке; 'sta' — наоборот.
     sme_pause_us — пауза SME станции-ядра перед MLME-ASSOCIATE и MLME-ADDBA (0 — сразу, как ядро в идеальной
     среде; StaSme.pause_us); mgmt_mcs — MCS кадров управления ядра (None — по умолчанию ядра, MCS 1; DmgMac.mgmt_mcs).
     resp_cmd_delay_clk — задержка ответа MAC узла ядра после точки IFS (CoreNode.resp_cmd_delay_clk; 0 — минимум
-    железа H-RESPCMD). Все три — выбор реализации в рамках стандарта; прогон «как ядро» — с умолчаниями."""
+    железа H-RESPCMD). Все три — выбор реализации в рамках стандарта; прогон «как ядро» — с умолчаниями.
+    setup(core, fw) — вызов после создания узлов, до эфира (сценарии тестов: фаза тика uc и т. п.)."""
     assert scn.n_sta == 1, 'смешанная пара — одна станция'
     import fw_scenario as FS
     r = Run(scn, 'mixed-' + core_role)
     try:
-        _run_mixed(r, scn, core_role, fw_elf, build_dir, uc_fw, step_us, FS, sme_pause_us, mgmt_mcs, resp_cmd_delay_clk)
+        _run_mixed(r, scn, core_role, fw_elf, build_dir, uc_fw, step_us, FS, sme_pause_us, mgmt_mcs, resp_cmd_delay_clk,
+                   setup)
     except (ModelGapAir, ModelGap) as e:
         r.gap = str(e)
         r.note('эмулятор: срыв на %.1f мкс — %s' % (r.air.clock_us() if r.air else 0, e))
@@ -176,7 +178,7 @@ def run_mixed(scn, core_role, fw_elf, build_dir, uc_fw, step_us=500, sme_pause_u
 
 
 def _run_mixed(r, scn, core_role, fw_elf, build_dir, uc_fw, step_us, FS, sme_pause_us=0, mgmt_mcs=None,
-               resp_cmd_delay_clk=0):
+               resp_cmd_delay_clk=0, setup=None):
     import machw
     mk_fw, mk_uc = _makers(fw_elf, build_dir, uc_fw)
     ssid = FS.SSID
@@ -210,6 +212,8 @@ def _run_mixed(r, scn, core_role, fw_elf, build_dir, uc_fw, step_us, FS, sme_pau
         _trickle(sme, sme.mac.sim, scn.batch, scn.batch_gap_us)    # данные ядра — пачками, как у узла прошивки
     r.core_nodes, r.fw_nodes = [core], [fw]
     r.core_sme = sme
+    if setup is not None:
+        setup(core, fw)
     air = r.air = MixedAir([fw], [core])
     blocked = False
     if core_role == 'ap':

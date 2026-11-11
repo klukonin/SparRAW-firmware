@@ -332,6 +332,11 @@ class Air:
                           mcs=rec.get('mcs', 0), tok=tok)
             if rec['start'] <= dst.hw.now:
                 dst.hw._run_due()                           # начало внутри последней инструкции приёмника — на её конце
+                if dst.hw.irqs:
+                    # H-IRQ: линии прерываний — по событиям, что сейчас подняло начало кадра (busy_event, H-EVT1);
+                    # без этого спящий uc узнавал о кадре только со следующим событием железа (sfd_sync: SC +204,
+                    # control PHY +665 тактов), и вход rx_flow запаздывал
+                    dst.hw._evt_lines()
 
     @staticmethod
     def lost_at(fr):

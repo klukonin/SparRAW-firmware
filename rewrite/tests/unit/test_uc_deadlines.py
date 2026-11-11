@@ -48,7 +48,7 @@ def passes(w, budget):
 
 # ---- модель стоимости ----
 from costmodel import Cost               # одна модель стоимости с моделью MAC (machw.py)
-from machw import MTP_LAT_CLK, MTP_PERM_LAT_CLK                     # noqa: E402
+from machw import MTP_LAT_CLK, MTP_PERM_LAT_CLK, RESP_CMD_DEADLINE_SC_CLK   # noqa: E402
 
 
 class Meter:
@@ -410,6 +410,31 @@ def test_sifs_response_command(uc, kind):
     print(m.profile(t, a))
     src = VENDOR_PATH_SRC % (kind, VENDOR_PATH_INSNS[kind]) if kind in VENDOR_PATH_INSNS else SIFS_SRC
     check('sifs_resp_' + kind, w, n, sifs_budget(w, n, kind), src)
+
+
+# Кадр SC кончился раньше проверки счётчиков PPDU в rx_flow_run (uc/ifs.h SIFS_CNT_RX_LATE_END_SC): срок — SIFS_CNT у
+# команды ответа, стенд для SC (machw RESP_CMD_DEADLINE_SC_CLK); путь — от снимка SIFS_CNT на проверке, которому порог
+# разрешает быть до SIFS_CNT_RX_LATE_END_SC.
+LATE_END_SC_LIMIT_CLK = 165 + 90                              # SIFS_CNT_CODE(1, 90): 1,55 мкс
+LATE_END_SC_SRC = 'стенд: SIFS_CNT у 0x37000020 на кадр SC ≤ 1044 без ошибок (machw RESP_CMD_DEADLINE_SC_CLK)'
+
+
+def test_sifs_response_late_end_sc(uc):
+    """PPDU SC (Ack обязателен, 10.3.2.11) кончился раньше проверки счётчиков PPDU: от чтения SIFS_CNT (снимок
+    rx_flow_r55_snap) до 0x37000020 — W; порог SIFS_CNT_RX_LATE_END_SC + W укладывается в срок SC по правилу запаса
+    (W ≤ B − max(20 %·B, 100) при W = порог + путь). Худшая ветка — как test_sifs_response_command('ack')."""
+    from test_uc_rx_late_end import PPDU_EVT_CNT, _ports
+    _ports(uc, sifs_cnt=0x10)
+    uc.w32(PPDU_EVT_CNT, 0)
+    m = Meter(uc, stop=lambda c: c == 0x37000020)
+    uc.call('rx_flow_run', stub={'uc_assert': 0}, max_steps=200000)
+    a = m.cmd_idx(lambda c: c == 0x37000020)
+    assert a is not None, 'нет ответа: %s' % [hex(c) for c in uc.mac_cmds]
+    g = [j for j, e in m.events() if e[:3] == ('extreg', 'r', 55) and j < a][-1]
+    w, n = m.span(g, a)
+    print(m.profile(g, a))
+    check('sifs_resp_late_end_sc', LATE_END_SC_LIMIT_CLK + w, n, RESP_CMD_DEADLINE_SC_CLK,
+          LATE_END_SC_SRC + '; W = порог %d + путь %d' % (LATE_END_SC_LIMIT_CLK, w))
 
 
 def test_txop_continue_after_ack(uc):

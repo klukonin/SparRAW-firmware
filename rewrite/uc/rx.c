@@ -478,6 +478,18 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
     ctx->flags = (ctx->flags & ~(1u << 12)) | (1u << 5);
 }
 
+/* Принятый PPDU кончился до проверки счётчиков в rx_flow_run и его можно разобрать с ответом в срок: новый PPDU не
+ * начался (начал CCA PHY_SIGNALS [21:16] столько же, сколько концов [13:8]), отчёт о нём (r42 б16) не снят, кадр SC
+ * (r38 [24:20] received_mcs ≠ 0), SIFS_CNT (sifs_cnt) не 0 (0 — как у rx_end_switch_to_tx: счёт не идёт) и меньше
+ * порога SIFS_CNT_RX_LATE_END_SC (uc/ifs.h). */
+static inline __attribute__((always_inline)) u32 rx_late_end_ok(u32 physig, u32 evt1, u32 sifs_cnt, u32 rep3)
+{
+    if (MAC_PHYSIG_CCA_EVT_CNT_OF(physig) != MAC_PHYSIG_PPDU_EVT_CNT_OF(physig) || !(evt1 & MAC_EVT1_PPDU_REPORT) ||
+        MAC_RX_REP3_RX_MCS_OF(rep3) == 0 || sifs_cnt == 0)
+        return 0;
+    return sifs_cnt < SIFS_CNT_RX_LATE_END_SC;
+}
+
 /* СРОК: весь путь от конца принятого кадра до вызова rx_flow_handle_frame / rx_flow_step входит
  * в срок ответа через SIFS 3 мкс (802.11-2020 10.3.2.3.3; Ack 10.3.2.11, BlockAck 10.25.3,
  * DMG CTS 10.3.2.9, RD 10.29.4). Вход при состоянии 2/3/5: от выхода из цикла ожидания
@@ -488,7 +500,8 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
  * же у vendor (0x9313d8). Запас общий с rx_frame_tx_resp_seq: единицы. Не добавлять код на этом
  * пути (трассу 0xeeee.. тоже) без замера tools/arcemu/resp_lat.py. Порог SIFS_CNT ≥ 0x120
  * (1 мкс + 32 такта) при состоянии 5 — сторож vendor: опоздавший вход не шлёт 0x1f006000…
- * 0x6000101 (rx_not_ready). */
+ * 0x6000101 (rx_not_ready). Кадр SC, кончившийся раньше проверки счётчиков PPDU (короткий, или вход задержан), —
+ * свой путь в ветке r13 ≠ seq: срок — порог SIFS_CNT_RX_LATE_END_SC (uc/ifs.h) плюс путь до 0x37000020. */
 UC_HOT
 u32 rx_flow_run(void)
 {
@@ -549,6 +562,25 @@ u32 rx_flow_run(void)
     rxf.flags = (rxf.flags & 8) | 0x80000000;
 
     if (r13 != seq) {
+        /* исправлено (vendor: любой r13 ≠ seq — «события нет», кадр без ответа). PPDU, ради которого uc вошёл сюда
+         * (busy_event), кончился раньше этой проверки: короткий кадр SC (Action ADDBA Response 3,4 мкс, Association
+         * Response 4,8 мкс; заголовок SC разобран через 2,47 мкс, 20.4.3) кончается, пока uc идёт от прерывания
+         * (sfd_sync) через l1_task_on_evt1 → rx_flow_main до сюда (~460 тактов, эмулятор), и тем более — если вход
+         * задержан тиком L1 (до ~330 тактов, vendor-порядок обработчиков одного уровня). Признак «этот кадр, он
+         * цел и только что кончился»: концов PPDU ровно на один больше своего счётчика, начал CCA столько же (новый
+         * PPDU не начался, assert 68 выше — разница ≥ 2), отчёт о PPDU (r42 б16) ещё не снят, и SIFS_CNT (снимок
+         * выше, от конца PPDU) не дальше срока ответа минус путь отсюда (rx_late_end_ok выше). Тогда кадр
+         * разбирается как после цикла ожидания конца (ХРУПКО ниже: защёлка усиления, затем «кадр принят»): ответ
+         * через SIFS обязателен (802.11-2020 10.3.2.11 Ack, 10.25.3 BlockAck, 10.3.2.9 DMG CTS). Иначе — прежний
+         * разбор рассинхронизации. Только при ok: без 0x1f006000…0x6000101 (сторож состояния 5) ответа нет и так.
+         * ХРУПКО: путь отсюда до 0x37000020 входит в порог SIFS_CNT_RX_LATE_END_SC (test_uc_deadlines
+         * test_sifs_response_late_end_sc); свой блок, а не переход в блок после цикла ожидания — иначе GCC кладёт тот
+         * блок сюда, и обычный путь после цикла получает взятый переход (сверено по дизассемблеру). */
+        if (__builtin_expect(ok && ((r13 - seq) & 0x3f) == 1 &&
+                             rx_late_end_ok(mac_status_sel(), mac_evt1(), rx_flow_r55_snap, mac_rx_rep3()), 0)) {
+            rx_latch_cur_gain_db();
+            goto tail;                          /* res = 1, hit = 0 — как «hi ≠ seq» после цикла */
+        }
         ppdu_evt_cnt = r13;
         uc_mac_cmd(0x20d2000);
         if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP)) {
