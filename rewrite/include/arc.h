@@ -299,6 +299,18 @@ static inline __attribute__((always_inline)) void uc_mac_cmd(u32 v)
     __asm__ volatile("mov r32,%0\n\tst.ab %0,[r25,4]\n\tbclr r25,r25,0xa" :: "r"(v) : "memory");
 }
 
+/* uc: MAC-команда без записи в кольцо журнала — для пути ответа через SIFS (802.11-2020 10.3.2.3.3): журнал — две
+ * инструкции и запись DCCM на команду, на пути DMG CTS ~20 команд (~60 тактов, стенд 2026-11-11, а до точки SIFS не
+ * хватало ~55). Команды этого пути в кольцо (разбор после сбоя) не попадают; -DUC_CMDLOG_ALL возвращает журнал. */
+#ifdef UC_CMDLOG_ALL
+#define uc_mac_cmd_nl uc_mac_cmd
+#else
+static inline __attribute__((always_inline)) void uc_mac_cmd_nl(u32 v)
+{
+    __asm__ volatile("mov r32,%0" :: "r"(v) : "memory");
+}
+#endif
+
 /* uc: текущий указатель кольца MAC-команд (r25). */
 static inline __attribute__((always_inline)) u32 uc_trace_ptr(void)
 {

@@ -447,9 +447,9 @@ void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d)
             r14 |= d;                       /* d — биты скорости 0x17 ([12:8] MCS | 3) или 0 — MCS выбирает MAC;
                                              * vendor: d — MCS, 0xff — «не задан» (сравнение на пути ответа) */
     }
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(r13 | 0x16000000);
-    uc_mac_cmd(r14 | 0x17000000);
+    uc_mac_cmd_nl(0x1b001111);
+    uc_mac_cmd_nl(r13 | 0x16000000);
+    uc_mac_cmd_nl(r14 | 0x17000000);
     arc_nops(3);
 }
 

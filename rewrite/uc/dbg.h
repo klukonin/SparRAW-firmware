@@ -119,6 +119,16 @@
 #define STAMP_TXOP_REM      45   /* txop_initiator_open_txop_flow, рядом с STAMP_TXOP_OPEN (до ожидания слота): a0 = TSF[31:0],
                                   * a1 = REMAINING_TIME_RD (r15, мкс) | мкс до TBTT (0x886ec0) << 16 — сверка плана TXOP MAC с
                                   * NAV RTS в захвате PMC (802.11-2020 10.39.5; docs/MAC-STAND.md «Эфир: NAV RTS и TBTT») */
+#define STAMP_HDR_EARLY     46   /* rx_flow_run, опыт E-R3 (только чтение), после rx_flow_handle_frame — шесть меток, такты от выхода
+                                  * из ожидания sfd_sync (б31 — событие было): 1) конец кадра | замер SNR; 2) первый r42 б10 |
+                                  * первый б12; 3) смена FC/Duration в rx_buf | PLCP 0x8830ec на б12; 4–5) смены r49 [19:16]
+                                  * (состояние << 28 | такты); 6) r37 | r38 б25 << 31, PLCP 0x8830ec в конце */
+#define STAMP_RESP_PATH     47   /* rx_flow_handle_frame, ответ быстрым путём (Ack/BA/DMG CTS), после STAMP_CTS_PATH: a0 = такты от
+                                  * входа до выхода из rx_get_required_response | до конца ожидания BAP << 16, a1 = вид (r5) */
+#define STAMP_SIFS_PTS      48   /* rx: SIFS_CNT (от конца приёма, мкс << 8 | такты) в точках пути ответа: a0 = точка (1 — вход в
+                                  * rx_flow_handle_frame, 2 — после MAC_MTP_RESP_VALID) | вид << 8, a1 = SIFS_CNT */
+#define STAMP_CTS_FAST      49   /* rx_fast_cts, после пуска: a0 = такты от входа до конца перехода RX→TX | до запроса MTP << 16,
+                                  * a1 = SIFS_CNT на входе (от конца RTS; чтение — +~10 тактов на пути) */
 #define STAMP_TXOP_CONT     36   /* mtp_get_tx_permission (продолжение TXOP / пуск по разрешению): SIFS_CNT перед
                                   * 0x19000001 (защёлка сдвигает команду на ~8 тактов); после r45: a0 = SIFS_CNT | r36 [15:0] << 16,
                                   * a1 = r43 (ответ MTP: MCS [20:16]) */

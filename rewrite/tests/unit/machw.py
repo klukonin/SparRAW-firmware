@@ -1939,7 +1939,10 @@ class HW:
         прямой передачи после FIFO) — ответ на ~0,85 мкс позже железа."""
         r, self.resp_due = self.resp_due, None
         self.go = False
-        start = r['end'] + self.ifs_clk() + MACLAT_CLK
+        # H-RESPCMD2 (стенд 2026-11-11, fix/sifs-resp: команда пуска DMG CTS через 2,70 мкс после конца RTS — сумма SIFS
+        # обоих узлов без калибровки 6,37 мкс, т. е. ~3,19 мкс в эфире; при команде ~3,00 — ~3,5): старт — позднее из
+        # «конец PPDU + IFS + MACLAT_RX» (как H-ORIGIN-RX, SSW-Ack при MBIFS) и «команда + MACLAT» (H-RESPCMD)
+        start = r['end'] + self.ifs_clk() + MACLAT_RX_CLK
         if self.resp_cmd_at is None or self.resp_cmd_at > r['end'] + r['deadline']:
             start = max(start, self.now + TX_START_CLK)
         else:

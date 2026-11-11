@@ -633,10 +633,11 @@ u32 mac_switch_rx_to_tx(u32 a)
     /* 6.2 asm 0x92a754. Возврат 1 — переход из состояния PHY < 6, иначе 0. */
     (void)a;
     u32 g;
-    UC_ST_ABS(mac_rx_to_tx_waited_brp, 0);
+    /* mac_rx_to_tx_waited_brp (ставит mac_switch_rx_to_tx_wait_brp) никто не читает — обнуление здесь (vendor) снято
+     * с пути ответа через SIFS */
     g = mac_sel_shadow & ~MAC_SEL_FIELD;
     UC_ST_ABS(mac_sel_shadow, g | MAC_SEL_PHY_SIGNALS);   /* ld/st по абсолютному адресу — без mov limm базы */
-    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
+    uc_mac_cmd_nl(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     A000_NOP3();
     if ((mac_evt_eng2_shr16() & 0xf) >= 6)
         return mac_switch_rx_to_tx_wait_brp(UC_RA_NOW());
@@ -647,16 +648,20 @@ u32 mac_switch_rx_to_tx(u32 a)
      * переходами (цикл в теле давал пролог push/pop, 2026-10-30).
      * 63 инструкции от входа до возврата (было 78, vendor 70); не добавлять сюда вызовов и кода без замера
      * (tests/unit/test_uc_deadlines.py, lat.py). */
-    VOL(uc_wait_marker) = 0xff2f;   /* метка ожидания: gcc выкидывал запись как мёртвую */
-    while (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
-        ;
-    UC_ST_ABS(uc_wait_marker, 0);
+    /* метка ожидания — только если ждать приходится: на пути ответа через SIFS (после отчёта о PPDU) cca_ppdu_comp
+     * уже поднят, и две записи DCCM — лишние (стенд 2026-11-11) */
+    if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP)) {
+        VOL(uc_wait_marker) = 0xff2f;   /* метка ожидания: gcc выкидывал запись как мёртвую */
+        while (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
+            ;
+        UC_ST_ABS(uc_wait_marker, 0);
+    }
     arc_nops_mb(1);   /* vendor L_92a7c2: 1×nop */
     u32 r13 = mac_status_sel();
     while (mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME)
         ;
     arc_nop_mb();   /* vendor L_92a7d0: пустой слот */
-    uc_mac_cmd(0x3d000004);
+    uc_mac_cmd_nl(0x3d000004);
     A000_NOP3();
     mac_evt_eng2_store(r49_snap);
     if (r13 & MAC_PHYSIG_PHY_RX_FRAME)
@@ -668,11 +673,11 @@ u32 mac_switch_rx_to_tx(u32 a)
      * раньше, когда ожидания выше дождались бы конца кадра, — так и делаем (переход заново); vendor падал. */
     if ((mac_status_sel() & MAC_PHYSIG_PHY_RX_FRAME) || !(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
         return mac_switch_rx_to_tx_again(a);
-    uc_mac_cmd(0x2093800);
+    uc_mac_cmd_nl(0x2093800);
     mac_rx_to_tx_fast = 1;
     g = mac_sel_shadow & ~MAC_SEL_FIELD;
     UC_ST_ABS(mac_sel_shadow, g | MAC_SEL_PHY_SIGNALS);
-    uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
+    uc_mac_cmd_nl(g | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
     A000_NOP2M();   /* vendor L_92a84c: 2×nop + mov 0,0 */
     ppdu_evt_cnt = mac_status_sel_shr8() & 0x3f;
     return 1;

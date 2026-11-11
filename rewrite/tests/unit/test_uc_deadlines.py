@@ -394,11 +394,9 @@ _SIFS_HW = 'B = vendor Ack 644 + 12: стенд vendor Ack + 12 тактов →
 
 
 @pytest.mark.parametrize('kind', [
-    pytest.param('ack', marks=risk('rx_flow_run → rx_frame_tx_resp_seq: r42.14 → 0x37000020 (Ack)', 532, 656, _SIFS_HW)),
-    'ba', 'bar',                                            # BlockAck на A-MPDU / BAR: запас 168 / 167 (с отказом от RD,
+    'ack', 'ba', 'bar',                                     # быстрый путь ответа (rx_flow_handle_frame, fix/sifs-resp)                                            # BlockAck на A-MPDU / BAR: запас 168 / 167 (с отказом от RD,
                                                             # 2026-11-04: без rx_flow_ctrl_qid_empty и ветки ответа RD)
-    pytest.param('cts', marks=risk('то же, DMG CTS на RTS (rx_end_switch_to_tx + mac_switch_rx_to_tx на пути; у нас на '
-                                   '101 инстр. короче vendor)', 687, 829, VENDOR_PATH_SRC % ('DMG CTS', 546))),
+    'cts',                                                  # быстрый путь DMG CTS (rx_fast_cts, fix/sifs-resp)
     pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_send_cf_end_response; на 53 инстр. короче '
                                      'vendor)', 578, 664, VENDOR_PATH_SRC % ('CF-End', 436))),
     'grant_ack'])                                           # медленный путь без запроса MTP: запас 217
