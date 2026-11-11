@@ -74,7 +74,8 @@ def snapshot(air, t0_clk=0):
         if f['start'] < t0_clk:
             continue
         frames.append(dict(start=f['start'], end=f['end'], src=bytes(f['src'].mac), frame=bytes(f['frame']),
-                           mpdus=f['mpdus'], dur_us=f['dur_us'], mcs=f['mcs'], what=f['what']))
+                           mpdus=f['mpdus'], dur_us=f['dur_us'], mcs=f['mcs'], what=f['what'],
+                           lost=[bytes(d.mac) for d, t in f.get('rx', ()) if t.get('lost')]))   # H-COLL: у кого потерян
     nodes = {bytes(n.mac): dict(tsf0_us=n.hw.tsf0_us, tbtt_us=n.hw.tbtt_us, bi_us=n.hw._bi_period_us())
              for n in air.nodes}
     return dict(frames=frames, nodes=nodes)

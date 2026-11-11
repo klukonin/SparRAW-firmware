@@ -115,7 +115,7 @@ def test_live_association(fw_factory, uc_factory):
         F.Fw(ap.fw).ap_start(bi=BI_TU)
     with sta:
         F.Fw(sta.fw).set_mac(sta.mac)
-    ap.hw.backoff_seed, sta.hw.backoff_seed = 1, 1001  # другие seed — столкновения (не моделируются) и assert 0x26 BRP
+    ap.hw.backoff_seed, sta.hw.backoff_seed = 1, 1001  # другие seed — столкновения (до H-COLL не моделировались) и assert 0x26 BRP
     ap.live()
     sta.live()
     sta.wmi(F.WMI_CONNECT, F.connect_cmd(bssid=ap.mac, ssid=b'test'))
@@ -611,8 +611,10 @@ def test_live_rd_declined(live_rd_granted):
 
 def test_live_rd_declined_cf_end_and_rts(live_rd_granted):
     """CF-End держателя (Duration ≠ 0, RA ответчика) — ответный CF-End (10.23.2.10; наш uc отвечает всегда); первый RTS
-    следующего TXOP держателя — DMG CTS (10.3.2.9). Допуск ответа — 5 мкс, как test_live_data_reference_access_rules
-    (ответ uc через SIFS в эмуляции позже, xfail test_live_data_reference_sifs)."""
+    следующего TXOP держателя, принятый точкой, — DMG CTS (10.3.2.9: ответ — на принятый RTS; RTS, столкнувшийся с
+    RTS точки в том же слоте отсрочки, точка не приняла — H-COLL, держатель повторяет его после тайм-аута). Допуск
+    ответа — 5 мкс, как test_live_data_reference_access_rules (ответ uc через SIFS в эмуляции позже, xfail
+    test_live_data_reference_sifs)."""
     r = live_rd_granted
     fr, ap, sta = r['fr'], r['ap'], r['sta']
     cfe = [i for i, f in enumerate(fr) if f['src'] is sta and f['frame'][:2] == FC_CF_END and f['dur_us']]
@@ -621,7 +623,8 @@ def test_live_rd_declined_cf_end_and_rts(live_rd_granted):
         nxt = fr[i + 1] if i + 1 < len(fr) else None
         assert nxt is not None and nxt['src'] is ap and nxt['frame'][:2] == FC_CF_END and nxt['dur_us'] == 0, _log(r)
         assert (nxt['start'] - fr[i]['end']) / CLK <= SIFS_US + 5.0
-    rts = [i for i, f in enumerate(fr) if i > cfe[0] and f['src'] is sta and f['frame'][:2] == FC_RTS]
+    lost = lambda f: any(d is ap for d, _ in Air.lost_at(f))
+    rts = [i for i, f in enumerate(fr) if i > cfe[0] and f['src'] is sta and f['frame'][:2] == FC_RTS and not lost(f)]
     assert rts and fr[rts[0] + 1]['src'] is ap and fr[rts[0] + 1]['frame'][:2] == FC_DMG_CTS, _log(r)
     assert len(sta.host_done) == 16
 

@@ -18,7 +18,13 @@
 - H-RXREP: отчёт о принятом маяке своей BSS — значения стенда (метка STAMP_BCN_REP, 1742 маяка vendor-AP, все
   одинаковые): r36 0x80, r37 0, r38 0xe0001009, r39 0x08000040; SSW — ssw_report (метка STAMP_SSW_REP); отчёт готов
   на rx_frame_event (H-RXREP-HDR);
-- канал идеальный: каждый кадр каждого сектора принимается (модели антенн/секторов нет)."""
+- канал идеальный: каждый кадр каждого сектора принимается (модели антенн/секторов нет; направленные лучи DMG в
+  модели узлы слышат друг друга всегда), кроме столкновений;
+- H-COLL (machw._rx_start): PPDU, перекрытые во времени у приёмника, теряются оба (захвата нет), полудуплекс — свой
+  PPDU портит принимаемый и не даёт принять начавшийся во время него; потерянное у приёмника не имеет последствий
+  приёма (буфер, отчёт, ответ через SIFS, NAV, кольцо fw, Ack/BlockAck у отправителя) — передатчик узнаёт о потере
+  только по отсутствию ответа; кто потерял кадр — frames[i]['rx'] (Air.lost_at). Детерминировано: исход зависит
+  только от времени кадров (seed отсрочки — у узлов)."""
 from machw import ctrl_txtime_clk, sc_txtime_clk, BA_LEN, RESP_CMD_DEADLINE_CLK, RESP_CMD_DEADLINE_CTS_CLK
 
 RX_BUF = 0x804010
@@ -281,29 +287,37 @@ class Air:
                                                                                           dst.t_prev))
             self.log.append((rec['start'], src, dst, rec['what']))
 
-            def hdr(hw, frame=frame, dst=dst):
-                for i, b in enumerate(frame):               # H-RXBUF
-                    dst.uc.cpu.write(RX_BUF + i, bytes([b]))
             fc = int.from_bytes(frame[:2], 'little')
             rts = fc == 0x00b4 and frame[4:10] == bytes(dst.mac)
             # Ack Policy No Ack (QoS Control B5..B6 = 1, 9.2.4.5.4): ответа через SIFS нет (QoS Null MAC, H-QNULL)
             noack = not isinstance(rec.get('qframe'), list) and qos_ack_policy(frame) == 1
             uni = (rec.get('qframe') is not None or rts) and frame[4:10] == bytes(dst.mac) and not noack
-            if uni:
-                dst.resp_ra = bytes(src.mac)                # Ack — тому, кто прислал
-                dst.resp_kind = 'cts' if rts else 'ack'
-                dst.resp_dur = rec['dur_us'] & 0xffff
-                if isinstance(rec.get('qframe'), list):
-                    # BlockAck: TID A-MPDU (одного TID, 10.12.2) и номера MPDU; SSN — наименьший (окно с первого)
-                    fs = [bytes(x) for x in rec['qframe']]
-                    sns = [int.from_bytes(x[22:24], 'little') >> 4 for x in fs]
-                    dst.resp_ba = (qos_tid(fs[0]) or 0, sns[0], sns)
+            # H-COLL: приём кадра этим узлом (machw ставит tok['lost'], если кадр потерян в столкновении) — всё, что
+            # следует из приёма, — только у принятого: поля ответа, итог Ack/BlockAck у отправителя кадра
+            tok = {}
+            ok = (lambda tok=tok: not tok.get('lost'))
+            self.frames[-1].setdefault('rx', []).append((dst, tok))    # итог приёма по узлам (lost_at)
+
+            def hdr(hw, frame=frame, dst=dst, uni=uni, rts=rts):
+                for i, b in enumerate(frame):               # H-RXBUF
+                    dst.uc.cpu.write(RX_BUF + i, bytes([b]))
+                if uni:
+                    dst.resp_ra = bytes(src.mac)            # Ack — тому, кто прислал
+                    dst.resp_kind = 'cts' if rts else 'ack'
+                    dst.resp_dur = rec['dur_us'] & 0xffff
+                    if isinstance(rec.get('qframe'), list):
+                        # BlockAck: TID A-MPDU (одного TID, 10.12.2) и номера MPDU; SSN — наименьший (окно с первого)
+                        fs = [bytes(x) for x in rec['qframe']]
+                        sns = [int.from_bytes(x[22:24], 'little') >> 4 for x in fs]
+                        dst.resp_ba = (qos_tid(fs[0]) or 0, sns[0], sns)
+            end = rec['start'] + rec['dur']
             if fc == 0x00d4 and frame[4:10] == bytes(dst.mac):
-                dst.hw.at(rec['start'] + rec['dur'], dst.hw.ack_rx, 'ack_rx')
+                dst.hw.at(end, lambda hw=dst.hw, ok=ok: ok() and hw.ack_rx(), 'ack_rx')
             if fc == 0x0094 and frame[4:10] == bytes(dst.mac):
-                dst.hw.at(rec['start'] + rec['dur'], dst.hw.ba_rx, 'ba_rx')
+                dst.hw.at(end, lambda hw=dst.hw, ok=ok: ok() and hw.ba_rx(), 'ba_rx')
             if rec.get('rd_resp') and frame[4:10] == bytes(dst.mac):
-                dst.hw.at(rec['start'] + rec['dur'], dst.hw.rd_resp_rx, 'rd_resp_rx')   # BlockAck в ответе RD (H-RD)
+                # BlockAck в ответе RD (H-RD)
+                dst.hw.at(end, lambda hw=dst.hw, ok=ok: ok() and hw.rd_resp_rx(), 'rd_resp_rx')
             ampdu = isinstance(rec.get('qframe'), list)
             report = report_of(dst)
             if ampdu:
@@ -315,9 +329,14 @@ class Air:
                               self._to_fw(d, src, bytes(x)) for x in fs],
                           nav_us=0 if frame[4:10] == bytes(dst.mac) else self._nav_us(frame, rec),
                           txss_end=self._txss_end(frame, rec), trn=rec.get('trn', 0),
-                          mcs=rec.get('mcs', 0))
+                          mcs=rec.get('mcs', 0), tok=tok)
             if rec['start'] <= dst.hw.now:
                 dst.hw._run_due()                           # начало внутри последней инструкции приёмника — на её конце
+
+    @staticmethod
+    def lost_at(fr):
+        """Узлы, у которых кадр журнала frames потерян в столкновении (H-COLL), → причина."""
+        return [(d, t['lost']) for d, t in fr.get('rx', ()) if t.get('lost')]
 
     @staticmethod
     def _idx(dst, src):

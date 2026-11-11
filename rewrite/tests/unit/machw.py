@@ -163,8 +163,8 @@ SIFS_CLK, SBIFS_CLK, SLOT_CLK = 495, 165, 825
 SLOT2_CLK = 1806
 # H-BACKOFF (арбитр очередей MAC, DTI): backoff_event (r42 б18) — через AIFS + случайные 0…CW слотов свободной среды
 # после NAV, пока есть включённая непустая очередь. Стенд 2026-10-29 (метки 28/29, STA): события — с ~1,35 мс от начала
-# BI (конец BTI vendor-AP) и дальше; от события до чтения выбора uc 1,5 мкс. AIFS/CW не сняты — EDCA AC_BE по 802.11-2020
-# (AIFSN 3, CWmin 15; aSIFSTime 3 мкс, aSlotTime 5 мкс).
+# BI (конец BTI vendor-AP) и дальше; от события до чтения выбора uc 1,5 мкс. AIFS не снята — EDCA AC_BE по 802.11-2020
+# (AIFSN 3; aSIFSTime 3 мкс, aSlotTime 5 мкс); CW — маска из команды uc (H-CWMASK), до неё — CWmin 15.
 AIFS_CLK, BACKOFF_CW = SIFS_CLK + 3 * SLOT_CLK, 15
 ORIGIN_TRIGS = (0x03, 0x05, 0x07, 0x09)          # H-ORIGIN: триггеры GP сетки A-BFT (подтверждено стендом)
 HW_MAC_TX_QID_ENABLE_MASK = 0x886f5c
@@ -645,6 +645,16 @@ class HW:
             c.io_hooks[a] = (fn, None)
         c.io_hooks[HW_MAC_TX_QID_ENABLE_MASK] = (lambda cpu, a: self.qid_en,
                                                  lambda cpu, a, v: (setattr(self, 'qid_en', v & M32), self._backoff_kick()))
+        # H-QSETKICK: запись маски набора qset (QSETn_MASK_VECTOR, uc пишет словом) — арбитр пересматривает очереди:
+        # очередь с кадрами, вошедшая в маску, начинает отсрочку (802.11-2020 10.23.2.2 a). Прежде модель пересматривала
+        # их только по своим событиям (конец кадра, снятие backoff_event, HW_MAC_TX_QID_ENABLE_MASK) — данные ждали
+        # случайного события (test_uc_bf_iss_limit: маска данных точки включена после её развёртки — 20 мс тишины)
+        def qset_wr(cpu, a, v):
+            for i in range(4):
+                cpu.mem[a + i] = (v >> (8 * i)) & 0xff
+            self._backoff_kick()
+        for k in range(9):
+            c.io_hooks[HW_QSET0_MASK_VECTOR + 4 * k] = (None, qset_wr)
         # uc → fw: причина прерывания fw (RGF_USER_USER_ICR.ICS, б9 — событие в ящике) — флаг для CoSim.pump
         c.io_hooks[0x880b58] = (None, lambda cpu, a, v: setattr(self, 'uc2fw', self.uc2fw | v))
 
@@ -677,12 +687,26 @@ class HW:
                 return (m & -m).bit_length() - 1, QSET_DATA_MASK + 1
         return None
 
+    # H-CWMASK (802.11-2020 10.23.2.2; команды uc): CW арбитра — маска из команды (9 + класс) << 24 | (2^ECW − 1)
+    # (txrx_api_program_edca_ac — ECWmin AC из LMAC 0x04, tx_pick_slot_for_peer — рост ECW на 1 до ECWmax после
+    # неудачи RTS и сброс к ECWmin после успеха: CW удваивает uc, MAC отсчитывает U[0, маска] слотов). Класс очереди —
+    # набор qset − 5 (sta_queue_class: маска 4 → 0, 5 → 1, 6 → 2, прочие → 3; H-QSEL — набор = маска + 1). До первой
+    # команды — BACKOFF_CW
+    eifs_end = 0                      # H-COLL: EIFS − DIFS + AIFS отсчитывается от этого такта (10.3.2.3.7)
+
+    def _cw(self, sel):
+        m = getattr(self, 'cw_mask', None)
+        if not m or sel is None:
+            return BACKOFF_CW
+        return m.get(min(max(sel[1] - QSET_MGMT, 0), 3), BACKOFF_CW)
+
     def _backoff_kick(self):
         if self.backoff_ev is not None or self._qsel() is None or self.r42 & (1 << 18):
             return
         if not hasattr(self, 'backoff_rng'):
             self.backoff_rng = random.Random(self.backoff_seed)
-        t = max(self.now, self.nav_end, self.medium_busy_end) + AIFS_CLK + self.backoff_rng.randint(0, BACKOFF_CW) * SLOT_CLK
+        t = max(self.now, self.nav_end, self.medium_busy_end, self.eifs_end) + AIFS_CLK + \
+            self.backoff_rng.randint(0, self._cw(self._qsel())) * SLOT_CLK
         self.backoff_ev = self.at(t, self._backoff_fire, 'backoff')
 
     def _backoff_fire(self):
@@ -902,6 +926,8 @@ class HW:
         elif v == 0x21000009:                             # H-WAKE: квитирование (l2_task_entry(1/2), инициализация)
             self.wake_armed = False
             self.c.irq_lines.discard(WAKE_VEC)
+        elif 0x09 <= op <= 0x0c:                          # H-CWMASK: маска CW класса очередей op − 9
+            self.__dict__.setdefault('cw_mask', {})[op - 9] = arg & 0x3ff
         elif op == 0x0d:                                  # H-BI1: запуск интервала маяков
             if self.bi_ev is None:
                 self._bi_arm()
@@ -1698,6 +1724,10 @@ class HW:
         self.tx = dict(start=t0, end=t0 + p['dur'], what=p['what'], dur_us=self.dur_us, qframe=p.get('qframe'),
                        qid=p.get('qid'))
         self.medium_busy_end = max(self.medium_busy_end, self.tx['end'])
+        if self.rx is not None and not self.rx.get('done'):
+            # H-COLL: свой PPDU поверх принимаемого (решение о доступе — до его преамбулы) — приём испорчен
+            self._coll(self.rx['what'], self.tx['what'])
+            self._rx_spoil(self.rx, 'полудуплекс')
         self.air_log.append((self.tx['start'], self.tx['end'], 'tx', self.tx['what']))   # кадр в журнале с пуска
         f = p.get('fifo')
         if f is not None and len(f) >= 2 and f[0] == 0xe4 and f[1] == 0:
@@ -1721,6 +1751,8 @@ class HW:
         if t.get('qframe') is not None:
             self._q_sent(t)
         self.tx = None
+        if self.coll_energy_end > self.now:
+            self._rx_energy(self.coll_energy_end, 'хвост чужого PPDU после своей передачи')
         self.perm_req_at = None
         self.ifs_ref, self.ifs_ref_kind = self.now, 'tx'     # SIFS_CNT = 0 после передачи (UC-REGISTERS §2.16)
         self._gp_trigger(0x04, self.now)                  # H-GP4: пуск по концу своей передачи
@@ -1776,9 +1808,11 @@ class HW:
         self._notify_tx()
 
     def air_rx(self, t_clk, psdu_len, what='', on_hdr=None, on_end=None, report=None, txss_end=False, sifs_resp=False,
-               resp_len=14, resp_deadline=RESP_CMD_DEADLINE_CLK, dur=None, report_at_hdr=False, nav_us=0, trn=0, mcs=0, rmcs=None):
+               resp_len=14, resp_deadline=RESP_CMD_DEADLINE_CLK, dur=None, report_at_hdr=False, nav_us=0, trn=0, mcs=0, rmcs=None,
+               tok=None):
         """Кадр пира в эфире с такта t_clk длиной psdu_len (control PHY). on_hdr(hw) — по rx_frame_event (H-HDR,
-        заголовок разобран: заполнить буфер приёма), on_end(hw) — в конце; report — {36..39: значение}."""
+        заголовок разобран: заполнить буфер приёма), on_end(hw) — в конце; report — {36..39: значение}. tok — dict
+        приёма (эфир): кадр потерян в столкновении (H-COLL) — tok['lost'] = причина."""
         dur = ctrl_txtime_clk(psdu_len) if dur is None else dur
         if report_at_hdr and report:
             # H-RXREP-HDR (стенд, метка STAMP_SSW_REP): отчёт r36..r39 готов уже на rx_frame_event
@@ -1797,19 +1831,82 @@ class HW:
                 if end0:
                     end0(hw)
         self.at(t_clk, lambda: self._rx_start(dur, what, on_hdr, on_end, report or {}, txss_end, sifs_resp, resp_len,
-                                              resp_deadline, trn, mcs, rmcs),
+                                              resp_deadline, trn, mcs, rmcs, tok),
                 'rx_start')
         return t_clk + dur
 
-    def _rx_start(self, dur, what, on_hdr, on_end, report, txss_end=False, sifs_resp=False, resp_len=14,
-                  resp_deadline=RESP_CMD_DEADLINE_CLK, trn=0, mcs=0, rmcs=None):
-        if self.tx is not None:
-            if self.collisions is None:
-                raise ModelGap('приём %r во время своей передачи (%r)' % (what, self.tx['what']))
-            # H-COLL (эфир нескольких узлов): полудуплекс — кадр, начавшийся во время своей передачи, не принимается
-            self.collisions.append((self.now, what, self.tx['what']))
+    # H-COLL (эфир нескольких узлов; 802.11-2020 10.3.2.1, 10.3.2.3.7, 10.23.2.2). Модель столкновения — без захвата:
+    #  - полудуплекс: кадр, начавшийся во время своей передачи, не принимается; своя передача, начатая во время приёма
+    #    (решение о доступе принято раньше, чем CCA увидела чужую преамбулу: два узла в одном слоте отсрочки), портит
+    #    принимаемый кадр;
+    #  - перекрытие двух PPDU у приёмника — оба теряются (PHY синхронизирован на первый, второй — помеха; захват не
+    #    моделируется: в паре узлов перекрытие у приёмника — всегда полудуплекс, третий узел — тот же уровень сигнала);
+    #  - потерянный кадр: среда занята по физической несущей до конца последнего из перекрытых PPDU (энергия — и после
+    #    конца своей передачи); до разбора заголовка — ни rx_frame_event, ни отчёта, ни ppdu_report_event (заголовок
+    #    испорчен, PHY-RXEND с ошибкой); после разбора — ppdu_report_event с отчётом без FCS ok (r38 б29..31 = 0, по
+    #    именам полей; на стенде не снято); кадр не уходит в fw, NAV не ставит, ответа через SIFS нет, точкой отсчёта IFS
+    #    не служит; после конца занятости — EIFS − DIFS + AIFS (10.3.2.3.7: aSIFSTime + AckTxTime + AIFS, AckTxTime —
+    #    Ack на control PHY), принятый без ошибки кадр EIFS прерывает. Передатчик о столкновении не знает — только по
+    #    отсутствию ответа (тайм-аут Ack/BlockAck — H-RETRY, CTS — uc; CW — uc, H-CWMASK).
+    # Задержки распространения нет (H-SYNC: aAirPropagationTime 100 нс — запас в aSlotTime, 10.3.7 (10-3), на стенде
+    # метры — единицы нс): перекрытие у приёмника — перекрытие во времени передачи.
+    coll_energy_end = 0               # H-COLL: конец чужого PPDU, начавшегося во время своей передачи
+
+    def _coll(self, what, other):
+        if self.collisions is None:
+            raise ModelGap('приём %r во время %r' % (what, other))
+        self.collisions.append((self.now, what, other))
+
+    def _rx_spoil(self, r, why):
+        """H-COLL: принимаемый кадр r испорчен."""
+        if r.get('lost') or r.get('done'):
             return
-        self.rx = dict(start=self.now, end=self.now + dur, what=what, trn=trn)
+        r['lost'] = why
+        if r.get('tok') is not None:
+            r['tok']['lost'] = why
+
+    def _rx_energy(self, end, what):
+        """H-COLL: среда занята по энергии без приёма (хвост чужого PPDU после своей передачи) до такта end."""
+        if self.rx is not None:
+            self.rx['busy_end'] = max(self.rx.get('busy_end', self.rx['end']), end)
+            return
+        r = self.rx = dict(start=self.now, end=end, what=what, trn=0, lost='энергия', energy=True, done=True)
+        self.medium_busy_end = max(self.medium_busy_end, end)
+        self.at(end, lambda: self._rx_lost_clear(r), 'rx_energy_end')
+
+    def _rx_lost_clear(self, r):
+        if self.rx is not r:
+            return
+        end = r.get('busy_end', r['end'])
+        if end > self.now:                                # перекрытый кадр кончается позже — среда ещё занята
+            r['end'] = end
+            self.at(end, lambda: self._rx_lost_clear(r), 'rx_lost_end')
+            return
+        self.rx = None
+        self.eifs_end = self.now + SIFS_CLK + ctrl_txtime_clk(14)       # 10.3.2.3.7: EIFS − DIFS + AIFS от конца
+        self._eng('rx_end')
+        self._backoff_kick()
+
+    def _rx_start(self, dur, what, on_hdr, on_end, report, txss_end=False, sifs_resp=False, resp_len=14,
+                  resp_deadline=RESP_CMD_DEADLINE_CLK, trn=0, mcs=0, rmcs=None, tok=None):
+        if self.tx is not None:
+            # H-COLL: полудуплекс — кадр, начавшийся во время своей передачи, не принимается
+            self._coll(what, self.tx['what'])
+            if tok is not None:
+                tok['lost'] = 'полудуплекс'
+            self.coll_energy_end = max(self.coll_energy_end, self.now + dur)
+            self.medium_busy_end = max(self.medium_busy_end, self.now + dur)
+            return
+        if self.rx is not None:
+            # H-COLL: перекрытие у приёмника — оба кадра потеряны (захвата нет)
+            self._coll(what, self.rx['what'])
+            if tok is not None:
+                tok['lost'] = 'перекрытие'
+            self._rx_spoil(self.rx, 'перекрытие с %r' % what)
+            self.rx['busy_end'] = max(self.rx.get('busy_end', self.rx['end']), self.now + dur)
+            self.medium_busy_end = max(self.medium_busy_end, self.now + dur)
+            return
+        self.rx = dict(start=self.now, end=self.now + dur, what=what, trn=trn, tok=tok)
         self.medium_busy_end = max(self.medium_busy_end, self.rx['end'])
         dur -= trn_clk(trn)                               # данные; поле TRN — после них (H-TRN)
         self.r49 &= ~(1 << 5)
@@ -1827,7 +1924,7 @@ class HW:
         rx = self.rx
 
         def sfd():
-            if self.rx is rx:
+            if self.rx is rx and not rx.get('lost'):
                 self._set42(11)                           # sfd_sync (H-PHYRX)
         hdr_clk = -(-SC_HDR_TC * 3 // 32) if mcs else HDR_CLK          # H-HDR-SC
         sfd_clk = -(-2176 * 3 // 32) if mcs else max(min(HDR_CLK, dur) - SFD_BEFORE_HDR_CLK, 0)   # SC: конец STF
@@ -1835,6 +1932,8 @@ class HW:
         self._eng('rx_busy')
 
         def hdr():
+            if rx.get('lost'):
+                return                                    # H-COLL: заголовок испорчен — rx_frame_event нет
             if self.rx is rx:
                 rx['hdr'] = True                          # phy_rx_frame, cca_ppdu_comp снят (H-PHYRX)
             if on_hdr:
@@ -1847,6 +1946,11 @@ class HW:
     def _rx_end(self, on_end, report, txss_end=False, sifs_resp=False, resp_len=14, what='',
                 resp_deadline=RESP_CMD_DEADLINE_CLK, rmcs=0):
         r = self.rx
+        r['done'] = True
+        if r.get('lost'):
+            self._rx_lost_end(r, report)
+            return
+        self.eifs_end = 0                                 # 10.3.2.3.7: кадр без ошибки прерывает EIFS
         self.air_log.append((r['start'], r['end'], 'rx', r['what']))
         if r.get('trn'):
             self._trn_start(r)                            # среда занята до конца TRN
@@ -1888,6 +1992,19 @@ class HW:
         self.ifs_ref, self.ifs_ref_kind = self.now, 'rx'
         self._gp_trigger(0x05, self.now)                  # H-GP5: пуск по концу приёма
         self._backoff_kick()
+
+    def _rx_lost_end(self, r, report):
+        """H-COLL: конец испорченного кадра (PHY-RXEND с ошибкой)."""
+        self.air_log.append((r['start'], r['end'], 'rx', r['what'] + ' (потерян: %s)' % r['lost']))
+        self.ppdu_cnt += 1                                # PPDU кончился (счётчик PHY_SIGNALS — по концам)
+        self.last_rx_sifs_resp = False
+        self.resp_due = None
+        if r.get('hdr'):
+            # заголовок был разобран (rx_frame_event и отчёт у uc) — итог приёма с ошибкой FCS
+            for n, v in report.items():
+                self.uc.ext[n] = v & ~0xe0000000 if n == 38 else v
+            self._set42(16)
+        self._rx_lost_clear(r)
 
     def _trn_start(self, r):
         """H-TRN: поле TRN-R принятого кадра — BRP-стадия (r49 б13), 32 метрики (r54 б1 + слово r40 BF_METRIC),

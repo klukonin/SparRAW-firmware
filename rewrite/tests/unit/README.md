@@ -37,6 +37,7 @@ docstring), а не наш код и не vendor. Тест проверяет и
 | `test_uc_ifs_duration.py` | Duration SSW/SSW-Feedback/SSW-Ack/Grant Ack/CF-End (9.2.5.1 округление вверх), CDOWN с LBIFS |
 | `test_uc_nav_update.py` | NAV по Duration (10.3.2.4): длиннее/короче, 0, ≥ 32768, CF-End, DMG Beacon |
 | `test_air_model.py` | модель эфира `air.py` без эмулятора: BlockAck на A-MPDU — Compressed (9.3.1.8.2, рис. 9-42, Table 9-28: BA Control 0x0004, TID_INFO, SSN, битовая карта), дубликаты по Table 10-6 (<A2, TID> у QoS Data, запись <SN, FN>, только при Retry) |
+| `test_air_collision.py` | модель столкновения (machw H-COLL, `air.py`): перекрытие у приёмника — оба кадра потеряны, полудуплекс, хвост чужого PPDU после своего, EIFS − DIFS + AIFS и её прерывание (10.3.2.3.7), FCS-ошибка после заголовка, потерянный Ack — тайм-аут и повтор, окно отсрочки из маски CW uc (H-CWMASK, 10.23.2.2) |
 
 `xfail(strict=True)` — найденное отклонение от стандарта (пункт и место в коде — в reason); после исправления
 кода тест начинает проходить и strict-xfail падает — пометку снять.
