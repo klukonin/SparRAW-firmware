@@ -13,4 +13,7 @@ static const void *const uc_keep[] = {
     abft_send_ssw_feedback, direct_tx_short_frame0_cb, direct_tx_short_frame2_cb,
     uc_init_cb_globals, uc_init_cb_copy_rf_mask, uc_init_cb_rx_meas, uc_init_cb_bi_sm_name,
     uc_init_cb_cmdq, ucode_cmdq_handler, bf_done_report_build_send,
+    /* основа PP/GP (uc/dynalloc.c, docs/TDMA.md §6): обмен в эфир ещё не подключён, расчёт сверяет
+     * tests/unit/test_tdma_dynalloc.py */
+    dyn_pp_poll, dyn_spr_duration, dyn_gp_grant_duration, dyn_poll_frame_init, dyn_spr_frame_init,
 };

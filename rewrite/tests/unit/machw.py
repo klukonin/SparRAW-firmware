@@ -20,7 +20,7 @@ fw → uc (8, L1) и пробуждение (10, L2); ядро (tools/arcemu/cpu
 Каждое допущение о железе — константа или ветка с меткой H-*: H-ORIGIN, H-ORIGIN-RX, H-CLK2, H-GP3, H-GP5, H-GP9, H-HDR, H-PHYRX, H-T1,
 H-MTP, H-IRQ, H-TRN, H-TXOPGO, H-RESULTGO, H-SLOT2, H-SLOT (своя передача), H-DATAMCS (MCS 8 — STAMP_TXOP_CONT) — замеры стенда (uc/abft.h, метки
 uc/dbg.h); H-TVEC, H-WAKE, H-FW2UC — по коду и документации; H-GP4, H-T23, H-E27, H-BUSY (режим 2 — по исходу стенда),
-H-QSEL, H-QEMPTY, H-TXGO18F, H-TXAFTERACK, H-RETRY, H-AMPDU (форма — стенд), H-TXOPEVT-CFEND, H-HDR-SC — по смыслу кода и стандарту (непроверено, см. notes вне
+H-QSEL, H-QEMPTY, H-TXGO18F, H-TXAFTERACK, H-RETRY, H-MTPLIM2, H-AMPDU (форма — стенд), H-TXOPEVT-CFEND, H-HDR-SC — по смыслу кода и стандарту (непроверено, см. notes вне
 репозитория); H-DURG — стенд (RX-запись станции); H-DURLIM0 (лимит TXOP 0 — Duration группового кадра 0) —
 стенд (bdur1).
 Неизвестная семантика (триггеры GP 07/08, неопознанные события движка 0x27) — ModelGap: модель не угадывает.
@@ -94,6 +94,7 @@ MTP_PERM_LAT_CLK = 57
 # 164 (0x19 → FIFO) + x ⇒ x = 220–240; станция: FIFO → r42.15 от 430 = x + 218 (H-TXEVT). Прежнее 91 — по аналогии с
 # H-ORIGIN, не замер.
 TX_START_CLK = 230
+MTPLIM_LIVE_CLK = 2 * 495         # H-MTPLIM2: план после своего конца ещё 2·SIFS — запрос продолжения после ответа у конца
 
 # ---- прерывания ядра uc (ARC600: tools/arcemu/cpu.py — уровни, E1/E2, AUX_IRQ_LV12) ----
 # H-TVEC: таймер ARC n — вектор 3 + 4n (uc_timer_start ставит уровень IRQ a·4 + 3): таймер 0 — 3 (L1, тик
@@ -184,6 +185,21 @@ HW_MAC_IFS_RIFS_SBIFS = 0x886d0c     # [31:24] SBIFS, мкс
 HW_MAC_TSF_LO, HW_MAC_TSF_HI = 0x886eb8, 0x886ebc
 HW_MAC_USEC_TO_TBTT = 0x886ec0
 HW_MAC_BI_START_TSF_LO = 0x886fc4
+# H-SPARR: аппаратный массив SP (расписание DTI, docs/ESE.md §3). fw закладывает запись тремя записями регистров в
+# порядке vendor (fw/rx.c sched_program_alloc_slot_regs): конец 0x886f84, начало 0x88c050 (TSF [31:0], мкс), управляющее
+# слово 0x886f88 — запись слова закладывает запись. MAC поднимает r54 б4 (service_period_0_ind) в начале и в конце
+# записи; 0x886f8c (SCHED_SLOT_STATUS) с начала записи — её управляющее слово (uc: dti_worker, [15:0]). Стенд: события
+# и чтение 0x886f8c — vendor и наш путь станции под ESE (2026-09-29, docs/ESE.md §4); глубина массива, поведение при
+# переполнении и записи с прошедшим началом не сняты — модель: без предела, запись с прошедшим концом отбрасывается,
+# с прошедшим началом — событие начала сразу. Аппаратная маска передачи (б26/б28 у записей без б7, «не источник»,
+# docs/ESE.md §3) не моделируется: доступ к среде ограничивает uc (uc/ese_dti.c).
+HW_MAC_SCHED_SLOT_END, HW_MAC_EXT_SCHED_SLOT_START = 0x886f84, 0x88c050
+HW_MAC_SCHED_SLOT_CTRL, HW_MAC_SCHED_SLOT_STATUS = 0x886f88, 0x886f8c
+SP_EVT_BIT = 4
+# H-RESPEXP: окно ответа через SIFS у MAC — не дольше 10 мкс от конца принятого PPDU (≫ SIFS + сроки команды ответа
+# H-RESPCMD 4–6 мкс). Стенд: RTS без DMG CTS (1,6–2,4 % под iperf, uc не ответил) — без FWERR, свои передачи следом
+# идут; позже окна 0x37000020 модель поздним ответом не считает
+RESP_EXPIRE_CLK = 10 * 165
 HW_RGF_USER_USER_SCRATCH_PAD = 0x8802bc
 
 
@@ -453,6 +469,7 @@ class HW:
         self.mac_q = {}                   # H-MACQ2: очередь MAC → [кадр (MPDU от fw)]; кадры управления/данных fw
         self.q_done = []                  # (qid, статус) — завершённые кадры очередей (DMA → fw: tx_complete)
         self.q_retry = {}                 # H-RETRY: очередь → повторов головного кадра
+        self.mtplim_held = []             # H-MTPLIM2: кадры очереди, не выпущенные по плану TXOP
         self.q_agg = {}                   # H-AMPDU: очередь → окно BA (из дескриптора очереди fw)
         self.q_last_hdr = {}              # H-QNULL: очередь → заголовок последнего выданного кадра (24 Б)
         self.bap_tx = None                # H-AMPDU: MPDU в последнем принятом BlockAck
@@ -646,6 +663,7 @@ class HW:
                       (HW_MAC_USEC_TO_TBTT, lambda cpu, a: max(0, self.tbtt_us - self.tsf_us()) & 0x3ffffff),
                       (HW_MAC_BI_START_TSF_LO, lambda cpu, a: (self.tbtt_us - self.bi_us) & M32)):
             c.io_hooks[a] = (fn, None)
+        c.io_hooks[HW_MAC_SCHED_SLOT_STATUS] = (lambda cpu, a: self.sp_status, None)
         c.io_hooks[HW_MAC_TX_QID_ENABLE_MASK] = (lambda cpu, a: self.qid_en,
                                                  lambda cpu, a, v: (setattr(self, 'qid_en', v & M32), self._backoff_kick()))
         # H-QSETKICK: запись маски набора qset (QSETn_MASK_VECTOR, uc пишет словом) — арбитр пересматривает очереди:
@@ -662,6 +680,44 @@ class HW:
         c.io_hooks[0x880b58] = (None, lambda cpu, a, v: setattr(self, 'uc2fw', self.uc2fw | v))
 
     uc2fw = 0
+    # ---- массив SP (H-SPARR) ----
+    sp_status = 0
+    _sp_regs = None
+    sp_log = None                     # (такт, 'prog'|'start'|'end'|'stale', начало TSF, конец TSF, слово)
+
+    def sp_slot_write(self, reg, v):
+        """Запись регистра массива SP (fw, CoSim): запись управляющего слова закладывает запись (H-SPARR)."""
+        if self._sp_regs is None:
+            self._sp_regs = {}
+            self.sp_log = []
+        self._sp_regs[reg] = v & M32
+        if reg != HW_MAC_SCHED_SLOT_CTRL:
+            return
+        lo_s = self._sp_regs.get(HW_MAC_EXT_SCHED_SLOT_START, 0)
+        lo_e = self._sp_regs.get(HW_MAC_SCHED_SLOT_END, 0)
+        now = self.tsf_us()
+
+        def full(lo):                                   # TSF [31:0] → ближайший полный TSF
+            base = now - (now & M32)
+            return min((base + lo + d for d in (-(1 << 32), 0, 1 << 32)), key=lambda x: abs(x - now))
+        ts, te, ctrl = full(lo_s), full(lo_e), v & M32
+        self.sp_log.append((self.now, 'prog', ts, te, ctrl))
+        if te <= now:
+            self.sp_log.append((self.now, 'stale', ts, te, ctrl))
+            return
+        clk = lambda tsf: (tsf - self.tsf0_us) * CLK_PER_US
+
+        def start():
+            self.sp_status = ctrl
+            self._set54(SP_EVT_BIT)
+            self.sp_log.append((self.now, 'start', ts, te, ctrl))
+
+        def end():
+            self._set54(SP_EVT_BIT)
+            self.sp_log.append((self.now, 'end', ts, te, ctrl))
+        self.at(max(clk(ts), self.now), start, 'sp_start')
+        self.at(clk(te), end, 'sp_end')
+
     rd_supp = False                   # H-RD: RD_SUPP у очередей с соглашением BA, RDG в A-MPDU
     rdg_force = False                 # сценарий: RDG в A-MPDU при любом б11 0x18 — пир, дающий RD (vendor и др.)
     mtp_resp_data = False             # H-RD: последний запрос MTP — данные очереди вместе с ответом через SIFS
@@ -788,7 +844,14 @@ class HW:
             # H-QEMPTY: null_status б1 — очередь MTP пуста (vendor-лог «MTP Queue is empty»): для очередей колец модели
             # (fw/хост → mac_q), запрошенных 0x16
             q = self.mtp_qid
-            empty = self.mac_q_model and q is not None and q < 0x1e and not self._q_avail(q)
+            avail = self._q_avail(q) if self.mac_q_model and q is not None and q < 0x1e else None
+            empty = avail is not None and not avail
+            if avail and q < 0x18 and self._mtplim_blocks(self.now + MTP_PERM_LAT_CLK, q, avail):
+                # H-MTPLIM: план TXOP MAC — REMAINING_TIME (лимит TXOP от RTS, docs/MAC-STAND.md «NAV RTS и TBTT»: длину
+                # A-MPDU и продолжение выбирают MAC/MTP): продолжение TXOP (уже был кадр очереди данных после RTS; TXOP
+                # данных всегда через RTS, H-PKTMODE) кадром, обмен которого не кончается до конца TXOP, MTP не
+                # предлагает — «очередь пуста». H-MTPLIM2 (_mtplim_blocks): то же и после конца плана, и для повтора
+                empty = True
             return (1 << 31) | (2 if empty else 0)
         if n == 47:
             return self._r47()
@@ -853,6 +916,10 @@ class HW:
         if f == 0xb:                                      # PHY_PLCP_RX: sifs_resp [15] — последний кадр требует ответа
             return (1 << 15) if self.last_rx_sifs_resp else 0
         if f == 0x3:                                      # REMAINING_TIME_RD — без сессии: максимум
+            # H-MTPLIM2: в действующем плане TXOP — его остаток, мкс (H-DURQ, «NAV RTS и TBTT»: REMAINING_TIME — план
+            # MAC); по нему uc решает, слать ли CF-End держателя (10.23.2.10) и открывать ли повтор (≤ 48 мкс — нет)
+            if self._mtplim_live():
+                return max(0, (self.txopq_end - self.now) // CLK_PER_US) & 0xffff
             return 0xffff
         if f == 0x4:                                      # H-BICNT: BI_COUNTER — мкс от последнего TBTT [25:0], bi_sync б31
             if self.bi_ev is None:
@@ -973,6 +1040,12 @@ class HW:
                 # выпускает — uc после неё ждёт слот (на стенде 81–303 такта, всегда slot_event при свободной среде,
                 # SIFS_CNT после пуска 0) и пускает кадр очереди парой 0x19000001/0x18 (txop_await_cts_ppdu). RTS — только
                 # в режиме доступа 1, кадром FIFO (direct_tx_send_after_delay)
+                # H-MTPLIM2: открытие TXOP (txop_initiator_open_txop_flow — новый доступ) закрывает прежний план; новый
+                # начнут RTS или первый кадр очереди (_dur_field, H-DURQ). Тот же 0x19000b00 даёт и повтор в TXOP после
+                # тайм-аута ответа (tx_mtp_queue_gate, кадр с битом Retry, без RTS — повтор A-MPDU точки, feat/tdma-strict 2026-11-08):
+                # при незавершённом повторе плана план остаётся — повтор — кадр того же TXOP (10.23.2.9)
+                if not self.txopq_retry:
+                    self._txopq_close()
                 return
             self.perm_req_at = self.now
             self._go()
@@ -1030,8 +1103,13 @@ class HW:
             q = self._q_avail(self.mtp_qid) if self.mtp_qid is not None and self.mtp_qid < 0x1e else None
             h = self.q_last_hdr.get(self.mtp_qid)
             # своя передача ещё идёт (A-MPDU данных, ответ ждёт BlockAck) — порядок PPDU не снят: прежнее поведение
+            # H-MTPLIM2: QoS Null — кадр этого TXOP (Duration — остаток плана): после конца плана (или не помещаясь в
+            # остаток) MAC его не выпускает — как и кадры очереди (_mtplim_blocks)
+            qn_beyond = self.txopq_end is not None and self.txopq_frames and \
+                self.now + TX_START_CLK + sc_txtime_clk(30, self.data_mcs) > self.txopq_end
+            self._txopq_close()                           # H-MTPLIM2: запрос итога — закрытие TXOP держателем
             if self.mac_q_model and q is not None and not q and h is not None and self.tx is None and \
-                    self.tx_pending is None:
+                    self.tx_pending is None and not qn_beyond:
                 sn = ((int.from_bytes(h[22:24], 'little') >> 4) + 1) & 0xfff
                 f = (0x00c8).to_bytes(2, 'little') + bytes(2) + h[4:22] + (sn << 4).to_bytes(2, 'little') + \
                     (0x0020).to_bytes(2, 'little')
@@ -1051,6 +1129,11 @@ class HW:
             self._tx_try()
         elif op == 0x18:                                  # пуск — уже по 0x19 (H-TXGO); 0x18 — выпуск очереди MTP
             pass
+        elif v == 0x37000020 and self.resp_due is not None and self.resp_cmd_at is None and \
+                self.now > self.resp_due['end'] + RESP_EXPIRE_CLK:
+            # H-RESPEXP: ответа через SIFS не было (uc решил не отвечать — RTS при ожидающем BF, NAV занят); 0x37000020
+            # много позже — программа своей передачи, а не поздний ответ: окно ответа MAC закрыто
+            self.resp_due = None
         elif v == 0x37000020 and self.resp_due is not None and self.resp_cmd_at is None:
             self.resp_cmd_at = self.now                   # команда ответа (H-SIFSRESP)
             dl = self.resp_due['end'] + self.resp_due['deadline']
@@ -1138,13 +1221,21 @@ class HW:
             self.go = False                           # H-MTPRESP: 0x19 ответа (уже начатого по 0x37000020) — не кадр FIFO
             return
         q = self._q_avail(self.mtp_qid) if self.mtp_qid not in (None, 0x1e, 0x1f) else None
+        if self.frame_ready is None and self.ssw_field is None and q and self.mtp_qid < 0x18 and \
+                self._mtplim_blocks(self.now + TX_START_CLK, self.mtp_qid, q):
+            # H-MTPLIM2: кадр очереди (новый или повтор с битом Retry), обмен которого с ответом не кончается до конца
+            # плана TXOP (в т. ч. план уже истёк), MAC в этом TXOP не выпускает — кадр ждёт следующего доступа
+            self.go = False
+            self.mtplim_held.append((self.now, self.mtp_qid))
+            return
         if self.frame_ready is None and self.ssw_field is None and q:
             # H-MACQ2: кадр из очереди MAC (кольцо fw → DMA → очередь) — целиком, как собрал fw; скорость — control
             # PHY (MCS дескриптора не моделируется)
             f = q[0]
             win = self.q_agg.get(self.mtp_qid, 0)
             if win and (f[0] >> 2) & 3 == 2:              # H-AMPDU
-                fs = list(q[:win])
+                # H-MTPLIM2: длина A-MPDU — по остатку плана TXOP (не меньше 1 MPDU: первый кадр после RTS)
+                fs = list(q[:max(1, self._mtplim_fit_n(self.now + TX_START_CLK, self.mtp_qid, q))])
                 self.frame_ready = dict(what='queue %#x A-MPDU %d MPDU %d B MCS %d' % (
                     self.mtp_qid, len(fs), ampdu_psdu_len(fs), self.data_mcs),
                     dur=sc_txtime_clk(ampdu_psdu_len(fs), self.data_mcs), qframe=fs, qid=self.mtp_qid,
@@ -1532,6 +1623,57 @@ class HW:
         return v.to_bytes(6, 'little')
 
     txopq_end = None                  # H-DURQ: конец TXOP по лимиту MAC (такты)
+    txopq_frames = 0                  # H-MTPLIM: кадров очереди в этом TXOP
+    mtplim_held = ()                  # H-MTPLIM2: [(такт, qid)] — кадры очереди, не выпущенные по плану TXOP (для тестов)
+
+    txopq_retry = False               # H-MTPLIM2: в этом плане был тайм-аут ответа — повтор ещё не завершён
+
+    def _txopq_close(self):
+        """H-MTPLIM2: план TXOP закрыт (новый доступ, запрос итога / CF-End держателя)."""
+        self.txopq_end, self.txopq_frames, self.txopq_retry = None, 0, False
+
+    def _mtplim_blocks(self, t0, qid, q):
+        """H-MTPLIM2 — последовательное правило H-MTPLIM (план TXOP MAC, H-DURQ: Duration кадров очереди — остаток лимита
+        TXOP от начала TXOP): в начатом TXOP (после RTS уже был кадр очереди) MTP предлагает и MAC выпускает следующий
+        PPDU очереди — новый или повтор (H-RETRY: тот же кадр с битом Retry), — только если обмен «PPDU + SIFS + ответ»
+        (BlockAck на A-MPDU, Ack на одиночный кадр; ответ — на MCS 1, худший из SC) кончается до конца плана, включая
+        случай, когда план уже истёк (802.11-2020 10.23.2.9: ни один кадр TXOP не выходит за лимит; 10.39.5: обмен в CBAP
+        кончается до конца CBAP — лимит урезает uc, ese_dti_tx_gate). План живёт до закрытия: новый доступ (0x19000b00
+        без незавершённого повтора, RTS), запрос итога или CF-End держателя; после своего конца — ещё MTPLIM_LIVE_CLK
+        (продолжение через SIFS после ответа, кончившегося у конца плана) или пока не завершён повтор.
+        Прежде правило действовало только до конца плана: повтор A-MPDU выходил за TXOP, а продолжение после конца
+        плана открывало новый план с полным лимитом (test_tdma_strict::test_air_strict_sp_retransmit на feat/tdma-strict 2026-11-08 —
+        A-MPDU 347 мкс с Duration 1118 через 13 мкс после конца TXOP, за конец CBAP). На стенде не проверено: отказывает ли
+        MTP после истечения TXOP и при повторе, не вмещающемся в остаток (docs/MAC-STAND.md «План TXOP и повтор»)."""
+        return bool(self.txopq_frames) and self._mtplim_fit_n(t0, qid, q) == 0
+
+    def _mtplim_live(self):
+        """План TXOP действует: задан и не кончился давно (> MTPLIM_LIVE_CLK) — либо не завершён повтор. Давно
+        кончившийся без повтора — TXOP держатель закончил без закрытия (своё SP без CF-End, отказ продолжения): запрос
+        после него — уже новый доступ, не кадр прежнего TXOP."""
+        return self.txopq_end is not None and (self.txopq_retry or self.now <= self.txopq_end + MTPLIM_LIVE_CLK)
+
+    def _mtplim_fit_n(self, t0, qid, q):
+        """H-MTPLIM2: сколько кадров очереди (A-MPDU — до окна BA, начиная с головы; одиночный — 1) MAC может выпустить
+        от t0, чтобы обмен «PPDU + SIFS + ответ» (BlockAck на A-MPDU, Ack на кадр; ответ — на MCS 1, худший из SC)
+        кончился до конца плана TXOP; плана нет — все. Длину A-MPDU выбирает MAC/MTP (H-MTPLIM, docs/MAC-STAND.md «NAV
+        RTS и TBTT»): у первого кадра после RTS — тоже по плану (лимит TXOP урезает uc, ese_dti_tx_gate)."""
+        f = q[0]
+        win = self.q_agg.get(qid, 0)
+        data = (f[0] >> 2) & 3 == 2
+        n_max = min(win, len(q)) if win and data else 1
+        if not self._mtplim_live():
+            return n_max
+        for n in range(n_max, 0, -1):
+            if win and data:
+                dur, resp = sc_txtime_clk(ampdu_psdu_len(list(q[:n])), self.data_mcs), BA_LEN
+            elif data:
+                dur, resp = sc_txtime_clk(len(f) + 4, self.data_mcs), 14
+            else:
+                dur, resp = ctrl_txtime_clk(len(f) + 4), 14
+            if t0 + dur + SIFS_CLK + sc_txtime_clk(resp, 1) <= self.txopq_end:
+                return n
+        return 0
     durq_new = False                  # H-DURG: 0x15 записана, своего кадра после неё ещё не было
     txopg_end = None                  # H-DURG: конец TXOP по 0x15 предыдущего своего кадра (такты) — для группового
 
@@ -1579,6 +1721,9 @@ class HW:
             if (rts or qf is not None) and lim:
                 if rts or self.txopq_end is None or p['start'] >= self.txopq_end:
                     self.txopq_end = p['start'] - SIFS_CLK + lim * CLK_PER_US
+                    self.txopq_frames = 0
+                if not rts:
+                    self.txopq_frames += 1
                 return max(0, (self.txopq_end - (p['start'] + p['dur'])) // CLK_PER_US)
             if fifo is not None and self._dur_minus_txtime():
                 return max(0, self.dur_us - -(-p['dur'] // CLK_PER_US))      # H-DUR18
@@ -1641,6 +1786,8 @@ class HW:
             n = self.q_retry.get(w['qid'], 0) + 1
             if q and n < self.RETRY_LIMIT:
                 self.q_retry[w['qid']] = n
+                if self.txopq_end is not None:
+                    self.txopq_retry = True                   # H-MTPLIM2: повтор — кадр этого TXOP
                 for i in range(min(w.get('n', 1), len(q))):
                     f = bytearray(q[i])
                     f[1] |= 0x08
@@ -1708,6 +1855,7 @@ class HW:
 
     def _q_done(self, qid, status):
         self.q_retry.pop(qid, None)
+        self.txopq_retry = False
         q = self.mac_q.get(qid)
         if q:
             q.pop(0)
@@ -1741,6 +1889,7 @@ class HW:
         self.air_log.append((self.tx['start'], self.tx['end'], 'tx', self.tx['what']))   # кадр в журнале с пуска
         f = p.get('fifo')
         if f is not None and len(f) >= 2 and f[0] == 0xe4 and f[1] == 0:
+            self._txopq_close()                           # H-MTPLIM2: CF-End держателя закрывает план TXOP
             # H-TXOPEVT-CFEND: CF-End держателя TXOP (tx_send_and_await_rx_frame: 0x15 — Duration обмена усечения,
             # 10.39.8) — txop_event в конце этого TXOP (H-TXOP: от начала кадра − MACLAT + Duration); после ответного
             # CF-End или тайм-аута uc ждёт его (uc_spin_until_event(MAC_EVT1_TXOP)). По коду uc, на стенде не снято

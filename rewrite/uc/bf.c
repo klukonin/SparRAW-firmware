@@ -258,6 +258,12 @@ void rx_mode_configure(u32 a, u32 b)
                 r1 = sta->flags;
                 if (r1 & 1u) {
                     r3 = sta->omni_rx_sel;
+                    /* SP, где узел назначение, а пир — источник (uc/ese_dti.c, рычаг 4): слушать его направленным
+                     * сектором до конца SP (10.39.6.2 «should be in the receive state … to receive transmissions from
+                     * the source») — первый PPDU источника идёт без RTS */
+                    if (FWSH(fwsh_sp_gate, rx_peer) == r17 + 1u &&
+                        (s32)(FWSH(fwsh_sp_gate, rx_end_tsf) - uc_read_tsf_lo()) > 0)
+                        r3 = sta->rx_sel;
                     r1 = r3 & 0x7fff00;
                     if (r1 == 0x7fff00) {
                         /* три установки бит-полей в [0x801024]

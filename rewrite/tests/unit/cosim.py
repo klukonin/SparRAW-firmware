@@ -27,6 +27,11 @@ RF_SETS_STAND = bytes.fromhex(
     '0000000001000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff010000000000000000000000'
     '0000000000000000000000000100000000000000000000003c788400') + bytes(0x74)  # +0x80 — указатель на rf_set_ranges (0x84783c)
 ANT_STAND = bytes.fromhex('014000')
+# Регистры MAC, которые читает fw, а ведёт модель MAC узла (у fw и uc один регистровый файл): период маяков (пишет uc),
+# TSF начала текущего BI, мкс до TBTT (расписание DTI, fw/tdma.c, fw/rx.c) — чтение fw → модель
+FW_READ_HW = (0x886d64, 0x886fc4, 0x886ec0)
+# Массив SP (machw H-SPARR): записи fw (lmac_if_evt_walk) → модель MAC
+SP_ARRAY_REGS = (0x886f84, 0x88c050, 0x886f88)
 # DMA колец хоста (H-DMA2)
 HW_DMA_RINGS_WITH_DATA = 0x881c84            # кольца хоста с непрочитанными дескрипторами
 HW_DMA_FW_ICR_C40_ICM = 0x881c48             # причина прерывания DMA vring (vring_schdlr_isr_dispatch)
@@ -67,6 +72,8 @@ class CoSim:
             assert 'не вернулась' in str(e), e
         self.ready = self.hw.uc_events()                        # «ucode ready»
         self.log = []                                           # (тип команды, [типы событий])
+        for a in SP_ARRAY_REGS:
+            fw.mmio_write_hook[a] = (lambda a: lambda f, x, v: self.hw.sp_slot_write(a, v))(a)
         self.feed(fw.boot_lmac_cmds)                            # fw их уже отправила при загрузке (ответы — заглушки)
 
     def _track_tx(self):
@@ -150,6 +157,8 @@ class CoSim:
         fw, hw = self.fw, self.hw
         fw.mmio_read_hook[F.HW_MAC_TSF_LO] = lambda f, a: hw.tsf_us() & F.M32
         fw.mmio_read_hook[F.HW_MAC_TSF_HI] = lambda f, a: hw.tsf_us() >> 32
+        for a in FW_READ_HW:
+            fw.mmio_read_hook[a] = (lambda a: lambda f, x: self._hw_reg(a))(a)
         self.fw_tick0 = (fw.now() - hw.now // self.FW_TICK_CLK) & F.M32
         self.cmd_seen = len(fw.lmac_cmds)
         fw._uc_seen = self.cmd_seen
@@ -166,6 +175,13 @@ class CoSim:
         self.qdesc = {}
         fw.mmio_write_hook[HW_QDESC_WIN_CTRL] = lambda f, a, v: self._qdesc_op(v)
         self._next_fw = self._fw_deadline()
+
+    def _hw_reg(self, a):
+        """Регистр MAC глазами модели (крючок чтения модели или значение, записанное uc)."""
+        h = self.uc.cpu.io_hooks.get(a)
+        if h is not None and h[0] is not None:
+            return h[0](self.uc.cpu, a)
+        return self.hw._raw(a)
 
     def _fw_tick(self):
         return (self.fw_tick0 + self.hw.now // self.FW_TICK_CLK) & F.M32
@@ -297,6 +313,12 @@ class CoSim:
 
     def _after_fw(self):
         hw, fw = self.hw, self.fw
+        if fw.tx_pending('tx_api_2'):
+            # H-BCNDMA: маяк из кольца TX (очередь MAC 0x1e) MAC забирает сразу — шаблон BTI; дескриптор завершён, fw
+            # освобождает кадр (pcp_bcon_wb) и шлёт CMD_BCON_MGT (bcon_post_send_cb), как в покое fwflows.settle. Без
+            # этого кольцо маяка вставало после нескольких пересборок (add_bcon) — новые ESE и BIC не доходили до эфира
+            self._track_tx()
+            fw.tx_complete('tx_api_2')
         for cmd in fw.lmac_cmds[self.cmd_seen:]:
             self.fw_log.append((hw.now, 'cmd %#x' % cmd.type))
             hw.lmac_cmd(cmd.type, cmd.body)

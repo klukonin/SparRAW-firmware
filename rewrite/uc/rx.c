@@ -1836,7 +1836,11 @@ ack_cts:   /* L_9331d0 */
             uc_stats.rts_rx += 1;
             FWSH(fwsh_diag, rts_rx) += 1;
         }
-        if (VOL(link_stat[rxf.sta].bf_reasons) != 0)
+        /* BF к отправителю ждёт: vendor на RTS не отвечает — свой SLS идёт следом. Если расписание DTI не даёт начать
+         * SLS до своего окна (uc/ese_dti.c, fwsh_sp_gate.init_hold: SP пира, Tguard), ждать окна — значит молчать на
+         * все RTS пира весь его SP; тогда — ответ по 10.3.2.9 (DMG CTS при свободном NAV). Флаг читается только при
+         * ожидающем BF (путь ответа через SIFS без него прежний). */
+        if (VOL(link_stat[rxf.sta].bf_reasons) != 0 && FWSH(fwsh_sp_gate, init_hold) == 0)
             return 0;
         /* NAV занят. 10.3.2.9: если NAV поставил кадр самого отправителя RTS — отвечать (DMG CTS); иначе не
          * отвечать. исправлено (vendor): отвечал DMG DTS — по 10.39.6.6 он только для назначения SP (в open SP

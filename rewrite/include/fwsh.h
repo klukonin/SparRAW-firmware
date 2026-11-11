@@ -6,13 +6,19 @@
  *    заголовок fw_stats_hdr, снимок температур, журналы калибровки (fw-only, include/sys_cfg.h,
  *    calib.h, calib_engine.h); здесь — его общая с uc часть: сводка соединений fw_stats_dash
  *    (0x853910) и опубликованный отчёт MAC_MON mac_mon_pub (0x853940, 0x80 Б).
- *  - 0x857000..0x857978 — общий блок (обнуляет crt0 fw, fw/start.S): fwsh_diag, fwq_tx_avail,
+ *  - 0x857000..0x857a00 — общий блок (обнуляет crt0 fw, fw/start.S): fwsh_diag, fwq_tx_avail,
  *    ll_ctx, ese_slot_tbl, байты STA-capability, отсчёты энергии fwsh_energy, статистика PHY
  *    fwsh_phy, наборы RF fwsh_sets (результаты и шаблон FTM — только SparRAW-pro, до 0x857828),
  *    RSSI станций fwsh_rssi (0x857828). За ним — SNR по секторам SLS fwsh_sect_snr (0x857860) и AID станций
- *    fwsh_peer_aid (0x857964, до 0x85796c), конец A-BFT BI у станции fwsh_sta_abft (0x85796c, до 0x857978),
- *    срывы ожиданий событий MAC в uc fwsh_uc_wait (0x857978, до 0x857984).
- *    Дальше (0x857a00..) — только uc: рейтинги секторов, link_stat (uc/dccm.h); всю SRAM 0x840000..0x860000, кроме board-файла, обнуляет crt0 fw (fw/fw.ld __peri_clr_*).
+ *    fwsh_peer_aid (0x857964, до 0x85796c), конец A-BFT BI у станции fwsh_sta_abft (0x85796c, до 0x857978), окна
+ *    строгого TDMA точки ese_own_tbl (0x857978, до 0x8579e8), доступ к среде по расписанию fwsh_sp_gate (0x8579e8,
+ *    до 0x857a00).
+ *    Дальше (0x857a00..0x857ed8) — только uc: рейтинги секторов, link_stat (uc/dccm.h).
+ *  - 0x857f80..0x857f8c — общий блок за данными uc: срывы ожиданий событий MAC в uc fwsh_uc_wait. Область
+ *    0x857ed8..0x858000 не адресуют ни fw, ни uc vendor 6.2 (литералов в коде и указателей в fw_data нет);
+ *    0x857ed8..0x857eec задевает link_stat[8] (sta = SPARRAW_PEER_UNKNOWN), 0x857f00.. — тесты (test_uc_sls_sweep),
+ *    поэтому fwsh_uc_wait — с 0x857f80. Прежде (до строгого TDMA) он стоял на 0x857978.
+ *  - всю SRAM 0x840000..0x860000, кроме board-файла, обнуляет crt0 fw (fw/fw.ld __peri_clr_*) — и все блоки выше.
  *  - fixed_sched (0x847a3c) — объект fw (символ fw/fw.ld); uc читает его по указателю
  *    fwsh_sets.fsched_tbl.
  *
@@ -279,26 +285,76 @@ struct ese_slot {
     };
     u32 start;                                 /* 0x04: начало от начала BI (мкс) */
     u16 dur;                                   /* 0x08: длительность (мкс) */
-    u16 rsv_0a;
+    u16 rx_tail_us;                            /* 0x0a: своя таблица точки, SP точка → станция: мкс от конца окна до конца
+                                                *       следующего за ним SP этой станции к точке — там точка назначение и
+                                                *       слушает её (10.39.6.2, uc/ese_dti.c); 0 — нет. В массив SP не идёт */
 };
 FWSH_OFF(struct ese_slot, peer_cid, 1);
 FWSH_OFF(struct ese_slot, dst_aid, 3);
 FWSH_OFF(struct ese_slot, dur, 8);
 _Static_assert(sizeof(struct ese_slot) == 0xc, "ese_slot");
-#define ESE_SLOTS_N 3
+#define ESE_SLOT_TYPE_SHIFT 4u                 /* ctrl_b0 [5:4]: тип (Allocation Type, 9.4.2.131: 0 — SP, 1 — CBAP) */
+#define ESE_SLOT_MAY_INIT   (1u << 7)          /* ctrl_b0 б7: узел может начинать обмен в окне (источник SP, CBAP) */
+#define ESE_SLOTS_N 3                          /* записей в ese_slot_tbl (раскладка vendor) */
+#define ESE_OWN_SLOTS_N 9                      /* записей в ese_own_tbl: общее CBAP + SP точки к каждой станции (до
+                                                * SPARRAW_MAX_STA); CBAP остатка BI — только при ≤ 7 станциях (поле
+                                                * ESE 17-е, fw/tdma.c) — тоже ≤ 9 */
+_Static_assert(ESE_OWN_SLOTS_N >= SPARRAW_MAX_STA + 1, "ese_own_tbl: окна строгого TDMA точки");
 
-/* Таблица слотов ESE (0x857264, 0x28 Б): пишет fw (include/sched_scheme.h), байты 2..3
- * ведёт uc (dti_worker_scheduled_dti_allocation_event). */
+/* Таблица слотов ESE: заголовок 4 Б и записи. Два объекта: ese_slot_tbl (0x857264, 3 записи, 0x28 Б, раскладка
+ * vendor) и ese_own_tbl (0x857978, ESE_OWN_SLOTS_N записей, SparRAW) — окна строгого TDMA точки (fw/tdma.c), где
+ * точка может начинать обмен. Таблицу обхода (ese_sched.tbl) выбирает fw; uc читает ese_own_tbl, только когда
+ * ese_slot_tbl.mode = ESE_TBL_MODE_OWN (vendor-fw этот режим не пишет — гибрид vendor-fw + наш uc ese_own_tbl не
+ * читает: память за 0x857828 vendor не обнуляет). Пишет fw (include/sched_scheme.h); байты 2..3 ese_slot_tbl ведёт uc
+ * (dti_worker_scheduled_dti_allocation_event). */
+#define ESE_TBL_MODE_NO_IE 1u                  /* mode: расписание без Allocation IE (WMI 0xa01) */
+#define ESE_TBL_MODE_IE    2u                  /* mode: с Allocation IE (WMI 0xa01) / из маяка своей точки */
+#define ESE_TBL_MODE_OWN   3u                  /* mode (только ese_slot_tbl): окна — в ese_own_tbl (строгий TDMA точки) */
 struct ese_slot_tbl {
-    u8  mode;                                  /* 0x00: 1 — без IE, 2 — с Allocation IE / из бикона */
-    u8  count;                                 /* 0x01: число слотов (≤ 3) */
-    u8  uc_alloc_end;                          /* 0x02: uc — 1 после начала выделения (следующее событие —
-                                                *       его конец); fw обнуляет в конструкторе */
-    u8  uc_cur_slot;                           /* 0x03: uc — текущий слот (по модулю count) */
-    struct ese_slot slot[ESE_SLOTS_N];         /* 0x04 */
+    u8  mode;                                  /* 0x00: ESE_TBL_MODE_* (0 — расписания нет) */
+    u8  count;                                 /* 0x01: число слотов (≤ ESE_SLOTS_N / ESE_OWN_SLOTS_N) */
+    u8  uc_alloc_end;                          /* 0x02: ese_slot_tbl — uc: 1 после начала выделения (следующее
+                                                *       событие — его конец); fw обнуляет в конструкторе;
+                                                *       ese_own_tbl — резерв */
+    u8  uc_cur_slot;                           /* 0x03: ese_slot_tbl — uc: текущий слот; ese_own_tbl — резерв */
+    struct ese_slot slot[];                    /* 0x04 */
 };
 FWSH_OFF(struct ese_slot_tbl, slot, 4);
-_Static_assert(sizeof(struct ese_slot_tbl) == 0x28, "ese_slot_tbl");
+typedef struct ese_slot_tbl ese_tbl_t;         /* у uc имя ese_slot_tbl — макрос объекта (ниже): тип — через typedef */
+#define ESE_SLOT_TBL_SIZE(n) (4u + (n) * (u32)sizeof(struct ese_slot))
+_Static_assert(ESE_SLOT_TBL_SIZE(ESE_SLOTS_N) == 0x28, "ese_slot_tbl");
+_Static_assert(ESE_SLOT_TBL_SIZE(ESE_OWN_SLOTS_N) == 0x70, "ese_own_tbl: 0x857978..0x8579e8");
+
+/* Доступ к среде по расписанию (0x8579e8, SparRAW; пишет и читает uc — uc/ese_dti.c, fw обнуляет при загрузке): лимит
+ * TXOP, урезанный до конца своего окна, и счётчики для стенда. */
+struct fwsh_sp_gate {
+    u16 txop_cap_us;                           /* 0x00: урезанный лимит TXOP MAC, мкс (0 — не урезан: LMAC 0x21);
+                                                *       сбрасывается на начале окна и DTI */
+    u8  refused;                               /* 0x02: отказов в доступе вне своего окна / в хвосте (по модулю 256) */
+    u8  capped;                                /* 0x03: урезаний лимита TXOP (по модулю 256) */
+    u32 own_end_tsf;                           /* 0x04: точка (ese_own_tbl): TSF конца текущего своего окна — на
+                                                *       событиях массива SP и начале DTI (ese_dti_window_now) */
+    u8  own_in_win;                            /* 0x08: 1 — own_end_tsf действует (идёт своё окно) */
+    u8  init_hold;                             /* 0x09: 1 — расписание есть, а своего окна (б7) сейчас нет: начать
+                                                *       обмен (в т. ч. SLS-инициатором) нельзя — на тех же событиях */
+    u8  init_sp;                               /* 0x0a: 1 — идёт своё окно-SP (узел — источник SP, 10.39.6.2): доступ без
+                                                *       RTS и конец обмена без CF-End (цикл источника, uc/ese_dti.c);
+                                                *       на каждом доступе (ese_dti_tx_gate) и событиях окон */
+    u8  rx_peer;                               /* 0x0b: cid + 1 источника SP, где узел — назначение: приём наведён на него
+                                                *       (rx_mode_configure); 0 — нет */
+    u32 rx_end_tsf;                            /* 0x0c: TSF конца этого SP — после него наведение не действует */
+    u32 src_end_tsf;                           /* 0x10: TSF конца последнего обмена источника в своём SP: назначение ещё
+                                                *       rx_flow_timeout_us ждёт его кадров — SLS не раньше (ese_dti_sls_fits) */
+    u8  src_more;                              /* 0x14: 1 — в своём SP был доступ: цикл источника продолжает */
+    u8  src_rounds;                            /* 0x15: доступов цикла источника без отсрочки EDCA (по модулю 256) */
+    u8  src_ends;                              /* 0x16: обменов в своём SP, законченных без CF-End (по модулю 256) */
+    u8  rx_steers;                             /* 0x17: наведений приёма на источник SP (по модулю 256) */
+};
+FWSH_OFF(struct fwsh_sp_gate, init_sp, 0x0a);
+FWSH_OFF(struct fwsh_sp_gate, rx_end_tsf, 0x0c);
+FWSH_OFF(struct fwsh_sp_gate, src_end_tsf, 0x10);
+FWSH_OFF(struct fwsh_sp_gate, rx_steers, 0x17);
+_Static_assert(sizeof(struct fwsh_sp_gate) == 0x18, "fwsh_sp_gate: 0x8579e8..0x857a00");
 
 /* Отсчёты статистики энергии (0x857290, 0xb4 Б): пишет uc (bf_req_report_energy_cb, событие LMAC
  * 0x20), читает fw (energy_statistics_complete, fw/phy_ext.c). Последнее слово gain[19]
@@ -464,7 +520,7 @@ struct fwsh_sta_abft {
 };
 _Static_assert(sizeof(struct fwsh_sta_abft) == 0xc, "fwsh_sta_abft");
 
-/* Срывы ожиданий событий MAC в uc (0x857978, SparRAW; пишет только uc, fw обнуляет при загрузке). Политика: у каждого
+/* Срывы ожиданий событий MAC в uc (0x857f80, SparRAW; пишет только uc, fw обнуляет при загрузке). Политика: у каждого
  * ожидания бита/события MAC, которое зависит от эфира или пира, — предел (время стандарта: aPPDUMaxTime, SIFS…) и
  * безопасный выход вместо вечного опроса (прежде uc висел, основной поток вставал — стенд 2026-11-07). При выходе по
  * пределу uc_hw_wait_tmo: счётчик, метка ожидания (те же коды, что uc_wait_marker 0x800628) и TSF. Ненулевой tmo_cnt
@@ -498,7 +554,20 @@ _Static_assert(sizeof(struct fwsh_uc_wait) == 0xc, "fwsh_uc_wait");
 #define FWSH_A_fwsh_sect_snr      0x857860u
 #define FWSH_A_fwsh_peer_aid      0x857964u
 #define FWSH_A_fwsh_sta_abft      0x85796cu
-#define FWSH_A_fwsh_uc_wait       0x857978u
+#define FWSH_A_ese_own_tbl        0x857978u
+#define FWSH_A_fwsh_sp_gate       0x8579e8u
+#define FWSH_A_fwsh_uc_wait       0x857f80u
+/* Границы (не объекты: без символа в fw.ld, tools/check_fwsh.py их не сверяет). */
+#define FWSH_UC_ONLY_START        0x857a00u     /* начало данных только uc (uc/dccm.h: fwsh_sls_rank_b1) */
+#define FWSH_UC_ONLY_END          0x857eecu     /* конец link_stat[8] = 0x857e38 + 9·0x14 (sta = SPARRAW_PEER_UNKNOWN
+                                                 * пишет за link_stat[SPARRAW_MAX_STA]) */
+#define FWSH_SRAM_END             0x858000u     /* конец рабочей SRAM fw (0x840000..0x858000; дальше не адресовать) */
+/* Раскладка без пересечений: нижний блок (crt0 fw: fwsh_diag..fwsh_sp_gate) до данных uc, верхний — за ними. */
+_Static_assert(FWSH_A_fwsh_sta_abft + sizeof(struct fwsh_sta_abft) <= FWSH_A_ese_own_tbl, "fwsh: sta_abft / ese_own_tbl");
+_Static_assert(FWSH_A_ese_own_tbl + ESE_SLOT_TBL_SIZE(ESE_OWN_SLOTS_N) <= FWSH_A_fwsh_sp_gate, "fwsh: ese_own_tbl / sp_gate");
+_Static_assert(FWSH_A_fwsh_sp_gate + sizeof(struct fwsh_sp_gate) <= FWSH_UC_ONLY_START, "fwsh: sp_gate / данные uc");
+_Static_assert(FWSH_A_fwsh_uc_wait >= FWSH_UC_ONLY_END + 0x14 && FWSH_A_fwsh_uc_wait + sizeof(struct fwsh_uc_wait) <= FWSH_SRAM_END,
+               "fwsh: uc_wait за данными uc и до конца SRAM");
 
 /* Поле общего объекта по его собственному литеральному адресу (целая константа «адрес
  * объекта + offsetof») — кодоген как с числом. Форма obj.field даёт у gcc адрес «база
@@ -532,7 +601,9 @@ extern struct fwsh_rssi fwsh_rssi;             /* 0x857828 */
 extern struct fwsh_sect_snr fwsh_sect_snr;     /* 0x857860 */
 extern struct fwsh_peer_aid fwsh_peer_aid;     /* 0x857964 */
 extern struct fwsh_sta_abft fwsh_sta_abft;     /* 0x85796c */
-extern struct fwsh_uc_wait fwsh_uc_wait;       /* 0x857978 */
+extern struct ese_slot_tbl ese_own_tbl;        /* 0x857978 */
+extern struct fwsh_sp_gate fwsh_sp_gate;       /* 0x8579e8 */
+extern struct fwsh_uc_wait fwsh_uc_wait;       /* 0x857f80 */
 #else
 /* uc: имена — макросы на литеральный адрес. */
 #define fw_stats_dash      (*(volatile struct fw_stats_dash *)FWSH_A_fw_stats_dash)
@@ -551,6 +622,8 @@ extern struct fwsh_uc_wait fwsh_uc_wait;       /* 0x857978 */
 #define fwsh_sect_snr      (*(volatile struct fwsh_sect_snr *)FWSH_A_fwsh_sect_snr)
 #define fwsh_peer_aid      (*(volatile struct fwsh_peer_aid *)FWSH_A_fwsh_peer_aid)
 #define fwsh_sta_abft      (*(volatile struct fwsh_sta_abft *)FWSH_A_fwsh_sta_abft)
+#define ese_own_tbl        (*(volatile ese_tbl_t *)FWSH_A_ese_own_tbl)
+#define fwsh_sp_gate       (*(volatile struct fwsh_sp_gate *)FWSH_A_fwsh_sp_gate)
 #define fwsh_uc_wait       (*(volatile struct fwsh_uc_wait *)FWSH_A_fwsh_uc_wait)
 
 

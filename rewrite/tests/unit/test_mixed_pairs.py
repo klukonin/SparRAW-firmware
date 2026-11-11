@@ -193,9 +193,11 @@ def test_mixed_report_builds(ap_core):
     assert not [d for d in diffs if d.cls == DC.CORE_STD]
 
 
-@pytest.mark.xfail(strict=True, reason='прошивка: точка срывается на станции-ядре с умолчаниями ядра — поздний ответ '
-                   'через SIFS (uc_assert 0x26/0x6019) на кадр вскоре после SLS/ассоциации и нет Ack на короткий '
-                   'кадр управления MCS 1 (ref/core/README.md, «Этап 3»)')
 def test_sta_core_defaults_ap_fw(fw_elf, build_dir, uc_fw):
+    """Станция-ядро с умолчаниями ядра и точка-прошивка: соединение и данные. Прежде — xfail (точка срывалась: поздний
+    ответ через SIFS, uc_assert 0x26/0x6019, ref/core/README.md «Этап 3»): модель засчитывала команду ответа 0x37000020
+    через ~40 мкс после кадра поздним ответом. С допущением H-RESPEXP (machw: окно ответа MAC — не дольше 10 мкс от конца
+    кадра; стенд — RTS без DMG CTS 1,6–2,4 % под iperf без FWERR) такая команда — уже не ответ: Ack нет, пир повторяет
+    кадр, соединение идёт. Поздняя команда uc на этих путях остаётся (README, строка про 43 мкс после SSW-Ack)."""
     scn, r = _run('sls-1sta', 'sta', fw_elf, build_dir, uc_fw, 'core')
     assert r.gap is None and not r.notes and r.done, r.notes

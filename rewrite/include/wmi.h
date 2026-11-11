@@ -693,13 +693,17 @@ struct wmi_prio_tx_sectors_set_default_cfg_cmd {
     u8  reserved[2];                           /* 0x02 */
 };
 
-/* WMI_SPARRAW_TDMA_CFG_CMDID (0x0f10, SparRAW): простой TDMA точки (fw/tdma.c) — включён по умолчанию,
- * порог по умолчанию TDMA_MIN_STA. Ответного события нет. Хост: tools/tdma_ctl.sh. */
+/* WMI_SPARRAW_TDMA_CFG_CMDID (0x0f10, SparRAW): TDMA точки (fw/tdma.c) — включён по умолчанию, порог по умолчанию
+ * TDMA_MIN_STA, режим по умолчанию — простое деление (CBAP по станциям). Ответного события нет. Хост:
+ * tools/tdma_ctl.sh. Прежний хост шлёт mode = 0 (байт был резервом) — простое деление, как раньше. */
 #define WMI_SPARRAW_TDMA_CFG_CMDID 0x0f10u
+#define WMI_SPARRAW_TDMA_MODE_EQUAL 0u         /* CBAP станция → точка поровну + общее CBAP (10.39.5) */
+#define WMI_SPARRAW_TDMA_MODE_SP    1u         /* строгий: SP точка → станция и станция → точка (10.39.6.2) + общее CBAP */
 struct wmi_sparraw_tdma_cfg_cmd {
     u8  enable;                                /* 0x00: 0 — выключить (весь DTI — CBAP), иначе включить */
     u8  min_sta;                               /* 0x01: порог (станций); 0 — по умолчанию */
-    u8  reserved[2];                           /* 0x02 */
+    u8  mode;                                  /* 0x02: WMI_SPARRAW_TDMA_MODE_* (иное — команда отвергается) */
+    u8  reserved;                              /* 0x03 */
 };
 WMI_SIZE(struct wmi_sparraw_tdma_cfg_cmd, 4);
 

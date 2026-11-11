@@ -114,6 +114,7 @@ void bi_dti_start_tx_slot(void)
 {
     /* vendor: при своём расписании PS (psc.state ≠ 0) — особый путь; PS вырезан */
     fixed_sched_run_tx_slot();
+    ese_dti_sp_src_cycle();                         /* своё SP: следующие доступы без отсрочки (uc/ese_dti.c) */
 }
 
 void bi_after_enter_aw(struct bi_ctx_s *c)

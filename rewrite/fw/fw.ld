@@ -103,7 +103,12 @@ fwsh_rssi    = 0x857828;  /* uc: struct fwsh_rssi — RSSI станций (SparR
 fwsh_sect_snr = 0x857860; /* uc: struct fwsh_sect_snr — SNR по секторам SLS (SparRAW) */
 fwsh_peer_aid = 0x857964; /* uc: struct fwsh_peer_aid — AID станций у AP/PCP (SparRAW) */
 fwsh_sta_abft = 0x85796c; /* uc: struct fwsh_sta_abft — конец A-BFT BI у станции (SparRAW) */
-fwsh_uc_wait  = 0x857978; /* uc: struct fwsh_uc_wait — срывы ожиданий событий MAC (SparRAW) */
+ese_own_tbl   = 0x857978; /* uc: struct ese_slot_tbl — окна строгого TDMA точки (SparRAW, fw/tdma.c), до 0x8579e8 */
+fwsh_sp_gate  = 0x8579e8; /* uc: struct fwsh_sp_gate — доступ к среде по расписанию (SparRAW, uc/ese_dti.c), до 0x857a00 */
+/* 0x857a00..0x857ed8 — только uc (рейтинги секторов, link_stat; uc/dccm.h). За link_stat — свободная часть (ни fw, ни uc
+ * vendor 6.2 её не адресуют: литералов 0x857ed8..0x857fff в коде нет, указателей туда в fw_data нет), её начало
+ * 0x857ed8..0x857eec задевает link_stat[8] (sta = SPARRAW_PEER_UNKNOWN, известный выход за таблицу) — не занимать. */
+fwsh_uc_wait  = 0x857f80; /* uc: struct fwsh_uc_wait — срывы ожиданий событий MAC (SparRAW), до 0x857f8c */
 
 /* Память, которую обнуляет crt0 (fw/start.S). Не vendor: vendor обнуляет только 0x840000..0x84e81c, 0x854000..0x8552f4
  * и 0x857000..0x857828, а остальное в SRAM периферии остаётся от прошлого запуска fw (тёплая перезагрузка хоста,

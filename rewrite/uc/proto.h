@@ -253,6 +253,18 @@ void ese_dti_slot_end(void);                                    /* ese_dti.c */
 void ese_dti_slot_start(u32 ctrl);                              /* ese_dti.c */
 u32 ese_dti_window_now(void);                                   /* ese_dti.c */
 u32 ese_dti_us_to_window_end(void);                             /* ese_dti.c */
+u32 ese_dti_init_left_us(void);                                 /* ese_dti.c */
+u32 ese_dti_tx_gate(void);                                      /* ese_dti.c */
+u32 ese_dti_sls_fits(u32 iss_us);                               /* ese_dti.c */
+u32 ese_dti_sp_src_end(u32 sta);                                /* ese_dti.c */
+void ese_dti_sp_src_cycle(void);                                /* ese_dti.c */
+void ese_dti_sp_src_start(void);                                /* ese_dti.c */
+u32 dyn_pp_o_us(u32 j);                                         /* dynalloc.c */
+u32 dyn_pp_poll(u32 i, u32 n, u32 *ro);                         /* dynalloc.c */
+u32 dyn_spr_duration(u32 poll_dur, u32 ro);                     /* dynalloc.c */
+u32 dyn_gp_grant_duration(u32 k, u32 n, u32 ack_mask);          /* dynalloc.c */
+void dyn_poll_frame_init(struct dtx_ctrl_frame *dst, u32 dur, u32 ro); /* dynalloc.c */
+void dyn_spr_frame_init(struct dtx_ctrl_frame *dst, const struct dtx_grant_req *src); /* dynalloc.c */
 u32 dti_alloc_left_us(void);                                    /* ese_dti.c */
 void evt_queue_noop_lock_hook(void);                            /* util.c */
 void evt_queue_take_locked(struct uc_mbox_ctx *a, u32 a1, u32 a2, u32 a3); /* tail.c */

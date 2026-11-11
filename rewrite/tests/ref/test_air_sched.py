@@ -126,3 +126,42 @@ def test_dynalloc_frames_in_capture():
     r = rules_of(a.ctx())
     got = {(m.split(':')[0], v) for _, m, v in r['r_dynalloc'].viol}
     assert ('dyn_poll_dur', 'ours') in got and ('dyn_spr_time_9.3.1.10', 'model') in got, got
+
+
+def test_sta_aid_inferred_from_sp_pair():
+    """Захват начат после ассоциации (Association Response нет): AID STA выводится по SP пары «AP — STA» в Extended
+    Schedule (10.39.6.2: в SP передают только источник и получатель). Стенд 2026-11-10 (строгий TDMA): без вывода
+    BlockAck получателя и QoS Null источника считались «посторонними» (sp_foreign, AID None), а BlockAck точки в SP
+    станции — восстановлением SP точкой (sp_recovery)."""
+    ent = S.plan(0, 100, 2000, [S.Req(S.SP, 0, 1, 3000), S.Req(S.SP, 1, 0, 3000)])
+    per = BI.layout(0, 100, BI.BiConfig(allocations=[e.alloc for e in ent]), None)
+    sps = [p for p in per if p.kind == BI.SP]
+    a = Air()
+    beacon(a, 0, ent)
+    for p, (src, dst) in zip(sps, ((AP, STA), (STA, AP))):
+        for e in SPm.sp_exchange(p, src, dst, 3):
+            a.add(e[4], e[2], e[3], e[0], length=1500 if e[4] == 'Data' else 14, mcs=e[6]['mcs'], dur=10)
+    r = rules_of(a.ctx())
+    assert r['r_sp_access'].checked and not r['r_sp_access'].viol, r['r_sp_access'].viol
+    assert r['r_sp_access'].info['aid_inferred'] == {STA: 1}
+    # кадров в SP пары нет — AID не выводится (правило его не знает)
+    b = Air()
+    beacon(b, 0, ent)
+    c = b.ctx()
+    rules_of(c)
+    assert not c.aids_inferred
+
+
+def test_sta_aid_not_inferred_when_ambiguous():
+    """Два MAC поровну обмениваются с AP в SP пары — доля одного MAC ниже порога: AID не выводится."""
+    other = '24:18:1d:00:00:01'
+    ent = S.plan(0, 100, 2000, [S.Req(S.SP, 1, 0, 3000)])
+    per = BI.layout(0, 100, BI.BiConfig(allocations=[e.alloc for e in ent]), None)
+    p = next(p for p in per if p.kind == BI.SP)
+    a = Air()
+    beacon(a, 0, ent)
+    for i, src in enumerate((STA, other) * 3):
+        a.add('Data', src, AP, p.start + 100 + 300 * i, length=1500, mcs=8, dur=10)
+    c = a.ctx()
+    rules_of(c)
+    assert not c.aids_inferred

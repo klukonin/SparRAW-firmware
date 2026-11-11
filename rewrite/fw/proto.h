@@ -1897,6 +1897,7 @@ void sysassert_dump_stack (void);                                               
 void sysassert_dump_ucode_assert_info (void);                                                        /* sysassert.c */
 void sysassert_dump_ucode_stack (void);                                                              /* sysassert.c */
 void tdma_ap_update (struct mid *mid, const struct conn *exclude);                                   /* tdma.c */
+void tdma_own_release (struct sched_scheme *ss);                                                     /* tdma.c */
 void temp_bb_only_start (void);                                                                      /* temp_service.c */
 void temp_bb_only_stop (void);                                                                       /* temp_service.c */
 u32 temp_get_active_rf (u32 a);                                                                      /* stubs.c */

@@ -84,6 +84,10 @@ def _answers_poll(ev, j, ap, q):
     return False
 
 
+UNSEEN_RESP_KINDS = ('Ack', 'BlockAck')
+UNSEEN_RESP_MCS_MAX = 4                  # 10.6.7.2: ответ — control MCS 0 или SC MCS 1–4 (обязательный набор)
+
+
 def check_sp(ev, p, bfc, mac_of, ap, caps, periods, sifs_tol=SIFS_TOL, q=0, idle_timeout=DOT11_SP_IDLE_TIMEOUT):
     """Правила одного SP с индивидуальным Source AID (ev — schedule.events всего BI). → (нарушения, SpState).
 
@@ -106,6 +110,8 @@ def check_sp(ev, p, bfc, mac_of, ap, caps, periods, sifs_tol=SIFS_TOL, q=0, idle
       'sp_after_trunc' — передача пары после усечения/CF-End вне выделенного (10.39.8.1);
       'sp_recovery'    — AP-получатель начинает передачи в SP раньше dot11SPIdleTimeout или в неусекаемом SP
                          (10.39.6.7);
+      'sp_unseen_trigger' — не нарушение: первый кадр SP — Ack/BlockAck получателя источнику без видимого вызвавшего
+                         кадра (данные источника не в захвате); вызывающие переводят его в «не проверяемо»;
       'sp_ext'         — SPR в SP: не Extendable (кроме ответа на Poll), не от источника/получателя, не к AP,
                          Duration ≠ остаток SP (10.39.9, 9.3.1.11);
       'sp_ext_grant'   — ответ AP: не через SIFS, RA ≠ TA SPR, Duration ≠ SPR − SIFS − TXTIME(Grant), грант > 0 при
@@ -148,6 +154,15 @@ def check_sp(ev, p, bfc, mac_of, ap, caps, periods, sifs_tol=SIFS_TOL, q=0, idle
             first = False
             late = r['ts'] - p.start >= idle_timeout - q
             if x == st.src:
+                st.first_src = r['ts']
+            elif x == st.dst and kind in UNSEEN_RESP_KINDS and resp is None and r['dst'] == st.src and \
+                    (r['mcs'] is None or r['mcs'] <= UNSEEN_RESP_MCS_MAX):
+                # Ack/BlockAck получателя источнику на MCS ответа (10.6.7.2: control/SC 1–4) без видимого вызвавшего
+                # кадра: вызвавший PPDU источника (данные, A-MPDU) в захват не попал — запись PMC стенда не несёт
+                # кадров данных (2026-11-10, строгий TDMA). Ответ без вызова получатель не шлёт (10.3.2.11, 10.25.3):
+                # источник начал обмен раньше. Не нарушение sp_first_src / sp_recovery — «не проверяемо»
+                out.append(Violation(r['i'], 'sp_unseen_trigger', f'первый кадр SP — {kind} получателя {x} на '
+                                     f'невидимый кадр источника {st.src} (данные не в захвате)'))
                 st.first_src = r['ts']
             elif x == ap and ap == st.dst:
                 if not late:

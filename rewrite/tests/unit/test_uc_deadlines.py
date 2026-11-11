@@ -604,8 +604,29 @@ def test_ssw_ack_after_feedback(uc, rf_modules):
     check('ssw_ack_' + ('rf%d' % rf_modules), w, n, MBIFS_B, MBIFS_SRC)
 
 
-@pytest.mark.parametrize('peer_ant', [1])
-def test_rss_after_iss_end(uc, peer_ant):
+from fwsh_addr import ESE_SLOT_TBL as ESE_TBL, ESE_OWN_TBL as ESE_OWN, SP_GATE   # noqa: E402  include/fwsh.h
+
+
+def ese_tables(uc, kind):
+    """Расписание DTI для путей SLS (dti_alloc_left_us): none — без ESE; sta3 — таблица станции из 3 записей, TSF вне
+    их (худший обход); own9 — точка в строгом TDMA (uc/ese_dti.c): 9 записей своей таблицы, своё окно идёт (конец из
+    fwsh_sp_gate, без обхода)."""
+    if kind == 'sta3':
+        uc.w8(ESE_TBL, 2)
+        uc.w8(ESE_TBL + 1, 3)
+        for i in range(3):
+            uc.w32(ESE_TBL + 4 + 0xc * i + 4, 0x7fff0000 + 0x1000 * i)
+            uc.w16(ESE_TBL + 4 + 0xc * i + 8, 100)
+    elif kind == 'own9':
+        uc.w8(ESE_TBL, 3)
+        uc.w8(ESE_TBL + 1, 0)
+        uc.w8(ESE_OWN + 1, 9)
+        uc.w32(SP_GATE + 4, 0x7fffffff)
+        uc.w8(SP_GATE + 8, 1)
+
+
+@pytest.mark.parametrize('peer_ant, ese', [(1, 'none'), (1, 'sta3'), (1, 'own9')])
+def test_rss_after_iss_end(uc, peer_ant, ese):
     """Ответчик TXSS: конец ISS инициатора (r54.0 txss_end_ind в txss_resp_wait_iss_end) → первый SSW RSS через MBIFS
     (10.42.2.2, uc/txss.c:467): mac_mode_switch_core_and_rf (RX→TX), mac_program_gp_timer0, txss_program_tx_frame с
     подготовкой развёртки 64 секторов (txss_set_sweep_param, копия порядка 64 Б) до 0x19. Худшее: 64 сектора, пир с
@@ -624,6 +645,7 @@ def test_rss_after_iss_end(uc, peer_ant):
     uc.w8(0x801ffc + 0, 0)
     uc.ext.update({54: lambda n, k: 1 if k >= 1 else 0, 40: (1 << 24) | 5, 42: (1 << 14) | (1 << 15) | (1 << 16),
                    43: 1 << 31, 45: 1 << 31, 47: 1, 49: 0})
+    ese_tables(uc, ese)
     m = Meter(uc, stop=IS_TX)
     uc.call('txss_resp_wait_iss_end', sta, 0x1000, stub={'uc_assert': 0}, max_steps=200000)
     a = m.cmd_idx(IS_TX)
@@ -631,7 +653,7 @@ def test_rss_after_iss_end(uc, peer_ant):
     t = m.trigger(54, 1, a)
     w, n = m.span(t, a)
     print(m.profile(t, a))
-    check('rss_after_iss_ant%d' % peer_ant, w, n, MBIFS_B, MBIFS_SRC)
+    check('rss_after_iss_ant%d_%s' % (peer_ant, ese), w, n, MBIFS_B, MBIFS_SRC)
 
 
 # =====================================================================================================================

@@ -1040,6 +1040,7 @@ static u32 ssb_build_allocations_cmd(struct sched_scheme *ssb_, const struct wmi
         n = WMI_SCHED_MAX_ALLOCS_PER_CMD;
     const struct wmi_sched_scheme_slot *e;
 
+    tdma_own_release(ssb_);                        /* таблица обхода — снова ese_slot_tbl (строгий TDMA, fw/tdma.c) */
     if (!(fl & 1) || n == 0) {
         schedule_scheme_builder_build_allocations(ssb_);
         return 0;

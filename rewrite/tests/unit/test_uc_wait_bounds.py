@@ -3,17 +3,18 @@
 предел по времени стандарта и безопасный выход; прежде — вечный опрос, uc вставал навсегда).
 
 - uc_spin_until_event_tmo: опрос r42 не дольше заданного числа проходов (UC_SPIN_PASSES(clk) — не меньше clk тактов);
-  при пределе — счётчик, метка и TSF в fwsh_uc_wait (0x857978), возврат 0.
+  при пределе — счётчик, метка и TSF в fwsh_uc_wait (0x857f80), возврат 0.
 - rx_get_required_response: ожидание MAC_BAP_RX_UPDATE (r53 б3, BAP отметил приём) — не меньше aPPDUMaxTime + SIFS
   (2 мс, Table 20-30; 3 мкс), при пределе ответа нет (0), метка 0xff31.
 - rx_flow_run (отчёт PPDU, r42 б16) и brp_responder_flow_enter (конец PPDU BRP, busy2 по маске 0x73): предел
   aPPDUMaxTime (+ SIFS), метки 0xff33 / 0xff32 — вызов uc_spin_until_event_tmo с этими метками проверяется по коду."""
 import pytest
 
+from fwsh_addr import UC_WAIT          # include/fwsh.h fwsh_uc_wait: +0 tmo_cnt, +4 last_marker, +8 last_tsf
+
 CLK = 165
 PPDU_MAX_CLK = 2000 * CLK              # aPPDUMaxTime DMG (Table 20-30)
 SIFS_CLK = 3 * CLK
-UC_WAIT = 0x857978                     # fwsh_uc_wait: +0 tmo_cnt, +4 last_marker, +8 last_tsf
 UC_WAIT_MARKER = 0x800628
 EVT_BUSY2, EVT_PPDU_REPORT = 1 << 14, 1 << 16
 

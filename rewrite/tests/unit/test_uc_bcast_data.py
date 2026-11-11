@@ -248,7 +248,7 @@ def test_live_group_data_duration_zero(live_group):
 
 # ---- групповой кадр станции при другом времени обмена; ожидание BAP с пределом ----
 
-UC_WAIT = 0x857978                      # include/fwsh.h fwsh_uc_wait: +0 tmo_cnt, +4 last_marker, +8 last_tsf
+from fwsh_addr import UC_WAIT          # noqa: E402  include/fwsh.h fwsh_uc_wait: +0 tmo_cnt, +4 last_marker, +8 last_tsf
 UC_WAIT_MARKER = 0x800628               # uc_wait_marker
 
 

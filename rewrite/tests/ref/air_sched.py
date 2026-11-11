@@ -14,7 +14,7 @@ from . import bi as BI
 from . import elements as E
 from . import schedule as S
 from . import sp as SPm
-from .timing import AID_AP_PCP, BCAST
+from .timing import AID_AP_PCP, AID_BROADCAST, BCAST
 
 PAGE = {'10.39.6.1': 1884, '10.39.6.2': 1885, '10.39.7': 1896, '10.39.6.4': 1887}
 DYN_KINDS = ('Poll', 'SPR', 'Grant', 'Grant Ack')
@@ -79,7 +79,51 @@ def _aids(c):
                 continue
             if fx.get('status') == 0:
                 aids[e.dst] = fx['aid'] & 0x3fff
+    _aids_from_schedule(c, aids)
     return aids
+
+
+AID_VOTE_MIN, AID_VOTE_SHARE = 3, 0.9     # вывод AID по SP пары с AP: кадров не меньше, доля одного MAC не ниже
+
+
+def _aids_from_schedule(c, aids):
+    """AID non-AP STA, ассоциация которой в захват не попала (запись начата позже), — по SP пары «AP — STA x» из
+    Extended Schedule (9.4.2.131: Source/Destination AID; 10.39.6.2: в SP передают только источник и получатель):
+    кадры между AP и STA x внутри блоков такого SP. AID x получает MAC, у которого в этих SP не меньше
+    AID_VOTE_MIN кадров с AP и не меньше AID_VOTE_SHARE всех таких кадров, если этот MAC ещё не сопоставлен. Иначе
+    AID остаётся неизвестен (правила с AID её не опознают). Выведенные — c.aids_inferred (в отчёт sp_access)."""
+    c.aids_inferred = {}
+    sched, bi_tu = _sched(c)
+    known = set(aids.values())
+    evs = sorted((e for e in c.k if e.src is not None), key=lambda e: e.t)
+    ts = [e.t for e in evs]
+    from bisect import bisect_left
+    votes = defaultdict(Counter)
+    for k, (b, ent, err, bs) in sched.items():
+        if not ent:
+            continue
+        ref = BI.tbtt(k, bi_tu)
+        for x in ent:
+            a = x.alloc
+            pair = {a.src_aid, a.dst_aid}
+            if a.alloc_type != S.SP or AID_AP_PCP not in pair or len(pair) != 2 or AID_BROADCAST in pair:
+                continue
+            sta = (pair - {AID_AP_PCP}).pop()
+            if sta in known:
+                continue
+            for t0, t1 in a.blocks(ref):
+                for e in evs[bisect_left(ts, t0):bisect_left(ts, t1)]:
+                    if e.src == c.ap and e.dst not in (None, BCAST):
+                        votes[sta][e.dst] += 1
+                    elif e.dst == c.ap and e.src != c.ap:
+                        votes[sta][e.src] += 1
+    taken = set(aids)
+    for sta, cnt in sorted(votes.items()):
+        mac, n = cnt.most_common(1)[0]
+        if n >= AID_VOTE_MIN and n >= AID_VOTE_SHARE * sum(cnt.values()) and mac not in taken:
+            aids[mac] = sta
+            c.aids_inferred[mac] = sta
+            taken.add(mac)
 
 
 def _dti(c):
@@ -184,13 +228,23 @@ def r_sp_access(c):
         n_sp = sum(1 for e in idx if BI.period_at(per, e.t) is not None and BI.period_at(per, e.t).kind in
                    (S.SP, S.CBAP))
         # AP в SP между STA без условий 10.39.6.7 — правило sp_recovery (air_wave5)
-        bad = [x for x in v if not (x.rule.startswith('dyn_') or x.rule in ('grant_ack', 'should_grant_last_src')
+        for x in v:
+            if x.rule == 'sp_unseen_trigger':
+                r.skip('первый кадр SP — Ack/BlockAck получателя на кадр источника, которого нет в захвате (данные не '
+                       'записаны): начало SP источником и 10.39.6.7 по нему не проверяемы')
+        bad = [x for x in v if not (x.rule.startswith('dyn_') or x.rule in ('grant_ack', 'should_grant_last_src',
+                                                                            'sp_unseen_trigger')
                                     or (x.rule == 'sp_foreign' and '10.39.6.7' in x.msg))]
         for x in bad:
             by[x.rule] += 1
             r.bad(ev.get(x.idx), f'{x.rule}: {x.msg}')
         r.ok(max(0, n_sp - len(bad)))
     r.info['rules'] = dict(by)
+    if getattr(c, 'aids_inferred', None):
+        r.info['aid_inferred'] = {m: a for m, a in c.aids_inferred.items()}
+        r.verdict_note = ('AID STA без ассоциации в захвате выведен по SP пары с AP в Extended Schedule (10.39.6.2: в SP '
+                          'передают только источник и получатель): ' +
+                          ', '.join(f'{m} → {a}' for m, a in c.aids_inferred.items()))
     return r
 
 

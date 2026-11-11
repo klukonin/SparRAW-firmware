@@ -260,7 +260,7 @@ pypy3 -m ref.core.diff_report --scenario all --against mixed-sta --mixed-preset 
 | прошивка против ядра-Sparrow (`fw-sparrow`) | «прошивка ≠ стандарт» — те же 11 уникальных, что против ядра в идеальной среде (BTI через 12–14 мкс после TBTT; при 2 STA — CF-End с RA другой станции, BRP с Initiator 0, CF-End не на границе слота; при BI 10 TU — A-MPDU/CF-End станции в BTI, RTS за концом CBAP): находки прошивки не зависят от того, идеальна ли среда у ядра |
 | `mixed-ap`, preset core | соединение и данные во всех 1-STA сценариях, кроме `sls-1sta-dl` (uc станции: uc_assert 0x26 в txop_await_cts_ppdu на 36 мс) |
 | `mixed-ap`, preset compat | 6 из 6: соединение, данные в обе стороны |
-| `mixed-sta`, preset core | срыв точки-прошивки в 5 из 6 (uc_assert 0x26/0x6019, ниже); BI 10 TU — вниз 48/48, вверх ADDBA станции без Ack |
+| `mixed-sta`, preset core | срыв точки-прошивки в 5 из 6 (uc_assert 0x26/0x6019, ниже); BI 10 TU — вниз 48/48, вверх ADDBA станции без Ack. С допущением H-RESPEXP (machw, ветка строгого TDMA) `sls-1sta` проходит: поздняя команда ответа — уже не ответ, пир повторяет кадр |
 | `mixed-sta`, preset compat | 5 из 6 целиком; BI 10 TU — uc_assert 0x6002 точки на 135,6 мс |
 
 Расхождения железа/модели со стандартом (ядро-Sparrow против ядра; все — «модель MAC эмулятора»):

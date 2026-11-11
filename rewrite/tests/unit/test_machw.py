@@ -506,3 +506,121 @@ def test_sifs_response_not_from_stale_fifo(uc):
     assert hw.frame_ready is not None and hw.frame_ready['what'] == 'direct 20 B'   # сам кадр FIFO — не установлено
     hw._cmd(0x33000001)
     assert hw.frame_ready is None
+
+
+# ---- H-MTPLIM2: план TXOP — повтор и продолжение только с обменом до конца плана -------------------------------
+
+def _mtplim_hw(uc, n_mpdu=8):
+    """Модель с очередью данных 0 (A-MPDU из n_mpdu кадров 1200 Б, окно BA n_mpdu) в начатом TXOP (после RTS уже был
+    кадр очереди — H-MTPLIM): длительность обмена «A-MPDU + SIFS + BlockAck (MCS 1)»."""
+    from machw import BA_LEN, SIFS_CLK, ampdu_psdu_len, sc_txtime_clk
+    hw = HW(uc)
+    hw.mac_q_model = True
+    f = bytes([0x88, 0x02]) + bytes(22) + bytes([0x00, 0x00]) + bytes(1200)       # QoS Data, TID 0
+    hw.mac_q[0] = [f] * n_mpdu
+    hw.q_agg[0] = n_mpdu
+    hw.mtp_qid = 0
+    hw.txopq_frames = 1
+    hw.xchg = lambda n: sc_txtime_clk(ampdu_psdu_len([f] * n), hw.data_mcs) + SIFS_CLK + sc_txtime_clk(BA_LEN, 1)
+    return hw, hw.xchg(n_mpdu)
+
+
+def _perm_empty(hw):
+    hw.perm_req_at = hw.now - 1000
+    return bool(hw._read_port(45) & 2)
+
+
+def test_mtplim2_retry_fits_without_room_for_cf_end(uc):
+    """(1) 802.11-2020 10.23.2.9, 10.39.5: повтор (тот же A-MPDU с битом Retry), чей обмен с BlockAck кончается до конца
+    плана TXOP, MAC выпускает — даже если после него на CF-End (10.23.2.10 — необязателен) места нет."""
+    from machw import TX_START_CLK
+    hw, xchg = _mtplim_hw(uc)
+    hw.mac_q[0] = [bytes([f[0], f[1] | 0x08]) + f[2:] for f in hw.mac_q[0]]      # H-RETRY: бит Retry
+    hw.txopq_end = hw.now + TX_START_CLK + xchg + 1                                 # ровно обмен, CF-End (14 мкс) — нет
+    assert not _perm_empty(hw)
+    hw._go()
+    assert hw.tx_pending is not None and 'A-MPDU 8 MPDU' in hw.tx_pending['what'] and not hw.mtplim_held
+
+
+@pytest.mark.parametrize('case', ['short', 'retry_short', 'retry_expired'])
+def test_mtplim2_no_fit_no_tx_frame_waits(uc, case):
+    """(3) Обмен не вмещается в остаток плана TXOP — продолжение, повтор после тайм-аута ответа (в т. ч. когда план уже
+    истёк): MTP — «очередь пуста», MAC кадр не выпускает, кадр остаётся в очереди до следующего доступа. Повтор
+    открывается тем же 0x19000b00, что и новый доступ (tx_mtp_queue_gate), — план при этом остаётся. Прежде
+    повтор шёл за конец плана, а продолжение после конца открывало новый план (Duration — полный лимит)."""
+    from machw import MTP_PERM_LAT_CLK
+    hw, xchg = _mtplim_hw(uc)
+    # не вмещается даже A-MPDU из одного MPDU (длину A-MPDU MAC выбирает по остатку плана — test_mtplim2_ampdu_trimmed)
+    hw.txopq_end = hw.now + MTP_PERM_LAT_CLK + hw.xchg(1) - 1 if case != 'retry_expired' else hw.now - 13 * CLK_PER_US
+    if case != 'short':
+        hw.txopq_retry = True                                                       # тайм-аут BlockAck в этом TXOP
+        end = hw.txopq_end
+        hw._cmd(0x19000b00)                                                         # повтор: tx_mtp_queue_gate
+        assert hw.txopq_end == end
+    assert _perm_empty(hw)
+    hw._go()
+    assert hw.tx_pending is None and hw.frame_ready is None and hw.mtplim_held == [(hw.now, 0)]
+    assert len(hw._q_avail(0)) == 8                                                 # кадры ждут
+    # закрытие держателем (запрос итога) и следующий доступ (txop_initiator_open_txop_flow: 0x19000b00) — новый план
+    hw._cmd(0x16000010)
+    hw._cmd(0x18008000)
+    hw._cmd(0x19000b00)
+    assert hw.txopq_end is None and not _perm_empty(hw)
+    hw._go()
+    assert hw.tx_pending is not None and 'A-MPDU' in hw.tx_pending['what']
+
+
+@pytest.mark.parametrize('left_us,qnull', [(2, False), (40, True)])
+def test_mtplim2_result_request_qnull_only_within_plan(uc, left_us, qnull):
+    """(2) Закрытие после повтора / опустевшей очереди: запрос итога (H-QNULL — QoS Null от имени пустой очереди,
+    Duration — остаток TXOP) — кадр этого TXOP: только если кончается до конца плана; иначе MAC ничего не выпускает.
+    CF-End держателя — только при достаточном остатке (uc: test_uc_ifs_duration::
+    test_cf_end_holder_nonzero_needs_room_for_response)."""
+    hw = HW(uc)
+    hw.mac_q_model = True
+    hdr = bytes([0x88, 0x02]) + bytes(22)
+    hw.mac_q[0] = []
+    hw.q_last_hdr[0] = hdr
+    hw.txopq_frames = 1
+    hw.txopq_end = hw.now + left_us * CLK_PER_US
+    hw._cmd(0x16000010)                                                             # запрос MTP с б4 к очереди 0
+    hw._cmd(0x18008000)                                                             # пуск запроса итога
+    assert (hw.tx_pending is not None and 'QoS Null' in hw.tx_pending['what']) == qnull
+
+
+def test_mtplim2_stale_plan_is_new_access(uc):
+    """План кончился давно (> MTPLIM_LIVE_CLK), повтора нет, держатель не закрывал TXOP (своё SP — без CF-End): запрос
+    MTP — уже новый доступ, кадр предлагается (иначе новый TXOP не открылся бы — запрос до 0x19000b00)."""
+    from machw import MTPLIM_LIVE_CLK
+    hw, xchg = _mtplim_hw(uc)
+    hw.txopq_end = hw.now - MTPLIM_LIVE_CLK - 1
+    assert not _perm_empty(hw)
+
+
+def test_mtplim2_ampdu_trimmed_to_plan(uc):
+    """Длину A-MPDU выбирает MAC/MTP по остатку плана TXOP (H-MTPLIM): в остаток, где помещается обмен с 3 MPDU из 8,
+    уходит A-MPDU из 3 MPDU (BlockAck — на них); остальные ждут. Прежде модель слала окно целиком — первый A-MPDU после
+    RTS с Duration 135 шёл 692 мкс, за конец CBAP (эмулятор, строгий TDMA с потерями)."""
+    from machw import TX_START_CLK
+    hw, xchg = _mtplim_hw(uc)
+    hw.txopq_frames = 0                                                             # первый кадр после RTS
+    hw.txopq_end = hw.now + TX_START_CLK + hw.xchg(3) + 1
+    hw._go()
+    assert hw.tx_pending is not None and 'A-MPDU 3 MPDU' in hw.tx_pending['what'], hw.tx_pending
+    assert len(hw._q_avail(0)) == 5
+
+
+def test_mtplim2_remaining_time_is_plan(uc):
+    """(2) REMAINING_TIME_RD (r40, селектор 3) в действующем плане TXOP — его остаток (H-DURQ): по нему uc шлёт CF-End
+    держателя только при достаточном остатке (10.23.2.10; пороги — test_uc_ifs_duration::
+    test_cf_end_holder_nonzero_needs_room_for_response); после повтора, съевшего план, — 0, CF-End нет. Без плана —
+    максимум (новый доступ)."""
+    from machw import MTPLIM_LIVE_CLK
+    hw, xchg = _mtplim_hw(uc)
+    hw.sel40 = 0x3000
+    hw.txopq_end = hw.now + 10 * CLK_PER_US
+    assert hw._r40() == 10
+    hw.txopq_end = hw.now - CLK_PER_US                                              # план только что кончился
+    assert hw._r40() == 0
+    hw.txopq_end = hw.now - MTPLIM_LIVE_CLK - 1                                     # давно, повтора нет — без сессии
+    assert hw._r40() == 0xffff

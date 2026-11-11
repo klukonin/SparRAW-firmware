@@ -448,6 +448,25 @@ __attribute__((section(".textlate"))) void ese_rx_on_own_beacon(const struct rx_
     if (sched)
         FWSH(fwsh_diag, ese_dti_bcons) += 1;
 }
+/* Таблица станции из маяка своей точки → аппаратный массив SP. Vendor (schedule_scheme__sum_two) закладывал записи с
+ * начала следующего BI: точка объявляет расписание маяком того BI, где оно действует (Allocation Start — этот BI,
+ * fw/tdma.c), и весь первый BI нового расписания станция без событий окон молчала (передача закрыта с начала DTI,
+ * uc/ese_dti.c; эмулятор, строгий TDMA, 2026-11-07). Маяк разбирается в BTI/A-BFT, до окон DTI: если до начала
+ * первой записи ещё не меньше ESE_PROG_LEAD_US — записи с этого BI (все в будущем), иначе — со следующего. */
+#define ESE_PROG_LEAD_US 100u
+static void ese_start_walk_from_beacon(struct sched_scheme *obj)
+{
+    u32 base = mac_get_bi_start_tsf();
+    u32 bi = mac_get_beacon_interval_us();
+    const struct ese_slot_tbl *t = obj->ese->tbl;
+    u32 off = MMIO32(HW_MAC_TSF_LO) - base;
+    if (t->count == 0 || off >= bi || off + ESE_PROG_LEAD_US > t->slot[0].start)
+        base += bi;
+    obj->next_bi_tsf = base;
+    lmac_if_evt_walk(obj);
+    lmac_if_evt_walk(obj);
+}
+
 /* schedule_scheme_builder__build_allocations_from_beacon (0x8c5248, 120 Б). */
 __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocations_from_beacon(struct sched_scheme *obj, const struct ie_ref *bcn)
 {
@@ -460,35 +479,40 @@ __attribute__((section(".textlate"))) void schedule_scheme_builder_build_allocat
     sched_builder_reset_alloc_list(obj->ese);
     u32 r18 = mac_get_bi_start_tsf();
     u32 r15 = 0;
-    if (r16 >= 1) {
-        u32 r17 = r16;
-        do {
-            if (ese_alloc_wanted(obj, r13) != 0) {
-                /* исправлено (vendor): бралось только первое окно поля. Аллокация — Number of Blocks окон по Allocation
-                 * Block Duration, начала через Allocation Block Period (9.4.2.131); каждое окно — запись таблицы.
-                 * Period 0 при нескольких блоках — окна совпали бы, берётся одно; 0 блоков — окон нет. */
-                u32 nblk = r13->n_blocks;
-                u32 per = r13->block_period[0] | ((u32)r13->block_period[1] << 8);
-                if (nblk > 1 && per == 0)
-                    nblk = 1;
-                for (u32 k = 0; k < nblk; k++) {
-                    /* исправлено (vendor): 4-е подходящее окно из маяка (ESE до 17 полей, 9.4.2.131) упиралось в
-                     * fatal 0x11bb ese_slot_table_add — остановка fw кадром из эфира. Лишние окна пропускаются. */
-                    if (obj->ese->tbl->count >= ESE_SLOTS_N) {
-                        fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
-                        goto table_full;
-                    }
-                    ese_alloc_to_slot(obj, r18, r13, k * per);
+    /* Два прохода: сначала окна, где станция может начинать обмен (CBAP своего/широковещательного источника, SP со
+     * своим AID источником — 10.39.5, 10.39.6.2), затем SP, где она только получатель. Таблица станции — ESE_SLOTS_N
+     * записей (раскладка vendor); получателю окно не нужно (ответы через SIFS разрешены и без него, вне своих окон uc
+     * обмен не начинает — uc/ese_dti.c), а пропущенное окно «может начинать» — тишина весь его срок. Прежде записи шли
+     * по порядку полей: строгий TDMA одной станции (общее CBAP, SP точка → станция, SP станция → точка, CBAP остатка
+     * BI) терял CBAP остатка — станция в нём не начинала обмен вовсе (стенд 2026-11-10, PMC: ни одного RTS станции в
+     * CBAP остатка), TCP шёл только в SP и общем CBAP. */
+    for (u32 pass = 0; pass < 2; pass++) {
+        const struct ese_alloc *a = r13;
+        for (u32 r17 = r16; r17 >= 1; r17--, a++) {
+            if (ese_alloc_wanted(obj, a) == 0 || ese_may_initiate(obj, a) != (pass == 0 ? 1u : 0u))
+                continue;
+            /* исправлено (vendor): бралось только первое окно поля. Аллокация — Number of Blocks окон по Allocation
+             * Block Duration, начала через Allocation Block Period (9.4.2.131); каждое окно — запись таблицы.
+             * Period 0 при нескольких блоках — окна совпали бы, берётся одно; 0 блоков — окон нет. */
+            u32 nblk = a->n_blocks;
+            u32 per = a->block_period[0] | ((u32)a->block_period[1] << 8);
+            if (nblk > 1 && per == 0)
+                nblk = 1;
+            for (u32 k = 0; k < nblk; k++) {
+                /* исправлено (vendor): 4-е подходящее окно из маяка (ESE до 17 полей, 9.4.2.131) упиралось в
+                 * fatal 0x11bb ese_slot_table_add — остановка fw кадром из эфира. Лишние окна пропускаются. */
+                if (obj->ese->tbl->count >= ESE_SLOTS_N) {
+                    fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
+                    goto table_full;
                 }
-                r15++;
+                ese_alloc_to_slot(obj, r18, a, k * per);
             }
-            r17--;
-            r13++;
-        } while (r17 >= 1);
+            r15++;
+        }
     }
     fw_log_emit2(0x2b, 0x1014498, r15 & 0xff, r16);
 table_full:
-    schedule_scheme_start_at_next_bi(obj);
+    ese_start_walk_from_beacon(obj);
 }
 /* Отпечаток ESE маяка (число полей и 24-битная свёртка всех байт полей): vendor замечал
  * только смену ID и адресов первого поля — новое начало, длительность, другие поля и их число
@@ -562,7 +586,7 @@ __attribute__((section(".textlate"))) void ese_alloc_to_slot(struct sched_scheme
     sp.ctrl = 0;
     sp.start = 0;
     sp.dur = 0;
-    sp.rsv_0a = 0;
+    sp.rx_tail_us = 0;
     sp.ctrl = (sp.ctrl & ~0xfu) | (b->ctrl[0] & 0xfu);                      /* bits_set32_s0_w4 */
     sp.ctrl = (sp.ctrl & ~(3u << 4)) | (((b->ctrl[0] >> 4) & 3u) << 4);     /* bits_set32_s4_w2 */
     sp.ctrl &= ~(1u << 6);

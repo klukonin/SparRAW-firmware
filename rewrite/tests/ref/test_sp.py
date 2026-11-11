@@ -126,6 +126,26 @@ def test_sp_recovery_after_idle_timeout():
     assert 'sp_recovery' in _judge(ent2, pp)[0]
 
 
+def test_first_frame_response_to_unseen_source_frame():
+    """Захват без кадров данных (PMC стенда, 2026-11-10): первый кадр SP станции → AP — BlockAck AP на её A-MPDU,
+    которого в журнале нет. Ответ без вызова получатель не шлёт (10.3.2.11, 10.25.3) — источник начал SP раньше:
+    не sp_recovery (10.39.6.7) и не sp_first_src, а sp_unseen_trigger («не проверяемо» у вызывающих). Передача AP,
+    не являющаяся ответом (данные), в том же месте — по-прежнему sp_recovery; BlockAck на MCS данных (не ответ,
+    10.6.7.2) — тоже."""
+    ent, (p,) = _bi([S.Req(S.SP, 1, 0, 3000)], [])
+    ba = SPm._ev(p.start + 78, 'BlockAck', AP, A, 32, 4)
+    rules, v, _ = _judge(ent, [ba])
+    assert rules == {'sp_unseen_trigger'}, v
+    data = SPm._ev(p.start + 78, 'Data', AP, A, 1500, 8)
+    assert 'sp_recovery' in _judge(ent, [data])[0]
+    ba8 = SPm._ev(p.start + 78, 'BlockAck', AP, A, 32, 8)
+    assert 'sp_recovery' in _judge(ent, [ba8])[0]
+    # SP точки → станции: BlockAck станции первым — то же
+    ent2, (p2,) = _bi([S.Req(S.SP, 0, 1, 3000)], [])
+    rules, v, _ = _judge(ent2, [SPm._ev(p2.start + 90, 'BlockAck', A, AP, 32, 4)])
+    assert rules == {'sp_unseen_trigger'}, v
+
+
 # ---------------------------------------------------------------------------------------------- продление
 def test_extension_needs_following_broadcast_sp():
     """10.39.9: «may grant the request … only if the following SP has the broadcast AID as both source and destination

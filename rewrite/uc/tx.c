@@ -304,6 +304,11 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
  * слота — коллизия с соседом, отсчитавшим отсрочку; кадр/TXOP теряется, растёт CW. */
 void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 {
+    /* Закрытие обмена в своём SP — без передачи (uc/ese_dti.c, рычаг 3): ни запроса итога (QoS Null), ни CF-End */
+    if (ese_dti_sp_src_end(a->sta)) {
+        txrx_state2 |= (1u << 9);
+        return;
+    }
     u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
     uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
@@ -505,12 +510,22 @@ void tx_slot_dispatch(u32 a)   /* 6.2 asm 0x938e34 */
     (void)a;
     u32 sp;
     struct tx_ctx_s *ctx = tx_ctx_alloc_next(1);
-    if (tx_slot_pick_queue((u32)&sp, 1) == 0) {
+    /* Расписание DTI (802.11-2020 10.39.5, 10.39.6.2; uc/ese_dti.c): вне своего окна и в его хвосте, где TXOP не
+     * кончится до конца окна, обмен не начинается — выход как «очереди нет» (выбор очереди без учёта слота: b = 0,
+     * команды слота нет), MAC снова разыграет доступ. Без расписания — одно чтение. */
+    u32 go = ese_dti_tx_gate();
+    if (tx_slot_pick_queue((u32)&sp, go) == 0) {
         mac_backoff_settle_set_chain_modes(2);
         uc_stats.tx_no_queue += 1;           /* [0x8022c8 + 8] */
         uc_mac_cmd(0xeeee01);
         return;
     }
+    if (go == 0) {
+        mac_backoff_settle_set_chain_modes(2);
+        uc_mac_cmd(0xeeee0d);                /* метка: доступ не по расписанию */
+        return;
+    }
+    FWSH(fwsh_sp_gate, src_more) = FWSH(fwsh_sp_gate, init_sp);   /* своё SP — цикл источника продолжит (ese_dti.c) */
     mac_select_all_sectors_and_wait();
     if (mac_evt1() & MAC_EVT1_BUSY2) {
         txrx_state2 = 0x800;        /* st.as 0x800,[gp,0x34] */
@@ -606,6 +621,25 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
 }
 
 
+/* Конец обмена в своём SP после запроса итога (tx_send_and_await_rx_frame, ветка без CF-End): приём — после своего
+ * кадра запроса итога (b ≠ 0), как в общем хвосте. Отдельная функция: в tx_send_and_await_rx_frame не добавляется
+ * живых регистров — пролог и путь «слот → CCA → запрос итога» (СРОК) те же, что без цикла источника (codecmp). */
+static __attribute__((noipa)) u32 tx_sp_end_restore_rx(u32 sta, u32 b)
+{
+    ese_dti_sp_src_end(sta);
+    if (b != 0) {
+        mac_set_rf_chain_state(1, sta_tab[sta].rx_sel);
+        uc_wait_one_event(6);
+        u32 r0 = abif_dvs_rf_ctrl_shadow;
+        r0 &= ~(1u << 24);
+        r0 &= ~(1u << 25);
+        r0 |= rf_set_rx << 24;
+        abif_dvs_rf_ctrl_shadow = r0;
+        *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r0;
+    }
+    return 1;
+}
+
 u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2 asm 0x9249b4 */
 {
     (void)d;
@@ -651,6 +685,13 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
         uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
         arc_nops(3);
         u32 rem = (u16)mac_status_sel();
+        /* Своё SP (uc/ese_dti.c, цикл источника): CF-End пиру — усечение SP (10.39.8.1), не шлём. Закрытие из
+         * tx_cca_check_and_send в своём SP сюда не доходит (без передачи), из mtp_get_tx_permission (MTP кадра не дал при
+         * фазе поиска скорости) — доходит после запроса итога: QoS Null (No Ack) MAC в своём SP остаётся. Проверка не
+         * раньше: на входе она удлиняла путь «слот → CCA → запрос итога» (СРОК, tx_cca_check_and_send) на 12 тактов
+         * (эмулятор, test_air RD). Байт и переход в отдельную функцию (noipa) — без новых живых регистров (codecmp) */
+        if (FWSH(fwsh_sp_gate, init_sp) != 0)
+            return tx_sp_end_restore_rx(sta, b);
         if (rem < DMG_CF_END_MIN_REM_US || (mac_evt1() & MAC_EVT1_TXOP))
             goto cf_end_done;
         if (rem < DMG_CF_END_NZ_REM_US)

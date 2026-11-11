@@ -101,9 +101,18 @@ def fw(fw_elf):
 
 @pytest.fixture
 def uc(build_dir, uc_fw):
-    """Свежий эмулятор uc: код из uc.elf, DCCM — uc_data образа (или 0 + .ucdata без vendor-образа)."""
+    """Свежий эмулятор uc: код из uc.elf, DCCM — uc_data образа (или 0 + .ucdata без vendor-образа). Расписание DTI в
+    общем с fw блоке — «нет расписания», как после crt0 нашего fw (fw/start.S обнуляет 0x857000..0x857a00 и
+    0x857f80..0x857f8c): флаг станции fwsh_diag.ese_dti_sched, заголовок ese_slot_tbl, ese_own_tbl, fwsh_sp_gate,
+    fwsh_uc_wait (include/fwsh.h tests/unit/fwsh_addr.py; прочее — мусор эмулятора, как прежде)."""
     import ucemu
-    return ucemu.UC(os.path.join(build_dir, 'uc.elf'), uc_fw)
+    from fwsh_addr import A, SP_GATE_SIZE
+    u = ucemu.UC(os.path.join(build_dir, 'uc.elf'), uc_fw)
+    u.cpu.write(0x857028, bytes(1))                          # fwsh_diag.ese_dti_sched
+    u.cpu.write(0x857264, bytes(4))                          # ese_slot_tbl: mode, count, uc
+    u.cpu.write(A['ese_own_tbl'], bytes(A['fwsh_sp_gate'] + SP_GATE_SIZE - A['ese_own_tbl']))   # ese_own_tbl, fwsh_sp_gate
+    u.cpu.write(A['fwsh_uc_wait'], bytes(0xc))               # fwsh_uc_wait (верхний диапазон crt0)
+    return u
 
 
 @pytest.fixture

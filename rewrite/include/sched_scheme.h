@@ -28,8 +28,9 @@ struct ese_sched {
     u8  cur;                                   /* 0x00: текущий слот (по модулю count) */
     u8  tdma_off;                              /* 0x01: TDMA точки выключен хостом (WMI_SPARRAW_TDMA_CFG, fw/tdma.c) */
     u8  tdma_min_sta;                          /* 0x02: порог включения TDMA (станций); 0 — по умолчанию (TDMA_MIN_STA) */
-    u8  rsv_03;
-    struct ese_slot_tbl *tbl;                  /* 0x04: 0x857264 */
+    u8  tdma_mode;                             /* 0x03: режим TDMA точки (WMI_SPARRAW_TDMA_MODE_*, fw/tdma.c) */
+    struct ese_slot_tbl *tbl;                  /* 0x04: таблица обхода — ese_slot_tbl (0x857264) или ese_own_tbl
+                                                *       (0x857978, строгий TDMA точки) */
 };
 _Static_assert(sizeof(struct ese_sched) == 8, "ese_sched");
 
@@ -37,7 +38,8 @@ _Static_assert(sizeof(struct ese_sched) == 8, "ese_sched");
 struct sched_scheme {
     struct ese_sched *ese;                     /* 0x00: 0x8052e4 */
     u8  seq;                                   /* 0x04: номер распределения (полубайт) */
-    u8  ese_n;                                 /* 0x05: число полей последнего ESE маяка (sched_alloc_changed) */
+    u8  ese_n;                                 /* 0x05: число полей последнего ESE маяка (sched_alloc_changed); у точки
+                                                *       в строгом TDMA — число окон ese_own_tbl в аппаратном массиве SP */
     u8  tdma_armed;                            /* 0x06: таймер обновления расписания TDMA взведён (fw/tdma.c) */
     u8  tdma_owned;                            /* 0x07: расписание построено TDMA точки, а не хостом (WMI 0xa01) */
     u32 next_bi_tsf;                           /* 0x08: TSF начала следующего BI */
@@ -45,7 +47,8 @@ struct sched_scheme {
     struct mid *mid;                           /* 0x10 */
     u32 start_acc;                             /* 0x14: накопитель начала слота (ESE-режим) */
     u8  same_cnt;                              /* 0x18: биконов подряд без изменений (до 0x10) */
-    u8  ese_hash[3];                           /* 0x19: 24-битный отпечаток последнего ESE маяка (sched_alloc_changed) */
+    u8  ese_hash[3];                           /* 0x19: 24-битный отпечаток последнего ESE маяка (sched_alloc_changed); у
+                                                *       точки в строгом TDMA — отпечаток окон ese_own_tbl (fw/tdma.c) */
     /* 0x1c: шаблон 15-байтового поля Allocation IE (биты 4..6 = 1, бит 7; [0xc] = 1 —
      * mid__init_sched_scheme) */
     union {

@@ -67,6 +67,13 @@ void internal_tx_isr(void)
                 FWSH(fwsh_sta_abft, txss_defer_cnt) += 1;
                 ok = 0;
             }
+            /* Расписание DTI (10.39.6.2, 10.39.5): SLS-инициатор начинает только в своём окне и если весь обмен SLS
+             * кончается до его конца (uc/ese_dti.c ese_dti_sls_fits); иначе — заново при следующем доступе (бит 3
+             * остаётся). */
+            if (ok != 0 && !ese_dti_sls_fits(dur)) {
+                FWSH(fwsh_sp_gate, refused) += 1;
+                ok = 0;
+            }
             if (ok != 0) {
                 bf_sm_run_sta(bf_cur_sta);
                 internal_tx_clear_pending_bit(3);
@@ -2366,6 +2373,20 @@ void tx_mtp_queue_gate(u32 a) {
 }
 
 
+/* Запрос MTP кадра открытия TXOP (mtp_queue_release_mgmt) + режим доступа в своём SP (uc/ese_dti.c, цикл источника):
+ * без RTS — среда по расписанию у источника, получатель слушает его весь SP (10.39.6.2); RTS/DMG CTS — защита TXOP
+ * CBAP. Режим доступа 0 (chan_access) — путь очереди управления (0x1a): кадр очереди сразу после слота и пробы CCA.
+ * Отдельная функция с той же сигнатурой: txop_initiator_open_txop_flow (сроки «слот → пуск», «tx_end → приём») и
+ * mtp_queue_release_mgmt (путь продолжения TXOP через SIFS) не меняются — codecmp. */
+static __attribute__((noipa)) u32 txop_open_release_mgmt(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
+{
+    u32 r = mtp_queue_release_mgmt(a, b, c, d);
+    if (FWSH(fwsh_sp_gate, init_sp) != 0)
+        a->chan_access = 0;
+    return r;
+}
+
+
 u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
     /* 6.2 asm 0x93a250. */
     (void)a;
@@ -2380,7 +2401,7 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
     uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
     arc_nops(3);
     u32 r15 = (u32)(u16)mac_status_sel();
-    u32 r0 = mtp_queue_release_mgmt(r13, (u32)&sp_buf[1], 0, r14);
+    u32 r0 = txop_open_release_mgmt(r13, (u32)&sp_buf[1], 0, r14);
     if (r0 != 0) {
         /* L_93a314 */
         /* mov_s r14,1; mov.eq r14,[r13+0x28]&3 — при сброшенном бите станции в 0x802948 */
@@ -3552,6 +3573,7 @@ void dti_worker_scheduled_dti_allocation_event(u32 *wake)
         *wake = 1;
     sp.ev.type = 6;
     uc_send_evt_ps_awake_peer((u32)&sp.ev);
+    ese_dti_sp_src_start();                     /* своё SP: источник начинает обмен на его начале (10.39.6.2) */
 }
 
 

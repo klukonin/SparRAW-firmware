@@ -45,6 +45,9 @@ void uc_main(void)
         memset0_words_uc((void *)&fsched_peers, (u32)&uc_log - (u32)&fsched_peers);   /* весь BSS 0x801be8..0x803234 */
         memset0_words_uc((void *)0, 0);
     }
+    /* Доступ по расписанию DTI (uc/ese_dti.c, SparRAW): наш fw обнуляет блок при загрузке, vendor-fw (гибрид) память
+     * за 0x857828 не трогает — флаги «своё SP» (конец TXOP без CF-End) и урезанный лимит TXOP не должны быть мусором */
+    memset0_words_uc((void *)&fwsh_sp_gate, sizeof(fwsh_sp_gate));
     g_800428 = 0;
     boot_uc_init_structs();
     boot_uc_init_and_run();
