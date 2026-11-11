@@ -374,6 +374,12 @@ def judge_duration(evs, ap, sched, txop_limit=None):
                 t0, nav_end = h
                 lo, hi = D.field(nav_end - e.t - tppdu), D.field(t0 + txop_limit - e.t - tppdu)
                 txop[e.src] = (t0, max(nav_end, e.te + e.dur))
+            if not first and e.kind != 'BRP' and e.dur == lo - 1 and lo <= hi:
+                # H-DURQ: Duration кадров очереди ставит MAC — остаток TXOP с отбрасыванием дробной микросекунды (стенд
+                # 2026-10-31: RTS 1982 = ⌊2000 − SIFS − TXTIME(RTS)⌋, при округлении вверх по 9.2.5.1 было бы 1983); NAV
+                # прежнего кадра (тоже ⌊…⌋ от того же конца TXOP) с округлением вверх выходит на 1 мкс дальше — отклонение
+                # MAC, не прошивки (значение пишет MAC, uc его не задаёт)
+                continue
             if not lo <= e.dur <= hi:
                 out.append(Finding('duration', e.kind, '9.2.5.2 b)', f'{e.kind}: Duration {e.dur} вне [{lo}, {hi}] '
                                    f'(TXOP {txop_limit} мкс){" [Duration ставит модель MAC, H-DURQ]" if e.kind != "BRP" else ""}',

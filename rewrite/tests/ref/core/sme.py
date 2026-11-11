@@ -115,6 +115,11 @@ class StaSme(_Sme):
         self.ul = []
         # MLME-ADDBA.request станции: 'always' — после ассоциации всегда (по умолчанию); 'ul' — только при данных вверх
         self.addba = 'always'
+        # отказ точки в соглашении (10.25.2: Status ≠ SUCCESS; прошивка отказывает, пока соединение не в состоянии 2) —
+        # новый MLME-ADDBA.request через addba_retry_us, не больше addba_retries раз (как ApSme); затем данные без
+        # соглашения BA — с Ack (10.3.2.11; Block Ack — по соглашению, не обязателен)
+        self.addba_retry_us, self.addba_retries = 5000, 3
+        self._addba_tries = 0
         # MLME-BF-TRAINING.request с RequestBRP = true (SLS, затем BRP — 6.3.91.2, 11.36)
         self.request_brp = False
         # действия SME после начала данных: [(через мкс, вызов)] — напр. MLME-LINKMEASURE, Information Request
@@ -172,6 +177,13 @@ class StaSme(_Sme):
             self._request(ML.MlmeAddbaRequest(PeerSTAAddress=self.bss.BSSID, DialogToken=0x21, TID=0, BufferSize=64))
         elif isinstance(p, ML.MlmeAddbaConfirm) and p.ResultCode == ML.SUCCESS:
             self._data()
+        elif isinstance(p, ML.MlmeAddbaConfirm) and self.state == 'associated':
+            if self._addba_tries < self.addba_retries:
+                self._addba_tries += 1
+                self.mac.sim.after(self.addba_retry_us, self.mac.mlme_request, ML.MlmeAddbaRequest(
+                    PeerSTAAddress=self.bss.BSSID, DialogToken=0x21 + self._addba_tries, TID=0, BufferSize=64))
+            else:
+                self._data()
 
     def _data(self):
         self.state = 'data'

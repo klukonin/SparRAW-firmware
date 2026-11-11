@@ -377,3 +377,29 @@ def test_journal_formats():
     assert e.kind == 'A-MPDU' and e.first == 'Data' and e.agg and e.rx_nodes == ('B',) and e.tx_node == 'A'
     assert e.length == len(ps) and e.t_ok and e.dur == 5
     assert AID_BROADCAST == 255
+
+
+def test_sta_sme_addba_refused_retry_then_normal_ack():
+    """10.25.2: точка вправе отказать в соглашении BA (прошивка — пока соединение не в состоянии 2). SME станции:
+    новый MLME-ADDBA.request через addba_retry_us, не больше addba_retries раз; затем данные без соглашения (с Ack)."""
+    from types import SimpleNamespace
+
+    from .sme import StaSme
+    reqs, timers, sent = [], [], []
+    mac = SimpleNamespace(addr='02:00:00:00:00:02', need_bf=True,
+                          sim=SimpleNamespace(after=lambda dt, fn, *a: timers.append((dt, fn, a))),
+                          mlme_request=reqs.append, ma_unitdata_request=sent.append)
+    s = StaSme(mac, ul_bytes=3000)
+    s.bss = SimpleNamespace(BSSID='02:00:00:00:00:01')
+    s.mlme_confirm(ML.MlmeAssociateConfirm(ResultCode=ML.SUCCESS))
+    assert s.state == 'associated' and isinstance(reqs[-1], ML.MlmeAddbaRequest)
+    tokens = [reqs[-1].DialogToken]
+    for _ in range(s.addba_retries):
+        s.mlme_confirm(ML.MlmeAddbaConfirm(PeerSTAAddress=s.bss.BSSID, ResultCode='FAILURE'))
+        dt, fn, a = timers.pop()
+        assert dt == s.addba_retry_us and s.state == 'associated' and not sent
+        fn(*a)
+        tokens.append(reqs[-1].DialogToken)
+    assert len(set(tokens)) == len(tokens)                  # новый Dialog Token на каждый запрос (9.4.1.12)
+    s.mlme_confirm(ML.MlmeAddbaConfirm(PeerSTAAddress=s.bss.BSSID, ResultCode='FAILURE'))
+    assert s.state == 'data' and sent and not timers
