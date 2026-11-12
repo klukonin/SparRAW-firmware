@@ -2356,7 +2356,15 @@ void rx_handle_ppdu_report(void)
             if (g & (1u << 5))
                 sta_set_tx_sector(*sta, sec[0], sec[1], 1);
         } else {
-            *flags = fl & ~1u;
+            fl &= ~1u;
+            /* Инициатор ждёт RSS, а пир (TA — тот же, проверено выше) шлёт нам ISS (Direction 0, 9.5.1): наша ISS до
+             * него не дошла (столкновение в CBAP), его SLS идёт, и по 10.42.6.2 мы — его ответчик: RSS через MBIFS
+             * после конца этой ISS. Признак для txss_init_wait_rss — уступить (SLS_RX_PEER_ISS); по последнему кадру
+             * (CDOWN 0) — уже нет: до начала RSS остаётся MBIFS. */
+            if (!(b0 & 1) && (txrx_state1 & (1u << 5)) && !(mac_rx_rep3() & MAC_RX_REP3_NEIGHBOUR) &&
+                !(mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN))
+                fl |= SLS_RX_PEER_ISS;
+            *flags = fl;
         }
         goto out;
     }

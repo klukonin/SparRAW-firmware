@@ -127,6 +127,9 @@
                                   * входа до выхода из rx_get_required_response | до конца ожидания BAP << 16, a1 = вид (r5) */
 #define STAMP_SIFS_PTS      48   /* rx: SIFS_CNT (от конца приёма, мкс << 8 | такты) в точках пути ответа: a0 = точка (1 — вход в
                                   * rx_flow_handle_frame, 2 — после MAC_MTP_RESP_VALID) | вид << 8, a1 = SIFS_CNT */
+#define STAMP_ISS_END       50   /* txss_resp_wait_iss_end: вход — a0 = r54, a1 = sls_rx.flags | 1 << 31; выход по концу ISS —
+                                  * a0 = r54, a1 = sls_rx.flags | такты от входа << 16; уступка инициатора (BF_FLOW_INIT_PEER_ISS) —
+                                  * a0 = 0xfeed0000 | r54, a1 = sls_rx.flags */
 #define STAMP_CTS_FAST      49   /* rx_fast_cts, после пуска: a0 = такты от входа до конца перехода RX→TX | до запроса MTP << 16,
                                   * a1 = SIFS_CNT на входе (от конца RTS; чтение — +~10 тактов на пути) */
 #define STAMP_TXOP_CONT     36   /* mtp_get_tx_permission (продолжение TXOP / пуск по разрешению): SIFS_CNT перед

@@ -857,6 +857,22 @@ u32 bf_sm_dispatch_by_state(u32 sta)
     uc_mac_cmd(((e->state | (e->flow_status << 4)) & 0xfff) | 0xfcf000);
     switch (e->state) {
     case 3:
+        if (e->flow_status == BF_FLOW_INIT_PEER_ISS) {
+            /* В ожидании RSS принята ISS пира нам (txss_init_wait_rss): своя ISS не дошла, по 10.42.6.2 мы —
+             * ответчик его SLS. Сразу поток ответчика (как bf_abort_unexpected(…, 4) с пути приёма): конец ISS пира
+             * и RSS через MBIFS ловит txss_resp_wait_iss_end; ждать фоновой задачи — пропустить конец ISS. IFS
+             * ответа — MBIFS (txss_init_flow на выходе вернул SIFS; с пути приёма его ставит sls_rx_ssw_frame). */
+            if (mac_ifs_shadow != ifs.mbifs) {
+                mac_ifs_shadow = ifs.mbifs;
+                MMIO32(HW_MAC_IFS_SIFS) = ifs.mbifs | 0x1730000;
+                arc_sync();
+                uc_mac_cmd(0x38000200);
+            }
+            sls_reset_sweep_results();
+            bf_sm_set_sta_state(sta, 4);
+            r = 0;
+            break;
+        }
         r = bf_sm_on_txss_init(sta);
         if (r != 1)
             break;
@@ -917,8 +933,13 @@ void bf_pause_sta_tx(u32 a0, u32 a1)
     u32 saved = arc_lr(ARC_STATUS32);
     arc_flag(saved & ~(1u << 1));
     struct sta_entry *slot = &sta_tab[a1];
-    if (slot->flags & 1u) {
-        u16 *m = &tx_dis_mask[a1];
+    u16 *m = &tx_dis_mask[a1];
+    /* исправлено (vendor 0x92ba54: каждый вызов заново публиковал маски и сбрасывал защёлку r42 б18 backoff_event
+     * командой 0x02 — 0x81 << 18 = б18): обработчик запроса BF зовёт паузу повторно, пока запрос ждёт доступа (каждые
+     * 3–5 мкс), и выигранная отсрочка ISS стиралась — доступ начинался заново (эмулятор 2026-11-12: отсрочка точки 4 раза
+     * подряд до ISS; 802.11-2020 10.23.2.2 — после окончания отсрочки EDCAF передаёт). Пауза по уже стоящей причине —
+     * без действий. */
+    if ((slot->flags & 1u) && !(*m & (1u << (a0 & 0x1f)))) {
         *m |= 1u << (a0 & 0x1f);
         qset_shadow.qset5_mask &= ~slot->qid_mask_q5;
         qset_shadow.qset6_mask &= ~slot->qid_mask_q6;

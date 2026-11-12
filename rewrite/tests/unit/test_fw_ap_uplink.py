@@ -26,7 +26,8 @@ LIVENESS_US = 3000
 RESP_US = 30                         # BlockAck через SIFS (3 мкс) + TXTIME — с запасом
 
 
-def _run(fw_elf, build_dir, uc_fw, drop=None, seed=5):
+def _run(fw_elf, build_dir, uc_fw, drop=None, seed=5, prep=None):
+    """prep(ap, sta, air) — до подключения (сценарии доступа к среде, test_fw_sls_collision)."""
     import fw_scenario as FS
     import machw
     from air import Air
@@ -45,6 +46,8 @@ def _run(fw_elf, build_dir, uc_fw, drop=None, seed=5):
     ap.live()
     s.live()
     air = Air([ap, s])
+    if prep:
+        prep(ap, s, air)
     s.wmi(F.WMI_CONNECT, F.connect_cmd(bssid=ap.mac, ssid=FS.SSID))
     lim = ap.hw.now + 60_000 * 165
     while ap.hw.now < lim and not (FS._connected(s) and FS._connected_ap(ap, s)):

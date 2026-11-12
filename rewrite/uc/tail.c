@@ -2905,6 +2905,16 @@ u32 txss_init_wait_rss(u32 a, u32 b) {
                     bf_store_flow_status(r14, 8);
                     return 0;
                 }
+                if (v & SLS_RX_PEER_ISS) {
+                    UC_STAMP(STAMP_ISS_END, 0xfeed0000u | (mac_evt4() & 0xffff), v);
+                    /* ISS пира нам (rx_handle_ppdu_report): уступить — ответчик (bf_sm_dispatch_by_state). Таймеры
+                     * ожидания RSS — стоп с квитанцией: GP0/GP1 потока ответчика взводятся заново, старый конец
+                     * GP0 закончил бы ожидание SSW-Feedback (txss_resp_wait_fdbk) раньше срока. */
+                    gp_timer_stop(0);
+                    gp_timer_stop(1);
+                    bf_store_flow_status(r14, BF_FLOW_INIT_PEER_ISS);
+                    return 0;
+                }
             } else if (mac_evt4() & MAC_EVT4_GP0_END) {
                 if (r13 != 0)
                     uc_assert((u32)__builtin_return_address(0), 0x102);
@@ -2928,6 +2938,18 @@ u32 txss_init_wait_rss(u32 a, u32 b) {
                 r13 = 1;
                 gp_timer_stop(0);
             }
+            continue;
+        }
+        /* исправлено (vendor: txss_end_ind принимался за конец RSS, чей бы ни был кадр с CDOWN 0). txss_end_ind
+         * без разобранного uc кадра RSS (б1) — конец RSS, только если последний кадр — SSW ответчика: Direction 1
+         * (9.5.1) от пира. ISS пира (Direction 0, столкновение в CBAP) — не RSS: SSW-Feedback по ней 10.42.2.1 и
+         * 10.42.6.2 не допускают (прежде точка слала 9 SSW-Feedback на ISS станции без SSW-Ack). Квитанция — и
+         * ждать дальше (тайм-ауты GP0/GP1). Путь конец RSS → SSW-Feedback через MBIFS (СРОК у txss_init_flow):
+         * здесь проверка — десяток инструкций при запасе в сотни. */
+        if (!(v & (1u << 1)) &&
+            (!(rx_buf_ssw & 1u) || rx_buf_ta[0] != sta_tab[r14].mac[0] || rx_buf_ta[1] != sta_tab[r14].mac[1] ||
+             rx_buf_ta[2] != sta_tab[r14].mac[2])) {
+            uc_mac_cmd(0x49000000 | MAC_EVT4_TXSS_END);
             continue;
         }
         if (v & (1u << 1)) {
@@ -2985,14 +3007,55 @@ u32 txss_resp_wait_fdbk(u32 a) {
 }
 
 
+/* Конец ISS пира без её последнего кадра (CDOWN 0 не принят — сектор не слышен): MAC поднимает txss_end_ind
+ * (r54 б0) раньше — стенд 2026-11-12, метка STAMP_ISS_END: выход по txss_end при последнем принятом SSW с CDOWN 1, RSS
+ * в эфире за 7,8–22,7 мкс до конца ISS (судья: «RSS начат через −… мкс после ISS»). 10.42.6.2: RSS — MBIFS после
+ * завершения ISS; конец ISS — по последнему принятому CDOWN (10.42.2.2.2: CDOWN — число оставшихся передач): ещё
+ * CDOWN × (TXTIME(SSW) + SBIFS) от конца того кадра. Ждём до «конец ISS + MBIFS − задержка пуска MAC» (команда позже
+ * точки IFS — старт через ~91 такт после неё, H-RESPCMD, docs/MAC-STAND.md). Отсчёт — SIFS_CNT (от конца последнего
+ * принятого кадра; Timer1 обнуляет тик L1): поле usec — 8 бит, ожидание до 255 мкс — CDOWN ≤ 15; больше — без ожидания
+ * (прежнее поведение, известное ограничение). */
+#define TXSS_TX_START_LAT_CLK  91u
+static __attribute__((noinline)) void txss_resp_wait_missed_iss_tail(void)
+{
+    u32 cd = ((u32)rx_buf_ssw >> 1) & 0x1ffu;
+    if (cd == 0 || cd > 15)
+        return;
+    u32 code = 0, prev = 0xffffu;
+    /* ~10 тактов на проход: предел — с запасом на 255 мкс счётчика */
+    for (u32 n = 0; n < 8000u; n++) {
+        uc_mac_cmd(0x4d000000);
+        arc_nops(3);
+        u32 sc = mac_timer_sel() & 0xffffu;
+        if (sc == 0)                              /* идёт приём (поздний кадр ISS) — ждать его конца */
+            continue;
+        if (sc < prev) {                          /* отсчёт от нового конца приёма — цель по его CDOWN */
+            cd = ((u32)rx_buf_ssw >> 1) & 0x1ffu;
+            if (cd > 15)
+                return;
+            u32 w = cd * (DMG_TXTIME_SSW_CLK + DMG_SBIFS_CLK) + DMG_MBIFS_CLK - TXSS_TX_START_LAT_CLK;
+            code = SIFS_CNT_CODE(w / DMG_CLK_PER_US, w % DMG_CLK_PER_US);
+        }
+        prev = sc;
+        if (sc >= code)
+            return;
+    }
+}
+
 u32 txss_resp_wait_iss_end(u32 a, u32 rss) {
     /* 6.2 asm 0x93bf1c. rss (r1) — таймаут от rss_wait_get, сквозь в gp_timer_arm. */
     u32 r13 = a;
+    UC_STAMP_T0(STAMP_ISS_END, ie_t0);
+    UC_STAMP(STAMP_ISS_END, mac_evt4(), sls_rx.flags | 1u << 31);
     gp_timer_arm(1, rss, 0, 0);
     for (;;) {
         u32 r54 = mac_evt4();
         u32 e = sls_rx.flags;
         if ((r54 & MAC_EVT4_TXSS_END) || (e & (1u << 1))) {
+            UC_STAMP(STAMP_ISS_END, (r54 & 0xffff) | ((rx_buf_ssw >> 1) & 0x1ff) << 16 | (mac_rx_misc() & MAC_RX_MISC_ZERO_CDOWN ? 1u << 31 : 0),
+                     (e & 0xffff) | (arc_lr(0x100) - ie_t0) << 16);
+            if (!(e & (1u << 1)) && (r54 & MAC_EVT4_TXSS_END))
+                txss_resp_wait_missed_iss_tail();
             txrx_state2 = 0x80000;
             txss_rank_needed = (e >> 1) & 1u;
             if (!(e & (1u << 1)))                   /* bbit1 r1,1 → пропуск */

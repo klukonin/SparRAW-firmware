@@ -845,6 +845,10 @@ struct bf_sta_s {
     u32  done_cb2;                      /* +0x10 второй колбэк завершения (из req_desc->cb2) */
 };
 _Static_assert(sizeof(struct bf_sta_s) == 20, "bf_sta");
+/* flow_status инициатора TXSS: в ожидании RSS принят кадр ISS пира (SLS_RX_PEER_ISS) — свою SLS оставить и стать ответчиком
+ * этой ISS (bf_sm_dispatch_by_state, 802.11-2020 10.42.6.2). Не пересекается с итогами 1..8 (инициатор) и 9..0xb
+ * (ответчик). */
+#define BF_FLOW_INIT_PEER_ISS        0xcu
 /* Глубина очереди запросов BF — раскладка DCCM vendor (0x8020b0, 0x14 Б). Меньше SPARRAW_STA_SLOTS: запрос при полной
  * очереди не ставится (bf_req_enqueue), его повторит триггер BF. */
 #define BF_REQ_FIFO_N 8u
@@ -1085,6 +1089,9 @@ _Static_assert(__builtin_offsetof(struct sls_rx_state, flags) == 0x0, "sls_rx.fl
 _Static_assert(__builtin_offsetof(struct sls_rx_state, brp_lrx) == 0xc, "sls_rx.brp_lrx");
 _Static_assert(__builtin_offsetof(struct sls_rx_state, x12) == 0x12, "sls_rx.x12");
 _Static_assert(__builtin_offsetof(struct sls_rx_state, x14) == 0x14, "sls_rx.x14");
+/* sls_rx.flags б12: инициатор в ожидании RSS принял кадр ISS пира, адресованный нам (rx_handle_ppdu_report) — уступить
+ * роль: ответчик этой ISS (txss_init_wait_rss → bf_sm_dispatch_by_state, 802.11-2020 10.42.6.2). */
+#define SLS_RX_PEER_ISS              (1u << 12)
 
 /* ba_stats (0x802210). Счётчики BlockAck/окон (0x18 Б, 0x802210..0x802227): memset0 + штамп TSF в bf_metrics__reset_and_stamp; потребитель bap_ */
 struct ba_stats_s {
