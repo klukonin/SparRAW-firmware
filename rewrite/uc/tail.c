@@ -3018,6 +3018,11 @@ u32 txss_resp_wait_fdbk(u32 a) {
 #define TXSS_TX_START_LAT_CLK  91u
 static __attribute__((noinline)) void txss_resp_wait_missed_iss_tail(void)
 {
+    /* Только если последний принятый кадр — SSW этой ISS (sls_rx б0, отчёт о SSW): иначе rx_buf_ssw — поле чужого кадра
+     * (данные, Ack…), CDOWN из него — мусор, ожидание до 255 мкс сдвигало ответы DTI (юнит test_air_strict_sp_retransmit:
+     * повтор источника в SP через 232 мкс > 200). */
+    if (!(sls_rx.flags & 1u) || !(mac_rx_rep1() & MAC_RX_REP1_SS) || !(mac_rx_rep2() & MAC_RX_REP2_SSW))
+        return;
     u32 cd = ((u32)rx_buf_ssw >> 1) & 0x1ffu;
     if (cd == 0 || cd > 15)
         return;
@@ -3030,6 +3035,8 @@ static __attribute__((noinline)) void txss_resp_wait_missed_iss_tail(void)
         if (sc == 0)                              /* идёт приём (поздний кадр ISS) — ждать его конца */
             continue;
         if (sc < prev) {                          /* отсчёт от нового конца приёма — цель по его CDOWN */
+            if (!(mac_rx_rep1() & MAC_RX_REP1_SS) || !(mac_rx_rep2() & MAC_RX_REP2_SSW))
+                return;                           /* принят не SSW — ISS уже кончилась */
             cd = ((u32)rx_buf_ssw >> 1) & 0x1ffu;
             if (cd > 15)
                 return;
