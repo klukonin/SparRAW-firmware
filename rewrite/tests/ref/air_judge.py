@@ -779,10 +779,18 @@ def sifs_sum(c):
                 continue
             key = (n, f'{p.kind}→{e.kind}')
             acc[key][side].append(Fr(er.tsft - pr.tsft) - AP.ppdu_time(p.length, p.mcs))
+    def robust_mean(v):
+        # среднее без выбросов (|x − медиана| > 3 мкс: единичные записи с испорченным временем — стенд 2026-11-14,
+        # среднее X1 BlockAck −37 875 мкс из 247 записей); не медиана — метки квантованы по 1 мкс, нужна их доля
+        m = sorted(v)[len(v) // 2]
+        w = [x for x in v if abs(x - m) <= 3]
+        return sum(w) / len(w), len(v) - len(w)
+
     for (n, k), d in sorted(acc.items()):
         if d['X1'] and d['X2']:
-            x1, x2 = sum(d['X1']) / len(d['X1']), sum(d['X2']) / len(d['X2'])
-            out[f'{n}: {k}'] = dict(n1=len(d['X1']), n2=len(d['X2']), X1=round(float(x1), 3), X2=round(float(x2), 3),
+            (x1, o1), (x2, o2) = robust_mean(d['X1']), robust_mean(d['X2'])
+            out[f'{n}: {k}'] = dict(n1=len(d['X1']), n2=len(d['X2']), outliers=o1 + o2,
+                                    X1=round(float(x1), 3), X2=round(float(x2), 3),
                                     sifs_sum=round(float(x1 + x2), 3),
                                     over_limit=round(float(x1 + x2 - 2 * (SIFS + SIFS_TOL)), 3))
     return out
