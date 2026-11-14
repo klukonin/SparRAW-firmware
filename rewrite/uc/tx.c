@@ -380,8 +380,8 @@ void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b)   /* 6.2 asm 0x9
 void tx_send_imm_response(u32 a, u32 b, u32 c)
 {
     UC_PAD(PAD_IMM_RESP);
-    uc_mac_cmd((a << 4) | 0x3e000000);
-    uc_mac_cmd(0x37000020);
+    uc_mac_cmd_nl((a << 4) | 0x3e000000);
+    uc_mac_cmd_nl(0x37000020);
     uc_stats.tx_start += 1;
     u32 r15 = b | (1u << 24);
     u32 r0 = abif_dvs_rf_ctrl_shadow;
@@ -392,14 +392,14 @@ void tx_send_imm_response(u32 a, u32 b, u32 c)
     *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r0;
     direct_tx_program_desc(0x10, c);
     r15 |= (1u << 26) | (1u << 28);
-    uc_mac_cmd(r15);
-    uc_mac_cmd(0x14000007);
+    uc_mac_cmd_nl(r15);
+    uc_mac_cmd_nl(0x14000007);
     mac_program_tx_with_rate(a);
-    uc_mac_cmd(0x2008000);
-    uc_mac_cmd(0x19000001);
+    uc_mac_cmd_nl(0x2008000);
+    uc_mac_cmd_nl(0x19000001);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
-    uc_mac_cmd(0x18001000);
+    uc_mac_cmd_nl(0x18001000);
 }
 
 

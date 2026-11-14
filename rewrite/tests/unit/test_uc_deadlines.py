@@ -397,8 +397,7 @@ _SIFS_HW = 'B = vendor Ack 644 + 12: стенд vendor Ack + 12 тактов →
     'ack', 'ba', 'bar',                                     # быстрый путь ответа (rx_flow_handle_frame, fix/sifs-resp)                                            # BlockAck на A-MPDU / BAR: запас 168 / 167 (с отказом от RD,
                                                             # 2026-11-04: без rx_flow_ctrl_qid_empty и ветки ответа RD)
     'cts',                                                  # быстрый путь DMG CTS (rx_fast_cts, fix/sifs-resp)
-    pytest.param('cfend', marks=risk('медленный путь: ответный CF-End (rx_send_cf_end_response; на 53 инстр. короче '
-                                     'vendor)', 578, 664, VENDOR_PATH_SRC % ('CF-End', 436))),
+    'cfend',                                                # быстрый путь ответного CF-End (rx_fast_cfend)
     'grant_ack'])                                           # медленный путь без запроса MTP: запас 217
 def test_sifs_response_command(uc, kind):
     """Принят кадр с немедленным ответом (Ack 10.3.2.11, BlockAck 10.25.3/10.25.6, DMG CTS 10.3.2.9, CF-End 10.39.8.1,

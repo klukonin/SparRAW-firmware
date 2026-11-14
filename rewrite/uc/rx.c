@@ -296,7 +296,7 @@ u32 rx_send_cf_end_response(void)
     tx_send_imm_response(0, d, 0x10);
     arc_core_wr(33, 0xe4);
     tx_fifo_free -= 0x10;
-    uc_mac_cmd(0x33000063);
+    uc_mac_cmd_nl(0x33000063);
     uc_wait_direct_tx_ready();
     direct_tx_commit();
     txr.imm_resp += 1;
@@ -1084,6 +1084,66 @@ no_resp:
     return rx_fast_resp_tail(ctx, s, r3, 0);
 }
 
+/* Берёт ли CF-End быстрый путь ответного CF-End (rx_fast_cfend) — проверка без вызова (см. rx_fast_resp_ok). */
+static inline __attribute__((always_inline)) u32 rx_fast_cfend_ok(void)
+{
+    u32 r3 = mac_rx_rep3();
+    return (mac_rx_rep2() & MAC_RX_REP2_CF_END) && rx_buf_duration != 0 &&
+           (r3 & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | MAC_RX_REP3_NEIGHBOUR |
+                  MAC_RX_REP3_FCS_OK_PART)) == (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART) &&
+           !(mac_rx_rep1() & (MAC_RX_REP1_SS | MAC_RX_REP1_NOACK_MGMT | MAC_RX_REP1_BEACON | MAC_RX_REP1_QOS_DATA |
+                              MAC_RX_REP1_MGMT)) &&
+           VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0;
+}
+
+/* Учёт быстрого пути ответного CF-End после пуска — вне срока, на размер (ICCM); то, что прежний путь делал в
+ * rx_flow_handle_frame и rx_get_required_response (CF-End нам с Duration ≠ 0 — ответ 8). */
+__attribute__((optimize("Os"), cold))
+static __attribute__((noinline)) u32 rx_fast_cfend_tail(struct tx_ctx_s *ctx, u32 s, u32 r3, u32 d)
+{
+    rx_cf_end_nav_reset(d);                       /* NAV — после ответа, как прежде */
+    uc_mac_cmd(0xeeee0c);
+    rxf.flags &= ~0x10u;
+    if (r3 & MAC_RX_REP3_RX_MCS)
+        sta_tab[s].flags &= ~2u;
+    if (!(rx_mode_flags & 1) && !(rx_mode_flags & 2) && rs_state[s].active == 0 &&
+        sel_nbr.cur_gain_db < sel_nbr.min_gain_db) {
+        sel_nbr.min_gain_db = sel_nbr.cur_gain_db;
+        sel_nbr.min_sta = (u8)s;
+    }
+    rx_last_mcs = MAC_RX_REP3_RX_MCS_OF(r3);
+    ctx->mtp_state = 8;
+    ctx->sta = s;
+    rxf.flags = (rxf.flags & ~2u) | 4;
+    rxf.resp_type = 8;
+    ctx->flags &= ~1u;
+    rx_resp_finish_restore_rx((u32)ctx, 3, 0);
+    uc_mac_cmd(0x14000000);
+    return 1;
+}
+
+/* ХРУПКО (СРОК SIFS): быстрый путь ответного CF-End (802.11-2020 10.39.8.1 — держатель TXOP усекает TXOP CF-End, ответ
+ * CF-End через SIFS; 9.3.1.6 Duration). CF-End — control PHY: конец PPDU uc видит рано (как RTS, стенд 2026-11-11);
+ * прежний путь (поиск станции, учёт, rx_get_required_response, нижний switch) шёл до пуска ~1,2 мкс лишних. Здесь —
+ * переход RX→TX, команды режима Duration (0x15/0x14000007, как rx_get_required_response), пуск прямой передачи
+ * (rx_send_cf_end_response: 0x19 — в tx_send_imm_response, кадр в FIFO — после, MAC держит точку SIFS); учёт после. */
+__attribute__((optimize("O2", "no-inline")))
+static __attribute__((noinline)) u32 rx_fast_cfend(struct tx_ctx_s *ctx)
+{
+    u32 r3 = mac_rx_rep3();
+    u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
+    rxf.sta = s;
+    rx_end_switch_to_tx();
+    uc_mac_cmd_nl(0x15000000);
+    uc_mac_cmd_nl(0x14000007);
+    /* сектор передачи станции — как прежний путь перед нижним switch (0x37000005/0x37000002/0x3f | tx_sel) */
+    uc_mac_cmd_nl(0x37000005);
+    uc_mac_cmd_nl(0x37000002);
+    uc_mac_cmd_nl(sta_tab[s].tx_sel | 0x3f000000);
+    u32 d = rx_send_cf_end_response();
+    return rx_fast_cfend_tail(ctx, s, r3, d);
+}
+
 /* Берёт ли RTS быстрый путь DMG CTS (rx_fast_cts) — проверка без вызова (см. rx_fast_resp_ok). */
 static inline __attribute__((always_inline)) u32 rx_fast_cts_ok(void)
 {
@@ -1233,6 +1293,10 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
         UC_STAMP_T0(STAMP_CTS_FAST, t_call);
         rx_fast_cts(ctx);
         UC_STAMP(STAMP_CTS_FAST, 0xd0000000u | (t_rep - t_in), t_call - t_in);
+        return 0;
+    }
+    if (rx_fast_cfend_ok()) {
+        rx_fast_cfend(ctx);
         return 0;
     }
 #endif
