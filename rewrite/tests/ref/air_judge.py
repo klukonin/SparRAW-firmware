@@ -464,7 +464,8 @@ def r_dur_resp(c):
         m = D.check_duration('ba' if e.kind == 'BlockAck' else 'ack', e.dur,
                              {'elicit_duration': p.dur, 'mcs': e.mcs, 'length': e.length})
         exp = sorted({D.field(Fr(p.dur) - g - AP.ppdu_time(e.length, e.mcs)) for g in (SIFS, SIFS + SIFS_TOL)})
-        meas = D.field(Fr(p.dur) - (e.te - p.te))
+        # промежуток по меткам — только при верном времени обоих (у вызвавшего метка могла быть отброшена: TSF_BAD)
+        meas = D.field(Fr(p.dur) - (e.te - p.te), overflow='clamp') if p.t_ok and e.te >= p.te else None
         if m is None:
             r.ok()
         else:
