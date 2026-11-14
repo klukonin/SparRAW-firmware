@@ -15,7 +15,7 @@ ap_up; sta_up
 [ -n "$PRE_AP_FILE" ] && cat "$PRE_AP_FILE" | $SSH "$AP" "cat > /tmp/$(basename "$PRE_AP_FILE")"
 [ -n "$PRE_AP" ] && echo "PRE_AP: $($SSH "$AP" "$PRE_AP" 2>&1 | tail -2 | tr '\n' ' ')"
 for h in "$AP" "$STA"; do echo "${h##*.} $(ver "$h") до: $($SSH "$h" "$CNT")"; done
-for h in "$AP" "$STA"; do cap_start "$h" 30; done
+for h in "$AP" "$STA"; do cap_start "$h" 30 $CAPMASK; done
 sleep 2
 $SSH "$STA" "timeout 15 iperf3 -c $AP_IP -t 8 2>&1 | grep receiver; timeout 15 iperf3 -c $AP_IP -t 8 -R 2>&1 | grep receiver"
 sleep 15
