@@ -782,7 +782,9 @@ struct bi_ctx_s {
     u8   round;                         /* +0x05 счётчик кругов развёртки */
     u8   fast_done;                     /* +0x06 (наше, у vendor — выравнивание) ответ A-BFT станции уже сделан
                                          * из bti_beacon_track_best_metric (abft_responder_fast); сброс — bi_run_bti_cycle */
-    u8 _pad0[1];
+    u8   bi_start_rx;                   /* +0x07 (наше, у vendor — выравнивание) начало BI уже учтено по маяку из
+                                         * rx_flow (l1_task_dispatch(5)) — bi1_event этого BI не повторяет его;
+                                         * сброс — вход в DTI (bi_sm_on_enter_dti) */
     struct sls_peer_rec rec;            /* +0x08 */
     u32  dti_wake;                      /* +0x20 DTI-аллокация: пир просил бодрствование (событие 29 при снятии) */
     struct aw_win_s aw;                 /* +0x24 */

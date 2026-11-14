@@ -301,10 +301,17 @@ u32 ese_dti_tx_gate(void)
     if (left > lim + ESE_TXOP_TAIL_US)
         return 1;
     FWSH(fwsh_sp_gate, refused) += 1;
-    if (left > ESE_TXOP_TAIL_US + ESE_TXOP_RETRY_US + ESE_TXOP_MIN_US)
+    if (left > ESE_TXOP_TAIL_US + ESE_TXOP_RETRY_US + ESE_TXOP_MIN_US) {
         ese_dti_txop_cap(left - ESE_TXOP_TAIL_US - ESE_TXOP_RETRY_US);
-    else
+        /* исправлено: своё SP — следующий доступ сразу (цикл источника, рычаг 3), новый TXOP уже по урезанному лимиту.
+         * Прежде отказ кончал цикл источника, следующий доступ ждал отсрочку MAC (~90 мкс); урезанный лимит считан от
+         * остатка в момент отказа и с запасом ESE_TXOP_RETRY_US (93 мкс) — доступ позже снова не проходил и урезал
+         * лимит заново: каскад отказов, повтор после потерянного BlockAck через 232 мкс (юнит
+         * test_air_strict_sp_retransmit, 2026-11-14: отказы в 1091817 и 1091910, остаток 1800 при лимите 1784 + 32). */
+        FWSH(fwsh_sp_gate, src_more) = FWSH(fwsh_sp_gate, init_sp);
+    } else {
         ese_dti_close();
+    }
     return 0;
 }
 

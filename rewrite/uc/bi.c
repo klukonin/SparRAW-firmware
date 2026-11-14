@@ -248,6 +248,7 @@ void bi_sm_on_enter_dti(u32 obj)
     bi_win.state = state;
     bi_win.to_dti += 1;
     mac_mon_armed = 1;
+    bi_ctx.bi_start_rx = 0;
     bi_after_enter_dti(&bi_ctx);                /* 6.2: 0x92b85c */
 }
 

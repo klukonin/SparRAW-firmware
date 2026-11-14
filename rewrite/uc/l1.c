@@ -277,14 +277,22 @@ void l1_task_report_link_lost(void)
     uc_send_evt_link_lost(buf);
 }
 
+/* Начало BI: смена слота MAC_MON (публикуется неактивный — прошлого BI) и снимок TSF/счётчика BI в слот. Ровно один
+ * раз за BI: по bi1_event (случай 0) или, если BTI начался раньше разбора bi1_event, по маяку из rx_flow (случай 5). */
+static void l1_bi_start(void)
+{
+    mac_mon_slot_idx = (mac_mon_slot_idx == 0) ? 1 : 0;
+    bi_timing_snapshot();
+}
+
 /* Диспетчер L1-таска (0x934e30) — портировано. */
 void l1_task_dispatch(u32 a, u32 b)
 {
     /* 0x934e30: таблица 0x801ac0 — 0:e4c 1:e80 2:ea0 3:eb8 4:f08 5:f14 6:ea8. */
     switch (a) {
     case 0:
-        mac_mon_slot_idx = (mac_mon_slot_idx == 0) ? 1 : 0;
-        bi_timing_snapshot();
+        if (bi_ctx.bi_start_rx == 0)
+            l1_bi_start();
         uc_sm_handle_event(&bi_sm, 0, b);
         return;
     case 1: {
@@ -311,8 +319,18 @@ void l1_task_dispatch(u32 a, u32 b)
         uc_sm_handle_event(&bi_sm, 4, 0);
         return;
     case 5:
-        if (b == 0)
+        if (b == 0) {
+            /* исправлено: rx_flow DTI принял маяк своей BSS (BTI уже идёт, bi1_event не разобран) — автомат BI
+             * переходит в BTI отсюда, минуя случай 0. vendor здесь не менял слот MAC_MON: под нагрузкой (приём DTI
+             * накрывает TBTT) так проходит каждый BI, маяки копятся в одном слоте, fw получает опубликованный
+             * пустой (detected = 0) и через bcn_thr BI рвёт связь «lost link: no beacons» (стенд 2026-11-13, AP .12 /
+             * STA .11: ~55 BI подряд без смены слота перед разрывом, в каждом BTI маяк принят). */
+            if (bi_ctx.bi_start_rx == 0) {
+                l1_bi_start();
+                bi_ctx.bi_start_rx = 1;
+            }
             uc_sm_handle_event(&bi_sm, 0, 1);
+        }
         return;
     case 6:
         peer_slots_scan_by_masks(a);
