@@ -16,6 +16,12 @@ ap_up; sta_up
 [ -n "$PRE_AP" ] && echo "PRE_AP: $($SSH "$AP" "$PRE_AP" 2>&1 | tail -2 | tr '\n' ' ')"
 for h in "$AP" "$STA"; do echo "${h##*.} $(ver "$h") до: $($SSH "$h" "$CNT")"; done
 for h in "$AP" "$STA"; do cap_start "$h" 30 $CAPMASK; done
+# POSTCAP="<команда>" — на обоих узлах сразу после старта записи (напр. запись регистра PMC через debugfs mem_write);
+# REGDUMP="<адрес> <число слов>" — слова памяти устройства (debugfs mem_addr/mem_val) в $OUT/<tag>_<узел>.regs
+[ -n "$POSTCAP" ] && for h in "$AP" "$STA"; do echo "${h##*.} POSTCAP: $($SSH "$h" "$POSTCAP" 2>&1 | tail -1)"; done
+if [ -n "$REGDUMP" ]; then set -- $REGDUMP
+	for h in "$AP" "$STA"; do $SSH "$h" "D=\$(ls -d /sys/kernel/debug/ieee80211/phy*/wil6210 | head -1); i=0; while [ \$i -lt $2 ]; do printf '0x%x\n' \$(($1 + 4 * i)) > \$D/mem_addr; cat \$D/mem_val; i=\$((i + 1)); done" > "$OUT/${T}_${h##*.}.regs"; done
+fi
 sleep 2
 $SSH "$STA" "timeout 15 iperf3 -c $AP_IP -t 8 2>&1 | grep receiver; timeout 15 iperf3 -c $AP_IP -t 8 -R 2>&1 | grep receiver"
 sleep 15
