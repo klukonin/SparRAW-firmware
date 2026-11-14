@@ -231,9 +231,10 @@ def read_pcap(path, node=None):
         (r.ver, r.src, r.dir, r.flags, r.mcs_rt, r.cid, r.mpdu_len, r.caplen, r.ta_raw, r.ta_cid, r.tsf32, r.info0,
          r.info1, r.status, r.trailer) = struct.unpack_from(VFMT, v, 0)
         r.phy, r.slot, r.sflags = bytes(v[32:56]), v[56], v[57]
-        if r.info0 & 31 > 12:
-            # DMG MCS — 0–12 (табл. 20-14/20-18): иначе info0 испорчен целиком (стенд 2026-11-14: единичные TX-записи
-            # .11 с MCS 13–30 и мусорной длиной у DMG CTS/маяка/CF-End) — как записи без info0
+        if r.info0 and (r.info0 & 31 > 12 or (not r.info0 >> 5 & 1 and r.info0 >> 6 != r.mpdu_len + 4)):
+            # info0 испорчен целиком — как запись без info0: DMG MCS вне 0–12 (табл. 20-14/20-18) или у одиночного MPDU
+            # длина PSDU ≠ MPDU + FCS (стенд 2026-11-14: ~10 из 350 тыс. TX-записей .11 — MCS 13–30, длина 20 у данных
+            # 1534 Б, 35 906 099 у CF-End)
             r.info0 = 0
         r.tsft = tsft if not r.sflags & SF_TSF_BAD else None
         r.raw = bytes(mpdu)
