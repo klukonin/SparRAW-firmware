@@ -149,7 +149,10 @@ class Rec:
 
     @property
     def mcs(self):
-        return self.info0 & 31 if self.info0 else None
+        """DMG MCS 0–12 (табл. 20-14/20-18); вне диапазона — испорченная запись (стенд 2026-11-14: единичные TX-записи
+        .11 с MCS 13–30 у DMG CTS/маяка/CF-End) — MCS неизвестен."""
+        m = self.info0 & 31 if self.info0 else None
+        return m if m is not None and m <= 12 else None
 
     @property
     def agg(self):
