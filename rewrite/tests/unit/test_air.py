@@ -273,13 +273,10 @@ def test_live_data_ap_to_sta(live_data):
     assert not [c for c in sta.hw.collisions + ap.hw.collisions if c[0] >= r['t1']], (sta.hw.collisions, ap.hw.collisions)
 
 
-@pytest.mark.xfail(reason='ответ uc на кадр SC и продолжение TXOP в модели позже SIFS (Ack ~6,5 мкс, продолжение ~5,6 мкс). '
-                          'Стенд 2026-10-30 (docs/MAC-STAND.md): команда BlockAck при SIFS_CNT до 1074, продолжение TXOP '
-                          'после BlockAck — 840–990 тактов, без ошибок; захват PMC 2026-11-04: на железе так же поздно '
-                          '(DMG CTS 4,9 мкс, BlockAck 5,5–6,0 — ответ идёт от команды uc, H-RESPCMD)', strict=False)
 def test_live_data_sifs(live_data):
     """802.11-2020 10.3.2.3.3, 10.3.2.11, 10.23.2.8: Ack — через SIFS после кадра данных, следующий кадр TXOP — через
-    SIFS после Ack (допуск DMG +0,49 мкс; старт MAC — +0,55 мкс, H-ORIGIN)."""
+    SIFS после Ack (допуск DMG +0,49 мкс; старт MAC — +0,55 мкс, H-ORIGIN). Прежде xfail (модель: Ack ~6,5, продолжение
+    ~5,6 мкс); проходит с ранним Ack и продолжением TXOP без перехода RX→TX (2026-11-16) — теперь сторож регресса."""
     log = live_data['log']
     gaps = []
     for i in live_data['data']:

@@ -1149,10 +1149,12 @@ def r_holder_gap(c):
     r = Rule('holder_gap', '10.23.2.8', 'продолжение TXOP держателем: следующий кадр — через SIFS после конца '
              'предыдущего обмена (после сбоя — PIFS); не раньше SIFS')
     gaps = defaultdict(list)
+    cf = defaultdict(list)
     for holder, seq in _txops(c):
         for a, b in zip(seq, seq[1:]):
             if b.src != holder or b.kind == 'RTS' or b.kind in BF_KINDS or a.kind in BF_KINDS:
                 continue                  # SLS/BRP — правила sls, brp
+            _holder_cf_sum(c, a, b, cf)
             p = c.prev.get(b.i)
             if p is None or p is not a and p.t > a.t:
                 continue
@@ -1181,6 +1183,7 @@ def r_holder_gap(c):
             else:
                 r.bad(b, f'{key}: {float(g):.2f} мкс — между SIFS + допуск и PIFS')
     r.info['gaps_us'] = {k: stat(v) for k, v in sorted(gaps.items(), key=lambda x: -len(x[1]))[:10]}
+    r.info['calibration_free_sum'] = {k: _cf_stat(v) for k, v in sorted(cf.items())}
     r.verdict_note = ('Промежуток «свой BA (MCS 8, RD) → CF-End» ≈ 10.6 мкс: ни SIFS, ни PIFS-восстановление '
                       '(сбоя нет). '
                       'Вердикт model: 10.23.2.10 не задаёт промежуток перед CF-End явно, правило SIFS — из 10.23.2.8 '
@@ -1190,6 +1193,38 @@ def r_holder_gap(c):
 
 
 BF_KINDS = ('SSW', 'SSW-Feedback', 'SSW-Ack', 'BRP')
+
+
+def _rx_tsf(c, e, n):
+    rr = next((c.recs[x][y] for x, y in e.recs if x == n), None)
+    return None if rr is None or rr.tx or rr.tsft is None else rr.tsft
+
+
+def _holder_cf_sum(c, a, b, out):
+    """Сумма без калибровки для продолжения TXOP: цепочка q (кадр держателя) → a (ответ пира N) → b (следующий кадр
+    держателя), метки приёма одного узла N: rx_N(b) − rx_N(q) − TXTIME(q) − TXTIME(a) = SIFS ответа N + SIFS
+    продолжения держателя (смещения точек меток TX не входят; RX — сокращаются при q и b одного класса модуляции).
+    Межузловой промежуток gaps_us зависит от калибровки и класса PHY кадров (стенд 2026-11-15: DMG CTS → A-MPDU в нём
+    на 1,4 мкс меньше, BlockAck → A-MPDU на 1,4 больше, чем по событиям PMC)."""
+    if a.src == b.src:
+        return
+    q = c.prev.get(a.i)
+    if q is None or q.src != b.src or not is_response_pair(q, a) or mode(q) != mode(b):
+        return
+    n = _who(c, a.src)
+    tq, tb = _rx_tsf(c, q, n), _rx_tsf(c, b, n)
+    if tq is None or tb is None or tb - tq > 1000:
+        return
+    out[f'{n} отвечает, {_who(c, b.src)} продолжает: {q.kind}→{a.kind}→{b.kind}'].append(
+        Fr(tb - tq) - AP.ppdu_time(q.length, q.mcs) - AP.ppdu_time(a.length, a.mcs))
+
+
+def _cf_stat(v):
+    m = sorted(v)[len(v) // 2]
+    w = [x for x in v if abs(x - m) <= 3]           # без единичных записей с испорченным временем (как sifs_sum)
+    x = sum(w) / len(w)
+    return dict(n=len(v), outliers=len(v) - len(w), sifs_sum=round(float(x), 3),
+                over_limit=round(float(x - 2 * (SIFS + SIFS_TOL)), 3))
 
 
 def _elicits(e):

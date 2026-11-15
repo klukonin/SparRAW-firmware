@@ -1868,9 +1868,13 @@ class HW:
         p = self.tx_pending
         p['dur_field'] = self._dur_field(p)
         if self.on_tx is not None:
+            # rdg_force — пир, дающий RD всегда: RDG в A-MPDU с начала кадра, не только по пуску 0x18 до начала (данные
+            # после DMG CTS начинаются в точке SIFS раньше, чем uc в эмуляции доходит до 0x18 — test_live_rd_declined)
+            rdg = p.get('rdg', False) or bool(self.rd_supp and self.rdg_force and isinstance(p.get('qframe'), list) and
+                                              not p.get('rd_resp'))
             p['rec'] = dict(start=p['start'], dur=p['dur'], what=p['what'], dur_us=p['dur_field'], fifo=p.get('fifo'),
                             mpdu_len=p.get('mpdu_len'), ssw=getattr(self, 'ssw_raw', 0), bic=self.bic_bytes(),
-                            qframe=p.get('qframe'), trn=p.get('trn', 0), mcs=p.get('mcs', 0), rdg=p.get('rdg', False),
+                            qframe=p.get('qframe'), trn=p.get('trn', 0), mcs=p.get('mcs', 0), rdg=rdg,
                             rd_resp=p.get('rd_resp', False))
             self.on_tx(p['rec'])
 

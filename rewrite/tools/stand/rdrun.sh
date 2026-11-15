@@ -6,8 +6,8 @@
 # разбор, вызывается с двумя pcap (точки и станции).
 . "$(dirname "$0")/stand_lib.sh"
 F=${1:?образ .fw}; T=${2:?метка}
-BUSY_OFF=${BUSY_OFF:-0x10c2}; NOEVT_OFF=${NOEVT_OFF:-0x574}
-CNT="D=\$(ls -d /sys/kernel/debug/ieee80211/phy*/wil6210 | head -1); echo \"busy_race=\$(dd if=\$D/blob_uc_data bs=1 skip=\$(($BUSY_OFF)) count=2 2>/dev/null | hexdump -e '1/2 \"%u\"') noevt=\$(dd if=\$D/blob_uc_data bs=1 skip=\$(($NOEVT_OFF)) count=4 2>/dev/null | hexdump -e '1/4 \"%u\"')\""
+BUSY_OFF=${BUSY_OFF:-0x10c2}; NOEVT_OFF=${NOEVT_OFF:-0x574}; DEFER_OFF=${DEFER_OFF:-0x1100}   # mac_mon_report.rx_defer_late
+CNT="D=\$(ls -d /sys/kernel/debug/ieee80211/phy*/wil6210 | head -1); echo \"busy_race=\$(dd if=\$D/blob_uc_data bs=1 skip=\$(($BUSY_OFF)) count=2 2>/dev/null | hexdump -e '1/2 \"%u\"') noevt=\$(dd if=\$D/blob_uc_data bs=1 skip=\$(($NOEVT_OFF)) count=4 2>/dev/null | hexdump -e '1/4 \"%u\"') defer_late=\$(dd if=\$D/blob_uc_data bs=1 skip=\$(($DEFER_OFF)) count=4 2>/dev/null | hexdump -e '1/4 \"%u\"')\""
 boot_pair "$F"
 ap_up; sta_up
 # PRE_AP="<команда>" — на точке после подъёма пары и до записи (напр. «sh /tmp/tdma_ctl.sh strict 1»: настройка

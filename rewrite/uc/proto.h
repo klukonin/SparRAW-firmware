@@ -600,6 +600,8 @@ u32 rx_program_mac_and_wait(struct tx_ctx_s *a);                /* rx.c */
 void rx_resp_finish_restore_rx(u32 a, u32 b, u32 c);            /* rx.c */
 void rx_send_grant_ack(void);                                     /* rx.c */
 void rx_end_switch_to_tx(void);                                /* rx.c */
+void rx_txop_deferred(void);                                   /* rx.c */
+void rx_txop_defer_late(void);                                 /* rx.c */
 void rx_update_nav_from_frame(u32 a);                           /* rx.c */
 u32 rs_next_enabled_mcs(u32 a, u32 b);                    /* rate_search.c */
 u32 rs_prev_enabled_mcs(u32 a, u32 b);                    /* rate_search.c */

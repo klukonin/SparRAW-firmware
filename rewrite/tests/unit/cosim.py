@@ -12,6 +12,7 @@
 приём данных (host_rx); окно дескрипторов очередей MAC для fw — H-QDESC.
 Наборы RF (fwsh_sets) у эмулятора fw нулевые — board-файл не загружается; RF_SETS_STAND — значения со стенда
 (blob_fw_peri, 2026-10-29: один набор, 64 TX-сектора, маска RF 1)."""
+import weakref
 import fwflows as F
 from machw import HW
 
@@ -53,7 +54,10 @@ def data_frame(sa, da, bssid, to_ds, seq, payload, ethertype=0x0800, tid=0):
 
 
 class CoSim:
+    instances = weakref.WeakSet()     # узлы эмуляции — для общих проверок после теста (conftest: сторож порядка uc)
+
     def __init__(self, fw, uc, boot_steps=20_000, cmd_steps=200_000, first_tbtt_us=None):
+        CoSim.instances.add(self)
         self.fw, self.uc, self.cmd_steps = fw, uc, cmd_steps
         self._addr_seen = {}
         for i, b in enumerate(RF_SETS_STAND):

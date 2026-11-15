@@ -26,6 +26,7 @@
 #define PAD_SSWFB_ABFT    8   /* tail: direct_tx_ssw_feedback (SSW-Feedback в A-BFT) */
 #define PAD_D10_WRITE     9   /* rx: перед записью 0x886d10 в rx_flow_step */
 #define PAD_ABFT_SIFSCHK 10   /* bti: перед проверкой SIFS_CNT в abft_ssw_go */
+#define PAD_EARLY_REQ    11   /* rx: rx_fast_resp_early — после отчёта, перед запросом MTP (запас SIFS BlockAck) */
 
 /* Номера меток UC_STAMP (бит в UC_STAMP_MASK). */
 #define STAMP_CCA_DET        0   /* l1: вход по busy_event (~каждый 8-й) — опрос PHY_SIGNALS и r42 до rx_frame_event (≤ 15 мкс):
@@ -171,7 +172,9 @@
  * метка до такта 165 МГц. Точки: 0x00 sfd_sync, 0x01 конец PPDU, 0x02 вход rx_flow_handle_frame, 0x03 отчёт о PPDU,
  * 0x04 rx_fast_resp, 0x08|вид запрос MTP, 0x06|вид MTP готов, 0x07|вид после 0x19000001; держатель TXOP: 0x10 вход
  * rx_flow_step, 0x11 отчёт, 0x12 после rx_match_expected_response, 0x13 запрос MTP rx_txop_continue, 0x14 MTP готов,
- * 0x15 перед 0x19000001 (mtp_get_tx_permission), 0x16 разрешение MTP. Только при -DUC_EVM_MARKS. */
+ * 0x15 перед 0x19000001 (mtp_get_tx_permission), 0x16 разрешение MTP; rx_flow_run: 0x18 кадр принят, 0x19 после
+ * rx_mode_configure (txrx_state2 б2); rx_flow_step: 0x1a после rx_end_switch_to_tx, 0x1b перед
+ * rx_match_expected_response. Только при -DUC_EVM_MARKS. */
 #ifdef UC_EVM_MARKS
 #define UC_EVM(n) uc_mac_cmd_nl(0x80e50000u | (u32)(n))
 #else

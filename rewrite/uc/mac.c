@@ -591,7 +591,6 @@ __attribute__((noinline)) u32 mac_switch_rx_to_tx_again(u32 a)
 UC_HOT u32 mac_switch_rx_to_tx_wait_brp(u32 ra)
 {
     u32 g;
-    mac_rx_to_tx_waited_brp = 1;
     for (;;) {
         u32 r2 = MAC_EE2_PHY_STATE_OF(mac_evt_eng2());
         if (r2 < 6 || r2 >= 0xe)
@@ -633,7 +632,8 @@ u32 mac_switch_rx_to_tx(u32 a)
     /* 6.2 asm 0x92a754. Возврат 1 — переход из состояния PHY < 6, иначе 0. */
     (void)a;
     u32 g;
-    /* mac_rx_to_tx_waited_brp (ставит mac_switch_rx_to_tx_wait_brp) никто не читает — обнуление здесь (vendor) снято
+    /* mac_rx_to_tx_waited_brp vendor (ставила mac_switch_rx_to_tx_wait_brp) никто не читал — снята, слово 0x8004a0 —
+     * rx_txop_defer; обнуление здесь (vendor) снято
      * с пути ответа через SIFS */
     g = mac_sel_shadow & ~MAC_SEL_FIELD;
     UC_ST_ABS(mac_sel_shadow, g | MAC_SEL_PHY_SIGNALS);   /* ld/st по абсолютному адресу — без mov limm базы */

@@ -127,3 +127,30 @@ def uc_factory(build_dir, uc_fw):
     """Фабрика независимых эмуляторов uc."""
     import ucemu
     return lambda: ucemu.UC(os.path.join(build_dir, 'uc.elf'), uc_fw)
+
+
+UC_DEFER_LATE_MARK = 0x80e500ff       # uc/rx.c rx_txop_defer_late: отложенная работа держателя TXOP не до приёма
+
+
+@pytest.fixture(autouse=True)
+def uc_order_guard():
+    """Сторож порядка uc во всех тестах эмуляции: работа держателя TXOP, отложенная за пуск (rx_txop_deferred: буфер
+    приёма 0x32), должна быть сделана до следующего приёма — иначе uc ставит метку 0x80e500ff (rx_txop_defer_late) и
+    доделывает её на входе rx_flow_run. Метка в журнале команд любого узла — ошибка порядка (2026-11-15: запрос итога с
+    приёмом ответного CF-End, test_fw_sls_collision ловил только косвенно)."""
+    seen = {id(n): len(getattr(n, 'hw', None).cmd_log) if getattr(n, 'hw', None) else 0 for n in list(_cosim_live())}
+    yield
+    bad = []
+    for n in list(_cosim_live()):
+        hw = getattr(n, 'hw', None)
+        if hw is None:
+            continue
+        for t, v in hw.cmd_log[seen.get(id(n), 0):]:
+            if v == UC_DEFER_LATE_MARK:
+                bad.append(t)
+    assert not bad, 'uc: работа держателя TXOP не сделана до приёма (rx_txop_defer_late) на тактах %s' % bad[:8]
+
+
+def _cosim_live():
+    m = sys.modules.get('cosim')
+    return m.CoSim.instances if m is not None else ()

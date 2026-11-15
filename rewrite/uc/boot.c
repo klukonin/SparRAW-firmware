@@ -49,6 +49,7 @@ void uc_main(void)
      * за 0x857828 не трогает — флаги «своё SP» (конец TXOP без CF-End) и урезанный лимит TXOP не должны быть мусором */
     memset0_words_uc((void *)&fwsh_sp_gate, sizeof(fwsh_sp_gate));
     g_800428 = 0;
+    rx_txop_defer = 0;                            /* без начального значения в образе DCCM (uc/rx.c rx_txop_deferred) */
     boot_uc_init_structs();
     boot_uc_init_and_run();
 }

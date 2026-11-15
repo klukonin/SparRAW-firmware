@@ -125,7 +125,9 @@ struct mac_mon_report_s {
     u32  fs_evt14_cnt;              /* +0x70 +0x70 (fixed scheduling, MAC-MON.md): ++ когда после mac_select_all_sectors_and_wait пришл */
     u32  fs_no_slot_cnt;            /* +0x74 +0x74 (fixed scheduling): ++ при sp == 0x1f — нет слота (tx.c 703, tail.c 2252/2296) */
     u32  bi2_events;                /* +0x78 +0x78 события BI2: bti.c 863 ++[0x801030+0xcc] */
-    u32  aw_tbtt_state;             /* +0x7c всегда 0: писал aw_tbtt__count_intervals (расписание PS) — PS вырезан; fw не читает */
+    u32  rx_defer_late;             /* +0x7c SparRAW: сторож rx_flow_run — работа держателя TXOP (rx_txop_deferred: буфер приёма
+                                       0x32, sel_nbr) не выполнена до следующего приёма, выполнена там (uc/rx.c). Прежде —
+                                       aw_tbtt_state (расписание PS, вырезано; fw не читал) */
 };
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, size) == 0x0, "mac_mon_report.size");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, bti) == 0x4, "mac_mon_report.bti");
@@ -160,7 +162,7 @@ _Static_assert(__builtin_offsetof(struct mac_mon_report_s, rx_off_duration) == 0
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, fs_evt14_cnt) == 0x70, "mac_mon_report.fs_evt14_cnt");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, fs_no_slot_cnt) == 0x74, "mac_mon_report.fs_no_slot_cnt");
 _Static_assert(__builtin_offsetof(struct mac_mon_report_s, bi2_events) == 0x78, "mac_mon_report.bi2_events");
-_Static_assert(__builtin_offsetof(struct mac_mon_report_s, aw_tbtt_state) == 0x7c, "mac_mon_report.aw_tbtt_state");
+_Static_assert(__builtin_offsetof(struct mac_mon_report_s, rx_defer_late) == 0x7c, "mac_mon_report.rx_defer_late");
 _Static_assert(sizeof(struct mac_mon_report_s) == 0x80, "mac_mon_report");
 
 /* ---------------- общий блок 0x857000 ---------------- */
