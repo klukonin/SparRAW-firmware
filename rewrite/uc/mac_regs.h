@@ -31,6 +31,7 @@
 /* r36 PPDU_REPORT_1_R36 */
 #define MAC_RX_REP1_QOS_DATA      (1u << 1)     /* qos_data_detected: QoS Data */
 #define MAC_RX_REP1_MGMT          (1u << 2)     /* mgmt_detected: кадр управления */
+#define MAC_RX_REP1_RSV           (1u << 3)     /* reservation_detected: до отчёта о PPDU — часто единственный бит r36 */
 #define MAC_RX_REP1_SS            (1u << 6)     /* ss_detected: принят SSW (развёртка секторов) */
 #define MAC_RX_REP1_BEACON        (1u << 7)     /* beacon_detected: принят маяк */
 #define MAC_RX_REP1_IMM_ACK       (1u << 8)     /* imm_ack: ожидаемый ACK пришёл */

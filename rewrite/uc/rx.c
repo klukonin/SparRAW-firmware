@@ -1094,61 +1094,113 @@ no_resp:
     return rx_fast_resp_tail(ctx, s, r3, 0);
 }
 
+/* Предварительный отчёт для раннего пути (rx_fast_resp_early): как rx_fast_resp_ok, но r36/r38 могут быть ещё не
+ * заполнены. Стенд 2026-11-15 (метки UC_EVM с битами отчёта на входе): у ~40 % ответов BlockAck к входу в r36 только
+ * б3 reservation_detected, в r38 — ADDR2_VALID и FCS_OK_PART без MPDU_AGG; QoS Data и A-MPDU — вместе с отчётом. Тогда
+ * кадр предсказывается как QoS Data в A-MPDU (ответ BlockAck), а сверка с окончательным отчётом (QoS, A-MPDU, станция,
+ * политика) решает: не сошлось — ничего не выдано, разбор прежним путём. Тип известен (иные биты r36) — только QoS
+ * Data. */
+static inline __attribute__((always_inline)) u32 rx_fast_resp_pre_ok(u32 r1, u32 r3)
+{
+    if (r1 & MAC_RX_REP1_QOS_DATA) {
+        if ((r1 & (MAC_RX_REP1_QOS_DATA | MAC_RX_REP1_SS | MAC_RX_REP1_BEACON | MAC_RX_REP1_BACK |
+                   MAC_RX_REP1_NOACK_MGMT | MAC_RX_REP1_MGMT)) != MAC_RX_REP1_QOS_DATA)
+            return 0;
+        if (!(r3 & MAC_RX_REP3_MPDU_AGG) && !(r1 & MAC_RX_REP1_BAR) && MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8)
+            return 0;
+    } else if (r1 & ~MAC_RX_REP1_RSV) {
+        return 0;
+    }
+    if ((r3 & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | MAC_RX_REP3_NEIGHBOUR |
+               MAC_RX_REP3_FCS_OK_PART)) != (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART) ||
+        MAC_RX_REP3_ACK_POLICY_OF(r3) != 0)
+        return 0;
+    u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
+    return VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0 && !(rx_mode_flags & 1) &&
+           !(uc_role_ap != 0 && !(maint_sta_mask & (1u << s)) && (maint_sta_mask_prev & (1u << s)));
+}
+
 /* Поля отчёта r37/r39, по которым rx_fast_resp_ok и rx_fast_resp выбирают ответ и его параметры: ранний путь сверяет
  * их в окончательном отчёте с предварительными. */
 #define RX_EARLY_REP1_M (MAC_RX_REP1_QOS_DATA | MAC_RX_REP1_MGMT | MAC_RX_REP1_SS | MAC_RX_REP1_BEACON | MAC_RX_REP1_BACK | \
-                         MAC_RX_REP1_BAR | MAC_RX_REP1_NOACK_MGMT | (1u << 17) | (0x1fu << 19))
+                         MAC_RX_REP1_BAR | MAC_RX_REP1_NOACK_MGMT | (1u << 17))   /* qid — из окончательного */
 #define RX_EARLY_REP3_M ((7u << 8) | MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | \
-                         MAC_RX_REP3_NEIGHBOUR | MAC_RX_REP3_FCS_OK_PART | MAC_RX_REP3_ACK_POLICY | MAC_RX_REP3_RX_MCS | \
-                         MAC_RX_REP3_MPDU_AGG)
+                         MAC_RX_REP3_NEIGHBOUR | MAC_RX_REP3_FCS_OK_PART | MAC_RX_REP3_ACK_POLICY | MAC_RX_REP3_MPDU_AGG)
+/* MCS принятого кадра (r38 [24:20]) в сверку не входит: до отчёта он 0 (стенд 2026-11-15, метки UC_EVM с расходящимися
+ * битами: у 2516 из 2546 несошедшихся предсказаний — только MCS 0 → 8); скорость ответа — по окончательному. */
 
-/* ХРУПКО (СРОК SIFS): ранний путь Ack/BlockAck — то же, что rx_fast_resp, но всё, что не ждёт окончательного отчёта о
- * PPDU, — до него. Стенд 2026-11-15 (метки UC_EVM в записях событий PMC, время от конца приёма 0x1d): uc видит конец
- * через 0,10 мкс, входит в rx_flow_handle_frame через 0,57, а отчёт (r42 б16) у PPDU с MPDU длиннее ~200 Б приходит
- * только через 1,9 мкс (у коротких — 0,73; у RTS — 0,79). От отчёта до запроса MTP прежний путь шёл 0,85 мкс (проверки,
- * пролог, скорость, команды сектора, mtp_service_dispatch), запрос → готовность 0,41, готовность → 0x19 0,18, 0x19 →
- * начало передачи 0,29: BlockAck через 3,64 мкс от 0x1d при нижней границе MAC 2,945 (DMG CTS, CF-End) — сумма SIFS
- * 7,53 мкс, нарушение 10.3.2.3.3 (норма ≤ 6,98). Здесь по предварительному отчёту (тот же кадр: TA, вид, политика,
- * MCS известны по заголовку) до отчёта считаются станция, вид ответа, скорость, слова запроса MTP (0x16/0x17, как
- * mtp_service_dispatch), сектор; после отчёта — переключение буфера, сверка полей RX_EARLY_REP*_M окончательного
- * отчёта с предварительными и сразу RF «передача», сектор, запрос MTP. Решение об ответе — только по окончательному
- * отчёту: поля разошлись — возврат 2 (ничего не выдано, буфер переключён), разбор прежним путём по окончательному.
- * Возврат 1 — кадр разобран (как rx_fast_resp). */
-__attribute__((optimize("O2", "no-inline")))
-static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx)
+/* Переключение буфера приёма (0x32) раннего пути — после пуска ответа или перед отказом: до запроса MTP оно стоило
+ * ~12 тактов (с записью в журнал команд), а читает буфер только учёт после пуска. */
+static inline __attribute__((always_inline)) void rx_early_buf_toggle(void)
 {
-    u32 r1 = mac_rx_rep1(), r3 = mac_rx_rep3();   /* предварительный отчёт, проверен rx_fast_resp_ok */
-    UC_EVM(0x0a);
-    u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
-    u32 agg = (r3 & MAC_RX_REP3_MPDU_AGG) || (r1 & MAC_RX_REP1_BAR);
-    u32 kind = agg ? 1 : 0, r5 = agg ? 2 : 1;
-    u32 qnull = !agg && (r1 & (1u << 17));
-    u32 qid = MAC_RX_REP1_DATA_QID_OF(r1);
-    u32 sel = sta_tab[s].tx_sel | 0x3f000000;
-    /* слова запроса MTP — как mtp_service_dispatch(kind, s, qid, rx_resp_rate(MCS)) для вида 0/1 */
-    u32 w17 = qid << 16;
-    if ((txrx_state1 & 2u) && rs_state[s].active != 0)
-        w17 |= ((u32)rs_sta_mcs_try(s) << 8) | 3;
-    else
-        w17 |= rx_resp_rate(MAC_RX_REP3_RX_MCS_OF(r3));
-    w17 |= 0x17000000;
-    u32 w16 = (kind << 8) | 0x1f0022 | 0x16000000;
-    while (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
-        ;
-    UC_EVM(0x03);
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
         rx_buf_toggle_cnt += 1;
     }
-    if (((mac_rx_rep1() ^ r1) & RX_EARLY_REP1_M) || ((mac_rx_rep3() ^ r3) & RX_EARLY_REP3_M) ||
+}
+
+/* ХРУПКО (СРОК SIFS): ранний путь Ack/BlockAck — то же, что rx_fast_resp, но всё, что не ждёт окончательного отчёта о
+ * PPDU и не выдаёт команд, — до него. Стенд 2026-11-15 (метки UC_EVM в записях событий PMC, время от конца приёма
+ * 0x1d): uc видит конец через 0,10 мкс, входит в rx_flow_handle_frame через 0,57, а отчёт (r42 б16) у PPDU с MPDU
+ * длиннее ~200 Б приходит только через 1,9 мкс (у коротких — 0,73; у RTS — 0,79). От отчёта до запроса MTP прежний
+ * путь шёл 0,85 мкс (проверки, пролог, скорость, команды сектора, mtp_service_dispatch); запрос → начало передачи у
+ * MAC ~0,9 мкс на любом пути. es1: BlockAck через 3,64 мкс от 0x1d при нижней границе MAC 2,945 (DMG CTS, CF-End) —
+ * сумма SIFS 7,53–7,56 мкс, нарушение 10.3.2.3.3 (норма ≤ 6,98).
+ * Здесь по предварительному отчёту (тот же кадр: TA, политика известны по заголовку; тип в r36 может быть ещё не
+ * известен — тогда QoS Data в A-MPDU, см. rx_fast_resp_pre_ok) до отчёта считаются станция, вид ответа, скорость
+ * (MCS прошлого кадра), слова запроса MTP (0x16/0x17, как mtp_service_dispatch), сектор; после отчёта — сверка полей
+ * RX_EARLY_REP*_M окончательного отчёта с предварительными, qid, MCS (пересчёт скорости только при расхождении),
+ * команды сектора и запрос MTP. Решение об ответе — только по окончательному отчёту: поля разошлись — возврат 2
+ * (ничего не выдано, буфер переключён), разбор прежним путём по окончательному. Возврат 1 — кадр разобран.
+ * Чего здесь нет и почему (стенд 2026-11-15, чередование захватов, судья эфира, сумма SIFS BlockAck):
+ *  - RF «передача» до запроса MTP у A-MPDU и QoS Null — её пишет rx_frame_tx_resp_after_req после 0x37000020; без
+ *    ранней записи 7,02–7,05 → 6,87–6,90 мкс (норма), FWERR 0;
+ *  - переключение буфера приёма до запроса — после пуска (rx_early_buf_toggle), с пересчётом скорости только при
+ *    расхождении MCS: 7,09–7,16 → 7,02–7,05;
+ *  - RF «передача» и команды сектора до отчёта — uc_assert 0x26 (поздняя команда ответа) при ассоциации на обоих узлах;
+ *  - опрос r36/r38 до отчёта — одиночные MPDU позже на 0,1–0,35 мкс, A-MPDU не раньше.
+ * Итог: от отчёта до запроса 0,85 → 0,39 мкс, ранний путь — у всех ответов BlockAck (прежде ~40 % отсекала проверка
+ * предварительного отчёта); прибытие BlockAck у запросчика (его 0x35 → 0x13 BlockAck, без калибровки) на A-MPDU
+ * 7,96 → 7,58 мкс, на одиночных MPDU без изменений; сумма SIFS BlockAck 7,55 → 6,87–6,90 мкс. */
+__attribute__((optimize("O2", "no-inline")))
+static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u32 r1, u32 r3)
+{
+    /* r1, r3 — предварительный отчёт, проверен rx_fast_resp_pre_ok; тип в r36 ещё не известен — ожидается QoS Data в
+     * A-MPDU (сверка — по окончательному) */
+    UC_EVM(0x0a);
+    if (!(r1 & MAC_RX_REP1_QOS_DATA)) {
+        r1 = MAC_RX_REP1_QOS_DATA;
+        r3 |= MAC_RX_REP3_MPDU_AGG;
+    }
+    u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
+    u32 agg = (r3 & MAC_RX_REP3_MPDU_AGG) || (r1 & MAC_RX_REP1_BAR);
+    u32 kind = agg ? 1 : 0, r5 = agg ? 2 : 1;
+    u32 qnull = !agg && (r1 & (1u << 17));
+    u32 sel = sta_tab[s].tx_sel | 0x3f000000;
+    /* слова запроса MTP — как mtp_service_dispatch(kind, s, qid, rx_resp_rate(MCS)) для вида 0/1; qid и MCS принятого
+     * (rx_resp_rate) — после отчёта */
+    u32 w17 = 0x17000000, rs = (txrx_state1 & 2u) && rs_state[s].active != 0, pm = rx_last_mcs;
+    if (rs)
+        w17 |= ((u32)rs_sta_mcs_try(s) << 8) | 3;
+    else
+        w17 |= rx_resp_rate(pm);                  /* MCS — как у прошлого кадра; после отчёта — сверка */
+    u32 w16 = (kind << 8) | 0x1f0022 | 0x16000000;
+    while (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
+        ;
+    UC_EVM(0x03);
+    u32 f1 = mac_rx_rep1(), f3 = mac_rx_rep3();
+    if (((f1 ^ r1) & RX_EARLY_REP1_M) || ((f3 ^ r3) & RX_EARLY_REP3_M) ||
         (!agg && MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8)) {
         UC_EVM(0x09);
+        rx_early_buf_toggle();
         return 2;
     }
+    r3 = f3;
+    u32 qid = MAC_RX_REP1_DATA_QID_OF(f1);
+    w17 |= qid << 16;
+    if (!rs && MAC_RX_REP3_RX_MCS_OF(f3) != pm)
+        w17 = (w17 & ~0x1f03u) | rx_resp_rate(MAC_RX_REP3_RX_MCS_OF(f3));
     if (agg || qnull) {
-        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_tx << 24);
-        abif_dvs_rf_ctrl_shadow = v;
-        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
         if (qnull)
             rx_bap_rx_up = 1;
     } else {
@@ -1177,10 +1229,12 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx)
     arc_nops(3);
     ctx->resp_ctx8 = qid;
     rx_frame_tx_resp_after_req(kind, ctx, s, r5, 1);
+    rx_early_buf_toggle();
     return rx_fast_resp_tail(ctx, s, r3, r5 | qnull << 8);
 tmo:
     rx_bap_rx_timeout();
 no_resp:
+    rx_early_buf_toggle();
     return rx_fast_resp_tail(ctx, s, r3, 0);
 }
 
@@ -1379,10 +1433,13 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
 #endif
     u32 early = 0;
 #ifndef UC_BENCH
-    /* Ранний путь Ack/BlockAck (rx_fast_resp_early, СРОК SIFS): отчёта ещё нет, кадр по предварительному — для
-     * быстрого пути; проверка — в ожидании отчёта, прочим кадрам не стоит ничего, кроме неё. */
-    if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT) && rx_fast_resp_ok()) {
-        early = rx_fast_resp_early(ctx);
+    /* Ранний путь Ack/BlockAck (rx_fast_resp_early, СРОК SIFS): отчёта ещё нет, а предварительный r36/r38 — кадр
+     * быстрого пути. Одна проверка на входе, без ожидания: стенд 2026-11-15 (прибытие BlockAck у запросчика, события
+     * PMC) — опрос r36/r38 до признака QoS Data / A-MPDU охватывал больше кадров, но одиночные MPDU приходили позже
+     * на 0,1–0,35 мкс, A-MPDU — не раньше; ранний путь и после пришедшего отчёта — тоже без выигрыша. */
+    u32 p1 = mac_rx_rep1(), p3 = mac_rx_rep3();
+    if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT) && rx_fast_resp_pre_ok(p1, p3)) {
+        early = rx_fast_resp_early(ctx, p1, p3);
         if (early == 1)
             return 0;
     }
