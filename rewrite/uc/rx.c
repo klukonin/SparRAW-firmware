@@ -872,11 +872,8 @@ done:
  * docs/LMAC-PROTOCOL.md, держит сам MAC (0x886d10, см. rx_flow_step); от uc нужно, чтобы команды
  * успели раньше этого момента — опоздание MAC отмечает битами MAC_HW_ICR (см. выше). */
 static inline __attribute__((always_inline)) void
-rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast, u32 rate)
+rx_frame_tx_resp_after_req(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast)
 {
-    UC_PAD(PAD_RESP_CMD);
-    UC_EVM(0x0800 | kind);
-    mtp_service_dispatch(kind, sta, ctx->resp_ctx8, rate);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     UC_EVM(0x0600 | kind);
@@ -924,6 +921,15 @@ rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
     uc_mac_cmd_nl(0x18000000);
+}
+
+static inline __attribute__((always_inline)) void
+rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast, u32 rate)
+{
+    UC_PAD(PAD_RESP_CMD);
+    UC_EVM(0x0800 | kind);
+    mtp_service_dispatch(kind, sta, ctx->resp_ctx8, rate);
+    rx_frame_tx_resp_after_req(kind, ctx, sta, resp, fast);
 }
 
 /* Биты скорости ответа через SIFS для команды MTP 0x17 ([12:8] MCS, [1:0] = 3; 0 — MCS выбирает MAC).
@@ -1081,6 +1087,96 @@ static __attribute__((noinline)) u32 rx_fast_resp(struct tx_ctx_s *ctx)
     uc_mac_cmd_nl(0x37000002);
     uc_mac_cmd_nl(sta_tab[s].tx_sel | 0x3f000000);
     rx_frame_tx_resp_seq(kind, ctx, s, r5, 1, rate);
+    return rx_fast_resp_tail(ctx, s, r3, r5 | qnull << 8);
+tmo:
+    rx_bap_rx_timeout();
+no_resp:
+    return rx_fast_resp_tail(ctx, s, r3, 0);
+}
+
+/* Поля отчёта r37/r39, по которым rx_fast_resp_ok и rx_fast_resp выбирают ответ и его параметры: ранний путь сверяет
+ * их в окончательном отчёте с предварительными. */
+#define RX_EARLY_REP1_M (MAC_RX_REP1_QOS_DATA | MAC_RX_REP1_MGMT | MAC_RX_REP1_SS | MAC_RX_REP1_BEACON | MAC_RX_REP1_BACK | \
+                         MAC_RX_REP1_BAR | MAC_RX_REP1_NOACK_MGMT | (1u << 17) | (0x1fu << 19))
+#define RX_EARLY_REP3_M ((7u << 8) | MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | \
+                         MAC_RX_REP3_NEIGHBOUR | MAC_RX_REP3_FCS_OK_PART | MAC_RX_REP3_ACK_POLICY | MAC_RX_REP3_RX_MCS | \
+                         MAC_RX_REP3_MPDU_AGG)
+
+/* ХРУПКО (СРОК SIFS): ранний путь Ack/BlockAck — то же, что rx_fast_resp, но всё, что не ждёт окончательного отчёта о
+ * PPDU, — до него. Стенд 2026-11-15 (метки UC_EVM в записях событий PMC, время от конца приёма 0x1d): uc видит конец
+ * через 0,10 мкс, входит в rx_flow_handle_frame через 0,57, а отчёт (r42 б16) у PPDU с MPDU длиннее ~200 Б приходит
+ * только через 1,9 мкс (у коротких — 0,73; у RTS — 0,79). От отчёта до запроса MTP прежний путь шёл 0,85 мкс (проверки,
+ * пролог, скорость, команды сектора, mtp_service_dispatch), запрос → готовность 0,41, готовность → 0x19 0,18, 0x19 →
+ * начало передачи 0,29: BlockAck через 3,64 мкс от 0x1d при нижней границе MAC 2,945 (DMG CTS, CF-End) — сумма SIFS
+ * 7,53 мкс, нарушение 10.3.2.3.3 (норма ≤ 6,98). Здесь по предварительному отчёту (тот же кадр: TA, вид, политика,
+ * MCS известны по заголовку) до отчёта считаются станция, вид ответа, скорость, слова запроса MTP (0x16/0x17, как
+ * mtp_service_dispatch), сектор; после отчёта — переключение буфера, сверка полей RX_EARLY_REP*_M окончательного
+ * отчёта с предварительными и сразу RF «передача», сектор, запрос MTP. Решение об ответе — только по окончательному
+ * отчёту: поля разошлись — возврат 2 (ничего не выдано, буфер переключён), разбор прежним путём по окончательному.
+ * Возврат 1 — кадр разобран (как rx_fast_resp). */
+__attribute__((optimize("O2", "no-inline")))
+static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx)
+{
+    u32 r1 = mac_rx_rep1(), r3 = mac_rx_rep3();   /* предварительный отчёт, проверен rx_fast_resp_ok */
+    UC_EVM(0x0a);
+    u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
+    u32 agg = (r3 & MAC_RX_REP3_MPDU_AGG) || (r1 & MAC_RX_REP1_BAR);
+    u32 kind = agg ? 1 : 0, r5 = agg ? 2 : 1;
+    u32 qnull = !agg && (r1 & (1u << 17));
+    u32 qid = MAC_RX_REP1_DATA_QID_OF(r1);
+    u32 sel = sta_tab[s].tx_sel | 0x3f000000;
+    /* слова запроса MTP — как mtp_service_dispatch(kind, s, qid, rx_resp_rate(MCS)) для вида 0/1 */
+    u32 w17 = qid << 16;
+    if ((txrx_state1 & 2u) && rs_state[s].active != 0)
+        w17 |= ((u32)rs_sta_mcs_try(s) << 8) | 3;
+    else
+        w17 |= rx_resp_rate(MAC_RX_REP3_RX_MCS_OF(r3));
+    w17 |= 0x17000000;
+    u32 w16 = (kind << 8) | 0x1f0022 | 0x16000000;
+    while (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
+        ;
+    UC_EVM(0x03);
+    if (rx_buf_toggle_dis == 0) {
+        uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
+        rx_buf_toggle_cnt += 1;
+    }
+    if (((mac_rx_rep1() ^ r1) & RX_EARLY_REP1_M) || ((mac_rx_rep3() ^ r3) & RX_EARLY_REP3_M) ||
+        (!agg && MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8)) {
+        UC_EVM(0x09);
+        return 2;
+    }
+    if (agg || qnull) {
+        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_tx << 24);
+        abif_dvs_rf_ctrl_shadow = v;
+        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
+        if (qnull)
+            rx_bap_rx_up = 1;
+    } else {
+        /* как в rx_fast_resp: ожидание MAC_BAP_RX_UPDATE (r53 б3) с пределом — до Ack */
+        VOL(uc_wait_marker) = 0xff31;
+        __asm__ goto("mov\tr12,%0\n"
+                     "1:\tsub.f\tr12,r12,1\n\tbeq\t%l[tmo]\n"
+                     "\tmov\tr11,r53\n\tbbit0\tr11,3,1b"
+                     :: "i"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : tmo);
+        VOL(uc_wait_marker) = 0;
+        rx_bap_rx_up = (mac_bap_if() & MAC_BAP_RX_UP_STATUS) ? 1 : 0;
+        uc_mac_cmd_nl(0x1c000008);
+        if (!rx_bap_rx_up)
+            goto no_resp;
+        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_tx << 24);
+        abif_dvs_rf_ctrl_shadow = v;
+        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
+    }
+    uc_mac_cmd_nl(0x37000005);
+    uc_mac_cmd_nl(0x37000002);
+    uc_mac_cmd_nl(sel);
+    UC_EVM(0x0800 | kind);
+    uc_mac_cmd_nl(0x1b001111);                    /* запрос MTP — как mtp_service_dispatch */
+    uc_mac_cmd_nl(w16);
+    uc_mac_cmd_nl(w17);
+    arc_nops(3);
+    ctx->resp_ctx8 = qid;
+    rx_frame_tx_resp_after_req(kind, ctx, s, r5, 1);
     return rx_fast_resp_tail(ctx, s, r3, r5 | qnull << 8);
 tmo:
     rx_bap_rx_timeout();
@@ -1281,14 +1377,26 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
         UC_STAMP(STAMP_SIFS_PTS, 1, mac_timer_sel());
     }
 #endif
-    if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
-        uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    UC_EVM(0x03);
-    UC_STAMP_T0(STAMP_CTS_PATH, t_rep);
-    if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
+    u32 early = 0;
+#ifndef UC_BENCH
+    /* Ранний путь Ack/BlockAck (rx_fast_resp_early, СРОК SIFS): отчёта ещё нет, кадр по предварительному — для
+     * быстрого пути; проверка — в ожидании отчёта, прочим кадрам не стоит ничего, кроме неё. */
+    if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT) && rx_fast_resp_ok()) {
+        early = rx_fast_resp_early(ctx);
+        if (early == 1)
+            return 0;
     }
+#endif
+    if (!early) {
+        if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
+            uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
+        UC_EVM(0x03);
+        if (rx_buf_toggle_dis == 0) {
+            uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
+            rx_buf_toggle_cnt += 1;
+        }
+    }
+    UC_STAMP_T0(STAMP_CTS_PATH, t_rep);
     /* Быстрый путь ответа (rx_fast_resp, СРОК SIFS) — по виду кадра (r36, одно сравнение): прочим кадрам путь прежний. */
 #ifndef UC_BENCH                              /* сборка микротестов (uc/bench.c) — без быстрых путей: места в ICCM нет */
     if (rx_fast_resp_ok()) {
