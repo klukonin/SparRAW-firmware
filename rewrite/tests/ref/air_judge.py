@@ -1931,8 +1931,16 @@ def r_assoc_state(c):
     if start is None:
         r.skip('кадров (ре)ассоциации/дизассоциации нет: состояние пары до захвата неизвестно', 1)
         return r
+    def body(e):
+        # тело кадра; искажённая запись (стенд 2026-11-15: TX-запись «Association Response» 28 Б из чужих записей PMC,
+        # склейка через границу буфера) — None
+        try:
+            return E.parse_body(e.kind, e.raw[24:])
+        except (ValueError, NotImplementedError):
+            return None
+
     rsna = any(e.kind in (E.PROBE_RESP, E.ASSOC_RESP) and e.src == ap and e.body_ok and
-               any(x.eid == 48 for x in E.parse_body(e.kind, e.raw[24:])[1]) for e in c.evs)
+               any(x.eid == 48 for x in (body(e) or ({}, []))[1]) for e in c.evs)
     log, idx, synth_kind = [], [], set()
     for j in range(start, len(c.evs)):
         e = c.evs[j]
@@ -1945,12 +1953,20 @@ def r_assoc_state(c):
             continue
         info = {}
         if e.kind in (E.ASSOC_RESP, E.REASSOC_RESP) and e.body_ok:
-            fx, _ = E.parse_body(e.kind, e.raw[24:])
+            b = body(e)
+            if b is None:
+                r.skip('тело кадра (ре)ассоциации/дизассоциации искажено (запись PMC испорчена): кадр пропущен')
+                continue
+            fx = b[0]
             info = dict(status=fx['status'], aid=fx['aid'] & 0x3fff)
             nx = next((x for x in c.evs[j + 1:j + 6] if x.kind == 'Ack' and x.dst == ap), None)
             info['acked'] = nx is not None
         if e.kind in (E.DISASSOC, E.DEAUTH) and e.body_ok:
-            info = dict(reason=E.parse_body(e.kind, e.raw[24:])[0]['reason'])
+            b = body(e)
+            if b is None:
+                r.skip('тело кадра (ре)ассоциации/дизассоциации искажено (запись PMC испорчена): кадр пропущен')
+                continue
+            info = dict(reason=b[0]['reason'])
         log.append(M.LogEvent(e.tsort, k, e.src, e.dst, info))
         idx.append(j)
         if e.synth:

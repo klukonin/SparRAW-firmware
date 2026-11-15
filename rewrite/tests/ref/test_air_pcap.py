@@ -164,6 +164,45 @@ def test_read_vendor_fields(tmp_path):
     assert rx and rx[0].length == 30000 and rx[0].mcs == 8 and rx[0].synth
 
 
+def ev_stamp(t):
+    """метка события PMC (CAPTURE.md 4.3): TSF[23:0] << 8 | такт 165 МГц внутри мкс"""
+    us = floor(t)
+    clk = min(164, int((t - us) * 165))
+    return (us & 0xffffff) << 8 | clk
+
+
+def test_restore_tx_stamps_from_events(tmp_path):
+    """v5: у TX-кадров с испорченной меткой (коды 2/6 у ответов MAC) метка восстанавливается по событию начала
+    передачи + задержка класса, измеренная на кадрах узла с верной меткой; сверка — с меткой, которую поставил бы TSF."""
+    lat = {'control': Fr(62, 10), 'sc': Fr(205, 100)}       # стенд 2026-11-15
+    node = Node('AP', AP_MAC, 0)
+    want = []
+    for i in range(400):
+        t = Fr(1_000_000 + 137 * i) + Fr(i % 97, 97)
+        mcs = 0 if i % 2 else 8
+        m = P.mode_of(mcs)
+        latch = t + P.PRE[m]                                 # точка метки TX (Node.stamp при off = 0)
+        bad = i % 5 == 3                                   # перед первым — верная метка (база 64 бит)
+        mpdu = (b'\x64\x05' if mcs == 0 else b'\x94\x00') + bytes(18)
+        info0 = 24 << 6 | mcs
+        tsf = None if bad else floor(latch)
+        v = vendor(1, len(mpdu), len(mpdu), 6 if bad else tsf, info0, P.SF_TSF_BAD if bad else 0)
+        v = bytes([5]) + v[1:] + struct.pack('<BBHIII', P.EV_TX_START, 0x2e, 0, 0, 0, ev_stamp(latch - lat[m]))
+        node.recs.append((t, radiotap(tsf, v) + mpdu))
+        if bad:
+            want.append((t, latch))
+    path = tmp_path / 'ev.pcap'
+    node.write(path)
+    recs = P.read_pcap(str(path), 'AP')
+    rest = [r for r in recs if r.ev_restored]
+    assert len(rest) == len(want) == 80
+    assert all(r.tsf_ok and r.ver == 5 and r.ev_code == 0x2e for r in rest)
+    d = [r.tsft - latch for r, (_, latch) in zip(rest, sorted(want))]
+    # метки целые (floor): восстановленная — с той же средней долей, отклонение каждой — не больше кванта
+    assert all(abs(x) < 1 for x in d)
+    assert abs(sum(d) / len(d) + Fr(1, 2)) < Fr(15, 100)
+
+
 def test_calibration_recovers_offsets(tmp_path):
     air = air_of(tmp_path)
     c = air.cal

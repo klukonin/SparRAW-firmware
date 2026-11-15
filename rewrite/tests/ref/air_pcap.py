@@ -6,13 +6,16 @@
     air.events                                        # [AirEv] — тот же вид, что unit/ref_bridge2.Ev, + флаги знания
 
 Вход — pcap wilmon (radiotap, наносекундный, linktype 127) одного или двух узлов; vendor namespace 02:53:52, версия 4
-(CAPTURE.md 5.4). Каждый узел пишет свой TX (заголовки настоящие, тела данных нет — маска без txqos) и свой RX: кадры,
+или 5 (CAPTURE.md 5.4; v5 — метки событий PMC, захват с `mask=…,evpath`). Каждый узел пишет свой TX (заголовки настоящие, тела данных нет — маска без txqos) и свой RX: кадры,
 отданные в очередь, — байтами; Ack/BA/RTS/DMG CTS/CF-End/SSW/данные, не отданные в очередь, — синтетические (FC по
 слоту парсера, RA/TA восстановлены, Duration 0, тело нулевое; CAPTURE.md 4.2).
 
 Что известно о записи и как это использовано [стенд, t2_11/t2_12 2026-11-04, проверяется при каждом слиянии]:
   - метка RX (`a7`) и TX (`59`) — TSF узла, целые мкс; у ответов, которые MAC шлёт сам, метка TX испорчена (TSF_BAD,
     время pcap = последняя хорошая метка) — такие кадры получают время из записи пира (RX) или только границы;
+  - с событиями PMC (v5, CAPTURE.md 4.3) у ответов MAC метка TX восстанавливается: начало передачи (событие 0x2e/0x06,
+    до такта 165 МГц) + задержка TX → метка своего класса модуляции, которую узел меряет сам по своим TX-кадрам с верной
+    меткой (стенд 2026-11-15: SC 2,04 мкс, Control 6,20, разброс — дискретность TSF), restore_tx_stamps;
   - `info0` и у TX, и у RX = длина PSDU с FCS << 6 | б5 агрегация (A-MPDU) | MCS [4:0]: у пар «TX узла — RX пира» поля
     совпадают (длина, MCS), поэтому MCS и длина TX-кадра известны; у A-MPDU TX-запись несёт заголовок первого MPDU
     (BlockAck), пир видит его как данные (слот парсера);
@@ -58,6 +61,9 @@ FL_TRUNC, FL_TRAILER, FL_NOLEN, FL_TSF, FL_STATUS, FL_PHY, FL_TA, FL_TA_FIXED = 
 SF_SYNTH, SF_RA_OWN, SF_RA_UNKNOWN, SF_TA_PEER, SF_TA_UNKNOWN, SF_BAD_FCS, SF_CDOWN0, SF_TSF_BAD = \
     (1 << i for i in range(8))
 SRC_PMC = 7
+# v5: метки событий PMC (CAPTURE.md 4.3, 5.4) — TSF[23:0] << 8 | такт 165 МГц
+EV_RX_HDR, EV_RX_END, EV_TX_START = 1, 2, 4
+EV_CLK = 165
 
 # ---- Frame Control → вид (802.11-2020 табл. 9-1; Control Frame Extension — табл. 9-2); имена как в ref_bridge2 ----
 CFE_NAME = {'poll': 'Poll', 'spr': 'SPR', 'grant': 'Grant', 'dmg_cts': 'DMG CTS', 'dmg_dts': 'DMG DTS',
@@ -128,7 +134,8 @@ class Rec:
     поля vendor v4 (CAPTURE.md 5.4); raw — MPDU без FCS как записан (у синтетических — FC/RA/TA + нули)."""
     __slots__ = ('node', 'n', 'ns', 'tsft', 'ver', 'src', 'dir', 'flags', 'mcs_rt', 'cid', 'mpdu_len', 'caplen',
                  'ta_raw', 'ta_cid', 'tsf32', 'info0', 'info1', 'status', 'trailer', 'phy', 'slot', 'sflags', 'raw',
-                 'kind', 'fkind', 'fc', 'action', 't', 'lo', 'hi', 'ev', 'ra', 'ta')
+                 'kind', 'fkind', 'fc', 'action', 't', 'lo', 'hi', 'ev', 'ra', 'ta',
+                 'ev_flags', 'ev_code', 'ev_hdr', 'ev_end', 'ev_start', 'ev_restored')
 
     @property
     def tx(self):
@@ -140,7 +147,7 @@ class Rec:
 
     @property
     def tsf_ok(self):
-        return self.tsft is not None and not self.sflags & SF_TSF_BAD
+        return self.tsft is not None and (not self.sflags & SF_TSF_BAD or self.ev_restored)
 
     @property
     def length(self):
@@ -197,7 +204,8 @@ def _radiotap(d):
     v = None
     k = d.find(VENDOR_OUI, 8, it_len)
     if k >= 0 and k + 6 + 60 <= it_len:
-        v = d[k + 6:k + 6 + 60]
+        skip, = struct.unpack_from('<H', d, k + 4)
+        v = d[k + 6:k + 6 + max(60, min(skip, it_len - k - 6))]
     return tsft, v, d[it_len:]
 
 
@@ -237,12 +245,70 @@ def read_pcap(path, node=None):
             # 1534 Б, 35 906 099 у CF-End)
             r.info0 = 0
         r.tsft = tsft if not r.sflags & SF_TSF_BAD else None
+        r.ev_flags = r.ev_code = r.ev_hdr = r.ev_end = r.ev_start = 0
+        r.ev_restored = False
+        if r.ver >= 5 and len(v) >= 76:
+            r.ev_flags, r.ev_code = v[60], v[61]
+            r.ev_hdr, r.ev_end, r.ev_start = struct.unpack_from('<III', v, 64)
         r.raw = bytes(mpdu)
         r.fc, r.kind, r.fkind, r.action = classify(r.raw, r.agg)
         r.t = r.lo = r.hi = r.ev = None
         r.ra, r.ta = r._ra(), r._ta()
         out.append(r)
+    restore_tx_stamps(out)
     return out
+
+
+def ev_delta(st, tsft):
+    """мкс от метки TSF @tsft до метки события @st (TSF[23:0] << 8 | такт): 24 бита TSF — ±8,4 с"""
+    d = ((st >> 8) - (tsft & 0xffffff)) & 0xffffff
+    if d & 0x800000:
+        d -= 1 << 24
+    return Fr(d) + Fr(st & 0xff, EV_CLK)
+
+
+def restore_tx_stamps(recs):
+    """Метки TX у кадров без верной метки (коды 2/6 у ответов MAC, CAPTURE.md 4) по событию начала передачи (v5): метка =
+    событие + задержка[класс], задержка — средняя (метка − событие) по TX-кадрам узла с верной меткой того же класса
+    (Control — MCS 0, SC — прочие; среднее, не медиана: метки целые, нужна та же доля). 64 бита — от ближайшей верной
+    метки записи (не дальше 1 с). Метка вне соседних верных меток записи (±5 мкс; кадры в pcap — по порядку записи) не
+    ставится: событие начала досталось не своему кадру (стенд 2026-11-15: 21 из 59 968 у станции, A-MPDU с началом
+    передачи за 0,7–15 мс). → {класс: (задержка, кадров по ней, восстановлено, отброшено)}."""
+    lat = defaultdict(list)
+    for r in recs:
+        if r.tx and r.tsft is not None and not r.sflags & SF_TSF_BAD and r.ev_flags & EV_TX_START and \
+                r.mcs is not None:
+            lat[r.mcs == 0].append(Fr(0) - ev_delta(r.ev_start, r.tsft))
+    off = {}
+    for k, v in lat.items():
+        v.sort()
+        m = v[len(v) // 2]
+        w = [x for x in v if abs(x - m) <= 1]
+        off[k] = sum(w) / len(w)
+    good = [r.tsft if r.tsft is not None and not r.sflags & SF_TSF_BAD else None for r in recs]
+    nxt, n = [None] * len(recs), None
+    for i in range(len(recs) - 1, -1, -1):
+        nxt[i] = n
+        if good[i] is not None:
+            n = good[i]
+    done, drop = Counter(), Counter()
+    last = None
+    for i, r in enumerate(recs):
+        if good[i] is not None:
+            last = good[i]
+            continue
+        if not (r.tx and r.ev_flags & EV_TX_START and r.mcs is not None and last is not None and
+                (r.mcs == 0) in off):
+            continue
+        d = ev_delta(r.ev_start, last)
+        t = last + d + off[r.mcs == 0]
+        if abs(d) > 1_000_000 or t < last - 5 or (nxt[i] is not None and t > nxt[i] + 5):
+            drop[r.mcs == 0] += 1
+            continue
+        r.tsft = t
+        r.ev_restored = True
+        done[r.mcs == 0] += 1
+    return {('control' if k else 'sc'): (round(float(off[k]), 3), len(lat[k]), done[k], drop[k]) for k in off}
 
 
 # =====================================================================================================================

@@ -402,16 +402,18 @@ Sparrow) — но записи даёт б28, б26 — нет.
 | 0x02 | начало приёма (обнаружение преамбулы) | за 1–4 мкс до TSF `a7` следующего RX |
 | 0x13 | конец PHY-заголовка принимаемого PPDU | +2,36 мкс от начала у SC, +5,05 у Control PHY; ровно по одному на RX-группу (9273 = 9273) |
 | 0x1d | конец приёма PPDU | 1,98 мкс + 3,43 нс·длина PSDU у MCS 8 (= 8 бит / 2310 Мбит/с); по одному на RX-группу |
-| 0x2e | начало передачи ответа (через SIFS после 0x1d) | DMG CTS — 2,945 мкс после 0x1d (±0,01), BlockAck — 3,52…3,59, QoS Null — 3,79 |
-| 0x06 | начало передачи после backoff (RTS, CF-End по доступу) | за 6–7 мкс до TSF TX |
+| 0x2e | начало передачи через фиксированный IFS: ответ (SIFS после 0x1d), кадр в TXOP, следующий DMG Beacon развёртки | DMG CTS — 2,945 мкс после 0x1d (±0,01), BlockAck — 3,52…3,59, QoS Null — 3,79; на 2,04 мкс (SC) / 6,20 (Control PHY) раньше метки TX-записи |
+| 0x06 | начало передачи после backoff / по времени (RTS, первый DMG Beacon BTI) | за 6–7 мкс до TSF TX (Control PHY) |
 | 0x35 | конец передачи | 0x35 − 0x2e = TXTIME: BlockAck 32 Б MCS 4 — 3,21 мкс, DMG CTS — 14,16 |
 | 0x28 | приём снова включён | +3,0 мкс после 0x35 |
 | 0x05, 0x2a, 0x15 | редкие (паузы без обмена, повтор приёма); смысл не установлен | — |
 
 Значит, на одном узле без калибровки и без TSF TX-записи (в т. ч. при кодах 2/6) видно время от конца приёма до
 начала ответа с точностью до такта — между событиями интерфейса MAC/PHY; эфирный SIFS больше на задержки PHY
-(BlockAck: 3,55 по событиям против 3,82 по эфиру, MAC-STAND). Разбор: `tools/pmc_raw_records.py --events`
-(драйвер); в разборщик драйвера и `air_judge` не встроено.
+(BlockAck: 3,55 по событиям против 3,82 по эфиру, MAC-STAND). Разбор сырых дампов: `tools/pmc_raw_records.py
+--events` (драйвер). В захват — `mask=…,evpath`: метки на кадрах (5.4); `air_pcap` восстанавливает по ним метку TX
+ответов MAC с кодом 2/6 (начало передачи + задержка TX класса, которую узел меряет на своих кадрах с верной меткой),
+сумма SIFS без калибровки (`air_judge`) считается и на узлах с кодами.
 
 ---
 
@@ -429,7 +431,7 @@ close
 | опция | смысл, по умолчанию |
 |---|---|
 | `<сек>` | 1..86400, обязательна; по истечении — `stop` |
-| `mask` | `rx` (= rxmgmt,rxctrl,rxbcn,rxerr,rxphy,rxsynth — **без rxqos**), `tx` (= txmgmt,txctrl,txbcn,txdirect — **без txqos**), отдельные биты, `rxqos`, `txqos`, `hostdata`, `hostmgmt`, `rxsynth`, `rxsynthbcn`; число: RX — биты 5..0, TX — биты 12..8, hostdata — 16, hostmgmt — 17, rxsynth — 18, rxsynthbcn — 19. По умолчанию `rx,tx` (0x41e3e). `rxqos`/`txqos` — только явно: AP под тяжёлым TX с ними висит (раздел 1), при старте — предупреждение в dmesg, в `capture` — строка `warning:`. `rxsynth` — синтетические кадры (4.2), нужен хотя бы один RX-бит; `rxsynthbcn` — ещё и чужие DMG Beacon, только вместе с `rxsynth` (иначе `-EINVAL`) |
+| `mask` | `rx` (= rxmgmt,rxctrl,rxbcn,rxerr,rxphy,rxsynth — **без rxqos**), `tx` (= txmgmt,txctrl,txbcn,txdirect — **без txqos**), отдельные биты, `rxqos`, `txqos`, `hostdata`, `hostmgmt`, `rxsynth`, `rxsynthbcn`, `evpath`, `evucmd`; число: RX — биты 5..0, TX — биты 12..8, hostdata — 16, hostmgmt — 17, rxsynth — 18, rxsynthbcn — 19, evpath — 20, evucmd — 21. По умолчанию `rx,tx` (0x41e3e). `rxqos`/`txqos` — только явно: AP под тяжёлым TX с ними висит (раздел 1), при старте — предупреждение в dmesg, в `capture` — строка `warning:`. `rxsynth` — синтетические кадры (4.2), нужен хотя бы один RX-бит; `rxsynthbcn` — ещё и чужие DMG Beacon, только вместе с `rxsynth` (иначе `-EINVAL`). `evpath` — записи событий `0xfe` (`PMC_CTL` б29, 4.3): метки конца PHY-заголовка и конца приёма на RX-кадрах, начала передачи на TX-кадрах (vendor v5, 5.4); `evucmd` — записи `0xff` (б28, команды uc с б31), только счёт; оба — лишь вместе с PMC-битами |
 | `snap` | байт кадра на тип, 4..252, кратно 4 (вверх); по умолчанию 252 |
 | `dsnap` | то же для qos-данных (байт 0 регистров `max_data`); по умолчанию = `snap` |
 | `bufs` | буферов в кольце 7, 2..32768; по умолчанию параметр модуля `capture_bufs` = 256 |
@@ -465,6 +467,7 @@ pmc: ctl=0x… stop_busy=… polls=…
 bufs: du=… nodu=… by_last=… by_next=… du_early=… part=…
 frames: rx=… tx=… bytes=… trunc=…
 records: total=… phy_only=… tx_nohdr=… unknown=… orphan=… more=…
+events: path=… ucmd=… rx_end=… tx_start=…
 resync: N start=… garbage=… hole=… carry=… torn=…
 ta: fixed=… unknown=… peers=…
 tsf: bad=…
@@ -507,12 +510,12 @@ raw: entries=… unread=…/… dropped=… | raw: off
 | 22 | Timestamp | только host-зеркала: TSF, оценённый по времени хоста, position «unknown» |
 | 30 + 31 | Vendor Namespace + Ext | OUI **02:53:52**, sub_ns 1, skip_length 60; следующее слово present — vendor, бит 0 |
 
-Vendor-данные, версия 4 (60 Б, little endian; от версии 3 отличается `slot`/`sflags`/`reserved` в конце и `mcs`
+Vendor-данные, версия 5 (76 Б, little endian; от версии 4 — 16 Б меток событий в конце, skip_length 76; от версии 3 отличается `slot`/`sflags`/`reserved` в конце и `mcs`
 у PMC RX; от версии 2 — `ta_raw`/`ta_cid` на месте `reserved` и битами 6, 7 `flags`):
 
 ```c
 struct wil_cap_rt_vendor {
-    u8     ver;        /* 4 */
+    u8     ver;        /* 5 */
     u8     src;        /* 5 — зеркало RX DMA, 6 — WMI mgmt, 7 — PMC */
     u8     dir;        /* 0 — принят, 1 — передан этим узлом */
     u8     flags;      /* б0 TRUNC, б1 TRAILER, б2 NOLEN, б3 TSF, б4 STATUS, б5 PHY,
@@ -533,8 +536,22 @@ struct wil_cap_rt_vendor {
     u8     sflags;     /* 4.2: б0 SYNTH, б1 RA_OWN, б2 RA_UNKNOWN, б3 TA_PEER,
                           б4 TA_UNKNOWN, б5 BAD_FCS, б6 CDOWN0, б7 TSF_BAD */
     __le16 reserved;
+    /* v5: метки событий PMC (4.3), TSF[23:0] << 8 | такт 165 МГц внутри мкс */
+    u8     ev_flags;   /* б0 ev_hdr, б1 ev_end, б2 ev_start есть */
+    u8     ev_code;    /* TX: событие ev_start — 0x2e (через фиксированный IFS), 0x06 */
+    __le16 reserved2;
+    __le32 ev_hdr;     /* RX: конец PHY-заголовка (0x13) */
+    __le32 ev_end;     /* RX: конец приёма PPDU (0x1d) */
+    __le32 ev_start;   /* TX: начало передачи (0x2e, 0x06) */
 };
 ```
+
+Привязка (разборщик драйвера): 0x13 — к RX-группе, `a7` которой идёт следом; 0x1d — к открытой RX-группе; 0x2e/0x06 —
+к TX-группе ближайшей `59`, 0x35 (конец передачи) снимает ещё не отданное начало (передача без записей). Проверка на
+дампе точки (`pmc_decode_test.py`, `our_ev_11`): конец приёма и PHY-заголовок — у 441 из 441 RX-кадров, начало
+передачи — у всех TX-кадров, кроме DMG Beacon развёртки без своего события (256 из 704); начало передачи на 2,04 мкс
+(SC) / 6,20 (Control PHY) раньше метки `59`, разброс — дискретность TSF; DMG CTS: от конца RTS до начала ответа
+2,945 мкс; C == Python.
 
 MCS в поле HT не ставится (для DMG оно неверно). Lua-диссектор vendor-полей — впереди
 (`tools/wireshark/sparraw_capture.lua`); пока поля видны в Wireshark как «Vendor Data».
@@ -666,8 +683,8 @@ CID 0, с CID 3 при байте 0, неоднозначный префикс �
    (2.4). Сделано 2026-11-15 (драйвер `unified` 0719f5a на стенде): TX-записи на каждый MPDU; `ae` б0 — ошибка FCS
    MPDU; `af.w0` [23:16] — MPDU без записи; R38 б30; нули RX — последний байт каждого куска до 16 Б; `SW_HEAD`;
    переполнение; TX `info0`; записи событий `0xff`/`0xfe` (б28/б29), б26/б27 записей не дают; триггеры uc (2.6).
-12. Не сделано (драйвер): каждый MPDU A-MPDU отдельным кадром; записи событий (4.3) — опция `start`, вывод в pcap
-   или отдельный файл, SIFS по событиям в `air_judge`.
+12. Не сделано (драйвер): каждый MPDU A-MPDU отдельным кадром. Сделано 2026-11-15: события на кадрах (`evpath`,
+   vendor v5), восстановление меток TX ответов MAC в `air_pcap`.
 
 ---
 
