@@ -14,7 +14,7 @@ wait $pa; ra=$?
 if [ $ra -ne 0 ] || [ $rs -ne 0 ]; then echo "подготовка узлов не прошла (точка $ra, станция $rs) — запись не делаю"; exit 1; fi
 ap_up
 echo "${AP##*.} $(ver "$AP")"
-cap_start "$AP" "$CAP_S" rx,tx,rxqos,txqos
+cap_start "$AP" "$CAP_S" rx,tx,rxqos,txqos,evpath
 t0=$(date +%s)
 sleep 3
 boot_sta "$F" --load-only || echo "станция: проверки не прошли (см. выше) — запись всё равно забираю"

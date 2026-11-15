@@ -10,7 +10,7 @@ ap_up; sta_up
 $SSH "$STA" 'sysctl -qw net.ipv4.icmp_echo_ignore_broadcasts=0'
 for h in "$AP" "$STA"; do echo "${h##*.} $(ver "$h")"; done
 APMAC=$(mac "$AP")
-for h in "$AP" "$STA"; do cap_start "$h" 40 rx,tx,rxqos,txqos; done
+for h in "$AP" "$STA"; do cap_start "$h" 40 rx,tx,rxqos,txqos,evpath; done
 sleep 4
 echo "AP m2u flag: $($SSH "$AP" 'cat /sys/kernel/debug/ieee80211/phy*/wil6210/multicast_to_unicast 2>/dev/null | head -1')"
 SI=$($SSH "$STA" "iw dev | sed -n 's/.*Interface \(.*sta0\)/\1/p'")

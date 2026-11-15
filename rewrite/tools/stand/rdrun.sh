@@ -15,7 +15,9 @@ ap_up; sta_up
 [ -n "$PRE_AP_FILE" ] && cat "$PRE_AP_FILE" | $SSH "$AP" "cat > /tmp/$(basename "$PRE_AP_FILE")"
 [ -n "$PRE_AP" ] && echo "PRE_AP: $($SSH "$AP" "$PRE_AP" 2>&1 | tail -2 | tr '\n' ' ')"
 for h in "$AP" "$STA"; do echo "${h##*.} $(ver "$h") до: $($SSH "$h" "$CNT")"; done
-for h in "$AP" "$STA"; do cap_start "$h" 30 $CAPMASK; done
+# CAPMASK — маска захвата (CAPTURE.md 5.1); по умолчанию rx,tx,evpath: события PMC дают метки TX ответов MAC и при
+# кодах 2/6 (air_pcap.restore_tx_stamps)
+for h in "$AP" "$STA"; do cap_start "$h" 30 "${CAPMASK:-rx,tx,evpath}"; done
 # POSTCAP="<команда>" — на обоих узлах сразу после старта записи (напр. запись регистра PMC через debugfs mem_write);
 # REGDUMP="<адрес> <число слов>" — слова памяти устройства (debugfs mem_addr/mem_val) в $OUT/<tag>_<узел>.regs
 [ -n "$POSTCAP" ] && for h in "$AP" "$STA"; do echo "${h##*.} POSTCAP: $($SSH "$h" "$POSTCAP" 2>&1 | tail -1)"; done
