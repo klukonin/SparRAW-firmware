@@ -169,7 +169,9 @@
  * MAC 0x80e50000 | n: б31 и код команды [30:24] = 0, как у меток vendor (0x80d0…, 0x80eeeeee), MAC её не исполняет
  * (с кодом 0x0e исполняет — образ с 0x8e5e…: «нет маяков», TX stalled, стенд 2026-11-15). Одна инструкция (mov r32),
  * метка до такта 165 МГц. Точки: 0x00 sfd_sync, 0x01 конец PPDU, 0x02 вход rx_flow_handle_frame, 0x03 отчёт о PPDU,
- * 0x04 rx_fast_resp, 0x08|вид запрос MTP, 0x06|вид MTP готов, 0x07|вид после 0x19000001. Только при -DUC_EVM_MARKS. */
+ * 0x04 rx_fast_resp, 0x08|вид запрос MTP, 0x06|вид MTP готов, 0x07|вид после 0x19000001; держатель TXOP: 0x10 вход
+ * rx_flow_step, 0x11 отчёт, 0x12 после rx_match_expected_response, 0x13 запрос MTP rx_txop_continue, 0x14 MTP готов,
+ * 0x15 перед 0x19000001 (mtp_get_tx_permission), 0x16 разрешение MTP. Только при -DUC_EVM_MARKS. */
 #ifdef UC_EVM_MARKS
 #define UC_EVM(n) uc_mac_cmd_nl(0x80e50000u | (u32)(n))
 #else

@@ -225,3 +225,23 @@ def test_blm_undefined_and_expiry():
     a.add('RTS', STA, AP, ack.te + 1000, tx='STA')
     r = rule(a.ctx(), J.r_blm)
     assert len(r.viol) == 1 and '11.27.1' in r.viol[0][1]
+
+
+def test_dur_resp_elicit_duration_id_bit15():
+    # табл. 9-9: Duration/ID вызвавшего с б15 (стенд 2026-11-15: 0x85ec) — не длительность; судья пропускает пару, а не
+    # падает DurationOverflow
+    a = Air()
+    d = a.add('Data', STA, AP, 1000, length=222, mcs=1, tx='STA', rx=('AP',), dur=0x85ec)
+    a.add('Ack', None, STA, d.te + T.SIFS, length=14, tx='AP', rx=('STA',), dur=0)
+    c = a.ctx()
+    c.prev = {1: c.evs[0]}
+    r = rule(c, J.r_dur_resp)
+    assert not r.viol and r.checked == 0
+    assert sum(r.info['elicit_dur_id_not_duration'].values()) == 1
+
+
+def test_assoc_state_short_action_record():
+    # запись Action короче 24 Б заголовка + категории (стенд 2026-11-15) — категория неизвестна, судья не падает
+    a = Air()
+    a.add('Action', STA, AP, 1000, length=30, raw=HDR, tx='STA', rx=('AP',))
+    rule(a.ctx(), J.r_assoc_state)

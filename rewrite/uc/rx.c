@@ -446,6 +446,7 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
             b |= (RX_TXOP_MCS_TRY(ctx->sta) << 8) | 3;
     }
     UC_PAD(PAD_TXOP);   /* стресс запаса: uc/dbg.h (прежде UC_DBG_TXOP_PAD) */
+    UC_EVM(0x13);
     UC_STAMP_T0(STAMP_MTP_LAT, mtp_t0);
     uc_mac_cmd(0x1b001111);
     uc_mac_cmd(a | 0x16000000);
@@ -453,6 +454,7 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
     uc_nop3();
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
+    UC_EVM(0x14);
     UC_STAMP(STAMP_MTP_LAT, 1u << 16 | (arc_lr(0x100) - mtp_t0), 0);
     u32 r51 = mac_mtp_desc();
     mtp_desc_lo = r51 & 0xf;
@@ -1037,7 +1039,7 @@ static __attribute__((noinline)) u32 rx_fast_resp_tail(struct tx_ctx_s *ctx, u32
  * E-R4): у кадра SC uc видит конец PPDU (r42 б14) через 1,26–1,65 мкс после конца в эфире, запрос MTP → готовность
  * ~0,87 мкс, переход RX→TX ~0,85 мкс (команды; ожидание PHY — ~50 тактов), а команда пуска позже точки SIFS даёт
  * ответ через ~0,55 мкс после неё (H-RESPCMD). Прежний путь (разбор, поиск станции, rx_get_required_response) до
- * запроса MTP шёл ~2,3–2,8 мкс. Здесь — только нужное до пуска: проверка отчёта, RF «передача», ожидание BAP (Ack),
+ * запроса MTP шёл ~2,3–2,8 мкс. Здесь — только нужное до пуска: проверка отчёта, ожидание BAP (Ack),
  * запрос MTP, пуск; учёт (sel_nbr, rx_last_mcs, флаги, восстановление приёма) — после пуска. Перехода RX→TX нет:
  * ответ через MTP уводит тракт с приёма секвенсор ответа MAC (так же путь ответа Talyn). Стенд 2026-11-14 (опыт E-S1,
  * захваты с записью данных, оценка по двум узлам): SIFS BlockAck станции 4,67 → 3,82 мкс, Ack на QoS Null 4,74 → 3,87;
@@ -1058,10 +1060,9 @@ static __attribute__((noinline)) u32 rx_fast_resp(struct tx_ctx_s *ctx)
     u32 kind = agg ? 1 : 0, r5 = agg ? 2 : 1;
     /* без перехода RX→TX: секвенсор ответа MAC (MTP) уводит тракт с приёма сам (как путь ответа Talyn; опыт E-S1) */
     u32 qnull = !agg && (r1 & (1u << 17));       /* б17 (QoS Null): без ожидания BAP, как в rx_get_required_response */
+    /* RF «передача» до запроса MTP не пишется: её пишет rx_frame_tx_resp_after_req после 0x37000020 (как в
+     * rx_fast_resp_early; стенд 2026-11-15: без ранней записи BlockAck на 0,14 мкс раньше, FWERR 0) */
     if (agg || qnull) {
-        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_tx << 24);
-        abif_dvs_rf_ctrl_shadow = v;
-        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
         if (qnull)
             rx_bap_rx_up = 1;
     } else {
@@ -1076,10 +1077,6 @@ static __attribute__((noinline)) u32 rx_fast_resp(struct tx_ctx_s *ctx)
         uc_mac_cmd_nl(0x1c000008);
         if (!rx_bap_rx_up)
             goto no_resp;
-        /* RF «передача» — после отметки BAP: с ним раньше Ack на стенде на 0,45 мкс позже (BAP ждёт тракт приёма?) */
-        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_tx << 24);
-        abif_dvs_rf_ctrl_shadow = v;
-        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
     }
     u32 rate = rx_resp_rate(MAC_RX_REP3_RX_MCS_OF(r3));
     ctx->resp_ctx8 = MAC_RX_REP1_DATA_QID_OF(r1);
@@ -1158,7 +1155,11 @@ static inline __attribute__((always_inline)) void rx_early_buf_toggle(void)
  *  - переключение буфера приёма до запроса — после пуска (rx_early_buf_toggle), с пересчётом скорости только при
  *    расхождении MCS: 7,09–7,16 → 7,02–7,05;
  *  - RF «передача» и команды сектора до отчёта — uc_assert 0x26 (поздняя команда ответа) при ассоциации на обоих узлах;
- *  - опрос r36/r38 до отчёта — одиночные MPDU позже на 0,1–0,35 мкс, A-MPDU не раньше.
+ *  - опрос r36/r38 до отчёта — одиночные MPDU позже на 0,1–0,35 мкс, A-MPDU не раньше;
+ *  - RF «передача» до запроса и в ветке Ack (ожидание BAP), и в прежнем rx_fast_resp; не сбылось только предсказание
+ *    A-MPDU (одиночный QoS Data / QoS Null той же станции) — Ack здесь же, а не прежним путём (у коротких кадров отчёт
+ *    к входу часто ещё не пришёл): Ack на QoS Null у ответчика 0x1d → 0x2e 3,13 → 2,59 мкс (стенд 2026-11-15, qn1,
+ *    события PMC; BlockAck 2,98–3,0, DMG CTS 2,93), BlockAck 6,86–6,92, гейт STA 14/14, AP 8/8, FWERR 0.
  * Итог: от отчёта до запроса 0,85 → 0,39 мкс, ранний путь — у всех ответов BlockAck (прежде ~40 % отсекала проверка
  * предварительного отчёта); прибытие BlockAck у запросчика (его 0x35 → 0x13 BlockAck, без калибровки) на A-MPDU
  * 7,96 → 7,58 мкс, на одиночных MPDU без изменений; сумма SIFS BlockAck 7,55 → 6,87–6,90 мкс. */
@@ -1168,7 +1169,8 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
     /* r1, r3 — предварительный отчёт, проверен rx_fast_resp_pre_ok; тип в r36 ещё не известен — ожидается QoS Data в
      * A-MPDU (сверка — по окончательному) */
     UC_EVM(0x0a);
-    if (!(r1 & MAC_RX_REP1_QOS_DATA)) {
+    u32 pred = !(r1 & MAC_RX_REP1_QOS_DATA);
+    if (pred) {
         r1 = MAC_RX_REP1_QOS_DATA;
         r3 |= MAC_RX_REP3_MPDU_AGG;
     }
@@ -1191,9 +1193,21 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
     u32 f1 = mac_rx_rep1(), f3 = mac_rx_rep3();
     if (((f1 ^ r1) & RX_EARLY_REP1_M) || ((f3 ^ r3) & RX_EARLY_REP3_M) ||
         (!agg && MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8)) {
-        UC_EVM(0x09);
-        rx_early_buf_toggle();
-        return 2;
+        /* не сбылось только предсказание A-MPDU (тип был неизвестен): одиночный QoS Data / QoS Null той же станции с
+         * Normal Ack — Ack здесь же (вид 0), а не прежним путём (у коротких кадров отчёт к входу ещё не пришёл чаще) */
+        if (!pred || ((f1 ^ r1) & RX_EARLY_REP1_M & ~(1u << 17)) ||
+            ((f3 ^ r3) & RX_EARLY_REP3_M & ~MAC_RX_REP3_MPDU_AGG) || (f3 & MAC_RX_REP3_MPDU_AGG) ||
+            MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8) {
+            UC_EVM(0x09);
+            rx_early_buf_toggle();
+            return 2;
+        }
+        UC_EVM(0x0b);
+        agg = 0;
+        kind = 0;
+        r5 = 1;
+        qnull = (f1 >> 17) & 1;
+        w16 = 0x1f0022 | 0x16000000;
     }
     r3 = f3;
     u32 qid = MAC_RX_REP1_DATA_QID_OF(f1);
@@ -1215,9 +1229,6 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
         uc_mac_cmd_nl(0x1c000008);
         if (!rx_bap_rx_up)
             goto no_resp;
-        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_tx << 24);
-        abif_dvs_rf_ctrl_shadow = v;
-        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
     }
     uc_mac_cmd_nl(0x37000005);
     uc_mac_cmd_nl(0x37000002);
@@ -2118,6 +2129,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
     u32 r11 = 0;
     u32 r14 = 0;
 
+    UC_EVM(0x10);
     if (dti_qset_mode == 1)
         fsched_slot_resetup_if_time_left(&fsched_peers, b);
 
@@ -2135,6 +2147,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
 
     if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
         uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
+    UC_EVM(0x11);
 
     struct rx_meas_ctx *r13p = &rx_meas;
     if (r13p->state == 2) {
@@ -2194,6 +2207,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
     }
 
     u32 disp = rx_match_expected_response();
+    UC_EVM(0x12);
     r13 = disp & r17;
     if (r13 == 1) {
         if ((mac_rx_rep1() & (MAC_RX_REP1_QOS_DATA | MAC_RX_REP1_MGMT)) != 0 && (mac_rx_rep3() & MAC_RX_REP3_ACK_POLICY) == 0) {

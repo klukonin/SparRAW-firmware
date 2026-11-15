@@ -136,3 +136,44 @@ def test_early_mcs_from_final(uc):
     assert 'rx_fast_resp_early' in {uc.where(pc).split('+')[0] for pc in m.pc.values()}, 'ранний путь не взят'
     w = mtp_words(uc)
     assert len(w) == 1 and (w[0][0] >> 8) & 7 == 1 and w[0][1] & 0x1f03 == (4 << 8 | 3), [hex(x) for x in w[0]]
+
+
+def req_fn(uc, m):
+    a = m.cmd_idx(lambda c: c == REQ)
+    return a is not None and uc.where(m.pc[a]).split('+')[0]
+
+
+@pytest.mark.parametrize('qnull', [0, 1])
+def test_early_pred_fail_single_ack_here(uc, qnull):
+    """Тип к входу неизвестен (r36 — только б3), окончательный отчёт: одиночный QoS Data / QoS Null (б17) той же станции,
+    Normal Ack: не сбылось только предсказание A-MPDU — Ack (вид 0) раннего пути, запрос MTP выдан из него же (не
+    прежним путём через mtp_service_dispatch), запрос один."""
+    sta = 0x20000800 | (7 << 8)
+    m, st = run(uc, 'ack', pre={36: 1 << 3, 38: sta}, fin={36: 1 << 1 | qnull << 17, 38: sta})
+    w = mtp_words(uc)
+    assert len(w) == 1 and (w[0][0] >> 8) & 7 == 0, [hex(c) for c in uc.mac_cmds]
+    assert req_fn(uc, m) == 'rx_fast_resp_early', req_fn(uc, m)
+    assert m.cmd_idx(lambda c: c == RESP) is not None
+
+
+def test_early_pred_fail_other_station_fallback(uc):
+    """Предсказание A-MPDU не сбылось, и станция в окончательном отчёте другая: ранний путь отказывается (ответ — прежним
+    путём по окончательному), запрос один."""
+    pre, fin = 0x20000800 | (7 << 8), 0x20000800 | (6 << 8)
+    m, st = run(uc, 'ack', pre={36: 1 << 3, 38: pre}, fin={36: 1 << 1, 38: fin})
+    assert req_fn(uc, m) != 'rx_fast_resp_early'
+    assert len(mtp_words(uc)) <= 1
+
+
+@pytest.mark.parametrize('kind', ['ba', 'ack'])
+@pytest.mark.parametrize('k', [0, 6], ids=['fast', 'early'])
+def test_no_rf_tx_before_request(uc, kind, k):
+    """RF «передача» (HW_ABIF_DVS_RF_CTRL) — только после 0x37000020 (rx_frame_tx_resp_after_req), не до запроса MTP, на
+    обоих быстрых путях (k = 0: отчёт уже есть — rx_fast_resp; 6 — rx_fast_resp_early): стенд 2026-11-15, ранняя
+    запись стоила BlockAck 0,14 мкс."""
+    m, st = run(uc, kind, k=k)
+    a = m.cmd_idx(lambda c: c == REQ)
+    assert a is not None
+    w = [j for j, e in m.events() if e[:3] == ('mmio', 'w', 0x889488)]
+    assert not [j for j in w if j < a], 'запись RF до запроса MTP'
+    assert req_fn(uc, m) == ('rx_fast_resp_early' if k else 'mtp_service_dispatch'), req_fn(uc, m)

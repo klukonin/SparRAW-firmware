@@ -3341,9 +3341,11 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
         sc19 = mac_timer_sel();
     }
 #endif
+    UC_EVM(0x15);
     uc_mac_cmd(0x19000001);
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
+    UC_EVM(0x16);
 #ifdef UC_STAMP_MASK
     UC_STAMP(STAMP_TXOP_CONT, (sc19 & 0xffff) | mac_rx_rep1() << 16, mac_mtp_resp());
 #endif

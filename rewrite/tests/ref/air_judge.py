@@ -425,12 +425,24 @@ def _pairs_by_adjacency(c, kind_resp, kind_elicit):
     return out
 
 
+def _elicit_not_duration(r, p):
+    """Табл. 9-9: Duration/ID с б15 — не длительность (AID / резерв), ответ по 9.2.5.7/9.3.1.13 от него не считается.
+    Пропуск с подсчётом в info (кадр с таким полем — отдельная находка), а не исключение DurationOverflow."""
+    if p.dur <= D.DUR_MAX:
+        return False
+    r.skip('Duration/ID вызвавшего — не длительность (б15, табл. 9-9)')
+    r.info.setdefault('elicit_dur_id_not_duration', Counter())[f'{p.kind} {p.src} 0x{p.dur:04x}'] += 1
+    return True
+
+
 def r_dur_cts(c):
     r = Rule('dur_cts', '9.3.1.13', 'Duration DMG CTS = Duration RTS − (TXTIME(DMG CTS) + SIFS), дробное — вверх')
     alt = Counter()
     for p, e in _pairs_by_adjacency(c, 'DMG CTS', ('RTS',)):
         if not (p.dur_ok and e.dur_ok):
             r.skip('Duration RTS или DMG CTS неизвестен (синтетическая запись без TX-записи)')
+            continue
+        if _elicit_not_duration(r, p):
             continue
         m = D.check_duration('dmg_cts', e.dur, {'rts_duration': p.dur, 'elicit_mcs': 0})
         want = D.field(Fr(p.dur) - T.txtime_control(20) - SIFS)
@@ -460,6 +472,8 @@ def r_dur_resp(c):
             continue
         if not (p.dur_ok and e.dur_ok):
             r.skip('Duration вызвавшего неизвестен (синтетический RX данных, тело и Duration не записаны)')
+            continue
+        if _elicit_not_duration(r, p):
             continue
         m = D.check_duration('ba' if e.kind == 'BlockAck' else 'ack', e.dur,
                              {'elicit_duration': p.dur, 'mcs': e.mcs, 'length': e.length})
@@ -736,7 +750,9 @@ def r_ifs_sifs(c):
         else:
             r.ok()
     r.info['gaps_us'] = {k: stat(v) for k, v in sorted(gaps.items())}
-    r.info['calibration_free_sum'] = sifs_sum(c)
+    x2 = {}
+    r.info['calibration_free_sum'] = sifs_sum(c, x2)
+    r.info['responder_x2'] = x2
     r.verdict_note = ('Разбивка «кто опаздывает» (AP/STA) зависит от калибровки (сдвиг TSF второго узла при равных '
                       'задержках записи RX у обоих узлов); сумма SIFS_AP + SIFS_STA (calibration_free_sum) от неё не '
                       'зависит: (STA tx запрос → STA rx ответ AP) + (STA rx запрос AP → STA tx ответ) − 2·TXTIME = '
@@ -751,10 +767,12 @@ def _who(c, mac):
     return mac
 
 
-def sifs_sum(c):
+def sifs_sum(c, x2_out=None):
     """Оценка SIFS_A + SIFS_B без калибровки (метки одного узла): для пары видов (запрос→ответ) на узле N:
     X1 = rx_N(ответ) − tx_N(запрос) − TXTIME(запрос), X2 = tx_N(ответ) − rx_N(запрос) − TXTIME(запрос);
-    X1 + X2 = SIFS_пира + SIFS_N (смещения точек меток сокращаются, если запросы одного класса модуляции)."""
+    X1 + X2 = SIFS_пира + SIFS_N (смещения точек меток сокращаются, если запросы одного класса модуляции).
+    x2_out — сюда X2 ответчика по каждой паре видов, и без X1 (QoS Null→Ack — запросы одной стороны): метки одного узла,
+    без калибровки; сравнимо между парами одного класса (SC→SC: X2 BlockAck ↔ X2 Ack)."""
     out = {}
     nodes = list(c.air.recs)
     if len(nodes) < 2:
@@ -787,6 +805,9 @@ def sifs_sum(c):
         return sum(w) / len(w), len(v) - len(w)
 
     for (n, k), d in sorted(acc.items()):
+        if x2_out is not None and d['X2']:
+            x2, o2 = robust_mean(d['X2'])
+            x2_out[f'{n}: {k}'] = dict(n=len(d['X2']), outliers=o2, X2=round(float(x2), 3))
         if d['X1'] and d['X2']:
             (x1, o1), (x2, o2) = robust_mean(d['X1']), robust_mean(d['X2'])
             out[f'{n}: {k}'] = dict(n1=len(d['X1']), n2=len(d['X2']), outliers=o1 + o2,
@@ -1903,8 +1924,9 @@ def _mlme_kind(e):
     if e.kind == 'BRP':
         return 'BRP'
     if e.kind in ('Action', 'Action No Ack'):
-        if e.synth or not e.body_ok:
-            return None                   # категория не записана (BRP — класс 1, прочие Action — класс 3)
+        if e.synth or not e.body_ok or e.raw is None or len(e.raw) <= 24:
+            return None                   # категория не записана (BRP — класс 1, прочие Action — класс 3); запись
+                                          # короче заголовка + категории (стенд 2026-11-15) — тоже
         if e.action in M._ACTION:
             return e.action
         # табл. 9-51: 4 Public, 15 Self-protected, 20 Unprotected DMG — класс 1 (11.3.3 a) 2) vi, vii, ix)
