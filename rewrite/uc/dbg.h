@@ -165,6 +165,17 @@
 #define UC_PAD(site) do { } while (0)
 #endif
 
+/* UC_EVM(n): метка uc в записи событий PMC 0xff (PMC_CTL б28, захват mask=…,evucmd; docs/CAPTURE.md 4.3) — команда
+ * MAC 0x80e50000 | n: б31 и код команды [30:24] = 0, как у меток vendor (0x80d0…, 0x80eeeeee), MAC её не исполняет
+ * (с кодом 0x0e исполняет — образ с 0x8e5e…: «нет маяков», TX stalled, стенд 2026-11-15). Одна инструкция (mov r32),
+ * метка до такта 165 МГц. Точки: 0x00 sfd_sync, 0x01 конец PPDU, 0x02 вход rx_flow_handle_frame, 0x03 отчёт о PPDU,
+ * 0x04 rx_fast_resp, 0x08|вид запрос MTP, 0x06|вид MTP готов, 0x07|вид после 0x19000001. Только при -DUC_EVM. */
+#ifdef UC_EVM
+#define UC_EVM(n) uc_mac_cmd_nl(0x80e50000u | (u32)(n))
+#else
+#define UC_EVM(n) do { } while (0)
+#endif
+
 #if defined(UC_STAMP_MASK) && !defined(UC_DCCM_OBJECTS)   /* data.c: объекты DCCM без макросов, меток там нет */
 #ifndef UC_STAMP_MASK2
 #define UC_STAMP_MASK2 0

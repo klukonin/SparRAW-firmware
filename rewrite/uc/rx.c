@@ -632,6 +632,7 @@ u32 rx_flow_run(void)
         uc_mac_cmd(0x2004000);
         uc_nop3();
         uc_wait_event_busy(MAC_EVT1_SFD_SYNC | MAC_EVT1_BUSY2, 0);
+        UC_EVM(0x00);
 #if defined(UC_STAMP_MASK) && !defined(UC_DCCM_OBJECTS)
         if (UC_STAMP_ON(STAMP_HDR_EARLY)) {
             e3_sfd = arc_lr(0x100);
@@ -689,6 +690,7 @@ u32 rx_flow_run(void)
                              "\tmov\t%0,r49\n\tbbit0\t%0,13,1b\n2:" : "=&r"(t) :: "memory");
         }
         (void)mac_evt_eng2();                  /* delay-слот vendor: mov r3,r49 */
+        UC_EVM(0x01);
 #if defined(UC_STAMP_MASK) && !defined(UC_DCCM_OBJECTS)
         if (UC_STAMP_ON(STAMP_RESP_PATH))
             t_le = arc_lr(0x100);
@@ -873,9 +875,11 @@ static inline __attribute__((always_inline)) void
 rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast, u32 rate)
 {
     UC_PAD(PAD_RESP_CMD);
+    UC_EVM(0x0800 | kind);
     mtp_service_dispatch(kind, sta, ctx->resp_ctx8, rate);
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
+    UC_EVM(0x0600 | kind);
 #if defined(UC_STAMP_MASK) && !defined(UC_DCCM_OBJECTS)
     if (UC_STAMP_ON(STAMP_SIFS_PTS)) {
         uc_mac_cmd_nl(0x4d000000);
@@ -897,6 +901,7 @@ rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast
     MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
     uc_mac_cmd_nl(0x2008000);
     uc_mac_cmd_nl(0x19000001);
+    UC_EVM(0x0700 | kind);
 #ifdef UC_STAMP_MASK
     if ((UC_STAMP_MASK) & (1u << STAMP_RESP_SIFS_CNT)) {   /* после срока: SIFS_CNT = от конца приёма до сюда */
         uc_mac_cmd_nl(0x4d000000);
@@ -1041,6 +1046,7 @@ __attribute__((optimize("O2", "no-inline")))
 static __attribute__((noinline)) u32 rx_fast_resp(struct tx_ctx_s *ctx)
 {
     u32 r1 = mac_rx_rep1(), r3 = mac_rx_rep3();   /* кадр уже проверен rx_fast_resp_ok */
+    UC_EVM(0x04);
     u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
     u32 agg = (r3 & MAC_RX_REP3_MPDU_AGG) || (r1 & MAC_RX_REP1_BAR);
     u32 kind = agg ? 1 : 0, r5 = agg ? 2 : 1;
@@ -1266,6 +1272,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
     u32 local;                                  /* [sp] */
 
     UC_PAD(PAD_RESP_ENTRY);
+    UC_EVM(0x02);
     UC_STAMP_T0(STAMP_CTS_PATH, t_in);
 #if defined(UC_STAMP_MASK) && !defined(UC_DCCM_OBJECTS)
     if (UC_STAMP_ON(STAMP_SIFS_PTS)) {
@@ -1276,6 +1283,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
 #endif
     if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
         uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
+    UC_EVM(0x03);
     UC_STAMP_T0(STAMP_CTS_PATH, t_rep);
     if (rx_buf_toggle_dis == 0) {
         uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
