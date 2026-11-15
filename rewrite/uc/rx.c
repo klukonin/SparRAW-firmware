@@ -1165,7 +1165,9 @@ static inline __attribute__((always_inline)) void rx_early_buf_toggle(void)
  *    события PMC; BlockAck 2,98–3,0, DMG CTS 2,93), BlockAck 6,86–6,92, гейт STA 14/14, AP 8/8, FWERR 0.
  * Итог: от отчёта до запроса 0,85 → 0,39 мкс, ранний путь — у всех ответов BlockAck (прежде ~40 % отсекала проверка
  * предварительного отчёта); прибытие BlockAck у запросчика (его 0x35 → 0x13 BlockAck, без калибровки) на A-MPDU
- * 7,96 → 7,58 мкс, на одиночных MPDU без изменений; сумма SIFS BlockAck 7,55 → 6,87–6,90 мкс. */
+ * 7,96 → 7,58 мкс, на одиночных MPDU без изменений; сумма SIFS BlockAck 7,55 → 6,87–6,90 мкс.
+ * Запас (стенд 2026-11-16, PAD_EARLY_REQ — nop перед запросом MTP): 64 такта — момент ответа не сдвигается (его держит
+ * MAC), 128 — станция теряет связь: на код от отчёта до запроса — меньше 128 тактов сверх нынешнего. */
 __attribute__((optimize("O2", "no-inline")))
 static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u32 r1, u32 r3)
 {

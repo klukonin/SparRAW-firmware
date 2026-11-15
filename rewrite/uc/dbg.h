@@ -26,7 +26,7 @@
 #define PAD_SSWFB_ABFT    8   /* tail: direct_tx_ssw_feedback (SSW-Feedback в A-BFT) */
 #define PAD_D10_WRITE     9   /* rx: перед записью 0x886d10 в rx_flow_step */
 #define PAD_ABFT_SIFSCHK 10   /* bti: перед проверкой SIFS_CNT в abft_ssw_go */
-#define PAD_EARLY_REQ    11   /* rx: rx_fast_resp_early — после отчёта, перед запросом MTP (запас SIFS BlockAck) */
+#define PAD_EARLY_REQ    11   /* rx: rx_fast_resp_early — после отчёта, перед запросом MTP (стенд 2026-11-16: 64 — без сдвига, 128 — обрыв) */
 
 /* Номера меток UC_STAMP (бит в UC_STAMP_MASK). */
 #define STAMP_CCA_DET        0   /* l1: вход по busy_event (~каждый 8-й) — опрос PHY_SIGNALS и r42 до rx_frame_event (≤ 15 мкс):
