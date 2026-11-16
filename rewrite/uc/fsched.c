@@ -342,13 +342,7 @@ u32 fsched_ap_poll_station(struct fsched_peer_ctx *p)
         p->ent[r1].cfg_idx = 1;
         return 1;
     }
-    u32 r0b = fsched_cur_entry_qid(p) << 16;
-    u32 r15 = r0b | 1u;
-    uc_mac_cmd(0x1b001111);
-    r15 |= (1u << 25) | (1u << 26) | (1u << 28);
-    uc_mac_cmd(r15);
-    uc_mac_cmd(0x17000000);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16_Q(fsched_cur_entry_qid(p), 1u), MTP_W17(0));
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     u32 r51 = mac_mtp_desc();

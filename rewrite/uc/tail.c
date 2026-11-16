@@ -432,7 +432,6 @@ void l2_handle_watchdog(void) {
  * 2,4 → assert 0x8c, 3 → 0x92d9fe (0x103), 5 → 0x92da0a (проверка очереди без c). */
 void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d)
 {
-    u32 r13 = (a << 8) | 0x1f0022;
     u32 r14 = 0;
     if (a >= 6 || a == 2 || a == 4) {
         uc_assert((u32)__builtin_return_address(0), 0x8c);
@@ -440,17 +439,11 @@ void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d)
         r14 = 0x103;
     } else {
         if (a != 5)
-            r14 = c << 16;
-        if ((txrx_state1 & 2u) && rs_state[b].active != 0)
-            r14 |= ((u32)rs_sta_mcs_try(b) << 8) | 3;
-        else
-            r14 |= d;                       /* d — биты скорости 0x17 ([12:8] MCS | 3) или 0 — MCS выбирает MAC;
+            r14 = MTP_CTX(c);
+        r14 |= MTP_RS_RATE_OR(b, d);        /* d — биты скорости 0x17 ([12:8] MCS | 3) или 0 — MCS выбирает MAC;
                                              * vendor: d — MCS, 0xff — «не задан» (сравнение на пути ответа) */
     }
-    uc_mac_cmd_nl(0x1b001111);
-    uc_mac_cmd_nl(r13 | 0x16000000);
-    uc_mac_cmd_nl(r14 | 0x17000000);
-    arc_nops(3);
+    MTP_REQUEST_NL(MTP_W16_RESP(a), MTP_W17(r14));
 }
 
 u32 rx_nav_check_idle(u32 a, u32 b, u32 c) {
@@ -2022,12 +2015,7 @@ static __attribute__((noipa)) void tx_bcast_flow_once(void) {
     mac_program_tx_vector(5, (rf_chain_cfg | 0x30) | (bcast.tx_sector << 8), r2);
     bcast_load_group_key();
     uc_mac_cmd(0x14000000);
-    u32 r13b = (fsched_peer_id << 16) | 1u;
-    uc_mac_cmd(0x1b001111);
-    r13b |= (1u << 25) | (1u << 26) | (1u << 28);
-    uc_mac_cmd(r13b);
-    uc_mac_cmd(0x17000000);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16_Q(fsched_peer_id, 1u), MTP_W17(0));
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     u32 r51c = mac_mtp_desc();
@@ -3416,37 +3404,22 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
 
 u32 mtp_queue_release_mgmt(struct tx_ctx_s *a, u32 b, u32 c, u32 d) {
     /* 6.2 asm 0x93ea40. */
-    u32 flag = ((c != 0) ? 1 : 0) << 1;
-    u32 r13 = 0, r15, r1;
-    if (d != 0) {
-        r15 = a->qid << 16;
-        r15 |= 1u << 2;
-        r1 = a->sta;
+    u32 r13 = 0, mode;
+    if (d != 0) {                           /* RD: скорость пробы без проверки txrx_state1 б1 */
+        mode = 4;
+        u32 r1 = a->sta;
         if (rs_state[r1].active != 0)
-            r13 = (rs_sta_mcs_try(r1) << 8) | 0x3;
+            r13 = MTP_RATE(rs_sta_mcs_try(r1));
     } else {
-        r15 = a->qid << 16;
-        u32 r2 = a->resp_ctx8;
-        if (flag == 2) {
-            r15 |= 0x103;
-            r13 = r2 << 16;
-        } else if (flag == 1) {
-            r15 |= 0x3;
-            r13 = r2 << 16;
+        if (c != 0) {
+            mode = 0x103;
+            r13 = MTP_CTX(a->resp_ctx8);
         } else {
-            r15 |= 1u;
+            mode = 1;
         }
-        if (txrx_state1 & (1u << 1)) {
-            u32 r1v = a->sta;
-            if (rs_state[r1v].active != 0)
-                r13 |= (rs_sta_mcs_try(r1v) << 8) | 0x3;
-        }
+        r13 |= MTP_RS_RATE_OR(a->sta, 0);
     }
-    uc_mac_cmd(0x1b001111);
-    r15 |= (1u << 25) | (1u << 26) | (1u << 28);
-    uc_mac_cmd(r15);
-    uc_mac_cmd(r13 | 0x17000000);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16_Q(a->qid, mode), MTP_W17(r13));
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     u32 r51 = mac_mtp_desc();

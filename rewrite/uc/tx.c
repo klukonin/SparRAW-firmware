@@ -153,12 +153,7 @@ void direct_tx_send_after_delay(u32 a, u32 b, u32 c)  /* 6.2 asm 0x938218 */
 void mac_program_tx_result_ctx_uc(u32 a, u32 b, u32 c)  /* 6.2 asm 0x92db20 */
 {
     (void)c;
-    u32 r14 = (a << 16) | (1u << 4);
-    u32 r13 = (b == 0) ? 0 : 0x103;
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(r14 | 0x16000000);
-    uc_mac_cmd(r13 | 0x17000000);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16_Q(a, 0x10u), MTP_W17((b == 0) ? 0u : 0x103u));
 }
 
 void tx_crypto_ctl_arm(void)

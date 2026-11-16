@@ -430,7 +430,7 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
         a = (ctx->qid << 16) | 4;
         b = 0;
         if (RX_TXOP_RS_ACTIVE(ctx->sta) != 0)
-            b = (RX_TXOP_MCS_TRY(ctx->sta) << 8) | 3;
+            b = MTP_RATE(RX_TXOP_MCS_TRY(ctx->sta));
     } else {
         u32 m = ctx->mtp_state;
         a = ctx->qid << 16;
@@ -438,20 +438,17 @@ static inline __attribute__((always_inline)) void rx_txop_continue(struct tx_ctx
         if (m == 2 || m == 1) {
             a |= (m == 2) ? 0x103 : 3;
             a |= 0x20;
-            b = ctx->resp_ctx8 << 16;
+            b = MTP_CTX(ctx->resp_ctx8);
         } else {
             a |= 1;
         }
         if ((txrx_state1 & 2) && RX_TXOP_RS_ACTIVE(ctx->sta) != 0)
-            b |= (RX_TXOP_MCS_TRY(ctx->sta) << 8) | 3;
+            b |= MTP_RATE(RX_TXOP_MCS_TRY(ctx->sta));
     }
     UC_PAD(PAD_TXOP);   /* стресс запаса: uc/dbg.h (прежде UC_DBG_TXOP_PAD) */
     UC_EVM(0x13);
     UC_STAMP_T0(STAMP_MTP_LAT, mtp_t0);
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(a | 0x16000000);
-    uc_mac_cmd(b | 0x17000000);
-    uc_nop3();
+    MTP_REQUEST(MTP_W16(a), MTP_W17(b));
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     UC_EVM(0x14);
@@ -970,6 +967,32 @@ __attribute__((noinline, cold)) static u32 rx_bap_rx_timeout(void)
     return 0;
 }
 
+/* Общее ядро проверок быстрых путей ответа через SIFS (rx_fast_resp_ok, rx_fast_resp_pre_ok, rx_fast_cts_ok,
+ * rx_fast_cfend_ok). Иначе — разбор прежним путём (rx_get_required_response решает то же по полному разбору). */
+/* одиночный кадр нам от известной станции: TA в таблице адресов, не групповой, не соседа, FCS частично ок */
+static inline __attribute__((always_inline)) u32 rx_fast_known_ucast(u32 r3)
+{
+    return (r3 & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | MAC_RX_REP3_NEIGHBOUR |
+                  MAC_RX_REP3_FCS_OK_PART)) == (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART);
+}
+/* управляющий кадр (RTS, CF-End): не SS, не Beacon, не QoS Data, не управление */
+static inline __attribute__((always_inline)) u32 rx_fast_ctrl_rep1_ok(u32 r1)
+{
+    return !(r1 & (MAC_RX_REP1_SS | MAC_RX_REP1_NOACK_MGMT | MAC_RX_REP1_BEACON | MAC_RX_REP1_QOS_DATA |
+                   MAC_RX_REP1_MGMT));
+}
+/* без измерения кадра (rx_meas), пропуска ответов (rx_resp_skip_cnt) и фиксированного расписания (dti_qset_mode) */
+static inline __attribute__((always_inline)) u32 rx_fast_allowed(void)
+{
+    return VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0;
+}
+/* Ack/BlockAck: без режима BF приёма; станция s не уходит из сопровождения (как midbrp в rx_get_required_response) */
+static inline __attribute__((always_inline)) u32 rx_fast_ack_sta_ok(u32 s)
+{
+    return !(rx_mode_flags & 1) &&
+           !(uc_role_ap != 0 && !(maint_sta_mask & (1u << s)) && (maint_sta_mask_prev & (1u << s)));
+}
+
 /* Берёт ли кадр быстрый путь ответа Ack/BlockAck (rx_fast_resp) — проверка по отчёту в теле rx_flow_handle_frame, без
  * вызова: пролог rx_fast_resp (сохранение регистров) на кадре, которому быстрый путь не подходит, стоил ~90 тактов
  * (стенд 2026-11-11: Ack на кадр с б17 — 4,24 мкс от входа до MTP против 3,68). */
@@ -984,13 +1007,9 @@ static inline __attribute__((always_inline)) u32 rx_fast_resp_ok(void)
     u32 agg = (r3 & MAC_RX_REP3_MPDU_AGG) || (r1 & MAC_RX_REP1_BAR);
     if (!agg && MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8)
         return 0;                                 /* ATIM — разбор rx_get_required_response */
-    if ((r3 & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | MAC_RX_REP3_NEIGHBOUR |
-               MAC_RX_REP3_FCS_OK_PART)) != (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART) ||
-        MAC_RX_REP3_ACK_POLICY_OF(r3) != 0)
+    if (!rx_fast_known_ucast(r3) || MAC_RX_REP3_ACK_POLICY_OF(r3) != 0)
         return 0;
-    u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
-    return VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0 && !(rx_mode_flags & 1) &&
-           !(uc_role_ap != 0 && !(maint_sta_mask & (1u << s)) && (maint_sta_mask_prev & (1u << s)));
+    return rx_fast_allowed() && rx_fast_ack_sta_ok(MAC_RX_REP3_ADDR2_IDX_OF(r3));
 }
 
 /* Учёт быстрого пути Ack/BlockAck после пуска (f: [7:0] — r5, б8 — QoS Null) или без ответа (f = 0) — вне срока, на
@@ -1111,13 +1130,9 @@ static inline __attribute__((always_inline)) u32 rx_fast_resp_pre_ok(u32 r1, u32
     } else if (r1 & ~MAC_RX_REP1_RSV) {
         return 0;
     }
-    if ((r3 & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | MAC_RX_REP3_NEIGHBOUR |
-               MAC_RX_REP3_FCS_OK_PART)) != (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART) ||
-        MAC_RX_REP3_ACK_POLICY_OF(r3) != 0)
+    if (!rx_fast_known_ucast(r3) || MAC_RX_REP3_ACK_POLICY_OF(r3) != 0)
         return 0;
-    u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
-    return VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0 && !(rx_mode_flags & 1) &&
-           !(uc_role_ap != 0 && !(maint_sta_mask & (1u << s)) && (maint_sta_mask_prev & (1u << s)));
+    return rx_fast_allowed() && rx_fast_ack_sta_ok(MAC_RX_REP3_ADDR2_IDX_OF(r3));
 }
 
 /* Поля отчёта r37/r39, по которым rx_fast_resp_ok и rx_fast_resp выбирают ответ и его параметры: ранний путь сверяет
@@ -1186,12 +1201,12 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
     u32 sel = sta_tab[s].tx_sel | 0x3f000000;
     /* слова запроса MTP — как mtp_service_dispatch(kind, s, qid, rx_resp_rate(MCS)) для вида 0/1; qid и MCS принятого
      * (rx_resp_rate) — после отчёта */
-    u32 w17 = 0x17000000, rs = (txrx_state1 & 2u) && rs_state[s].active != 0, pm = rx_last_mcs;
+    u32 w17 = MTP_W17(0), rs = (txrx_state1 & 2u) && rs_state[s].active != 0, pm = rx_last_mcs;
     if (rs)
-        w17 |= ((u32)rs_sta_mcs_try(s) << 8) | 3;
+        w17 |= MTP_RATE((u32)rs_sta_mcs_try(s));
     else
         w17 |= rx_resp_rate(pm);                  /* MCS — как у прошлого кадра; после отчёта — сверка */
-    u32 w16 = (kind << 8) | 0x1f0022 | 0x16000000;
+    u32 w16 = MTP_W16_RESP(kind);
     while (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
         ;
     UC_EVM(0x03);
@@ -1212,11 +1227,11 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
         kind = 0;
         r5 = 1;
         qnull = (f1 >> 17) & 1;
-        w16 = 0x1f0022 | 0x16000000;
+        w16 = MTP_W16_RESP(0);
     }
     r3 = f3;
     u32 qid = MAC_RX_REP1_DATA_QID_OF(f1);
-    w17 |= qid << 16;
+    w17 |= MTP_CTX(qid);
     if (!rs && MAC_RX_REP3_RX_MCS_OF(f3) != pm)
         w17 = (w17 & ~0x1f03u) | rx_resp_rate(MAC_RX_REP3_RX_MCS_OF(f3));
     if (agg || qnull) {
@@ -1240,10 +1255,7 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
     uc_mac_cmd_nl(sel);
     UC_PAD(PAD_EARLY_REQ);
     UC_EVM(0x0800 | kind);
-    uc_mac_cmd_nl(0x1b001111);                    /* запрос MTP — как mtp_service_dispatch */
-    uc_mac_cmd_nl(w16);
-    uc_mac_cmd_nl(w17);
-    arc_nops(3);
+    MTP_REQUEST_NL(w16, w17);                     /* запрос MTP — как mtp_service_dispatch */
     ctx->resp_ctx8 = qid;
     rx_frame_tx_resp_after_req(kind, ctx, s, r5, 1);
     rx_early_buf_toggle();
@@ -1260,11 +1272,7 @@ static inline __attribute__((always_inline)) u32 rx_fast_cfend_ok(void)
 {
     u32 r3 = mac_rx_rep3();
     return (mac_rx_rep2() & MAC_RX_REP2_CF_END) && rx_buf_duration != 0 &&
-           (r3 & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | MAC_RX_REP3_NEIGHBOUR |
-                  MAC_RX_REP3_FCS_OK_PART)) == (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART) &&
-           !(mac_rx_rep1() & (MAC_RX_REP1_SS | MAC_RX_REP1_NOACK_MGMT | MAC_RX_REP1_BEACON | MAC_RX_REP1_QOS_DATA |
-                              MAC_RX_REP1_MGMT)) &&
-           VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0;
+           rx_fast_known_ucast(r3) && rx_fast_ctrl_rep1_ok(mac_rx_rep1()) && rx_fast_allowed();
 }
 
 /* Учёт быстрого пути ответного CF-End после пуска — вне срока, на размер (ICCM); то, что прежний путь делал в
@@ -1320,11 +1328,7 @@ static inline __attribute__((always_inline)) u32 rx_fast_cts_ok(void)
 {
     u32 r3 = mac_rx_rep3();
     return (mac_rx_rep2() & MAC_RX_REP2_RTS) &&
-           (r3 & (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_MCAST | MAC_RX_REP3_BCAST | MAC_RX_REP3_NEIGHBOUR |
-                  MAC_RX_REP3_FCS_OK_PART)) == (MAC_RX_REP3_ADDR2_VALID | MAC_RX_REP3_FCS_OK_PART) &&
-           !(mac_rx_rep1() & (MAC_RX_REP1_SS | MAC_RX_REP1_NOACK_MGMT | MAC_RX_REP1_BEACON | MAC_RX_REP1_QOS_DATA |
-                              MAC_RX_REP1_MGMT)) &&
-           VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0;
+           rx_fast_known_ucast(r3) && rx_fast_ctrl_rep1_ok(mac_rx_rep1()) && rx_fast_allowed();
 }
 
 /* Учёт быстрого пути DMG CTS после пуска (ok = 1) или без ответа (ok = 0) — вне срока, на размер (ICCM). */
@@ -1942,10 +1946,7 @@ u32 rx_flow_main(void)
                 ctx = *pctx;
                 u32 q = ctx->qid;
                 if (q != prev) {
-                    uc_mac_cmd(0x1b001111);
-                    uc_mac_cmd(((q << 16) | 1) | 0x16000000);
-                    uc_mac_cmd(0x17000000);
-                    uc_nop3();
+                    MTP_REQUEST(MTP_W16_Q(q, 1), MTP_W17(0));
                     qchg = 1;
                     (*pctx)->flags &= ~(1u << 9);
                 }
@@ -2983,17 +2984,7 @@ u32 rx_program_mac_and_wait(struct tx_ctx_s *a)
         uc_mac_cmd(0x37000005);
         uc_mac_cmd(0x37000002);
         uc_mac_cmd(r13 | 0x3f000000);
-        r15 = (r14->qid << 16) | 1;
-        u32 sta = r14->sta;
-        if ((txrx_state1 & (1u << 1)) && rs_state[sta].active != 0)
-            r13 = (rs_sta_mcs_try(sta) << 8) | 3;
-        else
-            r13 = 0;
-        uc_mac_cmd(0x1b001111);
-        uc_mac_cmd(r15 | (1u << 25) | (1u << 26) | (1u << 28));
-        r13 |= 0x17000000;
-        uc_mac_cmd(r13);
-        arc_nops(3);
+        MTP_REQUEST(MTP_W16_Q(r14->qid, 1), MTP_W17(MTP_RS_RATE_OR(r14->sta, 0)));
         while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
             ;
         u32 v51 = mac_mtp_desc();

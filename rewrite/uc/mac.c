@@ -335,19 +335,13 @@ void mac_evt_enable_bit_sync_b(u32 a)
 void mac_program_tx_common(void)
 {
     /* 0x92d990 */
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(0x161f0040);
-    uc_mac_cmd(0x17000003);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16(0x1f0040u), MTP_W17(MTP_RATE(0u)));
 }
 
 void mac_program_tx_beacon(void)
 {
     /* 0x92d8a4 */
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(0x161e0001);
-    uc_mac_cmd(0x17000003);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16(0x1e0001u), MTP_W17(MTP_RATE(0u)));
 }
 void mac_set_pwr_mode_map_bf0(u32 mode)
 {
@@ -359,18 +353,12 @@ void mac_set_pwr_mode_map_bf0(u32 mode)
 void mac_program_tx_with_rate(u32 rate)
 {
     /* 0x92d8e8 */
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(0x161f0040);
-    uc_mac_cmd(((rate << 8) | 3) | 0x17000000);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16(0x1f0040u), MTP_W17(MTP_RATE(rate)));
 }
 void mac_program_tx_with_qid(u32 qid)
 {
     /* 0x92d93c */
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(((qid << 16) | 1) | 0x16000000);
-    uc_mac_cmd(0x17000003);
-    arc_nops(3);
+    MTP_REQUEST(MTP_W16_Q(qid, 1u), MTP_W17(MTP_RATE(0u)));
 }
 
 /* СРОК: при r40[2:0] = 5 MAC должен подтвердить смену режима (MAC_EVT1_BUSY2) за тайм-аут 0xa GP-таймера
@@ -480,9 +468,9 @@ u32 macq_probe_empty(u32 q)
 {
     /* 0x92dab8: MAC_MTP_PERM_Q_EMPTY = 1 — очередь пуста (vendor mtp_queue__release_mgmt пишет
      * «MTP Queue is empty»), возврат !MAC_MTP_PERM_Q_EMPTY = 1 — очередь НЕ пуста. */
-    uc_mac_cmd(0x1b001111);
-    uc_mac_cmd(((q << 16) | 1) | 0x16000000);
-    uc_mac_cmd(0x17000000);
+    uc_mac_cmd(MTP_REQ);
+    uc_mac_cmd(MTP_W16_Q(q, 1u));
+    uc_mac_cmd(MTP_W17(0u));
     arc_nops_nop(2);   /* vendor L_92dafc: 2×nop + mov 0,0 */
     while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
         ;
