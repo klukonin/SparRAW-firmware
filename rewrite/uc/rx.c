@@ -1303,15 +1303,17 @@ static __attribute__((noinline)) u32 rx_fast_cfend_tail(struct tx_ctx_s *ctx, u3
 /* ХРУПКО (СРОК SIFS): быстрый путь ответного CF-End (802.11-2020 10.39.8.1 — держатель TXOP усекает TXOP CF-End, ответ
  * CF-End через SIFS; 9.3.1.6 Duration). CF-End — control PHY: конец PPDU uc видит рано (как RTS, стенд 2026-11-11);
  * прежний путь (поиск станции, учёт, rx_get_required_response, нижний switch) шёл до пуска ~1,2 мкс лишних. Здесь —
- * переход RX→TX, команды режима Duration (0x15/0x14000007, как rx_get_required_response), пуск прямой передачи
- * (rx_send_cf_end_response: 0x19 — в tx_send_imm_response, кадр в FIFO — после, MAC держит точку SIFS); учёт после. */
+ * команды режима Duration (0x15/0x14000007, как rx_get_required_response), пуск прямой передачи
+ * (rx_send_cf_end_response: 0x19 — в tx_send_imm_response, кадр в FIFO — после, MAC держит точку SIFS); учёт после.
+ * Перехода RX→TX (rx_end_switch_to_tx) нет — тракт уводит с приёма сам пуск, как у ответов через MTP: стенд 2026-11-16
+ * (чередование 6 загрузок, события PMC) у ответчика 0x2e − 0x1d 2,964 → 2,885 мкс (нижняя граница MAC, как DMG CTS),
+ * сумма SIFS 6,39 → 6,20–6,24, FWERR 0; эмуляция 388 → 288 тактов до 0x37000020. */
 __attribute__((optimize("O2", "no-inline")))
 static __attribute__((noinline)) u32 rx_fast_cfend(struct tx_ctx_s *ctx)
 {
     u32 r3 = mac_rx_rep3();
     u32 s = MAC_RX_REP3_ADDR2_IDX_OF(r3);
     rxf.sta = s;
-    rx_end_switch_to_tx();
     uc_mac_cmd_nl(0x15000000);
     uc_mac_cmd_nl(0x14000007);
     /* сектор передачи станции — как прежний путь перед нижним switch (0x37000005/0x37000002/0x3f | tx_sel) */
@@ -1360,9 +1362,11 @@ static __attribute__((noinline)) u32 rx_fast_cts_tail(struct tx_ctx_s *ctx, u32 
 
 /* ХРУПКО (СРОК SIFS): быстрый путь DMG CTS на RTS (802.11-2020 10.3.2.9; SIFS 10.3.2.3.3). RTS — control PHY: конец
  * PPDU uc видит через ~0,58 мкс после конца в эфире (стенд 2026-11-11, SIFS_CNT на входе rx_flow_handle_frame), прежний
- * путь (поиск станции, учёт, rx_get_required_response) шёл до запроса MTP ещё ~1,2 мкс. Здесь — переход RX→TX и RF
- * «передача» первыми, затем условия ответа rx_get_required_response (ack_cts: ждущий BF к отправителю при закрытом
- * окне, NAV по 10.3.2.9 — занят не кадром отправителя RTS — без ответа), запрос MTP и пуск; учёт — после пуска.
+ * путь (поиск станции, учёт, rx_get_required_response) шёл до запроса MTP ещё ~1,2 мкс. Здесь — условия ответа
+ * rx_get_required_response (ack_cts: ждущий BF к отправителю при закрытом окне, NAV по 10.3.2.9 — занят не кадром
+ * отправителя RTS — без ответа), запрос MTP и пуск; учёт — после пуска. Перехода RX→TX на пути ответа нет (тракт уводит
+ * секвенсор MTP, как у Ack/BlockAck): стенд 2026-11-16 (чередование 6 загрузок) 0x2e − 0x1d 2,921 → 2,885 мкс, сумма
+ * SIFS 6,31–6,33 → 6,24–6,27, FWERR 0; эмуляция 401 → 299 тактов. Без ответа — переход, как прежний путь на RTS.
  * Берёт RTS нам от известной станции (TA в таблице адресов, не групповой, не соседа, FCS частично ок), без измерения
  * кадра, пропуска ответов и фиксированного расписания; иначе 0 — разбор прежним путём. Возврат 1 — разобран. */
 __attribute__((optimize("O2", "no-inline")))
@@ -1379,10 +1383,8 @@ static __attribute__((noinline)) u32 rx_fast_cts(struct tx_ctx_s *ctx)
         e_sifs = mac_timer_sel();
     }
 #endif
-    /* Условия ответа (ack_cts в rx_get_required_response: ждущий BF к отправителю при закрытом окне, NAV по 10.3.2.9) —
-     * до перехода RX→TX: переход ждёт, пока PHY снимет признаки приёма (~50 тактов после входа, стенд 2026-11-11), и эта
-     * работа uc идёт в то же время, а не после. Без ответа — переход всё равно (как прежний путь на RTS). RF
-     * «передача» — в rx_frame_tx_resp_seq (ранняя запись на стенде пуск не ускоряла). */
+    /* Условия ответа (ack_cts в rx_get_required_response: ждущий BF к отправителю при закрытом окне, NAV по 10.3.2.9).
+     * RF «передача» — в rx_frame_tx_resp_after_req (ранняя запись на стенде пуск не ускоряла). */
     rxf.sta = s;
     /* TSF — только при взведённом NAV (rx_nav_check_idle_at смотрит его лишь при rx_nav.flags & 3 == 3; иначе ответ
      * «NAV свободен» и снятие б0 — то же без TSF); tx_busy_start_tsf — после пуска, с поправкой на прошедшее время
@@ -1400,10 +1402,11 @@ static __attribute__((noinline)) u32 rx_fast_cts(struct tx_ctx_s *ctx)
         txr.rts_nav_busy += 1;
         go = 0;
     }
-    rx_end_switch_to_tx();
     UC_STAMP_T0(STAMP_CTS_FAST, c1);
-    if (!go)
+    if (!go) {
+        rx_end_switch_to_tx();                    /* без ответа — переход, как прежний путь на RTS */
         goto no_resp;
+    }
     UC_STAMP_T0(STAMP_CTS_FAST, c2);
     /* RTS — control PHY: MCS ответа выбирает MAC (rx_resp_rate) */
     RX_RESP_ISSUE(5, ctx, s, 3, sta_tab[s].tx_sel | 0x3f000000, 0x20000400, PAD_RESP_CMD, MTP_W16_RESP(5),
