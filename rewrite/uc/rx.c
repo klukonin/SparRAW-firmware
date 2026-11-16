@@ -920,6 +920,23 @@ rx_frame_tx_resp_seq(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast
     rx_frame_tx_resp_after_req(kind, ctx, sta, resp, fast);
 }
 
+/* ХРУПКО (СРОК SIFS): выпуск ответа через SIFS — одна последовательность для раннего и прежнего путей Ack/BlockAck,
+ * DMG CTS и ответа из rx_flow_handle_frame: сектор передачи станции (0x37000005, 0x37000002, 0x3f | tx_sel — sel),
+ * доп. команда (extra ≠ 0: 0x20000400 у DMG CTS), точка стресса pad, запрос MTP словами w16/w17 (MTP_W16_RESP,
+ * MTP_W17_RESP — посчитаны вызывающим, до пути: прежде их считал вызов mtp_service_dispatch между сектором и запросом),
+ * ожидание MTP и пуск (rx_frame_tx_resp_after_req). Команды — без журнала (uc_mac_cmd_nl). */
+#define RX_RESP_ISSUE(kind, ctx, sta, resp, sel, extra, pad, w16, w17) do { \
+    uc_mac_cmd_nl(0x37000005);                                             \
+    uc_mac_cmd_nl(0x37000002);                                             \
+    uc_mac_cmd_nl(sel);                                                    \
+    if ((extra) != 0)                                                      \
+        uc_mac_cmd_nl(extra);                                              \
+    UC_PAD(pad);                                                           \
+    UC_EVM(0x0800 | (kind));                                               \
+    MTP_REQUEST_NL(w16, w17);                                              \
+    rx_frame_tx_resp_after_req(kind, ctx, sta, resp, 1);                   \
+} while (0)
+
 /* Биты скорости ответа через SIFS для команды MTP 0x17 ([12:8] MCS, [1:0] = 3; 0 — MCS выбирает MAC).
  * исправлено (vendor): MCS Ack/BlockAck не задавался — MAC слал BlockAck на кадр MCS 8 на MCS 1 (стенд 2026-10-30,
  * наш uc и vendor-AP: r38 received_mcs 1 у принятого BlockAck). 802.11-2020 10.6.7.2: на кадр SC — MCS из
@@ -1104,12 +1121,10 @@ static __attribute__((noinline)) u32 rx_fast_resp(struct tx_ctx_s *ctx)
         if (!rx_bap_rx_up)
             goto no_resp;
     }
-    u32 rate = rx_resp_rate(MAC_RX_REP3_RX_MCS_OF(r3));
-    ctx->resp_ctx8 = MAC_RX_REP1_DATA_QID_OF(r1);
-    uc_mac_cmd_nl(0x37000005);
-    uc_mac_cmd_nl(0x37000002);
-    uc_mac_cmd_nl(sta_tab[s].tx_sel | 0x3f000000);
-    rx_frame_tx_resp_seq(kind, ctx, s, r5, 1, rate);
+    u32 qid = MAC_RX_REP1_DATA_QID_OF(r1);
+    u32 w17 = MTP_W17_RESP(0, s, qid, rx_resp_rate(MAC_RX_REP3_RX_MCS_OF(r3)));   /* виды 0/1 — одно слово */
+    ctx->resp_ctx8 = qid;
+    RX_RESP_ISSUE(kind, ctx, s, r5, sta_tab[s].tx_sel | 0x3f000000, 0, PAD_RESP_CMD, MTP_W16_RESP(kind), w17);
     return rx_fast_resp_tail(ctx, s, r3, r5 | qnull << 8);
 tmo:
     rx_bap_rx_timeout();
@@ -1244,14 +1259,8 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
         if (!rx_bap_rx_up)
             goto no_resp;
     }
-    uc_mac_cmd_nl(0x37000005);
-    uc_mac_cmd_nl(0x37000002);
-    uc_mac_cmd_nl(sel);
-    UC_PAD(PAD_EARLY_REQ);
-    UC_EVM(0x0800 | kind);
-    MTP_REQUEST_NL(w16, w17);                     /* запрос MTP — как mtp_service_dispatch */
-    ctx->resp_ctx8 = qid;
-    rx_frame_tx_resp_after_req(kind, ctx, s, r5, 1);
+    RX_RESP_ISSUE(kind, ctx, s, r5, sel, 0, PAD_EARLY_REQ, w16, w17);
+    ctx->resp_ctx8 = qid;                         /* до этого места его никто не читает */
     RX_BUF_TOGGLE();
     return rx_fast_resp_tail(ctx, s, r3, r5 | qnull << 8);
 tmo:
@@ -1395,12 +1404,10 @@ static __attribute__((noinline)) u32 rx_fast_cts(struct tx_ctx_s *ctx)
     UC_STAMP_T0(STAMP_CTS_FAST, c1);
     if (!go)
         goto no_resp;
-    uc_mac_cmd_nl(0x37000005);
-    uc_mac_cmd_nl(0x37000002);
-    uc_mac_cmd_nl(sta_tab[s].tx_sel | 0x3f000000);
-    uc_mac_cmd_nl(0x20000400);
     UC_STAMP_T0(STAMP_CTS_FAST, c2);
-    rx_frame_tx_resp_seq(5, ctx, s, 3, 1, 0);           /* RTS — control PHY: MCS ответа выбирает MAC (rx_resp_rate) */
+    /* RTS — control PHY: MCS ответа выбирает MAC (rx_resp_rate) */
+    RX_RESP_ISSUE(5, ctx, s, 3, sta_tab[s].tx_sel | 0x3f000000, 0x20000400, PAD_RESP_CMD, MTP_W16_RESP(5),
+                  MTP_W17_RESP(5, s, 0, 0));
     UC_STAMP(STAMP_CTS_FAST, (c1 - c0) | (c2 - c0) << 16, e_sifs);
     return rx_fast_cts_tail(ctx, s, r3, tsf, t_in, 1);
 no_resp:
@@ -1730,19 +1737,18 @@ chk:                                            /* 0x93215c */
         } else {
             u32 s1 = *sta;
             u32 m = sta_tab[s1].tx_sel;
-            uc_mac_cmd(0x37000005);
-            uc_mac_cmd(0x37000002);
-            uc_mac_cmd(m | 0x3f000000);
-            if (r5 - 1 < 3) {
-                /* Быстрый путь ответа ACK/BA (vendor 0x932a0c, случаи 1..3): запрос в MTP
-                 * сразу, записи ctx->flags/ctx->sta/0x802298/0x802294 — после команды 0x19000001
-                 * (rx_frame_tx_resp_seq). ХРУПКО: тайминг практически без запаса у vendor;
-                 * здесь запас ~20 инструкций, см. комментарий у rx_frame_tx_resp_seq. */
+            if (r5 - 1 >= 3) {
+                uc_mac_cmd(0x37000005);
+                uc_mac_cmd(0x37000002);
+                uc_mac_cmd(m | 0x3f000000);
+            } else {
+                /* Ответ Ack/BA/DMG CTS прежним путём (vendor 0x932a0c, случаи 1..3): сектор и запрос в MTP
+                 * сразу (RX_RESP_ISSUE), записи ctx->flags/ctx->sta/0x802298/0x802294 — после команды 0x19000001.
+                 * ХРУПКО: срок SIFS, см. комментарий у rx_frame_tx_resp_after_req. */
                 u32 kind = r5 == 1 ? 0 : r5 == 2 ? 1 : 5;
-                if (r5 == 3)
-                    uc_mac_cmd(0x20000400);
                 UC_STAMP_T0(STAMP_CTS_PATH, t_mtp);
-                rx_frame_tx_resp_seq(kind, ctx, s1, r5, 1, rate);
+                RX_RESP_ISSUE(kind, ctx, s1, r5, m | 0x3f000000, r5 == 3 ? 0x20000400u : 0, PAD_RESP_CMD,
+                              MTP_W16_RESP(kind), MTP_W17_RESP(kind, s1, ctx->resp_ctx8, rate));
                 UC_STAMP(STAMP_CTS_PATH, (t_rep - t_in) | (t_sw - t_in) << 16,
                          (t_mtp - t_in) | (arc_lr(0x100) - t_in) << 16);
                 UC_STAMP(STAMP_RESP_PATH, (t_get - t_in) | (t_bap - t_in) << 16, r5);

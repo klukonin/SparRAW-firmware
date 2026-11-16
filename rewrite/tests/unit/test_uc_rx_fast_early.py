@@ -140,14 +140,14 @@ def test_early_mcs_from_final(uc):
 
 def req_fn(uc, m):
     a = m.cmd_idx(lambda c: c == REQ)
-    return a is not None and uc.where(m.pc[a]).split('+')[0]
+    return a is not None and uc.where(m.pc[a]).split('+')[0].split('.')[0]   # без суффикса клона gcc (.isra.0)
 
 
 @pytest.mark.parametrize('qnull', [0, 1])
 def test_early_pred_fail_single_ack_here(uc, qnull):
     """Тип к входу неизвестен (r36 — только б3), окончательный отчёт: одиночный QoS Data / QoS Null (б17) той же станции,
     Normal Ack: не сбылось только предсказание A-MPDU — Ack (вид 0) раннего пути, запрос MTP выдан из него же (не
-    прежним путём через mtp_service_dispatch), запрос один."""
+    прежним путём rx_fast_resp), запрос один."""
     sta = 0x20000800 | (7 << 8)
     m, st = run(uc, 'ack', pre={36: 1 << 3, 38: sta}, fin={36: 1 << 1 | qnull << 17, 38: sta})
     w = mtp_words(uc)
@@ -176,4 +176,4 @@ def test_no_rf_tx_before_request(uc, kind, k):
     assert a is not None
     w = [j for j, e in m.events() if e[:3] == ('mmio', 'w', 0x889488)]
     assert not [j for j in w if j < a], 'запись RF до запроса MTP'
-    assert req_fn(uc, m) == ('rx_fast_resp_early' if k else 'mtp_service_dispatch'), req_fn(uc, m)
+    assert req_fn(uc, m) == ('rx_fast_resp_early' if k else 'rx_fast_resp'), req_fn(uc, m)   # запрос — RX_RESP_ISSUE на месте

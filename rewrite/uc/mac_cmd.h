@@ -14,6 +14,10 @@
 
 /* 0x16 ответа через SIFS по виду (mtp_service_dispatch): 0 — Ack, 1 — BlockAck, 3 — 0x103 без 0x17, 5 — DMG CTS */
 #define MTP_W16_RESP(kind)     MTP_W16(((kind) << 8) | 0x1f0022u)
+/* 0x17 ответа через SIFS по виду (mtp_service_dispatch, виды 0/1/5): контекст ответа c (кроме DMG CTS) и скорость —
+ * поиска скорости станции s или rate (биты rx_resp_rate) */
+#define MTP_W17_RESP(kind, s, c, rate) \
+    MTP_W17(((kind) == 5 ? 0u : MTP_CTX(c)) | MTP_RS_RATE_OR(s, rate))
 /* 0x16 кадра очереди qid; mode: 1 — обычный, 3 / 0x103 — с контекстом ответа (0x17 [23:16]), 4 — RD, 0x10 — итог */
 #define MTP_W16_Q(qid, mode)   MTP_W16(((qid) << 16) | (mode))
 

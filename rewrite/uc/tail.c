@@ -432,18 +432,15 @@ void l2_handle_watchdog(void) {
  * 2,4 → assert 0x8c, 3 → 0x92d9fe (0x103), 5 → 0x92da0a (проверка очереди без c). */
 void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d)
 {
-    u32 r14 = 0;
-    if (a >= 6 || a == 2 || a == 4) {
+    u32 w17 = MTP_W17(0);
+    if (a >= 6 || a == 2 || a == 4)
         uc_assert((u32)__builtin_return_address(0), 0x8c);
-    } else if (a == 3) {
-        r14 = 0x103;
-    } else {
-        if (a != 5)
-            r14 = MTP_CTX(c);
-        r14 |= MTP_RS_RATE_OR(b, d);        /* d — биты скорости 0x17 ([12:8] MCS | 3) или 0 — MCS выбирает MAC;
+    else if (a == 3)
+        w17 = MTP_W17(0x103);
+    else
+        w17 = MTP_W17_RESP(a, b, c, d);     /* d — биты скорости 0x17 ([12:8] MCS | 3) или 0 — MCS выбирает MAC;
                                              * vendor: d — MCS, 0xff — «не задан» (сравнение на пути ответа) */
-    }
-    MTP_REQUEST_NL(MTP_W16_RESP(a), MTP_W17(r14));
+    MTP_REQUEST_NL(MTP_W16_RESP(a), w17);
 }
 
 u32 rx_nav_check_idle(u32 a, u32 b, u32 c) {
