@@ -9,6 +9,10 @@ python3 -m pytest tests -m unit                          # в составе о�
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ARC_DIR=<тулчейн> pypy3 -m pytest -p no:cacheprovider tests/unit
 ```
 
+Сторожа прогона: tests/unit в аргументах без тулчейна — ошибка запуска (иначе тесты эмуляции молча не собираются);
+весь tests/unit без фильтров должен собрать не меньше `UNIT_MIN_TESTS` (`test_unit_collection.py`; удалили тесты —
+опустить границу в том же коммите). Ошибка порядка uc (метка 0x80e500ff) роняет любой тест — `uc_order_guard`.
+
 Функция uc исполняется в эмуляторе ARC (`tools/arcemu/cpu.py`) прямо из `uc.elf`: DCCM — по настоящим адресам,
 начальные данные — из ELF. Обвязка `ucemu.py`:
 

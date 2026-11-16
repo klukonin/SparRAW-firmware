@@ -1,10 +1,12 @@
-/* SPDX-License-Identifier: AGPL-3.0-or-later */
-/* Запрос MTP (секвенсор передачи MAC): 0x1b001111 «запрос», слово 0x16 (что передать), слово 0x17 (параметры:
+// SPDX-License-Identifier: AGPL-3.0-or-later
+/* Слова команд MAC, общие для путей uc (подключается через -include после uc/mac_regs.h, Makefile).
+ *
+ * Запрос MTP (секвенсор передачи MAC): 0x1b001111 «запрос», слово 0x16 (что передать), слово 0x17 (параметры:
  * скорость, контекст ответа), затем 3×nop_s до чтения ответа r43 (MAC_MTP_RESP_VALID). Слова собираются только здесь —
  * прежде их собирали ~14 мест (ответ через SIFS, продолжение TXOP, очереди управления, маяк, групповые), и расхождение
- * копий не было видно. Макросы (а не функции): заголовок включается до include/arc.h (Makefile, -include). */
-#ifndef UC_MTP_H
-#define UC_MTP_H
+ * копий не было видно. Макросы (а не функции): поля DCCM (uc/dccm.h) и rs_sta_mcs_try подставляются в месте вызова. */
+#ifndef UC_MAC_CMD_H
+#define UC_MAC_CMD_H
 
 #define MTP_REQ                0x1b001111u
 #define MTP_W16(v)             (0x16000000u | (v))
@@ -28,5 +30,12 @@
     do { uc_mac_cmd(MTP_REQ); uc_mac_cmd(w16); uc_mac_cmd(w17); arc_nops(3); } while (0)
 #define MTP_REQUEST_NL(w16, w17) \
     do { uc_mac_cmd_nl(MTP_REQ); uc_mac_cmd_nl(w16); uc_mac_cmd_nl(w17); arc_nops(3); } while (0)
+
+/* Переключение буфера приёма (0x32 | номер половины): после отчёта о PPDU, до следующего приёма (иначе следующий кадр
+ * ложится в буфер, который ещё читает разбор — ошибка 2026-11-15, rx_post_run). _NOW — без проверки запрета. */
+#define RX_BUF_TOGGLE_NOW() \
+    do { uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000u); rx_buf_toggle_cnt += 1; } while (0)
+#define RX_BUF_TOGGLE() \
+    do { if (rx_buf_toggle_dis == 0) RX_BUF_TOGGLE_NOW(); } while (0)
 
 #endif

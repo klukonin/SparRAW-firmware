@@ -27,7 +27,23 @@ else:
     collect_ignore_glob = ['test_*.py']
 
 
+def unit_args(config):
+    """Аргументы прогона, указывающие внутрь tests/unit (явный запрос юнит-тестов): [(путь, есть ли '::')]."""
+    out = []
+    for a in config.args:
+        p = os.path.abspath(os.path.join(str(config.invocation_params.dir), a.split('::')[0]))
+        if p == HERE or p.startswith(HERE + os.sep):
+            out.append((p, '::' in a))
+    return out
+
+
 def pytest_configure(config):
+    # Сторож: tests/unit запрошен явно, а тулчейна нет — без этого тесты эмуляции молча не собираются и прогон «зелёный»
+    # на одном tests/ref (2026-11-16: 1585 вместо ~3150 в рабочей копии дерева без ARC_DIR). Общий прогон tests/ (стенд)
+    # без тулчейна по-прежнему идёт без юнит-тестов.
+    if not _TC and unit_args(config):
+        raise pytest.UsageError('tests/unit запрошен, но тулчейн ARC не найден — тесты эмуляции не соберутся; '
+                                'задайте ARC_DIR (…/toolchain/arc_gnu_2021.03_prebuilt_elf32_le_linux_install)')
     config.addinivalue_line('markers', 'unit: юнит-тест без стенда (эмулятор ARC / хостовый gcc)')
     # Параллельный прогон: pytest -n 8 --dist loadgroup — тесты с общим дорогим кэшем/фикстурой в одной группе
     config.addinivalue_line('markers', 'xdist_group(name): группа тестов на один воркер pytest-xdist (loadgroup)')
@@ -129,13 +145,13 @@ def uc_factory(build_dir, uc_fw):
     return lambda: ucemu.UC(os.path.join(build_dir, 'uc.elf'), uc_fw)
 
 
-UC_DEFER_LATE_MARK = 0x80e500ff       # uc/rx.c rx_txop_defer_late: отложенная работа держателя TXOP не до приёма
+UC_DEFER_LATE_MARK = 0x80e500ff       # uc/rx.c rx_post_late: отложенная работа после пуска не до приёма
 
 
 @pytest.fixture(autouse=True)
 def uc_order_guard():
-    """Сторож порядка uc во всех тестах эмуляции: работа держателя TXOP, отложенная за пуск (rx_txop_deferred: буфер
-    приёма 0x32), должна быть сделана до следующего приёма — иначе uc ставит метку 0x80e500ff (rx_txop_defer_late) и
+    """Сторож порядка uc во всех тестах эмуляции: работа после пуска, отложенная за него (rx_post_run: буфер
+    приёма 0x32), должна быть сделана до следующего приёма — иначе uc ставит метку 0x80e500ff (rx_post_late) и
     доделывает её на входе rx_flow_run. Метка в журнале команд любого узла — ошибка порядка (2026-11-15: запрос итога с
     приёмом ответного CF-End, test_fw_sls_collision ловил только косвенно)."""
     seen = {id(n): len(getattr(n, 'hw', None).cmd_log) if getattr(n, 'hw', None) else 0 for n in list(_cosim_live())}
@@ -148,7 +164,7 @@ def uc_order_guard():
         for t, v in hw.cmd_log[seen.get(id(n), 0):]:
             if v == UC_DEFER_LATE_MARK:
                 bad.append(t)
-    assert not bad, 'uc: работа держателя TXOP не сделана до приёма (rx_txop_defer_late) на тактах %s' % bad[:8]
+    assert not bad, 'uc: отложенная работа после пуска не сделана до приёма (rx_post_late) на тактах %s' % bad[:8]
 
 
 def _cosim_live():

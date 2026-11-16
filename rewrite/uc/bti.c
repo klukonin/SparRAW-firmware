@@ -247,10 +247,7 @@ u32 abft_resp_parse_fdbk(struct sls_peer_rec *dst)
 {
     /* 6.2 asm 0x93061c. Парсинг ABFT-фидбека. */
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
-    }
+    RX_BUF_TOGGLE();
     ppdu_evt_cnt += 1;                  /* ld_s [gp,80] / st.as [gp,20] — один адрес */
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
@@ -287,10 +284,7 @@ u32 abft_resp_parse_fdbk(struct sls_peer_rec *dst)
 u32 bti_beacon_rx_match_bss(u32 a, u32 b)
 {
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000);   /* bset 25/28/29 — u32, не u8 */
-        rx_buf_toggle_cnt += 1;
-    }
+    RX_BUF_TOGGLE();
     ppdu_evt_cnt += 1;                      /* [gp,0x50] → st.as [gp,0x14] */
     (uc_stats.rx_arm)++;
     uc_mac_cmd(0x2011000);

@@ -110,10 +110,7 @@ void rx_listen_set_flag_and_stamp_tsf(void)
 void rx_arm_window(void)
 {
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
-    }
+    RX_BUF_TOGGLE();
     ppdu_evt_cnt += 1;
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
@@ -159,11 +156,7 @@ u32 rx_flow_run_and_check_bf_abort(u32 a)
 u32 rx_ppdu_is_ack(void)
 {
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {
-        u32 v = (rx_buf_toggle_cnt & 1) | 0x32000000u;
-        uc_mac_cmd(v);
-        rx_buf_toggle_cnt += 1;
-    }
+    RX_BUF_TOGGLE();
     ppdu_evt_cnt += 1;                      /* ld_s [gp,80] / st.as [gp,20] */
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
@@ -174,11 +167,7 @@ u32 rx_ppdu_is_ack(void)
 u32 rx_ppdu_is_cts(void)
 {
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {
-        u32 v = (rx_buf_toggle_cnt & 1) | 0x32000000u;
-        uc_mac_cmd(v);
-        rx_buf_toggle_cnt += 1;
-    }
+    RX_BUF_TOGGLE();
     ppdu_evt_cnt += 1;                      /* ld_s [gp,80] / st.as [gp,20] */
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
@@ -193,10 +182,7 @@ u32 rx_ppdu_is_cts(void)
 u32 rx_ppdu_is_ssw(void)
 {
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1u) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
-    }
+    RX_BUF_TOGGLE();
     ppdu_evt_cnt += 1;
     uc_stats.rx_arm += 1;
     uc_mac_cmd(0x2011000);
@@ -525,7 +511,7 @@ u32 rx_flow_run(void)
 
     uc_mac_cmd(0xeeee09);
     uc_mac_cmd(arc_lr(uc_timer[1].count) & 0xffffff);
-    RX_DEFER_CHECK();                             /* сторож: отложенная работа держателя — до приёма (ХРУПКО, rx_txop_deferred) */
+    RX_POST_CHECK();                              /* сторож: отложенная работа после пуска — до приёма (ХРУПКО, rx_post_run) */
     rx_ppdu_report_seen = 0;
     uc_mac_sel(0);
     uc_nop3();
@@ -1012,33 +998,51 @@ static inline __attribute__((always_inline)) u32 rx_fast_resp_ok(void)
     return rx_fast_allowed() && rx_fast_ack_sta_ok(MAC_RX_REP3_ADDR2_IDX_OF(r3));
 }
 
+/* Общее для учёта после пуска и отказа быстрых путей (хвосты rx_fast_*_tail, rx_post_run) — вне срока. */
+/* учёт sel_nbr: станция с наименьшим усилением приёма среди тех, у кого не идёт поиск скорости; не при rx_mode_flags
+ * б0/б1 (режимы приёма, bf.c) */
+__attribute__((optimize("Os"), noinline))
+static void rx_sel_nbr_note(u32 s)
+{
+    if (!(rx_mode_flags & 3) && rs_state[s].active == 0 && sel_nbr.cur_gain_db < sel_nbr.min_gain_db) {
+        sel_nbr.min_gain_db = sel_nbr.cur_gain_db;
+        sel_nbr.min_sta = (u8)s;
+    }
+}
+/* ответа нет — RF обратно на приём */
+static inline __attribute__((always_inline)) void rx_rf_set_rx(void)
+{
+    u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_rx << 24);
+    abif_dvs_rf_ctrl_shadow = v;
+    MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
+}
+/* ответа нет — приём заново, кадр разобран без ответа (как rx_get_required_response с ответом 0) */
+static inline __attribute__((always_inline)) void rx_fast_no_resp(struct tx_ctx_s *ctx)
+{
+    ctx->mtp_state = 0;
+    rx_mac_prepare();
+    rxf.flags |= 4;
+    rxf.resp_type = 0;
+    ctx->flags &= ~1u;
+}
+
 /* Учёт быстрого пути Ack/BlockAck после пуска (f: [7:0] — r5, б8 — QoS Null) или без ответа (f = 0) — вне срока, на
  * размер (ICCM). */
 __attribute__((optimize("Os"), cold))
 static __attribute__((noinline)) u32 rx_fast_resp_tail(struct tx_ctx_s *ctx, u32 s, u32 r3, u32 f)
 {
     u32 r5 = f & 0xff;
-    if (!r5) {                                    /* ответа нет — RF обратно на приём */
-        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_rx << 24);
-        abif_dvs_rf_ctrl_shadow = v;
-        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
-    }
+    if (!r5)                                      /* ответа нет — RF обратно на приём */
+        rx_rf_set_rx();
     uc_mac_cmd(0xeeee0c);
     rxf.flags &= ~0x10u;
     rxf.sta = s;
     if (!r5) {
-        ctx->mtp_state = 0;
-        rx_mac_prepare();
-        rxf.flags |= 4;
-        rxf.resp_type = 0;
-        ctx->flags &= ~1u;
+        rx_fast_no_resp(ctx);
         uc_mac_cmd(0x14000000);
         return 1;
     }
-    if (!(rx_mode_flags & 2) && rs_state[s].active == 0 && sel_nbr.cur_gain_db < sel_nbr.min_gain_db) {
-        sel_nbr.min_gain_db = sel_nbr.cur_gain_db;
-        sel_nbr.min_sta = (u8)s;
-    }
+    rx_sel_nbr_note(s);                           /* rx_mode_flags б0 исключён проверкой (rx_fast_ack_sta_ok) */
     rx_last_mcs = MAC_RX_REP3_RX_MCS_OF(r3);
     if (f >> 8) {                                 /* QoS Null — как L_9330b4 в rx_get_required_response */
         if (*(u16 *)&rx_buf_body18 & (1u << 4))
@@ -1144,16 +1148,6 @@ static inline __attribute__((always_inline)) u32 rx_fast_resp_pre_ok(u32 r1, u32
 /* MCS принятого кадра (r38 [24:20]) в сверку не входит: до отчёта он 0 (стенд 2026-11-15, метки UC_EVM с расходящимися
  * битами: у 2516 из 2546 несошедшихся предсказаний — только MCS 0 → 8); скорость ответа — по окончательному. */
 
-/* Переключение буфера приёма (0x32) раннего пути — после пуска ответа или перед отказом: до запроса MTP оно стоило
- * ~12 тактов (с записью в журнал команд), а читает буфер только учёт после пуска. */
-static inline __attribute__((always_inline)) void rx_early_buf_toggle(void)
-{
-    if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
-    }
-}
-
 /* ХРУПКО (СРОК SIFS): ранний путь Ack/BlockAck — то же, что rx_fast_resp, но всё, что не ждёт окончательного отчёта о
  * PPDU и не выдаёт команд, — до него. Стенд 2026-11-15 (метки UC_EVM в записях событий PMC, время от конца приёма
  * 0x1d): uc видит конец через 0,10 мкс, входит в rx_flow_handle_frame через 0,57, а отчёт (r42 б16) у PPDU с MPDU
@@ -1170,8 +1164,8 @@ static inline __attribute__((always_inline)) void rx_early_buf_toggle(void)
  * Чего здесь нет и почему (стенд 2026-11-15, чередование захватов, судья эфира, сумма SIFS BlockAck):
  *  - RF «передача» до запроса MTP у A-MPDU и QoS Null — её пишет rx_frame_tx_resp_after_req после 0x37000020; без
  *    ранней записи 7,02–7,05 → 6,87–6,90 мкс (норма), FWERR 0;
- *  - переключение буфера приёма до запроса — после пуска (rx_early_buf_toggle), с пересчётом скорости только при
- *    расхождении MCS: 7,09–7,16 → 7,02–7,05;
+ *  - переключение буфера приёма до запроса — после пуска (RX_BUF_TOGGLE; до запроса ~12 тактов с журналом команд, а
+ *    буфер читает только учёт после пуска), с пересчётом скорости только при расхождении MCS: 7,09–7,16 → 7,02–7,05;
  *  - RF «передача» и команды сектора до отчёта — uc_assert 0x26 (поздняя команда ответа) при ассоциации на обоих узлах;
  *  - опрос r36/r38 до отчёта — одиночные MPDU позже на 0,1–0,35 мкс, A-MPDU не раньше;
  *  - RF «передача» до запроса и в ветке Ack (ожидание BAP), и в прежнем rx_fast_resp; не сбылось только предсказание
@@ -1219,7 +1213,7 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
             ((f3 ^ r3) & RX_EARLY_REP3_M & ~MAC_RX_REP3_MPDU_AGG) || (f3 & MAC_RX_REP3_MPDU_AGG) ||
             MAC_RX_MISC_TYPE_IDX_OF(mac_rx_misc()) == 8) {
             UC_EVM(0x09);
-            rx_early_buf_toggle();
+            RX_BUF_TOGGLE();
             return 2;
         }
         UC_EVM(0x0b);
@@ -1258,12 +1252,12 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
     MTP_REQUEST_NL(w16, w17);                     /* запрос MTP — как mtp_service_dispatch */
     ctx->resp_ctx8 = qid;
     rx_frame_tx_resp_after_req(kind, ctx, s, r5, 1);
-    rx_early_buf_toggle();
+    RX_BUF_TOGGLE();
     return rx_fast_resp_tail(ctx, s, r3, r5 | qnull << 8);
 tmo:
     rx_bap_rx_timeout();
 no_resp:
-    rx_early_buf_toggle();
+    RX_BUF_TOGGLE();
     return rx_fast_resp_tail(ctx, s, r3, 0);
 }
 
@@ -1285,11 +1279,7 @@ static __attribute__((noinline)) u32 rx_fast_cfend_tail(struct tx_ctx_s *ctx, u3
     rxf.flags &= ~0x10u;
     if (r3 & MAC_RX_REP3_RX_MCS)
         sta_tab[s].flags &= ~2u;
-    if (!(rx_mode_flags & 1) && !(rx_mode_flags & 2) && rs_state[s].active == 0 &&
-        sel_nbr.cur_gain_db < sel_nbr.min_gain_db) {
-        sel_nbr.min_gain_db = sel_nbr.cur_gain_db;
-        sel_nbr.min_sta = (u8)s;
-    }
+    rx_sel_nbr_note(s);
     rx_last_mcs = MAC_RX_REP3_RX_MCS_OF(r3);
     ctx->mtp_state = 8;
     ctx->sta = s;
@@ -1336,11 +1326,8 @@ __attribute__((optimize("Os"), cold))
 static __attribute__((noinline)) u32 rx_fast_cts_tail(struct tx_ctx_s *ctx, u32 s, u32 r3, u32 tsf, u32 t_in, u32 ok)
 {
     rx_nav_check_idle_at(tsf + ((u8 *)&ifs.sifs)[1], 0, 0);   /* учёт rx_nav_check_idle_at: снятие истёкшего NAV */
-    if (!ok) {
-        u32 v = (abif_dvs_rf_ctrl_shadow & 0xfcffffff) | (rf_set_rx << 24);
-        abif_dvs_rf_ctrl_shadow = v;
-        MMIO32(HW_ABIF_DVS_RF_CTRL) = v;
-    }
+    if (!ok)
+        rx_rf_set_rx();
     uc_mac_cmd(0xeeee0c);
     rxf.flags &= ~0x10u;
     tx_busy_start_tsf = uc_read_tsf_lo() - 0xe - (arc_lr(0x100) - t_in) / 165u;
@@ -1351,20 +1338,12 @@ static __attribute__((noinline)) u32 rx_fast_cts_tail(struct tx_ctx_s *ctx, u32 
     }
     rx_last_mcs = MAC_RX_REP3_RX_MCS_OF(r3);
     if (ok) {
-        if (!(rx_mode_flags & 1) && !(rx_mode_flags & 2) && rs_state[s].active == 0 &&
-            sel_nbr.cur_gain_db < sel_nbr.min_gain_db) {
-            sel_nbr.min_gain_db = sel_nbr.cur_gain_db;
-            sel_nbr.min_sta = (u8)s;
-        }
+        rx_sel_nbr_note(s);
         ctx->mtp_state = 3;
         rx_resp_finish_restore_rx((u32)ctx, 5, 0);
         mac_mon_report.tx_cts += 1;
     } else {
-        ctx->mtp_state = 0;
-        rx_mac_prepare();
-        rxf.flags |= 4;
-        rxf.resp_type = 0;
-        ctx->flags &= ~1u;
+        rx_fast_no_resp(ctx);
     }
     uc_mac_cmd(0x14000000);
     return 1;
@@ -1469,10 +1448,7 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a)
         if (!(mac_evt1() & MAC_EVT1_PPDU_REPORT))
             uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
         UC_EVM(0x03);
-        if (rx_buf_toggle_dis == 0) {
-            uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
-            rx_buf_toggle_cnt += 1;
-        }
+        RX_BUF_TOGGLE();
     }
     UC_STAMP_T0(STAMP_CTS_PATH, t_rep);
     /* Быстрый путь ответа (rx_fast_resp, СРОК SIFS) — по виду кадра (r36, одно сравнение): прочим кадрам путь прежний. */
@@ -2115,48 +2091,42 @@ u32 rx_flow_main(void)
     return ret;
 }
 
-/* ХРУПКО: работа держателя TXOP, отложенная за пуск продолжения (конец mtp_get_tx_permission) или до выхода
+/* ХРУПКО: работа после пуска, отложенная за его последнюю команду (rx_post_defer; прежде rx_txop_deferred — только
+ * держатель TXOP). Сейчас откладывает только продолжение TXOP держателем: до конца mtp_get_tx_permission или до выхода
  * rx_flow_step без продолжения — в порядке прежнего пути: переключение буфера приёма 0x32, учёт sel_nbr (~0,3 мкс).
  * Срок — до приёма ответа на наш кадр (TXTIME + SIFS, QoS Null ~3,4 мкс): буфер должен быть переключён. Тяжёлое сюда не
  * переносить: rx_mode_configure здесь (3,7 мкс) — uc_assert 0x6002 на стенде (образ evT2, 2026-11-15). */
 __attribute__((optimize("Os"), noinline))
-void rx_txop_deferred(void);
+void rx_post_run(void);
 
-/* Сторожа порядка: работа держателя TXOP не выполнена до следующего приёма — путь, забывший вызвать rx_txop_deferred
+/* Сторожа порядка: отложенная работа после пуска не выполнена до следующего приёма — путь, забывший вызвать rx_post_run
  * (эмуляция 2026-11-15: запрос итога с приёмом ответного CF-End — буфер переключался после приёма, test_fw_sls_collision).
- * Два места: вход rx_flow_run (выполнить сейчас) и сама rx_txop_deferred (счётчик взводов приёма uc_stats.rx_arm изменился
+ * Два места: вход rx_flow_run (выполнить сейчас) и сама rx_post_run (счётчик взводов приёма uc_stats.rx_arm изменился
  * с откладывания). Сигнал — метка 0x80e500ff (тесты эмуляции падают на ней — tests/unit/conftest.py uc_order_guard) и
  * mac_mon_report.rx_defer_late (стенд: rdrun «defer_late», должно быть 0). Проверку в путях приёма (tx_await_rx_or_timeout
  * и др.) не ставить: одна загрузка с ветвлением там уже меняет исход test_fw_sls_collision. */
 __attribute__((optimize("Os"), noinline, cold))
-void rx_txop_defer_late(void)
+void rx_post_late(void)
 {
     uc_mac_cmd(0x80e500ff);                       /* метка (MAC не исполняет: б31, код 0): эмуляция, захват evucmd */
     mac_mon_report.rx_defer_late += 1;
-    rx_txop_defer = (rx_txop_defer & ~0xff00u) | (uc_stats.rx_arm & 0xff) << 8;   /* не считать второй раз */
-    rx_txop_deferred();
+    rx_post_defer = (rx_post_defer & ~0xff00u) | (uc_stats.rx_arm & 0xff) << 8;   /* не считать второй раз */
+    rx_post_run();
 }
 
 __attribute__((optimize("Os"), noinline))
-void rx_txop_deferred(void)
+void rx_post_run(void)
 {
-    u32 d = rx_txop_defer;
-    rx_txop_defer = 0;
+    u32 d = rx_post_defer;
+    rx_post_defer = 0;
     if (((d >> 8) & 0xff) != (uc_stats.rx_arm & 0xff)) {     /* сторож: между откладыванием и сюда был приём */
         uc_mac_cmd(0x80e500ff);
         mac_mon_report.rx_defer_late += 1;
     }
-    if ((d & RX_DEFER_TOGGLE) && rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
-    }
-    if (d & RX_DEFER_NBR) {
-        u32 r7 = (d >> 16) & 0xff;
-        if (!(rx_mode_flags & 3) && rs_state[r7].active == 0 && sel_nbr.cur_gain_db < sel_nbr.min_gain_db) {
-            sel_nbr.min_gain_db = sel_nbr.cur_gain_db;
-            sel_nbr.min_sta = (u8)r7;
-        }
-    }
+    if (d & RX_POST_TOGGLE)
+        RX_BUF_TOGGLE();
+    if (d & RX_POST_NBR)
+        rx_sel_nbr_note((d >> 16) & 0xff);
 }
 
 /* СРОК (ХРУПКО): путь держателя TXOP от принятого Ack/BlockAck (или ответа RD) до продолжения TXOP —
@@ -2174,7 +2144,7 @@ void rx_txop_deferred(void)
  * передачи 3,85–3,93 (ответы MAC — 2,93: продолжение позже SIFS + допуск, 10.23.2.8 / 10.3.2.3.3); после DMG CTS — ещё
  * rx_mode_configure 3,7 мкс в rx_flow_run до входа сюда (из них запись усиления РЧ 2,25), начало данных 8,1. Теперь на
  * пути продолжения перехода RX→TX нет (продолжение — запросом MTP, тракт уводит секвенсор MTP, как у ответов), буфер и
- * sel_nbr — за пуском (rx_txop_deferred): начало передачи после BlockAck 2,98 (без меток; ответы MAC 2,93–3,0), после
+ * sel_nbr — за пуском (rx_post_run): начало передачи после BlockAck 2,98 (без меток; ответы MAC 2,93–3,0), после
  * DMG CTS 6,36. Без продолжения — переход и буфер до rx_mac_prepare, как прежде (иначе эмуляция теряет SSW при
  * столкновении SLS, test_fw_sls_collision). Настройка приёма во время RTS (2,89 после CTS на стенде, гейт 14/14 и 8/8)
  * ломает в эмуляции SLS с потерями и столкновениями — не взята. Возврат RX→TX сюда — только с замером. */
@@ -2242,18 +2212,18 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
 
     /* Перехода RX→TX (rx_end_switch_to_tx: ожидание снятия phy_rx_frame — у кадра SC ~0,7 мкс после отчёта) на пути
      * продолжения нет (без продолжения — ниже, после решения): продолжение идёт запросом MTP, а секвенсор MTP уводит тракт с приёма сам (как у ответов, опыт E-S1). Переключение
-     * буфера приёма (0x32) и учёт sel_nbr — за 0x19000001 продолжения или на выходе (rx_txop_deferred): до запроса MTP
+     * буфера приёма (0x32) и учёт sel_nbr — за 0x19000001 продолжения или на выходе (rx_post_run): до запроса MTP
      * их никто не читает. Стенд 2026-11-15 (метки UC_EVM 0x10..0x1b): см. ХРУПКО выше. */
     UC_EVM(0x1a);
     {
-        u32 d = RX_DEFER_TOGGLE | (uc_stats.rx_arm & 0xff) << 8;   /* [15:8] — взводов приёма на момент: сторож порядка */
+        u32 d = RX_POST_TOGGLE | (uc_stats.rx_arm & 0xff) << 8;   /* [15:8] — взводов приёма на момент: сторож порядка */
         /* L_931c5c */
         if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) {
             u32 r7 = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
             rxf.sta = r7;
-            d |= RX_DEFER_NBR | r7 << 16;
+            d |= RX_POST_NBR | r7 << 16;
         }
-        rx_txop_defer = d;
+        rx_post_defer = d;
     }
 
     UC_EVM(0x1b);
@@ -2290,7 +2260,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
          * шлёт 0x3d000004 / 0x02093800 — без него эмуляция теряет SSW при столкновении SLS (test_fw_sls_collision) */
         if (!(mac_rx_rep3() & MAC_RX_REP3_RD))
             rx_end_switch_to_tx();
-        rx_txop_deferred();                       /* буфер 0x32 — до взвода приёма (rx_mac_prepare), как прежде */
+        rx_post_run();                       /* буфер 0x32 — до взвода приёма (rx_mac_prepare), как прежде */
         rx_mac_prepare();
         if ((mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID) &&
             rxf.sta != tx_ctx_pool.cur->sta) {
@@ -2338,17 +2308,17 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
          * последний здесь = r13 = 1. */
         if (rx_ppdu_report_seen == 0) {
             rx_txop_continue(r15, 1);
-            if (rx_txop_defer != 0)               /* ранний выход mtp_get_tx_permission — без отложенной работы */
-                rx_txop_deferred();
+            if (rx_post_defer != 0)               /* ранний выход mtp_get_tx_permission — без отложенной работы */
+                rx_post_run();
             return 1;
         }
         if (!(mac_rx_rep3() & MAC_RX_REP3_RD))  /* продолжения нет — переход RX→TX, как прежде */
             rx_end_switch_to_tx();
-        rx_txop_deferred();
+        rx_post_run();
         rxf.flags |= 2u;
         r15->flags |= 1u;
     }
-    rx_txop_deferred();
+    rx_post_run();
     uc_mac_cmd(0xeeee0b);
     return 0;
 }
@@ -2575,10 +2545,7 @@ void rx_handle_ppdu_report(void)
     rx_ppdu_report_seen = 1;
     uc_mac_cmd(0xeeee0a);
     uc_wait_event_busy(MAC_EVT1_PPDU_REPORT, 0);
-    if (rx_buf_toggle_dis == 0) {                 /* [gp,-242] */
-        uc_mac_cmd((rx_buf_toggle_cnt & 1) | 0x32000000);
-        rx_buf_toggle_cnt += 1;
-    }
+    RX_BUF_TOGGLE();                              /* [gp,-242] */
     if (mac_rx_rep3() & MAC_RX_REP3_ADDR2_VALID)
         *sta = MAC_RX_REP3_ADDR2_IDX_OF(mac_rx_rep3());
     else if (mac_rx_rep1() & MAC_RX_REP1_BEACON)

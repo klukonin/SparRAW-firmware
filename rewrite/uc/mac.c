@@ -621,7 +621,7 @@ u32 mac_switch_rx_to_tx(u32 a)
     (void)a;
     u32 g;
     /* mac_rx_to_tx_waited_brp vendor (ставила mac_switch_rx_to_tx_wait_brp) никто не читал — снята, слово 0x8004a0 —
-     * rx_txop_defer; обнуление здесь (vendor) снято
+     * rx_post_defer; обнуление здесь (vendor) снято
      * с пути ответа через SIFS */
     g = mac_sel_shadow & ~MAC_SEL_FIELD;
     UC_ST_ABS(mac_sel_shadow, g | MAC_SEL_PHY_SIGNALS);   /* ld/st по абсолютному адресу — без mov limm базы */

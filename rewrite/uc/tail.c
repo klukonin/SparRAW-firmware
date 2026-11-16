@@ -3372,8 +3372,8 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
         /* L_93e9cc */
         if (txrx_state1 & (1u << 1)) {
             /* отложенная работа держателя (буфер приёма 0x32) — до запроса итога: в нём приём ответного CF-End */
-            if (rx_txop_defer != 0)
-                rx_txop_deferred();
+            if (rx_post_defer != 0)
+                rx_post_run();
             tx_send_and_await_rx_frame(a, 1, 0, 0);
             txrx_state2 |= 1u << 9;
             return;
@@ -3393,12 +3393,12 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
     } else {
         uc_mac_cmd(0x18000000);
     }
-    /* ХРУПКО: работа держателя TXOP, отложенная за пуск (uc/rx.c rx_txop_deferred) — только после последней команды
+    /* ХРУПКО: работа держателя TXOP, отложенная за пуск (uc/rx.c rx_post_run) — только после последней команды
      * пуска: между 0x19000001 / разрешением MTP и 0x18 она задерживала команды — MAC отмечал опоздание (uc_assert
      * 0x6002, стенд 2026-11-15, образ evT2, там с rx_mode_configure). Кончиться должна до приёма ответа на наш кадр
      * (TXTIME кадра + SIFS; самый короткий — QoS Null ~3,4 мкс): сейчас ~0,3 мкс. */
-    if (rx_txop_defer != 0)
-        rx_txop_deferred();
+    if (rx_post_defer != 0)
+        rx_post_run();
 }
 
 

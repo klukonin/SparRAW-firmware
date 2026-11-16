@@ -1778,12 +1778,12 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define nav_late_cnt                 (*(u32 *)0x800490)   /* [н] rx_nav_set_from_duration: ++, если NAV включён и новое значение позже старого более чем на 0x32; rx_nav_check_idle обнуляет при снятии флага. */
 #define g_800494                     (*(u32 *)0x800494)   /* [н] l1_task_dispatch, событие 3: при l1_fsched_flag≠0 и [0x800494]==0 (и 0x8022a8≠2) — событие 3 автомата BI, иначе mac_compute_bi_mon_timings. Только чтение,... */
 #define r49_snap                     (*(u32 *)0x80049c)   /* [с] Снимок r49 (EVENT_ENGINE2 PHY BRP) в mac_switch_rx_to_tx после смены режима. UC-REGISTERS §2.12. Только запись (в 4.1 по этому адресу — гейт AW, друг... */
-#define RX_DEFER_TOGGLE              2u            /* переключение буфера приёма 0x32 */
-#define RX_DEFER_NBR                 4u            /* учёт sel_nbr станции [23:16] */
-#define rx_txop_defer                (*(u32 *)0x8004a0)   /* Работа держателя TXOP, отложенная за пуск продолжения (rx_txop_deferred): RX_DEFER_* | (uc_stats.rx_arm & 0xff) << 8 (сторож порядка) | станция sel_nbr << 16. Прежде — mac_rx_to_tx_waited_brp vendor (только запись, никто не читал). */
-/* Сторож порядка на входе rx_flow_run: отложенная работа держателя (rx_txop_defer) не должна висеть — иначе
- * rx_txop_defer_late (метка 0x80e500ff, mac_mon_report.rx_defer_late) */
-#define RX_DEFER_CHECK() do { if (__builtin_expect(rx_txop_defer != 0, 0)) rx_txop_defer_late(); } while (0)
+#define RX_POST_TOGGLE               2u            /* переключение буфера приёма 0x32 */
+#define RX_POST_NBR                  4u            /* учёт sel_nbr станции [23:16] */
+#define rx_post_defer                (*(u32 *)0x8004a0)   /* Работа после пуска, отложенная за его последнюю команду (rx_post_run; сейчас — продолжение TXOP держателем): RX_POST_* | (uc_stats.rx_arm & 0xff) << 8 (сторож порядка) | станция sel_nbr << 16. Прежде — mac_rx_to_tx_waited_brp vendor (только запись, никто не читал). */
+/* Сторож порядка на входе rx_flow_run: отложенная работа после пуска (rx_post_defer) не должна висеть — иначе
+ * rx_post_late (метка 0x80e500ff, mac_mon_report.rx_defer_late) */
+#define RX_POST_CHECK() do { if (__builtin_expect(rx_post_defer != 0, 0)) rx_post_late(); } while (0)
 #define txss_rank_needed             (*(u32 *)0x8004a4)   /* [н] 1 — после TXSS выполнить txss_rank_best_sector (txss_init_flow/txss_resp_flow); ставят txss_init_wait_rss (бит 1 статуса), sls_rx_ssw_frame, txss_r... */
 #define discovery_on                 (*(u32 *)0x8004a8)   /* [в] LMAC 0x24: 1 — DISCOVERY ON, 0 — OFF (ucode_cmd_0x24_handler). Только запись в uc. */
 #define qset_enable_mask             (*(u32 *)0x8004ac)   /* [в] Маска включённых qset 4..7 для mac_publish_masks (0x70 при сбросе; б7 — internal TX; uc_res_vote снимает/ставит 0x70). DATAPATH.md §8: 6.2 = [gp-0x... */

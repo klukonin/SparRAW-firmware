@@ -665,9 +665,8 @@ void brp_responder_flow_enter(u32 a)
         uc_mac_cmd(0x2011000);
         uc_mac_cmd(0x14000100);
         uc_mac_cmd(0x14000000);
-    } else if (rx_buf_toggle_dis == 0) {
-        uc_mac_cmd((rx_buf_toggle_cnt & 1) | (1u << 25) | (1u << 28) | (1u << 29));
-        rx_buf_toggle_cnt += 1;
+    } else {
+        RX_BUF_TOGGLE();
     }
     uc_mac_cmd(0x80 | (1u << 25));
     for (;;) {
