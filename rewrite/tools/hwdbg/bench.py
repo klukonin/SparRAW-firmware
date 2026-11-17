@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Микротесты цены операций uc (uc/bench.c, метка STAMP_BENCH 17) из снимков blob_uc_data.
 
-usage: bench.py <каталог или .bin>… [--json]
+usage: bench.py <каталог или .bin>… [--json | --gpt]
 Для каждого теста — цена одной группы операций тела (uc/bench.c) в тактах 165 МГц (nop = 1): медиана, мин, макс
 по всем парам замеров T(n1), T(n2) одного запуска. --json — словарь {тест: медиана} (для
-tests/unit/test_cost_model.py)."""
+tests/unit/test_cost_model.py). --gpt — набор 5 (UC_BENCH_SET=5): такты от взвода GP-таймера 0x23010000 | N до
+r42 б9 по каждому N и наклон (тактов на единицу срока)."""
 import glob
 import json
 import os
@@ -16,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stamps import stamps                                   # noqa: E402
 
 STAMP_BENCH = 17
+GPT_ID = 0xf0                                               # uc/bench.c, набор 5: a0 = 0xf0 | N << 8 | TSF << 16
 NAMES = ('NOP LD_DCCM LDUSE_DCCM ST_DCCM LD_FW LDUSE_FW ST_FW LD_MAC LD_RGF ST_MAC ST_RGF STSYNC_MAC SYNC LR_AUX '
          'CORE_RD LIMM BR BR_D LD_PHY ST_MAC_N1 ST_MAC_N3 ST_MAC_N7 ST_MAC_N11 ST_MAC_N7_SYNC ST_MAC_LD_MAC '
          'ST_MAC_LD_FW ST_MAC_LD_DCCM LD_MAC_N3 LD_MAC_N7 LD_MAC_N11 LD_FW_N3 LIMM_NOPS2 LIMM_NOP NOP_S '
@@ -56,7 +58,7 @@ def runs(paths):
         st = [s for s in stamps(b) if s[0] == STAMP_BENCH]
         for x, y in zip(st, st[1:]):
             n1, n2 = (x[2] >> 8) & 0xff, (y[2] >> 8) & 0xff
-            if (x[2] & 0xff) != (y[2] & 0xff) or n1 >= n2 or (x[1], x[2]) in seen:
+            if (x[2] & 0xff) == GPT_ID or (x[2] & 0xff) != (y[2] & 0xff) or n1 >= n2 or (x[1], x[2]) in seen:
                 continue
             if max(x[3], y[3]) > 1000000:                   # COUNT1 сброшен посреди замера
                 continue
@@ -74,6 +76,20 @@ def costs(r):
     return {k: [(x - d0) / OPS + 1 for x in v] for k, v in d.items()}
 
 
+def gpt(paths):
+    """{N: [такты]} меток набора 5 без повторов; 0 — предел опроса исчерпан (б9 не пришёл)."""
+    seen, out = set(), {}
+    for p in paths:
+        b = open(p, 'rb').read()
+        if len(b) < 0x4000:
+            continue
+        for s in stamps(b):
+            if s[0] == STAMP_BENCH and (s[2] & 0xff) == GPT_ID and s[1:3] not in seen:
+                seen.add(s[1:3])
+                out.setdefault((s[2] >> 8) & 0xff, []).append(s[3])
+    return out
+
+
 def main():
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
     if not a:
@@ -82,6 +98,15 @@ def main():
     paths = []
     for x in a:
         paths += sorted(glob.glob(os.path.join(x, '**', '*.bin'), recursive=True)) if os.path.isdir(x) else [x]
+    if '--gpt' in sys.argv:
+        g = {n: statistics.median([t for t in v if t]) for n, v in sorted(gpt(paths).items()) if any(v)}
+        for n, v in sorted(gpt(paths).items()):
+            print('N=%-3d n=%3d  предел %d  медиана %s  мин %s  макс %s' % (n, len(v), v.count(0), g.get(n, '-'),
+                                                                        min(v), max(v)))
+        k = sorted(g)
+        if len(k) >= 2:
+            print('тактов на единицу срока: %.2f' % ((g[k[-1]] - g[k[0]]) / (k[-1] - k[0])))
+        return 0
     c = costs(runs(paths))
     if '--json' in sys.argv:
         print(json.dumps({NAMES[k]: round(statistics.median(v), 2) for k, v in sorted(c.items())}, ensure_ascii=False))

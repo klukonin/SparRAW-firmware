@@ -504,6 +504,43 @@ u32 uc_bench_one(u32 id, u32 n)
 #define BENCH_PERIOD_MS 20
 #define BENCH_HDR (0xa8000000u | 0xfff00u | STAMP_BENCH)
 
+#if UC_BENCH_SET == 5
+/* Набор 5 (UC_BENCH_SET=5): единица срока GP-таймера MAC. Взвод 0x23010000 | N и 0x02000200 — как в ожидании
+ * uc_wait_event_busy, затем опрос r42 б9 (gp_timers_event) с пределом; такты COUNT1 от взвода до б9 при N = 4, 16, 64
+ * (с запрещёнными L1/L2). Метка STAMP_BENCH: a0 = 0xf0 | N << 8 | TSF[25:10] << 16, a1 = такты (0 — предел исчерпан). */
+static u32 bench_gpt(u32 n)
+{
+    u32 s = arc_lr(ARC_STATUS32);
+    arc_flag(s & ~6u);
+    u32 t0 = arc_lr(0x100);
+    uc_mac_cmd(n | 0x23010000);
+    uc_mac_cmd(0x2000200);
+    arc_nops_nop(2);
+    u32 lim = 20000;                                   /* ~2 мс при ~15 тактах на проход */
+    while (!(arc_core_rd(42) & 0x200) && --lim != 0)   /* r42 EVENT1_STATUS б9 */
+        ;
+    u32 t = arc_lr(0x100) - t0;
+    arc_flag(s);
+    return lim != 0 ? t : 0;
+}
+
+void uc_bench_tick(void)
+{
+    u32 ms = (MMIO32(HW_MAC_TSF_LO) >> 10) & 0xffff;
+    u32 best = ~0u;
+    for (u32 i = 0; i < 256; i++) {                  /* переменных uc вне DCCM нет — возраст по последней метке */
+        if (uc_log.ring[i] != BENCH_HDR)
+            continue;
+        u32 age = (ms - (uc_log.ring[(u8)(i + 2)] >> 16)) & 0xffff;
+        if (age < best)
+            best = age;
+    }
+    if (best < BENCH_PERIOD_MS)
+        return;
+    u32 n = 4u << (2 * (ms % 3));
+    UC_STAMP(STAMP_BENCH, 0xf0 | n << 8 | ms << 16, bench_gpt(n));
+}
+#else
 void uc_bench_tick(void)
 {
     u32 ms = (MMIO32(HW_MAC_TSF_LO) >> 10) & 0xffff;
@@ -528,5 +565,6 @@ void uc_bench_tick(void)
     UC_STAMP(STAMP_BENCH, tag | BENCH_N1 << 8, uc_bench_one(id, BENCH_N1));
     UC_STAMP(STAMP_BENCH, tag | BENCH_N2 << 8, uc_bench_one(id, BENCH_N2));
 }
+#endif
 
 #endif
