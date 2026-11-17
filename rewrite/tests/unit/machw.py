@@ -1950,7 +1950,9 @@ class HW:
         if self.resp_cmd_at is None or self.resp_cmd_at > r['end'] + r['deadline']:
             start = max(start, self.now + TX_START_CLK)
         else:
-            start = max(start, self.resp_cmd_at + MACLAT_CLK, self.now)
+            # H-SIFSRESP: команда в срок — момент держит MAC, 0x19 (_go) его не сдвигает (стенд: 0x19 при SIFS_CNT 723–966
+            # без сбоев); старт может оказаться раньше шага uc, в котором модель это обрабатывает
+            start = max(start, self.resp_cmd_at + MACLAT_CLK)
         self.resp_cmd_at = None
         mcs = r.get('mcs', 0)
         if self.mtp_rate is not None:
@@ -2112,6 +2114,7 @@ class HW:
     def _rx_end(self, on_end, report, txss_end=False, sifs_resp=False, resp_len=14, what='',
                 resp_deadline=RESP_CMD_DEADLINE_CLK, rmcs=0):
         r = self.rx
+        r_end = r['end']                                  # конец кадра в эфире: точки MAC — от него, а не от шага uc
         r['done'] = True
         if r.get('lost'):
             self._rx_lost_end(r, report)
@@ -2128,7 +2131,7 @@ class HW:
             self.bap_rx = True
         if rmcs:
             resp_deadline = max(resp_deadline, RESP_CMD_DEADLINE_SC_CLK)
-        self.resp_due = dict(end=self.now, what=what, resp_len=resp_len, deadline=resp_deadline, mcs=rmcs) \
+        self.resp_due = dict(end=r_end, what=what, resp_len=resp_len, deadline=resp_deadline, mcs=rmcs) \
             if sifs_resp else None
         self.resp_cmd_at = None
         if self.rd_auto_ba:
@@ -2155,7 +2158,7 @@ class HW:
         self._set42(16)                                   # ppdu_report_event
         if txss_end:
             self._set54(0)                                # txss_end_ind: развёртка пира кончилась (CDOWN 0)
-        self.ifs_ref, self.ifs_ref_kind = self.now, 'rx'
+        self.ifs_ref, self.ifs_ref_kind = r_end, 'rx'
         self._gp_trigger(0x05, self.now)                  # H-GP5: пуск по концу приёма
         self._backoff_kick()
 

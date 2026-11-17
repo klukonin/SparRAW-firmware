@@ -757,7 +757,9 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
      * инструкций ≈ 285 тактов модели; запас ~15 тактов. Стенд: период 0x19 = TXTIME + SBIFS, зазор 1,01 мкс.
      * Удлинение пути на ~10 инструкций — зазор больше SBIFS, хвост пачки за aSSDuration.
      * ХРУПКО (эфир двух узлов, 2026-10-30, test_air::test_abft_ssw_sbifs_accuracy): 0x19 — через 0,99–1,01 мкс после
-     * конца кадра, т. е. запас 0…2 такта, не 15; после BF в DTI зазор до 1,0303 мкс > SBIFS + aSBIFSAccuracy. */
+     * конца кадра, т. е. запас 0…2 такта, не 15; после BF в DTI зазор до 1,0303 мкс > SBIFS + aSBIFSAccuracy.
+     * Исход в эмуляции зависит от раскладки кода: рост rx.c без правок здесь (опыт 2026-11-18) перевёл
+     * test_air::test_abft_ssw_sbifs_accuracy из xfail в pass — запаса нет и на сдвиги адресов. */
     /* DMG Antenna ID — 2 бита (B16..B17 поля SSW, 9.5.1); выше — RXSS Length, вне CBAP резерв = 0 (9.2.2).
      * исправлено (vendor: rf_chain_cfg << 16 целиком — RF-цепь ≥ 4 попадала в RXSS Length). Вне цикла: путь короче. */
     u32 ssw_ant = (u32)(*(u8 *)&rf_chain_cfg & 3u) << 16;
