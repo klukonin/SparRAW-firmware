@@ -64,12 +64,17 @@ void bi_mode_load_cmd1e_operand(void)
     uc_mac_cmd(0x1e010004);
     uc_mac_cmd(0x1e010001);
 }
+/* Поправки отметок времени {мкс[31:16], такты 165 МГц[15:0]} (стенд 2026-11-17, запись на обоих узлах, сдвиг 1:1 со
+ * старшим полем; MAC-STAND «Отметки времени»): Timestamp DMG Beacon = TSF в начале первого символа данных на антенне
+ * (802.11-2020 11.1.3.1) — задержка Control PHY 6,22 мкс; SC — 2,07; поправка приёма маяка (11.1.3.9) — 4,6 мкс.
+ * Значения vendor: TSF станции расходится с TSF точки на ~2,9 мкс — какая из поправок неверна, без внешней опоры не
+ * установлено. 0x886d60 — запись эффекта не дала. */
 void bi_mode_program_mac_timing(void)
 {
-    MMIO32(HW_MAC_TIMING_CONST_5C) = 0x40063;
+    MMIO32(HW_MAC_TSF_RX_ADJ) = 0x40063;
     MMIO32(HW_MAC_TIMING_CONST_60) = 0x10001;
-    MMIO32(HW_MAC_TIMING_CONST_E8) = 0x60025;
-    MMIO32(HW_MAC_TIMING_CONST_EC) = 0x2000b;
+    MMIO32(HW_MAC_TX_STAMP_DELAY_CTRL) = 0x60025;
+    MMIO32(HW_MAC_TX_STAMP_DELAY_SC) = 0x2000b;
     MMIO32(HW_MAC_USEC_CLK_DIV) = 0x5300a5;
 }
 /* bf_init_globals — в bf.c. */

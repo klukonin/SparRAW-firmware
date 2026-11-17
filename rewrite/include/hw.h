@@ -153,7 +153,7 @@
 #define HW_MAC_BI_INIT_CONST_44              0x886d44u   /* mac_bi_init_const_44 */
 #define HW_MAC_TIMED_WAIT_US                 0x886d50u   /* mac_timed_wait_us */
 #define HW_MAC_USEC_CLK_DIV                  0x886d58u   /* mac_usec_clk_div */
-#define HW_MAC_TIMING_CONST_5C               0x886d5cu   /* mac_timing_const_5c */
+#define HW_MAC_TSF_RX_ADJ                    0x886d5cu   /* поправка TSF при приёме маяка {мкс[31:16], такты[15:0]} (11.1.3.9); стенд 2026-11-17 */
 #define HW_MAC_TIMING_CONST_60               0x886d60u   /* mac_timing_const_60 */
 #define HW_MAC_BEACON_INTERVAL               0x886d64u   /* mac_beacon_interval */
 #define HW_MAC_CMD1E_OPERAND                 0x886d88u   /* mac_cmd1e_operand */
@@ -169,8 +169,8 @@
 #define HW_FW2UC_IMV                         0x886ddcu   /* fw2uc_IMV */
 #define HW_FW2UC_IMS                         0x886de0u   /* fw2uc_IMS */
 #define HW_FW2UC_IMC                         0x886de4u   /* fw2uc_IMC */
-#define HW_MAC_TIMING_CONST_E8               0x886de8u   /* mac_timing_const_e8 */
-#define HW_MAC_TIMING_CONST_EC               0x886decu   /* mac_timing_const_ec */
+#define HW_MAC_TX_STAMP_DELAY_CTRL           0x886de8u   /* задержка Timestamp/метки TX, Control PHY {мкс, такты} (11.1.3.1); стенд 2026-11-17 */
+#define HW_MAC_TX_STAMP_DELAY_SC             0x886decu   /* задержка метки TX, SC PHY {мкс, такты}; стенд 2026-11-17 */
 #define HW_MAC_LMAC0_TIMING_0                0x886e08u   /* mac_lmac0_timing_0 */
 #define HW_MAC_LMAC0_TIMING_1                0x886e0cu   /* mac_lmac0_timing_1 */
 #define HW_MAC_LMAC0_TIMING_2                0x886e10u   /* mac_lmac0_timing_2 */
