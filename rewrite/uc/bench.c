@@ -540,6 +540,63 @@ void uc_bench_tick(void)
     u32 n = 4u << (2 * (ms % 3));
     UC_STAMP(STAMP_BENCH, 0xf0 | n << 8 | ms << 16, bench_gpt(n));
 }
+#elif UC_BENCH_SET == 6
+/* Набор 6 (UC_BENCH_SET=6): смысл маски команды 0x27 [14:8] (по коду Talyn — множество состояний idle-detect, r42 б14
+ * — «состояние в множестве»). Для одного s = 0…6: 0x27 | (1 << s) << 8 и 0x02004000, как mac_evt_enable_bit_sync, затем
+ * опрос r42 б14 до 100 мкс (с запрещёнными L1/L2); прежнее значение 0x27 — последнее в журнале команд — возвращается.
+ * Команды опыта — без журнала. Метка STAMP_BENCH: a0 = 0xe0 | s << 8 | TSF[25:10] << 16, a1 = такты до б14 (2 —
+ * уже стоял при первом опросе), ~0 — не дождались. */
+#define MAC_EVT_EN_SHADOW (*(volatile u32 *)0x8004e0)    /* uc/dccm.h mac_evt_en_shadow */
+static u32 bench_e27_last(void)
+{
+    u32 p = uc_trace_ptr();
+    for (u32 i = 0; i < 256; i++) {
+        p = ((p - 4) & 0x3ff) | MAC_CMD_LOG_ADDR;
+        u32 v = *(volatile u32 *)p;
+        if ((v >> 24) == 0x27)
+            return v;
+    }
+    return MAC_EVT_EN_SHADOW | 0x27004000;
+}
+
+static u32 bench_e27(u32 st)
+{
+    u32 s = arc_lr(ARC_STATUS32);
+    arc_flag(s & ~6u);
+    u32 prev = bench_e27_last();
+    uc_mac_cmd_nl(MAC_EVT_EN_SHADOW | ((1u << st) << 8) | 0x27000000);
+    uc_mac_cmd_nl(0x2004000);
+    arc_nops(3);
+    u32 t0 = arc_lr(0x100), t;
+    while (!(arc_core_rd(42) & 0x4000)) {             /* r42 EVENT1_STATUS б14 */
+        if ((t = arc_lr(0x100) - t0) > 16500) {
+            t = ~0u;
+            goto out;
+        }
+    }
+    t = arc_lr(0x100) - t0;
+out:
+    uc_mac_cmd_nl(prev);
+    arc_flag(s);
+    return t;
+}
+
+void uc_bench_tick(void)
+{
+    u32 ms = (MMIO32(HW_MAC_TSF_LO) >> 10) & 0xffff;
+    u32 best = ~0u;
+    for (u32 i = 0; i < 256; i++) {
+        if (uc_log.ring[i] != BENCH_HDR)
+            continue;
+        u32 age = (ms - (uc_log.ring[(u8)(i + 2)] >> 16)) & 0xffff;
+        if (age < best)
+            best = age;
+    }
+    if (best < BENCH_PERIOD_MS)
+        return;
+    u32 st = ms % 7;
+    UC_STAMP(STAMP_BENCH, 0xe0 | st << 8 | ms << 16, bench_e27(st));
+}
 #else
 void uc_bench_tick(void)
 {

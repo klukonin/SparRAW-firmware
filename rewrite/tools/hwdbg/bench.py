@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Микротесты цены операций uc (uc/bench.c, метка STAMP_BENCH 17) из снимков blob_uc_data.
 
-usage: bench.py <каталог или .bin>… [--json | --gpt]
+usage: bench.py <каталог или .bin>… [--json | --gpt | --e27]
 Для каждого теста — цена одной группы операций тела (uc/bench.c) в тактах 165 МГц (nop = 1): медиана, мин, макс
 по всем парам замеров T(n1), T(n2) одного запуска. --json — словарь {тест: медиана} (для
 tests/unit/test_cost_model.py). --gpt — набор 5 (UC_BENCH_SET=5): такты от взвода GP-таймера 0x23010000 | N до
-r42 б9 по каждому N и наклон (тактов на единицу срока)."""
+r42 б9 по каждому N и наклон (тактов на единицу срока). --e27 — набор 6: маска 0x27 одного состояния s
+idle-detect, такты до r42 б14 (≤ 20 — сразу) или «нет» за 100 мкс."""
 import glob
 import json
 import os
@@ -17,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stamps import stamps                                   # noqa: E402
 
 STAMP_BENCH = 17
+E27_ID = 0xe0                                               # набор 6: a0 = 0xe0 | s << 8 | TSF << 16
 GPT_ID = 0xf0                                               # uc/bench.c, набор 5: a0 = 0xf0 | N << 8 | TSF << 16
 NAMES = ('NOP LD_DCCM LDUSE_DCCM ST_DCCM LD_FW LDUSE_FW ST_FW LD_MAC LD_RGF ST_MAC ST_RGF STSYNC_MAC SYNC LR_AUX '
          'CORE_RD LIMM BR BR_D LD_PHY ST_MAC_N1 ST_MAC_N3 ST_MAC_N7 ST_MAC_N11 ST_MAC_N7_SYNC ST_MAC_LD_MAC '
@@ -58,7 +60,7 @@ def runs(paths):
         st = [s for s in stamps(b) if s[0] == STAMP_BENCH]
         for x, y in zip(st, st[1:]):
             n1, n2 = (x[2] >> 8) & 0xff, (y[2] >> 8) & 0xff
-            if (x[2] & 0xff) == GPT_ID or (x[2] & 0xff) != (y[2] & 0xff) or n1 >= n2 or (x[1], x[2]) in seen:
+            if (x[2] & 0xff) in (GPT_ID, E27_ID) or (x[2] & 0xff) != (y[2] & 0xff) or n1 >= n2 or (x[1], x[2]) in seen:
                 continue
             if max(x[3], y[3]) > 1000000:                   # COUNT1 сброшен посреди замера
                 continue
@@ -76,15 +78,15 @@ def costs(r):
     return {k: [(x - d0) / OPS + 1 for x in v] for k, v in d.items()}
 
 
-def gpt(paths):
-    """{N: [такты]} меток набора 5 без повторов; 0 — предел опроса исчерпан (б9 не пришёл)."""
+def gpt(paths, tag=GPT_ID):
+    """{N: [такты]} меток набора 5 (tag = E27_ID — набора 6, {s: [такты]}) без повторов; 0 / ~0 — не дождались."""
     seen, out = set(), {}
     for p in paths:
         b = open(p, 'rb').read()
         if len(b) < 0x4000:
             continue
         for s in stamps(b):
-            if s[0] == STAMP_BENCH and (s[2] & 0xff) == GPT_ID and s[1:3] not in seen:
+            if s[0] == STAMP_BENCH and (s[2] & 0xff) == tag and s[1:3] not in seen:
                 seen.add(s[1:3])
                 out.setdefault((s[2] >> 8) & 0xff, []).append(s[3])
     return out
@@ -98,6 +100,12 @@ def main():
     paths = []
     for x in a:
         paths += sorted(glob.glob(os.path.join(x, '**', '*.bin'), recursive=True)) if os.path.isdir(x) else [x]
+    if '--e27' in sys.argv:
+        for st, v in sorted(gpt(paths, E27_ID).items()):
+            w = sorted(t for t in v if t != 0xffffffff)
+            print('s=%d n=%3d  сразу %3d  нет %3d  медиана %s' % (st, len(v), sum(t <= 20 for t in w), len(v) - len(w),
+                                                              statistics.median(w) if w else '-'))
+        return 0
     if '--gpt' in sys.argv:
         g = {n: statistics.median([t for t in v if t]) for n, v in sorted(gpt(paths).items()) if any(v)}
         for n, v in sorted(gpt(paths).items()):
