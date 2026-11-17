@@ -450,6 +450,23 @@ def test_txop_continue_after_ack(uc):
           'стенд: vendor-путь 417 инстр. (P0.2) + 12 тактов; uc/rx.c:386')
 
 
+def test_txop_continue_after_ba(uc):
+    """Держатель TXOP принял BlockAck на свой A-MPDU (режим 2 txrx_state2, BAP с ожиданием) → следующий кадр TXOP через
+    SIFS (10.23.2.8): от конца кадра (r42.14) до запроса в MTP 0x1b001111 (2026-11-17: 410 тактов, прежде 422; стенд: 0x2e − 0x1d 3,006 → 2,958 мкс). Стенд 2026-11-17:
+    момент продолжения держит путь uc (nop перед командами сектора сдвигают 0x2e − 0x1d 1:1); в эфире продолжение =
+    (0x2e − 0x1d) + ~1,28 мкс (сумма SIFS без калибровки), норма 3,00–3,49 (10.3.2.3.3) — 0x2e − 0x1d в 1,72–2,21 мкс;
+    сейчас 3,0 (нарушение, MAC-STAND «Продолжение TXOP держателем»)."""
+    def prep(uc):
+        uc.w32(0x8005f4, 2)                                 # txrx_state1: TXOP
+        uc.w32(0x8005f8, 0x102)                             # ждём BlockAck
+        uc.ext.update({36: 1 << 9, 38: 0x20001800 | (STA_IDX << 8) | (4 << 20), 41: 1,
+                       53: 1 | (32 << 8) | (2 << 16)})      # r53: bap_tx_update_ind, 32 MPDU, 2 без подтверждения
+    m, t, a, w, n = sifs_run(uc, 'ack', act=lambda c: c == 0x1b001111, prep=prep)
+    print(m.profile(t, a))
+    print('txop_continue_ba: W = %d тактов (%d инстр.; %.2f мкс)' % (w, n, w / 165))
+    assert not any(c == 0x80e500ff for c in uc.mac_cmds), 'сторож порядка: отложенная работа после приёма'
+
+
 @pytest.mark.parametrize('kind', ['ack', 'ba'])
 def test_rf_back_to_rx_after_response(uc, kind):
     """После ответа РЧ — снова на приём до преамбулы следующего кадра партнёра через SIFS после конца нашего (10.3.2.3.3;

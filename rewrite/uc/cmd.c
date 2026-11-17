@@ -732,7 +732,10 @@ void txrx_api_program_ifs_timing(u32 a)
     mac_clk_div165(c[3], (u32)&ifs.c3);
     mac_clk_div165(c[4], (u32)&ifs.c4);
     *(volatile u32 *)HW_MAC_IFS_RIFS_SBIFS = ifs.c3 | ((u32)ifs.c4 << 16);
-    *(volatile u32 *)HW_MAC_RX2TX_RESP_START = 0x100;
+    /* Нижняя граница момента ответа / продолжения RX→TX {такты, мкс} — SIFS (10.3.2.3.3). Прежде здесь 0x100 (1 мкс), а
+     * SIFS писал путь продолжения TXOP перед каждым запросом (rx_flow_step) — значение постоянное, запись снята с пути
+     * (стенд 2026-11-16/17: значения ниже SIFS момент не сдвигают, MAC-STAND «Продолжение TXOP держателем»). */
+    *(volatile u32 *)HW_MAC_RX2TX_RESP_START = ifs.sifs;
 }
 
 /* ---- Главный диспетчер ucode-команд (0x93c928) ---- */

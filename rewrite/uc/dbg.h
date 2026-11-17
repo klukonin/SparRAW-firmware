@@ -24,7 +24,7 @@
 #define PAD_IMM_RESP      6   /* tx: перед командой в tx_send_imm_response (DMG CTS, Grant Ack, CF-End) */
 /* 7 — свободен (была mac_mode_switch_after_ppdu, путь DMG DTS) */
 #define PAD_SSWFB_ABFT    8   /* tail: direct_tx_ssw_feedback (SSW-Feedback в A-BFT) */
-#define PAD_D10_WRITE     9   /* rx: перед записью 0x886d10 в rx_flow_step */
+#define PAD_D10_WRITE     9   /* rx: rx_flow_step — перед командами сектора продолжения TXOP (стенд 2026-11-17: 32/64 — момент +0,19/+0,39 мкс, без отказов) */
 #define PAD_ABFT_SIFSCHK 10   /* bti: перед проверкой SIFS_CNT в abft_ssw_go */
 #define PAD_EARLY_REQ    11   /* rx: rx_fast_resp_early — после отчёта, перед запросом MTP (стенд 2026-11-16: 64 — без сдвига, 128 — обрыв) */
 
