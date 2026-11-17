@@ -9,7 +9,8 @@
 **[код]** — по листингу `6.2/src/asm/uc`; **[пак+код]** — имя из пака, а использование в uc ему
 соответствует (это проверено по листингу); **[ISA]** — штатная семантика ARC600 (номера AUX-регистров и биты
 STATUS32 из документации ядра, а не из пака); **[железо]** — подтверждено на стенде (только там, где
-это уже сделано в других документах). «Предположение: …» — вывод без прямого доказательства.
+это уже сделано в других документах); **[Talyn-code: источник]** — смысл из кода Talyn 7.5.3.115
+(uc/fw), имя дают строка журнала, имя модуля или глобал пака; **[вывод]** — вывод по структуре кода. «Предположение: …» — вывод без прямого доказательства.
 «Назначение не установлено» — бит используется, но смысл неизвестен. Все адреса — **[6.2]**.
 
 Обозначения: `0x93xxxx` — адрес инструкции в vendor-листинге (метка `L_93xxxx` в
@@ -41,16 +42,16 @@ gp uc = `0x800528`: `ld_s r0,[gp,0xd0]` — байтовое смещение (0
 | r36…r39 | отчёт о принятом PPDU | single-mapped | 30 / 36 / 51 / 9 | тип кадра, адрес, MCS |
 | r40 | группа R40 (16 регистров) | полубайт [15:12] селектора | 101 | PHY_SIGNALS, BACKOFF_IFS_STATUS, BI_COUNTER |
 | r41 | группа R41 (очереди) | полубайт [11:8] | 16 | выбор очереди, маски qset |
-| r42 | события EVENT1..3 | селектор не пишется (§2.3) | 80 | ожидания, главный цикл L1 |
-| r43 | ответ MTP на запрос | — | 57 | `valid` б31, MCS, политика ACK |
-| r45 | разрешение MTP на TX | — | 63 | `valid` б31, байт `null_status` |
+| r42 | события `EVENT3_STATUS_R42` | полубайт [7:4] (=2 с инициализации, §2.3) | 80 | ожидания, главный цикл L1 |
+| r43 | ответ MTP на запрос | команда 0x77 [3:0] (Sparrow не шлёт → индекс 0) | 57 | `valid` б31, MCS, политика ACK |
+| r45 | разрешение MTP на TX | 0x77 [11:8] (→ индекс 0) | 63 | `valid` б31, байт `null_status` |
 | r47 | группа R47 | полубайт [19:16] | 35 | DIRECT_TX, RFC, LFSR, агрегация |
-| r49 | EVENT_ENGINE2 (PHY BRP) | — | 8 | б5, б13, [19:16] |
-| r51 | MTP_DESCRIPTOR_SCRATCHPAD | — | 34 | копируется в 0x800608/0x80060c |
-| r53 | BAP_IF_0 | — | 23 | BA-интерфейс |
-| r54 | события EVENT4 (GP-таймеры, TXSS) | — | 40 | таймауты, окна BI |
-| r55 | группа R55 | MAC-команда 0x4d | 10 | TSF, SIFS_CNT, GP_CLK2 |
-| r44, r46, r48, r50, r52, r56 | — | — | 0 | в uc 6.2 не читаются |
+| r49 | EVENT_ENGINE2 (PHY BRP) | 0x77 [19:16] (→ индекс 0) | 8 | б5, б13, [19:16] |
+| r51 | MTP_DESCRIPTOR_SCRATCHPAD | 0x78 [3:0] (→ индекс 0) | 34 | копируется в 0x800608/0x80060c |
+| r53 | BAP_IF_0 | 0x78 [7:4] (→ индекс 0) | 23 | BA-интерфейс |
+| r54 | события `EVENT6_STATUS` (GP-таймеры, TXSS) | полубайт [23:20] (=2) | 40 | таймауты, окна BI |
+| r55 | группа R55 | MAC-команда 0x4d [3:0] | 10 | TSF, SIFS_CNT, GP_CLK2 |
+| r44, r46, r48, r50, r52, r56 | — | r48: 0x1d [3:0]; r44/r46/r50: 0x77; r56: 0x4d [20:16] | 0 | в uc 6.2 не читаются |
 
 Число чтений — вхождения `rN` в vendor-листинге (`grep -rhoE '\br(3[2-9]|4[0-9]|5[0-6])\b'`).
 
@@ -75,9 +76,10 @@ gp uc = `0x800528`: `ld_s r0,[gp,0xd0]` — байтовое смещение (0
 | 0x1d | меняет один полубайт теневого селектора, через 3 такта результат в r40/r41/r47/… | [MAC-COMMANDS §7.3](MAC-COMMANDS.md#73-0x1d-и-0x4d--локальное-чтение-железо) |
 | 0x4d | выбирает регистр группы R55, результат в r55 | там же; §2.16 |
 | 0x02 | маска ожидаемых событий r42 (бит 9 — `gp_timers_event` для таймаута) | §2.4 |
-| 0x27 | разрешение битов событий (`[0x8004e0] \| 0x27000000 \| (1<<n)<<8`) | `mac_evt__enable_bit_sync` 0x9361bc |
+| 0x27 | маска состояний автомата idle-detect (`[0x8004e0] \| 0x27000000 \| (1<<s)<<8`): r42 б14 поднимается, пока `BACKOFF_IFS_STATUS.idle_detect` = s **[Talyn-code: строка журнала `wait_dmg_cts`]** | `mac_evt__enable_bit_sync` 0x9361bc |
 | 0x49 | квитирование битов r54 | [MAC-COMMANDS §7.6](MAC-COMMANDS.md#76-gp-таймеры-и-r54-0x49-0x4f0x54-0x670x68) |
 | 0x23 | `0x23010000 \| t` — взвести GP-таймер таймаута ожидания | `uc_wait_event_busy` 0x9366e8 |
+| 0x77 / 0x78 | селекторы r43/r44/r45/r46/r49/r50 и r51/r53 (только Talyn) | §2.3 |
 
 ### 2.2. r33 / r34 — FIFO передающего тракта **[код]**
 
@@ -104,25 +106,47 @@ ucode очищает полубайт, вписывает индекс, сохр
 
 | биты селектора | группа | маска очистки | мест | пример |
 |---|---|---|---|---|
-| 3..0 | назначение не установлено | — | 0 | — |
-| 7..4 | назначение не установлено; пишется только при инициализации (=2) | `bic 0xf0` | 1 | `bi_mode_init_event_timers`, `0x1d000020` |
+| 3..0 | r48 (Talyn); в 6.2 всегда 0, r48 не читается | — | 0 | — |
+| 7..4 | r42; пишется только при инициализации (=2 → `EVENT3_STATUS_R42`) | `bic 0xf0` | 1 | `bi_mode_init_event_timers`, `0x1d000020` |
 | 11..8 | r41 | `0xfffff0ff` | 11 | `fsched__pick_ready_queue` 0x92bec6 |
 | 15..12 | r40 (а также единичные чтения r37/r38/r54 сразу после) | `0xffff0fff` | 45 | `uc_read_bi_sync` 0x936b60 |
 | 19..16 | r47 | `0xfff0ffff` | 22 | `brp__program_and_measure` 0x9238a6 |
-| 23..20 | назначение не установлено; пишется только при инициализации (=2) | `0xff0fffff` | 1 | `bi_mode_init_event_timers`, `0x1d200000` |
+| 23..20 | r54; пишется только при инициализации (=2 → `EVENT6_STATUS`) | `0xff0fffff` | 1 | `bi_mode_init_event_timers`, `0x1d200000` |
 
-Регистры r42, r43, r45, r49, r51, r53, r54 uc **никогда не выбирает**: в 6.2 нет ни одной
-записи, после которой читался бы такой регистр. Все их чтения совпадают по смыслу с
-регистром индекса 0 своей группы в паке (`EVENT1_STATUS_R42`, `MTP_QUERY_RESPONSE_1`,
-`MTP_TX_PERMISSION_RESP`, `EVENT_ENGINE2_STATUS`, `MTP_DESCRIPTOR_SCRATCHPAD`, `BAP_IF_0`,
-`EVENT4_STATUS`) — см. соответствующие разделы. Для r42 и r54 раскладка бит у индексов 0…2
-одинакова, поэтому имена бит верны при любом индексе. Предположение: полубайты 7..4 и 23..20,
-выставленные в 2 при инициализации, относятся к каким-то из этих групп, но к каким именно, не
-установлено.
+**Полная карта селекторов** **[Talyn-code: `fwlog_TSF_Started_dump_MSXD`, глобалы пака
+`g_rd2/rd3/rd4_bus_control_shadow`, `g_msxd_timing_ctrl_0_shadow`]**. Функция дампа Talyn uc
+(`msxd_local_regs_dump`, 0x866c) перебирает каждый полубайт каждой команды-селектора; число
+итераций каждого цикла во всех 18 случаях равно размеру группы в паке, что и доказывает раскладку:
+
+| команда (тень Talyn) | [3:0] | [7:4] | [11:8] | [15:12] | [19:16] | [20:16] | [23:20] |
+|---|---|---|---|---|---|---|---|
+| 0x1d (`g_rd2_bus_control`; у Sparrow `0x8004e4`) | r48 | r42 | r41 | r40 | r47 | — | r54 |
+| 0x77 (`g_rd4_bus_control`) | r43 | r44 | r45 | r46 | r49 | — | r50 |
+| 0x78 (`g_msxd_timing_ctrl_0`) | r51 | r53 | — | — | — | — | — |
+| 0x4d (`g_rd3_bus_control`) | r55 | — | — | — | — | r56 (NAV 8×4) | б23 — второй банк |
+
+Бит 23 команды 0x4d расширяет две группы: R40 индекс 0xf (`AC_PENDING_EXTENSION_R40`) и R47 индекс
+0xc (`SP_EXTENSION_R47`). Talyn также шлёт `0x61|nid` (выбор сети) перед чтением TSF через 0x4d.
+
+Следствия для Sparrow 6.1/6.2 (проверено по листингу 6.1.0.40 и 6.2):
+
+- uc Sparrow не шлёт 0x77 и 0x78, поэтому r43, r45, r49, r51, r53 всегда читаются с индексом 0
+  (тень после сброса = 0): `MTP_QUERY_RESPONSE_1`, `MTP_TX_PERMISSION_RESP`, `EVENT_ENGINE2_STATUS`,
+  `MTP_DESCRIPTOR_SCRATCHPAD`, `BAP_IF_0`. Прежняя запись «эти регистры uc никогда не выбирает»
+  верна; причина — в Sparrow нет самих команд-селекторов. Есть ли
+  0x77/0x78 в кремнии Sparrow, не установлено.
+- r42 и r54 выбираются: полубайты [7:4] и [23:20] команды 0x1d ставятся в 2 при инициализации (Talyn
+  делает то же: `hwm_init_registers`, `0x1d000020`, `0x1d200000`). Значит, **r42 = `EVENT3_STATUS_R42`,
+  r54 = `EVENT6_STATUS`**, а не индекс 0 (`EVENT1_STATUS_R42` / `EVENT4_STATUS`), как было записано
+  раньше. Раскладка бит у индексов 0…2 обеих групп одинакова, поэтому имена бит в §2.8/§2.15 верны;
+  единственное отличие — бит 4 в `EVENT6_STATUS` называется `service_period_ind`.
+- Полубайт [3:0] — r48 (`BEACON_INTERVAL_CTRL_LO32` при индексе 0); в 6.2 он всегда 0, и r48 никто не
+  читает. Talyn использует `0x1d00000f` (r48 сел. 0xf = `PPDU_MISC_2_R48`) при разборе принятых кадров.
 
 На стенде в простое наблюдаются селекторы `0x1d284320`, `0x1d230020`
 ([MAC-COMMANDS §7.3](MAC-COMMANDS.md#73-0x1d-и-0x4d--локальное-чтение-железо)), то есть полубайты
-7..4 и 23..20 там всегда равны 2 **[железо]**.
+7..4 и 23..20 там всегда равны 2 **[железо]**. Расшифровка `0x1d284320`: r54←2, r47←8
+(`MTP_AGGREGATION`), r40←4 (`BI_COUNTER`), r41←3 (`QSET_1_MASK_VECTOR`), r42←2, r48←0.
 
 ### 2.4. Ожидания событий **[код]**
 
@@ -263,9 +287,12 @@ single-mapped значение: полубайт 15..12 выбирает рег�
 | 0xb | `MTP_Q_AVAIL` | 0..31 | `mtp_q_avail_vec` | OR с BAP_Q_AVAIL | `fsched__pick_ready_queue` 0x92bec6, `fsched__pick_queue_r41` 0x93983c, `rx_flow_ctrl_qid_empty` 0x93db3e |
 | 0xc | `BAP_Q_AVAIL` | 0..29 | `bap_q_avail_vec` | `asl.f 0,r41,2` | `bap_q_avail__check` 0x9302c0, `macq__is_idle` 0x926108 |
 
-### 2.8. r42 — события (EVENT1_STATUS) **[пак+код]**
+### 2.8. r42 — события (EVENT3_STATUS_R42) **[пак+код]**
 
-Селектор r42 uc не пишет (§2.3); раскладка `EVENT1/2/3_STATUS_R42` одинакова. Биты 0..23 —
+Индекс — полубайт [7:4] команды 0x1d, с инициализации = 2, т. е. `EVENT3_STATUS_R42` (§2.3; раньше
+здесь стояло `EVENT1_STATUS` — неверно, имена бит от этого не меняются: раскладка
+`EVENT1/2/3_STATUS_R42` одинакова). Разрешение событий — маска MAC-команды 0x01, квитирование — 0x02
+([MAC-COMMANDS §6](MAC-COMMANDS.md#6-сводная-таблица-кодов)). Биты 0..23 —
 события, 24..31 — резерв. Счётчик мест учитывает и прямые проверки, и маски помощников §2.4.
 
 | бит | имя | смысл в uc | где (vendor) |
@@ -278,7 +305,7 @@ single-mapped значение: полубайт 15..12 выбирает рег�
 | 9 | `gp_timers_event` | **таймаут ожидания** (GP-таймер из `0x23010000\|t`) | добавляется во все `uc_wait_event_busy/sleep` с `t≠0`; прямо: `rx__dispatch_by_g_8005f8` 0x933494…0x933566, `rx_flow__handle_frame` 0x932726 — `while (!r42.9 && !r53.0)`, при б9 ассерт 0x3b |
 | 11 | `sfd_sync_event` | синхронизация SFD | маска `0x4800` (`rx_flow__run` 0x931140) |
 | 12 | `rx_frame_event` | **принят кадр** (ответ ACK/CTS, BRP, SSW) | 13 прямых мест: `itx__wait_ack*`, `itx__wait_cts*`, `tx__await_rx_or_timeout` 0x924c98, BRP-потоки, `bti__bi2_event_step` 0x936e9e, `bti_bi2__track_best_metric` 0x93dcce, `abft_responder__respond_flow` 0x930508, `abft_rx_ssw_tx_feedback` 0x92c158 |
-| 14 | `busy2_event` | **среда занята / подтверждение команды**: перед TX — отказ, если взведён; после `0x27…+0x02004000` — ждать его | 26 прямых мест + маски: `tx__cca_check_and_send` 0x924d40, `tx_bcast_flow` 0x937940, `txop__await_cts_ppdu` 0x9399de, `tx_slot__dispatch` 0x938e52, `internal_tx__flow_sm2/4/6`, `bti_worker__…beacon_sweep_flow` 0x923e86/0x924158, `rx__program_mac_and_wait` 0x938d6c, `sxd_hal__wait_slot2_busy2` 0x936d46 и др. |
+| 14 | `busy2_event` | **автомат idle-detect в состоянии из маски 0x27** (по Talyn; §2.1): перед TX — отказ, если взведён; после `0x27…+0x02004000` — ждать его | 26 прямых мест + маски: `tx__cca_check_and_send` 0x924d40, `tx_bcast_flow` 0x937940, `txop__await_cts_ppdu` 0x9399de, `tx_slot__dispatch` 0x938e52, `internal_tx__flow_sm2/4/6`, `bti_worker__…beacon_sweep_flow` 0x923e86/0x924158, `rx__program_mac_and_wait` 0x938d6c, `sxd_hal__wait_slot2_busy2` 0x936d46 и др. |
 | 15 | `tx_end_event` | **передача закончена** | 20 мест `uc_spin_until_event(0x8000)` (§2.4) |
 | 16 | `ppdu_report_event` | отчёт r36…r39 готов | `rx_flow_step` 0x931b34, `rx_flow__run` 0x93125c, `rx_flow__handle_frame` 0x931f20 + 14 мест `uc_wait_event_busy(0x10000)` |
 | 18 | `backoff_event` | конец backoff → `bi_dispatch_by_role` (L1) | `l1_task__main_step` 0x92cbfa/0x92ccb6 |
@@ -368,15 +395,17 @@ DCCM:
 | 8..14 | `num_of_tx_pkts` | `0x802210 +=` | `rx__dispatch_by_g_8005f8` 0x933594, `rx_flow__handle_frame` 0x932758 |
 | 16..22 | `num_of_non_acked_pkts` | `0x802214 +=`; оба → `bap_q_avail__check` | `rx__dispatch_by_g_8005f8` 0x93359c, `rx_flow__handle_frame` 0x932760 |
 
-### 2.15. r54 — события EVENT4_STATUS **[пак+код]**
+### 2.15. r54 — события EVENT6_STATUS **[пак+код]**
 
-Квитирование — MAC-команда 0x49 ([MAC-COMMANDS §7.6](MAC-COMMANDS.md#76-gp-таймеры-и-r54-0x49-0x4f0x54-0x670x68)).
+Индекс — полубайт [23:20] команды 0x1d, с инициализации = 2, т. е. `EVENT6_STATUS` (§2.3; раньше
+здесь стояло `EVENT4_STATUS` — неверно, раскладка бит у EVENT4/5/6 одинакова, кроме имени бита 4).
+Разрешение событий — маска MAC-команды 0x48, квитирование — MAC-команда 0x49 ([MAC-COMMANDS §7.6](MAC-COMMANDS.md#76-gp-таймеры-и-r54-0x49-0x4f0x54-0x670x68)).
 
 | бит | имя | смысл в uc | где (vendor) |
 |---|---|---|---|
 | 0 | `txss_end_ind` | развёртка TXSS окончена | `txss_init__wait_rss` 0x93bb7a/0x93bbd0, `txss_resp__wait_iss_end` 0x93bf34/0x93bfd2, маски `0x81`/`0xc1` |
 | 1 | `rxss_bf_metric_ind` | метрика RXSS готова | `brp__program_and_measure` 0x923738/0x923744 |
-| 4 | `service_period_0_ind` | вход DTI-аллокации (ESE) | `l1__on_event4` 0x92cd46 |
+| 4 | `service_period_ind` (в EVENT4 — `service_period_0_ind`) | вход DTI-аллокации (ESE) | `l1__on_event4` 0x92cd46 |
 | 6 | `gp0_end_ind` | **таймаут GP0** (ответ не пришёл) | 14 мест + маски `0x40`: `itx__wait_ack*`, `itx__wait_cts*`, `tx__await_rx_or_timeout` 0x924c9e, BRP-потоки 0x92267c/0x9229a4, `txss_resp__wait_fdbk` 0x93bef8, `txss_init__wait_rss` 0x93bbb2, `bti_bi2__track_best_metric` 0x93dec8, `bti__r54_event_bit6` 0x92bf2c, `abft_initiator_feedback_loop` 0x92c068, `mac__arm_events_0xc00` 0x93e0ce |
 | 7 | `gp1_end_ind` | таймаут GP1 (глобальный) | `abft_responder__respond_flow` 0x930574, `bti__arm_period_gp0` 0x9307f2, `abft_rx_ssw_tx_feedback` 0x92c150, `txss_init__send_fdbk_wait_ack` 0x93ba70, `txss_init__wait_rss` 0x93bbbe, `txss_resp__wait_iss_end` 0x93bf3e/0x93bfd8 |
 | 8 | `gp2_end_ind` | конец GP2 | `bti_bi2__gp2_end_flag` 0x923ca8, `bti_bi2__track_best_metric` 0x93ded0, маски `0x100`, `0x140` |
@@ -412,8 +441,11 @@ vendor в `abft_responder__tx_ssw` 0x93095a: `SIFS_CNT ≥ 0x160` или `= 0` �
 `less_than_min_session_0..7`, к сроку ответа не относится.
 
 В `abft_rx_ssw_tx_feedback` 0x92c25a, `rx__switch_to_rx_mode` 0x924fe2 и `rx_nav__set_from_duration`
-0x92dd7c r55 читается после вычисленной команды; какой регистр выбран, не установлено (у последнего
-используется `(r55>>8)&0xff`, как `SIFS_CNT.usec`).
+0x92dd7c r55 читается после вычисленной команды. В `rx_nav__set_from_duration` это **`SIFS_CNT`**
+(`(r55>>8)&0xff` = `usec`, тень 0x4d там остаётся 0) **[Talyn-code: `nav_db.c`, строка «Received
+bigger NAV than Current…»]**: Talyn в той же функции шлёт `0x4d000000`, берёт байт [1] и вычитает
+его из TSF + Duration. Для двух других мест Talyn даёт тот же `0x4d000000` в
+`abft_worker_responder` — вероятно, тоже `SIFS_CNT` **[вывод]**.
 
 ### 2.17. r29/r30 (ilink1/ilink2)
 
@@ -559,7 +591,7 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
 | слово | тень чего | биты |
 |---|---|---|
 | `0x8004e4` (`[gp,-0x44]`) | селекторы команды 0x1d | полубайты §2.3 |
-| `0x8004e0` (`[gp,-0x48]`) | разрешение событий (команда 0x27) | OR-ится в `0x27000000 \| (1<<n)<<8`; при инициализации = 0xc (`stubs.c`) |
+| `0x8004e0` (`[gp,-0x48]`) | маска состояний idle-detect (команда 0x27, §2.1) | OR-ится в `0x27000000 \| (1<<n)<<8`; при инициализации = 0xc (`stubs.c`) |
 | `0x8004c8` (`[gp,-0x60]`) | `0x886f5c` `mac_tx_qid_enable_mask` | бит на qid; б31 = внутренняя очередь ucode. `tx_sta__run_txop` 0x93a136: `\|= 0x800564`, после TXOP `&= ~0x800564` |
 | `0x8006a0` (`[gp,0x5e]`) | `0x889488` `abif_dvs_rf_ctrl` | ucode меняет только [25:24] (`dvs_if_splitter_enable`): `(тень & 0xfcffffff) \| [0x802940 или 0x802944] << 24` — набор RF на время TX/RX |
 
@@ -700,13 +732,14 @@ uc обращается к AUX только через `lr`/`sr` и к STATUS32 
 
 ## 8. Не установлено
 
-* Группы, которые выбирают полубайты 3..0, 7..4, 23..20 теневого селектора (§2.3).
+* Есть ли команды-селекторы 0x77/0x78 в кремнии Sparrow (§2.3).
 * Назначение бит 1 и 5 в `MTP_TX_PERMISSION_RESP.null_status` по паку; поля `r51` (§2.13).
 * `0x8005f4` б7…б10 и `0x8005f8` б4 (режим 16), б17, б18, б20, б26…б29: писатель в 6.2 не
   найден (только проверки); возможно, это остатки 4.1. Смысл `0x8005f8` б31.
 * `0x802948`, `0x800564` — точный смысл масок qid.
 * Бит 24 `sr` в DEBUG (AUX 0x5) при программировании точки останова.
-* Регистр r55 в `abft_rx_ssw_tx_feedback`, `rx__switch_to_rx_mode`, `rx_nav__set_from_duration`.
+* Регистр r55 в `abft_rx_ssw_tx_feedback`, `rx__switch_to_rx_mode` (по Talyn вероятно `SIFS_CNT`, §2.16);
+  в `rx_nav__set_from_duration` — `SIFS_CNT` (закрыто).
 * Признак полуслова в r34 (б24) — подтвердить на стенде или по второй ветке
   `direct_tx__send_after_delay`.
 
