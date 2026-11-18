@@ -2,6 +2,7 @@
 /* L2-менеджер: l2mgr__mac_bringup (0x8f6ab8) + trigger. Размещается в .textlate. */
 #include "../include/types.h"
 #include "../include/hw.h"
+#include "../include/clk.h"
 #include "../include/arc.h"
 #include "../include/rf_obj.h"
 #include "../include/rx_ring.h"
@@ -70,7 +71,7 @@ __attribute__((section(".textlate"))) void lmac_if_send_qset_ranges(void)
 /* lmac_if_send_mac_cfg (0x8db8cc, 124 Б): LMAC-команда 0x00 (0x44 Б) — конфигурация MAC
  * (ucode_cmd_0x00_handler): 0xc Б cfg, cfg w0c/w10 → regs.w0c/w10 (@0xc/@0x10), cfg w[0..3] →
  * regs.w14[2..5] (@0x1c..@0x28), regs.qset_mode (@0x2c) бит 0..3 = 8, ifs_clk[0] = a1,
- * ifs_clk[1] = a2, ifs_clk[2] = 825, ifs_clk[3]/[4] = 0xa5, x3c = 4, x3e = 2, rf_chain — байт
+ * ifs_clk[1] = a2, ifs_clk[2] = 5 мкс, ifs_clk[3]/[4] = 1 мкс в тактах ядра (vendor 825, 0xa5), x3c = 4, x3e = 2, rf_chain — байт
  * rf_obj.rf_idx (0x8042c8). regs.w14[0..1] и прочие биты qset_mode vendor не пишет (у vendor — остаток слота
  * пула, у нас 0: mem_pool_alloc_locked обнуляет). Нет буфера — команды нет. */
 __attribute__((section(".textlate"))) void lmac_if_send_mac_cfg(const struct lmac_mac_cfg_src *cfg, u32 a1, u32 a2)
@@ -80,11 +81,12 @@ __attribute__((section(".textlate"))) void lmac_if_send_mac_cfg(const struct lma
     volatile struct lmac_cmd_mac_cfg *b = mem_pool_alloc_locked(&lmac_mbox.mb);
     if (b == 0)
         return;
+    u32 mhz = clk_mhz_of_n(MMIO32(CLK_PLL_N_REG));   /* такт ядра (include/clk.h) */
     b->ifs_clk[0] = (u16)a1;
     b->rf_chain = *(volatile u8 *)&rf_obj.rf_idx;
-    b->ifs_clk[3] = 0xa5;
-    b->ifs_clk[4] = 0xa5;
-    b->ifs_clk[2] = 825;
+    b->ifs_clk[3] = (u16)mhz;                       /* 1 мкс (RIFS/SBIFS, 0xa5 при 165) */
+    b->ifs_clk[4] = (u16)mhz;
+    b->ifs_clk[2] = (u16)(5u * mhz);                /* aSlotTime 5 мкс (825 при 165) */
     b->ifs_clk[1] = (u16)a2;
     memcpy_fw((void *)b->regs.b0, cfg->b0, 0xc);
     b->regs.w10 = cfg->w10;
@@ -100,7 +102,7 @@ __attribute__((section(".textlate"))) void lmac_if_send_mac_cfg(const struct lma
 }
 
 /* lmac_if__send_init_cfg (0x8f3db8, 164 Б): шаг 9 — конфигурация MAC (0x24 Б на стеке) в
- * LMAC 0x00 с a1 = 495, a2 = 0xa. Байты 0..0x13: 4, 1, 0x96, 0, 0xa1, 0, 0x7b, 0, 0x16, 0,
+ * LMAC 0x00 с a1 = SIFS 3 мкс в тактах ядра (vendor 495), a2 = 0xa. Байты 0..0x13: 4, 1, 0x96, 0, 0xa1, 0, 0x7b, 0, 0x16, 0,
  * 0x12, 0, 0x60, 0, 0x91, 2, 0xa, 2, 0x6a, 0; слова @0x14 |= 0xf, @0x18 |= 0x3f,
  * @0x1c = (… & ~0xf) | 8, @0x20 = 0x38 (биты 6..31 = 0 через bits__set32_s6_w26).
  * vendor не инициализирует стек: старшие биты @0x14/@0x18/@0x1c — остатки стека
@@ -120,7 +122,7 @@ __attribute__((section(".textlate"))) void lmac_if_send_mac_init_cfg(void)
     c.w[2] = (c.w[2] & ~0xfu) | 8u;
     c.w[3] = (c.w[3] & ~0xfu) | 0x38u;
     l2_bitfield_set32(&c.w[3], 6, 26, 0);
-    lmac_if_send_mac_cfg(&c, 495, 0xa);
+    lmac_if_send_mac_cfg(&c, 3u * clk_mhz_of_n(MMIO32(CLK_PLL_N_REG)), 0xa);   /* aSIFSTime 3 мкс (495 при 165) */
 }
 
 /* l2mgr__mac_bringup, хвост при [gp,400] = [0x800314] != 0 (0x8f6b0c, 62 Б): регистры MAC

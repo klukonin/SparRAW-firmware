@@ -447,7 +447,6 @@ void peer_slots_scan_by_masks(u32 a)
     src->snr_valid = 0;
     src->snr = (s32)0xffffff00;
     mac_mon_report.bcons_atim_fail_vec = r14;
-    mac_mon_snap = FWSH(mac_mon_pub, nav_accum);
     uc_send_evt_mac_monitor(1);
     mac_mon_armed = 0;
     tx_busy_start_tsf = 0;

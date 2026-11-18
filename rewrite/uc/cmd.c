@@ -720,17 +720,17 @@ void txrx_api_program_ifs_timing(u32 a)
 {
     /* 0x936acc: входы — u16 (ldw_s), выход — пары {mod,div} по 2 байта в 0x802968. */
     u16 *c = (u16 *)a;
-    mac_clk_div165(c[0], (u32)&ifs.sifs);
-    mac_clk_div165(c[0] * 3, (u32)&ifs.mbifs);   /* add1_s r0,r0,r0 = ×3 */
-    mac_clk_div165(c[2], (u32)&ifs.slot);        /* ldw_s [r13,4] = c[2] */
+    mac_clk_div_us(c[0], (u32)&ifs.sifs);
+    mac_clk_div_us(c[0] * 3, (u32)&ifs.mbifs);   /* add1_s r0,r0,r0 = ×3 */
+    mac_clk_div_us(c[2], (u32)&ifs.slot);        /* ldw_s [r13,4] = c[2] */
     *(volatile u32 *)HW_MAC_IFS_SIFS = ifs.sifs | 0x1730000;
     *(volatile u32 *)HW_MAC_IFS_SLOT = ifs.slot | (1u << 22) | (1u << 24) | (1u << 25);
     *(volatile u32 *)HW_MAC_IFS_CONST_452 = 0x452;
-    mac_clk_div165(c[0] + c[2], (u32)&ifs.pifs);
-    mac_clk_div165(c[2] << 1, (u32)&ifs.two_slot);
+    mac_clk_div_us(c[0] + c[2], (u32)&ifs.pifs);
+    mac_clk_div_us(c[2] << 1, (u32)&ifs.two_slot);
     *(volatile u32 *)HW_MAC_IFS_PIFS_2SLOT = ifs.pifs | ((u32)ifs.two_slot << 16);
-    mac_clk_div165(c[3], (u32)&ifs.c3);
-    mac_clk_div165(c[4], (u32)&ifs.c4);
+    mac_clk_div_us(c[3], (u32)&ifs.c3);
+    mac_clk_div_us(c[4], (u32)&ifs.c4);
     *(volatile u32 *)HW_MAC_IFS_RIFS_SBIFS = ifs.c3 | ((u32)ifs.c4 << 16);
     /* Нижняя граница момента ответа / продолжения RX→TX {такты, мкс} — SIFS (10.3.2.3.3). Прежде здесь 0x100 (1 мкс), а
      * SIFS писал путь продолжения TXOP перед каждым запросом (rx_flow_step) — значение постоянное, запись снята с пути

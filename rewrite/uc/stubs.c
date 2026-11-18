@@ -2,6 +2,7 @@
 /* Разные функции uCode (TX-контекст, mailbox, TSF, ...). Имя файла историческое: заглушек здесь нет. */
 #include "../include/types.h"
 #include "../include/hw.h"
+#include "../include/clk.h"
 #include "../include/arc.h"
 #include "../include/sta_max.h"
 
@@ -76,7 +77,9 @@ void bi_mode_program_mac_timing(void)
     MMIO32(HW_MAC_TIMING_CONST_60) = 0x10001;
     MMIO32(HW_MAC_TX_STAMP_DELAY_CTRL) = 0x60025;
     MMIO32(HW_MAC_TX_STAMP_DELAY_SC) = 0x2000b;
-    MMIO32(HW_MAC_USEC_CLK_DIV) = 0x5300a5;
+    /* делитель мкс MAC (TSF, Duration, NAV, TXOP, BI, IFS в мкс) = такт ядра в МГц; [31:16] = f/2 + 1, как vendor
+     * (0x5300a5 при 165; fw mac_set_usec_clk_div) */
+    MMIO32(HW_MAC_USEC_CLK_DIV) = (((clk_mhz >> 1) + 1u) << 16) | clk_mhz;
 }
 /* bf_init_globals — в bf.c. */
 /* mac_set_default_slot_timing — в mac.c. */

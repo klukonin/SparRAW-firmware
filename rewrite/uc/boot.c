@@ -6,6 +6,7 @@
 #include "../include/arc.h"
 #include "dbg.h"
 #include "../include/hw.h"
+#include "../include/clk.h"
 
 
 /* Многоядерный handshake при старте (0x93e2c0). */
@@ -50,6 +51,7 @@ void uc_main(void)
     memset0_words_uc((void *)&fwsh_sp_gate, sizeof(fwsh_sp_gate));
     g_800428 = 0;
     rx_post_defer = 0;                            /* без начального значения в образе DCCM (uc/rx.c rx_post_run) */
+    clk_mhz = clk_mhz_of_n(MMIO32(CLK_PLL_N_REG));   /* такт ядра — до всех пересчётов мкс ↔ такты (include/clk.h) */
     boot_uc_init_structs();
     boot_uc_init_and_run();
 }

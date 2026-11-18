@@ -5,6 +5,7 @@
  * Всё кладём в .textlate — секция .text переполнена. */
 #include "../include/types.h"
 #include "../include/hw.h"
+#include "../include/clk.h"
 #include "../include/rf_obj.h"
 #include "../include/fwdata.h"
 
@@ -142,13 +143,13 @@ __attribute__((section(".textlate"))) void hw_pll_mode_switch(u32 on, u32 arg)
     if (on == 1) {
         if (arg != 0) {
             u32 v = MMIO16(HW_RGF_USER_FW_REV_ID);
-            mac_set_usec_clk_div((v == 5) ? 0x28u : 0x26u, 1);
+            mac_set_usec_clk_div((v == 5) ? CLK_REF_MHZ : 0x26u, 1);   /* MAC на опоре; у не-B0 опора не установлена (vendor 38) */
         }
         hw_modes_enable_pll();
     } else {
         hwm_reset_analog_block();
         if (arg != 0)
-            mac_set_usec_clk_div(0xa5, 0);
+            mac_set_usec_clk_div(clk_mhz_of_n(MMIO32(CLK_PLL_N_REG)), 0);   /* снова такт ядра (include/clk.h) */
     }
 }
 

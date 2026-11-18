@@ -219,6 +219,7 @@ class FW:
         z = dict.fromkeys(range(DCCM, DCCM + DCCM_SIZE), 0)
         z.update(dict.fromkeys(range(SRAM, SRAM_END), 0))
         c.mem.update(z)
+        c.mem.update({0x8893f8 + i: b for i, b in enumerate((132).to_bytes(4, 'little'))})   # множитель PLL (include/clk.h)
         for name, addr, d in secs:
             code = name in ('.text', '.textlate') or name.startswith('.text')
             c.load(addr, d, is_code=code)

@@ -485,6 +485,7 @@ class HW:
         c.write(HW_MAC_IFS_RIFS_SBIFS, ((sbifs_us << 24) | (1 << 8)).to_bytes(4, 'little'))
         # исходное состояние регистров, которые uc опрашивает (иначе — детерминированный мусор эмулятора):
         c.write(0x8890cc, (0).to_bytes(4, 'little'))      # HW_RFC_CORE_CTRL: б29 — RF-контроллер занят → свободен
+        c.write(0x8893f8, (132).to_bytes(4, 'little'))    # множитель PLL baseband (сброс 132 → 165 МГц, include/clk.h)
         # HW_PHY_RX_STATUS_8837B0: стенд 2026-10-30 (метка STAMP_SNR_SEL, iperf, 5656 чтений у двух узлов) — всегда 0x2
         # (rx_flow_run запускает выбор сектора по SNR на каждом кадре); мусор эмулятора включал его у одного узла
         c.write(0x8837b0, (2).to_bytes(4, 'little'))

@@ -393,7 +393,7 @@ void l2_task_report_error_bits(void);                           /* l1.c */
 u32 mac_wait_busy2_or_gp0_timeout(void);                                 /* mac.c */
 u32 mac_build_qset_mask(const struct lmac_mac_regs *a);         /* mac.c */
 void mac_install_rf_gain_cb(void);                      /* mac.c */
-void mac_clk_div165(u32 a, u32 out);                            /* mac.c */
+void mac_clk_div_us(u32 a, u32 out);                            /* mac.c */
 void aw_set_new_tbtt_clear_ps(struct pm_ctx_s *p);                       /* mac.c */
 void mac_cmd_29000001(void);                                    /* mac.c */
 void mac_set_phy_mode(void);                                       /* mac.c */

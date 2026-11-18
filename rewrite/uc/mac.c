@@ -86,13 +86,14 @@ u32 macq_read_hw_queue_word(u32 q)
     return MMIO32(addr);
 }
 
-void mac_clk_div165(u32 a, u32 out)
+void mac_clk_div_us(u32 a, u32 out)
 {
-    /* 0x936b94: out[0] = a % 165, out[1] = a / 165 (по байту). */
-    u32 n = 0;
-    while (a >= 0xa5) {
+    /* 0x936b94 (vendor: делитель 165): код {такты, мкс} регистров IFS MAC — out[0] = a % f, out[1] = a / f (по байту),
+     * f = clk_mhz (include/clk.h). */
+    u32 n = 0, f = clk_mhz;
+    while (a >= f) {
         n++;
-        a -= 0xa5;
+        a -= f;
     }
     u8 *o = (u8 *)out;                  /* пара {остаток, частное} (struct ifs_timing) */
     o[1] = (u8)n;
