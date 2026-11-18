@@ -351,8 +351,9 @@ void bti_sta_beacon_abft_flow(struct bi_ctx_s *c)
         /* Вход в BTI с пути приёма (l1_task_run_bi_phase → rx_flow → автомат BI, аргумент 1): маяк уже разобран rx_flow,
          * окно GP2 (0x284 от конца его приёма) прошло — GP0 по этому маяку взводится поздно (MAC_EVT4_GP2_END). Так
          * входит станция без синхронизации BI — до ассоциации, когда A-BFT ей и нужен (10.42.5: ответчик TXSS в A-BFT);
-         * vendor пропускал A-BFT каждого BI. Стенд 2026-11-18: вход kind 1 — один за загрузку (первый маяк), но без
-         * перевзвода GP0 поздно и в следующих BTI (abft_gp0_late_cnt 122–125 за ~12 с, abft_try 0), с перевзводом — 0.
+         * vendor пропускал A-BFT каждого BI. Стенд 2026-11-18: без перевзвода abft_gp0_late_cnt 122–125 (повторные
+         * входы kind 1), abft_try 0; с перевзводом вход kind 1 обычно один (первый маяк) и опозданий 0, в 1 загрузке
+         * из 9 — 64 повторных входа после ассоциации.
          * Поэтому GP2 перевзводится на конец следующего принятого кадра, и следующий маяк этого BTI ловится в
          * bti_beacon_rx_step_chk, как при входе по TBTT (kind 0); последовательность GP2 — как в bti_reset_sweep_state.
          * Только если развёртка за этим маяком продолжается (CDOWN > 0) — иначе ждать в bti_beacon_rx_step_chk нечего
@@ -1298,12 +1299,18 @@ void bti_beacon_track_best_metric(struct bi_ctx_s *c)
                 s32 dl = (s32)(((t_bcn + (u32)rx_buf_duration * ABFT_CLK_PER_US) & 0x3fffffffu) - bti_cnt.x04);
                 u32 fss = (bcn_rx.bi_ctrl[1] >> 2) & 0xf;
                 if (dl > -(s32)(5 * ABFT_CLK_PER_US) && dl < (s32)(5 * ABFT_CLK_PER_US) && fss >= ABFT_SS_FRAMES_PER_SLOT) {
-                    if (bcn_rx.abft_go != 0) {       /* как bti_sta_arm_abft_first_slot, без квитирования MAC_EVT4_GP1_END */
+                    if (bcn_rx.abft_go != 0) {       /* как bti_sta_arm_abft_first_slot */
                         /* не меньше 1 такта, как в bti_sta_arm_abft_first_slot: при dl < −(899 − g0off) (≈ −3,85 мкс,
                          * внутри окна ±5 мкс) значение уходило в минус → ~2^32 тактов, GP1 не срабатывал за A-BFT */
                         s32 gp1 = (s32)ABFT_STA_STD_GP1_CLK + dl - (s32)g0off;
                         uc_mac_cmd((u32)(gp1 > 0 ? gp1 : 1) | 0x50000000u);
                         uc_mac_cmd(0x5300070e);
+                        /* исправлено: повторный взвод ждущего GP1 сразу поднимает MAC_EVT4_GP1_END (H-GPREARM, стенд
+                         * 2026-11-18: флаг следующим чтением после первой поправки, GP0 ещё идёт). Без квитирования
+                         * bti_sta_arm_abft_slot_period на конце GP0 видела «границу слота прошла»: слот 0 пропускался,
+                         * в слоте 1 пачка уходила по сетке на слот раньше точки, SSW-Feedback не засчитывался. GP1 до
+                         * конца GP0 не стартует (поправка — только при !MAC_EVT4_GP0_END) — настоящее событие не теряется. */
+                        uc_mac_cmd(0x49000080);
                     }
                     u32 n = ((((u32)bcn_rx.bi_ctrl[1] << 8) | bcn_rx.bi_ctrl[0]) >> 7 & 7) + 1;
                     /* как abft_sta_arm_abft_end_timer, без квитирования MAC_EVT4_GP2_END (его ждёт этот цикл, r16) */
