@@ -223,11 +223,7 @@ void l1_task_reset_units(void)
     gp_timer_stop(0);
     gp_timer_stop(1);
     gp_timer_stop(2);
-    uc_mac_cmd(0x54000000);
-    uc_mac_cmd(0x54000000);
-    uc_mac_cmd(0x49000100);
-    uc_mac_cmd(0x51000284);
-    uc_mac_cmd(0x54000508);
+    bti_gp2_arm_rx_end();
 }
 void l1_task_sel_nbr_update(void)
 {

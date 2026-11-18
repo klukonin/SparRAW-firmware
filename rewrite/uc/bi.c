@@ -169,11 +169,7 @@ void bi_bti_end_reset_timers(struct sls_peer_rec *r)
     gp_timer_stop(0);
     gp_timer_stop(1);
     gp_timer_stop(2);
-    uc_mac_cmd(0x54000000);
-    uc_mac_cmd(0x54000000);
-    uc_mac_cmd(0x49000100);
-    uc_mac_cmd(0x51000284);
-    uc_mac_cmd(0x54000508);
+    bti_gp2_arm_rx_end();
 }
 
 /* ---- BI state-machine действия (bi_sm_action_*) ---- */

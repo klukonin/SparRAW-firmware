@@ -200,6 +200,7 @@ void brp_update_omni_sector_idx(u32 a, u32 b);                  /* brp.c */
 void brp_write_reg_pair(u32 a, u32 b);                          /* brp.c */
 void bti_sta_arm_abft_slot_period(void);                                  /* bti.c */
 u32 bti_beacon_rx_step(struct bi_ctx_s *c);                     /* bti.c */
+void bti_gp2_arm_rx_end(void);                                 /* bti.c */
 u32 bti_gp2_end_flag(void);                                 /* bti.c */
 void bti_beacon_track_best_metric(struct bi_ctx_s *c);             /* bti.c */
 void bti_clear_cid_sweep_counters(void);                        /* bti.c */
@@ -750,6 +751,7 @@ u32 uc_wait_txop_end(void);                                      /* mac.c */
 void uc_hw_wait_tmo(u32 marker);                                 /* mac.c */
 u32 uc_spin_until_event_tmo(u32 mask, u32 passes, u32 marker);   /* mac.c */
 #define UC_SPIN_PASSES(clk) ((clk) / 4u + 1u)                     /* проходов uc_spin_until_event_tmo на ≥ clk тактов */
+#define UC_SPIN_PASSES_N(clk, n) ((clk) / (n) + 1u)                /* проходов цикла опроса в n тактов на ≥ clk тактов */
 void uc_spin_until_event4(u32 a);                               /* uutil.c */
 void uc_spin_until_gp2_end(void);                         /* bf.c */
 void uc_sysassert_emit_mac_trace(u32 a);                        /* misc.c */

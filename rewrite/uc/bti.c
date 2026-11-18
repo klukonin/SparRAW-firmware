@@ -178,6 +178,18 @@ void bti_count_sweep_round(struct bi_ctx_s *c)
     }
 }
 
+/* GP2 станции на конец приёма следующего кадра (H-GP5, uc/abft.h): снять, сбросить события GP, ABFT_STA_GP2_RXEND_CLK,
+ * пуск по концу приёма (0x54000508). Одна функция на четыре места (начало BI, конец BTI, сброс L1, вход в BTI с пути
+ * приёма) — место в ICCM. */
+__attribute__((noinline, optimize("Os"))) void bti_gp2_arm_rx_end(void)
+{
+    uc_mac_cmd(0x54000000);
+    uc_mac_cmd(0x54000000);
+    uc_mac_cmd(0x49000100);
+    uc_mac_cmd(ABFT_STA_GP2_RXEND_CLK | 0x51000000);
+    uc_mac_cmd(0x54000508);
+}
+
 void bti_reset_sweep_state(struct bi_ctx_s *c)
 {
     u8 v = 0;
@@ -186,11 +198,7 @@ void bti_reset_sweep_state(struct bi_ctx_s *c)
         v++;
     }
     memset0_words_uc(&bcn_rx, 0x1c);                /* до x1c */
-    uc_mac_cmd(0x54u << 24);
-    uc_mac_cmd(0x54u << 24);
-    uc_mac_cmd(0x49000100);
-    uc_mac_cmd(0x51000284);
-    uc_mac_cmd(0x54000508);
+    bti_gp2_arm_rx_end();
     memset0_words_uc((void *)&bti_sw, 0x58);
     c->round = 0;
 }
@@ -341,14 +349,25 @@ void bti_sta_beacon_abft_flow(struct bi_ctx_s *c)
 {
     if (c->kind == 1) {
         /* Вход в BTI с пути приёма (l1_task_run_bi_phase → rx_flow → автомат BI, аргумент 1): маяк уже разобран rx_flow,
-         * окно GP2 (0x284 от конца его приёма) прошло — GP0 по этому маяку взводится поздно (MAC_EVT4_GP2_END), A-BFT этого BI
-         * пропускается (status 4), как у vendor. Участие в A-BFT необязательно (10.42.5): BF и ассоциация проходят
-         * в DTI (TXSS).
-         * Перевзвод GP2 на следующий маяк этого BTI (ответ в A-BFT при сканировании/ассоциации) убран: стенд
-         * 2026-10-28, чередование 3+3 (и 2 ранее) — с ним первый BRP после ассоциации проваливался во всех загрузках,
-         * шторм CTS и разрывы «lost link: no beacons» в 2 из 3; без него 5 из 5 чисто. Ограничение перевзвода
-         * временем BTI или состоянием «до ассоциации» не помогло (2 из 3 с разрывами) — портит связь сам ответ в
-         * A-BFT этого пути (bti_beacon_track_best_metric → abft_responder_fast); причина не найдена. */
+         * окно GP2 (0x284 от конца его приёма) прошло — GP0 по этому маяку взводится поздно (MAC_EVT4_GP2_END). Так
+         * входит станция без синхронизации BI — до ассоциации, когда A-BFT ей и нужен (10.42.5: ответчик TXSS в A-BFT);
+         * vendor пропускал A-BFT каждого BI. Стенд 2026-11-18: вход kind 1 — один за загрузку (первый маяк), но без
+         * перевзвода GP0 поздно и в следующих BTI (abft_gp0_late_cnt 122–125 за ~12 с, abft_try 0), с перевзводом — 0.
+         * Поэтому GP2 перевзводится на конец следующего принятого кадра, и следующий маяк этого BTI ловится в
+         * bti_beacon_rx_step_chk, как при входе по TBTT (kind 0); последовательность GP2 — как в bti_reset_sweep_state.
+         * Только если развёртка за этим маяком продолжается (CDOWN > 0) — иначе ждать в bti_beacon_rx_step_chk нечего
+         * до конца BI и uc не обслуживал бы приём; без проверок окна BI и синхронизации BI (chk 0): BTI доказан
+         * принятым маяком, а до синхронизации счётчика BI с AP проверка окна почти всегда ложна. Только до ассоциации
+         * (maint_sta_mask == 0): после неё станция в A-BFT и так не отвечает (abft_cfg.responder_mode 0 —
+         * UNASSOCIATED_ONLY, lmac_if_send_abft_cfg), а ожидание маяка сдвигало бы приём DTI.
+         * Прежде (стенд 2026-10-28) перевзвод убирали: первый BRP после ассоциации проваливался, шторм CTS, разрывы —
+         * но тогда узлы шли на ядре, портившем память (ядро 920+911), и A-BFT станции был ещё не по
+         * стандарту. */
+        if (maint_sta_mask == 0 && ((rx_buf_bcn_ssw >> 1) & 0x1ff) != 0) {
+            bti_gp2_arm_rx_end();
+            if (bti_beacon_rx_step_chk(c, 0) == 0)
+                return;
+        }
     } else if (bti_beacon_rx_step(c) == 0) {
         return;
     }
@@ -1001,6 +1020,20 @@ static u32 abft_sta_arm_bti_end_timer(void)
     return (bti_gp2_end_flag() != 0 || abft_gp_clk2() == 0) ? 2u : 1u;
 }
 
+/* Такты прохода опроса маяка при входе с пути приёма (bti_beacon_rx_step_chk, chk 0): mov r42 / tst limm / bne_s /
+ * add.f / bne_s назад — по costmodel.py 1 + 2 + 3 (флаги через 3) + 1 + 4 (флаги, переход) = 11. */
+#define BTI_RX_ENTRY_PASS_CLK 11u
+/* Вход в BTI с пути приёма: следующий маяк этого BTI не пришёл до его конца — GP2, перевзведённый на конец кадра
+ * (bti_sta_beacon_abft_flow), снять; A-BFT этого BI пропущен, как при позднем взводе GP0 (status 4). */
+__attribute__((noinline, cold)) static u32 bti_rx_entry_timeout(struct bi_ctx_s *c)
+{
+    uc_mac_cmd(0x54000000);
+    bcn_rx.abft_gp0_late_cnt += 1;
+    c->status = 4;
+    abft_sta_note_abft_end();
+    return 0;
+}
+
 /* chk = 0 — без проверок окна BI и синхронизации BI (вход в BTI с пути приёма, см. bti_sta_beacon_abft_flow). */
 static u32 bti_beacon_rx_step_chk(struct bi_ctx_s *c, u32 chk)
 {
@@ -1017,8 +1050,19 @@ static u32 bti_beacon_rx_step_chk(struct bi_ctx_s *c, u32 chk)
     }
 
     u32 t_bcn = 0;
+    /* chk 0: следующий маяк ждём не дольше конца BTI — Duration принятого маяка (9.3.4.2, 10.42.5.1: BTI кончается по
+     * Duration последнего принятого маяка), счётом проходов опроса (Timer1 сбрасывает тик L1). Без срока станция,
+     * не услышав маяк (сектор развёртки мимо), ждала до маяка следующего BI и отбрасывала кадры DTI — стенд 2026-10-28:
+     * шторм CTS, провал BRP, «lost link: no beacons» (test_uc_bti_rx_entry). */
+    u32 left = UC_SPIN_PASSES_N((u32)rx_buf_duration * ABFT_CLK_PER_US, BTI_RX_ENTRY_PASS_CLK);
     for (;;) {                                        /* L_936e90 */
-        uc_wait_event_busy(MAC_EVT1_BI2 | MAC_EVT1_RX_FRAME, 0);
+        if (chk != 0) {
+            uc_wait_event_busy(MAC_EVT1_BI2 | MAC_EVT1_RX_FRAME, 0);
+        } else {
+            while (!(mac_evt1() & (MAC_EVT1_BI2 | MAC_EVT1_RX_FRAME)))
+                if (--left == 0)
+                    return bti_rx_entry_timeout(c);
+        }
         t_bcn = abft_t1();                           /* MAC_EVT1_RX_FRAME первого маяка: конец BTI для поправки по последнему маяку */
         if (!(mac_evt1() & MAC_EVT1_RX_FRAME)) {
             /* L_937298 */
