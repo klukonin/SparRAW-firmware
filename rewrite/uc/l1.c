@@ -3,6 +3,7 @@
 #include "../include/sta_max.h"
 #include "../include/types.h"
 #include "../include/hw.h"
+#include "ifs.h"
 #include "../include/arc.h"
 #include "../include/macq_desc.h"
 

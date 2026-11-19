@@ -46,7 +46,7 @@
 #define STAMP_FB_TX_EVT     10   /* tail: то же — tx_end_event (r42.15) */
 #define STAMP_RESP_SIFS_CNT 12   /* rx: ответ через SIFS — после 0x37000020/0x19: a0 = SIFS_CNT (от конца приёма), a1 = вид */
 #define STAMP_LONG_TASK     13   /* l1/sched: задача дольше STAMP_LONG_CLK; a0 = номер фоновой | 0x100 + режим L1, a1 = такты */
-#define STAMP_LONG_CLK      330  /* 2 мкс */
+#define STAMP_LONG_CLK      (2u * DMG_CLK_PER_US)  /* 2 мкс (uc/ifs.h) */
 #define STAMP_BF_SEG        15   /* bf: bf_sm_process_request_fifo — отрезок; a0 = номер | состояние << 8, a1 = такты от входа */
 #define STAMP_FW_CMD        14   /* misc: команда fw (ящик) дольше STAMP_LONG_CLK; a0 = код команды, a1 = такты */
 #define STAMP_EVT           16   /* boot/evt: отправка события в fw; a0 = 0 — взят слот (uc_evt_write_slot), 1 << 16 | тип —

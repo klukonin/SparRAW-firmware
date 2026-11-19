@@ -38,6 +38,8 @@ def sc1_txtime_clk(L):
     nblks = (((L + 20) // 21) * 672 + 447) // 448
     return ((2176 + 1152 + 1024 + nblks * 512 + 64) * 3 + 31) // 32
 
+# поправки отметок времени MAC в тактах (uc/ifs.h UC_*_CLK: тракт PHY в чипах ∝ такту)
+STAMP_CLK = dict(TSF_RX_ADJ=281, TX_STAMP_CTRL=1027, TX_STAMP_SC=341)
 
 def cdiv(a, b):
     return -(-a // b)
@@ -77,6 +79,8 @@ def ref(f):
         SSW_FRAME_US=cdiv(t_ssw, f) + 2, BAP_RX_WAIT_PASSES=(PPDU_MAX_US * f + SIFS_US * f) // 4 + 2)
     for k, ns in SIFS_CNT_NS.items():
         d[k] = ((ns // 1000) << 8) | (ns % 1000) * f // 1000
+    for k, c in STAMP_CLK.items():
+        d[k] = ((c // f) << 16) | c % f
     return d
 
 
@@ -91,7 +95,8 @@ OLD_165 = dict(MHZ=165, SIFS=495, SBIFS=165, SLOT=825, PIFS=1320, MBIFS=1485, LB
                SSWFB_DUR_BRP_US=37, SSWACK_DUR_SUB=27, SSWFB_GP1=5092, SSWFB_RETRY_NEED_US=81, SSWFB_FRAME_US=21,
                SSW_FRAME_US=17, BAP_RX_WAIT_PASSES=(2000 * 165 + 495) // 4 + 2,
                SIFS_CNT_ABFT_SSW_LATE=0x163, SIFS_CNT_ABFT_FB_LATE=0x685, SIFS_CNT_RX_ENTRY_LATE=0x120,
-               SIFS_CNT_RX_LATE_END_SC=0x15a, SIFS_CNT_RESP_LATE=0x500)
+               SIFS_CNT_RX_LATE_END_SC=0x15a, SIFS_CNT_RESP_LATE=0x500,
+               TSF_RX_ADJ=0x10074, TX_STAMP_CTRL=0x60025, TX_STAMP_SC=0x2000b)
 
 
 def clkk_names():

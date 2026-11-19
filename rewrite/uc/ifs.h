@@ -314,6 +314,18 @@ _Static_assert((9697u * CLK_MHZ_RESET + 500u) / 1000u == 1600u && (4848u * CLK_M
                (970u * CLK_MHZ_RESET + 500u) / 1000u == 160u && (12u * CLK_MHZ_RESET + 500u) / 1000u == 2u,
                "паузы vendor при 165");
 
+/* Поправки отметок времени MAC {мкс[31:16], такты[15:0]} (uc/stubs.c bi_mode_program_mac_timing; стенд 2026-11-17 при
+ * 165 МГц, MAC-STAND «Отметки времени»): поправка TSF при приёме маяка 1,70 мкс, задержка метки TX Control PHY 6,22 и
+ * SC PHY 2,07 мкс. Это тракт PHY (преамбула, фильтры) — в чипах, а частота чипов идёт от такта ядра (notes: скорость
+ * TSF и полоса ∝ N), поэтому величины хранятся в тактах [гип, при другом такте не калибровалось]; поле — от такта. */
+#define UC_TSF_RX_ADJ_CLK        281u
+#define UC_TX_STAMP_CTRL_CLK     1027u
+#define UC_TX_STAMP_SC_CLK       341u
+#define MAC_US_CLK_CODE_AT(c, f) ((((c) / (f)) << 16) | ((c) % (f)))
+_Static_assert(MAC_US_CLK_CODE_AT(UC_TSF_RX_ADJ_CLK, CLK_MHZ_RESET) == 0x10074u &&
+               MAC_US_CLK_CODE_AT(UC_TX_STAMP_CTRL_CLK, CLK_MHZ_RESET) == 0x60025u &&
+               MAC_US_CLK_CODE_AT(UC_TX_STAMP_SC_CLK, CLK_MHZ_RESET) == 0x2000bu, "поправки отметок при 165");
+
 #ifndef UC_ABFT_MACLAT_CLK
 #define UC_ABFT_MACLAT_CLK    91u       /* старт прямой передачи после события GP + IFS(0x886d00): стенд 0,55 мкс (H-ORIGIN) */
 #endif

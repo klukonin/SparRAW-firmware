@@ -4,6 +4,7 @@
 #include "../include/types.h"
 #include "../include/arc.h"
 #include "../include/hw.h"
+#include "ifs.h"
 
 
 /* 0x9215d2. Биты задач 0x800648 & маска 0x800584 ([gp,92]); старший бит —

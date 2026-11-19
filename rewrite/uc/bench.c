@@ -19,6 +19,7 @@
 #include "../include/types.h"
 #include "../include/arc.h"
 #include "../include/hw.h"
+#include "ifs.h"
 #include "dbg.h"
 
 #ifdef UC_BENCH
@@ -593,7 +594,7 @@ static u32 bench_e27(u32 st)
     arc_nops(3);
     u32 t0 = arc_lr(0x100), t;
     while (!(arc_core_rd(42) & 0x4000)) {             /* r42 EVENT1_STATUS б14 */
-        if ((t = arc_lr(0x100) - t0) > 16500) {
+        if ((t = arc_lr(0x100) - t0) > 100u * DMG_CLK_PER_US) {   /* 100 мкс */
             t = ~0u;
             goto out;
         }

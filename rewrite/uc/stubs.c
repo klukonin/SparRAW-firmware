@@ -66,7 +66,7 @@ void bi_mode_load_cmd1e_operand(void)
     uc_mac_cmd(0x1e010004);
     uc_mac_cmd(0x1e010001);
 }
-/* Поправки отметок времени {мкс[31:16], такты 165 МГц[15:0]} (стенд 2026-11-17, запись на обоих узлах, сдвиг 1:1 со
+/* Поправки отметок времени {мкс[31:16], такты[15:0]} (величины в тактах — uc/ifs.h UC_TSF_RX_ADJ_CLK и др.) (стенд 2026-11-17, запись на обоих узлах, сдвиг 1:1 со
  * старшим полем; MAC-STAND «Отметки времени»): Timestamp DMG Beacon = TSF в начале первого символа данных на антенне
  * (802.11-2020 11.1.3.1) — задержка Control PHY 6,22 мкс; SC — 2,07; поправка приёма маяка (11.1.3.9). Время BSS
  * задаёт точка (11.1.3.1: станция ставит свой TSF по Timestamp маяка), поэтому расхождение правится поправкой приёма:
@@ -74,10 +74,10 @@ void bi_mode_load_cmd1e_operand(void)
  * калибровка судьи по ответам RTS → DMG CTS в обе стороны). 0x886d60 — запись эффекта не дала. */
 void bi_mode_program_mac_timing(void)
 {
-    MMIO32(HW_MAC_TSF_RX_ADJ) = 0x10074;          /* 1 мкс + 116 тактов = 1,70 мкс */
+    MMIO32(HW_MAC_TSF_RX_ADJ) = CLKK(TSF_RX_ADJ);      /* 1,70 мкс при 165 (0x10074), uc/ifs.h */
     MMIO32(HW_MAC_TIMING_CONST_60) = 0x10001;
-    MMIO32(HW_MAC_TX_STAMP_DELAY_CTRL) = 0x60025;
-    MMIO32(HW_MAC_TX_STAMP_DELAY_SC) = 0x2000b;
+    MMIO32(HW_MAC_TX_STAMP_DELAY_CTRL) = CLKK(TX_STAMP_CTRL);
+    MMIO32(HW_MAC_TX_STAMP_DELAY_SC) = CLKK(TX_STAMP_SC);
     /* делитель мкс MAC (TSF, Duration, NAV, TXOP, BI, IFS в мкс) = такт ядра в МГц; [31:16] = f/2 + 1, как vendor
      * (0x5300a5 при 165; fw mac_set_usec_clk_div) */
     u32 f = CLKK(MHZ);
