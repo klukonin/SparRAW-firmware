@@ -222,6 +222,7 @@
 #define RF_STATUS                0x880a68u  /* 0 RF_OK, 1 RF_NO_COMM, 2 RF_WRONG_BOARD_FILE (globals пака 11ad, … */
 #define RGF_USER_CLKS_CTL_0      0x880abcu  /* бит 1 CAR_AHB_SW_SEL: такт AHB от PLL (165 МГц), иначе опорный; … */
 #define CLK_SWITCH_STATUS        0x880c60u  /* липкие флаги (запись 1 стирает): бит 2 переключение SEL_SLEEP_OR_REF … */
+#define UC_CODE_WIN              0x920000u  /* ICCM uc (код, 128 КБ) в адресах fw и хоста (драйвер: uc_code) */
 #define PHY_SELF_MODE_CTL_RX     0x883000u  /* управление self-режимом PHY: пары битов [1:0] и [3:2] (бит разрешения … */
 #define PHY_SELF_MODE_CTL_TX     0x883004u  /* self TX режим PHY: бит 1 разрешение, бит 0 строб; взводит … */
 #define PHY_RX_SWAP_IQ           0x883038u  /* бит 0 инверсия I, бит 1 инверсия Q на приёме; 3 = … */

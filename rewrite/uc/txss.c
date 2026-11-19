@@ -484,8 +484,8 @@ void txss_store_sector_ranking(u32 a, u32 b)
  * больше MBIFS — Duration последнего SSW (9 мкс) не уходит ниже 0; развёртка, не влезающая в выделение глубже,
  * сама нарушает 10.42.2.1, укорачивать её здесь нечем. От чтения остатка до конца первого SSW — TXTIME 14,909 мкс
  * + путь + округление регистра: 17 мкс, Duration занижается (безопасная сторона). */
-#define SSW_FRAME_US  ((DMG_TXTIME_SSW_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US + 2u)
-_Static_assert(SSW_FRAME_US == 17u, "SSW до конца кадра");
+_Static_assert(SSW_FRAME_US_AT(CLK_MHZ_RESET) == 17u, "SSW до конца кадра");
+#define SSW_FRAME_US  CLKK(SSW_FRAME_US)
 static void ssw_plan_cap_by_allocation(const u16 *timing)
 {
     u32 d0 = SLS_SSW_DUR(ss_plan_tx_dur, SLS_MBIFS_US - timing[2], ss_plan_cdown, sls_ssw_dur_mul(timing[1]));
@@ -1248,7 +1248,7 @@ u8 txq_fifo_ptp_idle_snapshot(void)
 }
 
 /* СРОК (минимальная выдержка, аппаратный): импульс сброса RFC (HW_RFC_RESET_CTRL б4 = 0) —
- * rfc_txrx_set·160 тактов (≈ 0,97 мкс на единицу rfc_txrx_set), как vendor L_92a03c..L_92a054
+ * 0,97 мкс на единицу rfc_txrx_set (160 тактов при 165 МГц), как vendor L_92a03c..L_92a054
  * (lp n × 2×nop_s, n = rfc_txrx_set·80; при n = 0 ARC600 исполняет тело один раз — 2 такта).
  * Минимум RFC не известен, поэтому длительность прежняя, но по часам ядра (uc_delay_clk). */
 void rfc_restore_txrx_sets(void)
@@ -1256,8 +1256,8 @@ void rfc_restore_txrx_sets(void)
     u32 sp0, sp1;
     rf_set_txrx_sets_save(0xf, 0xff, &sp0, &sp1);
     MMIO32(HW_RFC_RESET_CTRL) &= ~(1u << 4);
-    u32 n = (u32)rfc_txrx_set * 80;      /* vendor: ldb; asl 4; add2 (×5) */
-    uc_delay_clk(n != 0 ? 2 * n : 2);    /* lp n × 2×nop_s; при n = 0 тело lp исполняется один раз */
+    u32 n = rfc_txrx_set;                /* vendor: lp rfc_txrx_set·80 × 2×nop_s = 160 тактов (0,97 мкс при 165) на единицу */
+    uc_delay_clk(UC_NS_TO_CLK(n != 0 ? 970u * n : 12u));   /* при n = 0 тело lp vendor исполняется один раз — 2 такта */
     MMIO32(HW_RFC_RESET_CTRL) |= (1u << 4);
     MMIO32(HW_ABIF_DVS_RF_CTRL) = sp0;
     MMIO32(HW_RFC_RFCA_CFG) = sp1;

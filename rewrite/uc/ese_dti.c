@@ -47,14 +47,13 @@
 
 #define ESE_PAUSE_REASON  8u
 
-/* Хвост окна, который TXOP не занимает (такты 165 МГц, вверх до мкс): от проверки до начала TXOP — ожидание
+/* Хвост окна, который TXOP не занимает (такты ядра, вверх до мкс): от проверки до начала TXOP — ожидание
  * границы слота (mac_select_all_sectors_and_wait, ≤ aSlotTime) и путь uc до пуска (≤ aSlotTime: событие слота →
  * 0x19 — 437 тактов по модели стоимости, 531 на стенде, test_uc_deadlines); после плана MAC — ответ на последний
  * кадр TXOP: SIFS + TXTIME(BlockAck 32 октета, Control PHY — худший MCS ответа; стенд: BlockAck последнего A-MPDU
  * кончается на ~3,5 мкс позже горизонта MAC, docs/MAC-STAND.md «NAV RTS и TBTT»). */
-#define ESE_BA_LEN          32u
-#define ESE_TXOP_TAIL_US    DMG_CLK_TO_US_CEIL(2u * DMG_SLOT_CLK + DMG_SIFS_CLK + DMG_CTRL_TXTIME_CLK(ESE_BA_LEN))
-_Static_assert(ESE_TXOP_TAIL_US == 32u, "хвост окна: 2·aSlotTime + SIFS + TXTIME(BlockAck)");
+_Static_assert(ESE_TXOP_TAIL_US_AT(CLK_MHZ_RESET) == 32u, "хвост окна: 2·aSlotTime + SIFS + TXTIME(BlockAck)");
+#define ESE_TXOP_TAIL_US    CLKK(ESE_TXOP_TAIL_US)   /* ESE_TXOP_TAIL_US_AT, uc/ifs.h */
 /* Запас урезанного лимита на ожидание следующего доступа: AIFS + CWmin·aSlotTime класса AC_BE по умолчанию
  * (Table 9-155: AIFSN 3, CWmin 15) — следующая попытка после отказа приходит не позже, иначе урезание повторяется. */
 #define ESE_TXOP_RETRY_US   (3u + 3u * DMG_SLOT_US + 15u * DMG_SLOT_US)
@@ -257,10 +256,8 @@ u32 ese_dti_init_left_us(void)
  * кончаются до конца своего окна. iss_us — своя развёртка (txss_sweep_duration_for_sta); развёртка ответчика
  * принимается той же длины (число секторов пира uc не хранит; у стенда — 32/32); кадр BRP с TRN — не больше
  * ESE_BRP_FRAME_US (эмулятор: 65,7 мкс). Без расписания — 1. */
-#define ESE_BRP_FRAME_US    100u
-#define ESE_SLS_TAIL_US     (DMG_CLK_TO_US_CEIL(3u * DMG_MBIFS_CLK + DMG_TXTIME_SSW_FB_CLK + DMG_TXTIME_SSW_ACK_CLK + \
-                                                2u * DMG_BRPIFS_CLK) + 2u * ESE_BRP_FRAME_US)
-_Static_assert(ESE_SLS_TAIL_US == 352u, "хвост SLS: 3·MBIFS + Feedback + Ack + 2·(BRPIFS + BRP)");
+_Static_assert(ESE_SLS_TAIL_US_AT(CLK_MHZ_RESET) == 352u, "хвост SLS: 3·MBIFS + Feedback + Ack + 2·(BRPIFS + BRP)");
+#define ESE_SLS_TAIL_US     CLKK(ESE_SLS_TAIL_US)    /* ESE_SLS_TAIL_US_AT, uc/ifs.h */
 /* Шаг цикла назначения (rx_flow_main): срок rx_flow_timeout_us проверяется между ожиданиями занятости слота
  * (sxd_hal_wait_slot2_busy, по 4 за проход — ~46 мкс в эмуляторе, H-SLOT2) — выход до прохода позже срока. */
 #define ESE_RESP_LOOP_US    100u

@@ -24,14 +24,29 @@ SECTIONS
 {
     .vectors : {
         KEEP(*(.vectors))
+        . = 0xf8;
+        LONG(__clkpatch_hdr)            /* CLKK_TABLE_PTR_UC (uc/clkk.h) */
         . = ALIGN(0x80);
     } > CODE
+    ASSERT(SIZEOF(.vectors) == 0x100, "uc: .vectors — 0x100 Б (слово CLKK по 0xf8)")
 
     .text : {
         *(.text.startup)
         *(.text .text.*)
         *(.rodata .rodata.*)
         KEEP(*(.uc_keep))
+    } > CODE
+
+    /* Таблица CLKK (uc/clkk.h) — сразу за кодом: метка 'CLKK', число записей, записи (адрес поля limm | номер << 24).
+     * Её адрес — слово CLKK_TABLE_PTR_UC в хвосте .vectors (векторы кончаются на 0xa0, .vectors дополнен до 0x100 — код не
+     * сдвигается). fw вписывает значения при текущем такте ядра перед пуском uc (fw/lmac.c clkk_patch_uc). */
+    .clkpatch : {
+        __clkpatch_hdr = .;
+        LONG(0x4b4b4c43)
+        LONG((__clkpatch_end - __clkpatch_start) / 4)
+        __clkpatch_start = .;
+        KEEP(*(.clkpatch))
+        __clkpatch_end = .;
     } > CODE
 
     .data : {

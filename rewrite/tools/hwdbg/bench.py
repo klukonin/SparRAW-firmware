@@ -39,7 +39,8 @@ NAMES = ('NOP LD_DCCM LDUSE_DCCM ST_DCCM LD_FW LDUSE_FW ST_FW LD_MAC LD_RGF ST_M
 OPS = 16
 SET2_FIRST = NAMES.index('MOVF_BEQ_NT')                    # uc/bench.c: B_SET2_FIRST, набор UC_BENCH_SET=2
 SET3_FIRST = NAMES.index('BREQ_NT_BK8')                    # B_SET3_FIRST, набор 3
-SET4 = ('ST_MAC_N11', 'LD_MAC_N11', 'CMP_N3_BLEQ_NT', 'LD_TSF_N4_LD', 'LD_TSF2_USE_N4')   # uc/bench.c SET4: не помещались
+SET4 = ('ST_MAC_N11', 'LD_MAC_N11', 'CMP_N3_BLEQ_NT', 'LD_TSF_N4_LD', 'LD_TSF2_USE_N4', 'ST_MAC_N7', 'ST_MAC_N7_SYNC',
+        'LP3_4', 'BREQ_NT_N3', 'BL_NOP_PUSH', 'BL_POP_NOP_J')   # uc/bench.c SET4: не помещались
 SETS = (1, 2, 3, 4)
 
 

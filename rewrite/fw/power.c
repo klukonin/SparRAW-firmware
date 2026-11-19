@@ -2,6 +2,7 @@
 /* Менеджер питания и калибровочный движок — инициализация. */
 #include "../include/types.h"
 #include "../include/hw.h"
+#include "../include/clk.h"
 #include "../include/arc.h"
 #include "../include/dbg.h"
 #include "../include/rf_obj.h"
@@ -66,8 +67,9 @@ u32 hwm_probe_33khz_clk(void)
 __attribute__((section(".textlate")))
 void power_start_two_timers(void)
 {
-    arc_timer_start(1, 0, 0x1f78a40, 2);
-    arc_timer_start(0, 0, 0xce4, 1);
+    u32 mhz = clk_mhz_of_n(MMIO32(CLK_PLL_N_REG));   /* такт ядра (include/clk.h) */
+    arc_timer_start(1, 0, CLK_FW_WDOG_US * mhz, 2);
+    arc_timer_start(0, 0, CLK_FW_TIMER0_US * mhz, 1);
 }
 
 __attribute__((section(".textlate")))

@@ -1326,7 +1326,7 @@ _Static_assert(sizeof(struct agc_cfg_s) == 0x20, "agc_cfg_s");
 _Static_assert(__builtin_offsetof(struct agc_cfg_s, gain_arr) == 0x8, "agc_cfg.gain_arr");
 _Static_assert(__builtin_offsetof(struct agc_cfg_s, gain_lo_ofs) == 0x10, "agc_cfg.gain_lo_ofs");
 
-/* ifs (0x802968). Пары {такты, мкс} (по 2 байта, mac_clk__div165) для регистров IFS: txrx_api_program_ifs_timing. 0x802968..0x802975. */
+/* ifs (0x802968). Пары {такты, мкс} (по 2 байта, mac_clk_div_us) для регистров IFS: txrx_api_program_ifs_timing. 0x802968..0x802975. */
 struct ifs_timing {
     u16  sifs;                      /* +0x00 +0: SIFS {clk,us} → 0x886d00|0x1730000 (mac_ifs_restore_sifs, после SLS обратно сюда). */
     u16  slot;                      /* +0x02 +2: slot {clk,us} → 0x886d04. */
@@ -1343,6 +1343,7 @@ _Static_assert(__builtin_offsetof(struct ifs_timing, two_slot) == 0x6, "ifs.two_
 _Static_assert(__builtin_offsetof(struct ifs_timing, c3) == 0x8, "ifs.c3");
 _Static_assert(__builtin_offsetof(struct ifs_timing, c4) == 0xa, "ifs.c4");
 _Static_assert(__builtin_offsetof(struct ifs_timing, mbifs) == 0xc, "ifs.mbifs");
+
 
 /* bti_sw (0x802a14). Параметры развёртки маяка/A-BFT (0x58 Б, 0x802a14..0x802a6b; memset0 в bti__reset_sweep_state). */
 struct bti_sweep_cfg {
@@ -1640,7 +1641,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define cmd20_cfg                    ((u8 *)0x8025b8)   /* [36] Копия 0x24 Б тела LMAC 0x20 (ucode_cmd_0x20_handler); 0x8025b8..0x8025db. */
 #define rx_mode_hist                 ((u8 *)0x8025fc)   /* [16] Кольцо последних режимов RX (rx_mode__configure: hist[idx]=mode, idx=(idx+1)&0xf, hist[idx]=0xff как маркер). … */
 #define txop_limit_us                ((u32 *)0x80294c)   /* [4] 4 лимита TXOP (u16 из LMAC 0x21 → u32), txop__apply_limits_regs: [1]→сдвиг/мин, [2]|[3]<<16 → 0x886f74. LMAC-P… */
-#define ifs_cfg_clk                  ((u16 *)0x80295c)   /* [6] 12 Б из тела LMAC 0x00 +0x30, в тактах ядра (u16: [0] SIFS, [2] slot, [3], [4] — 3, 5, 1, 1 мкс × clk_mhz; mac_clk_div_us делит на clk_mhz); вход txrx_api_program_ifs_timing. Не литерал (0x80294… */
+#define ifs_cfg_clk                  ((u16 *)0x80295c)   /* [6] 12 Б из тела LMAC 0x00 +0x30, в тактах ядра (u16: [0] SIFS, [2] slot, [3], [4] — 3, 5, 1, 1 мкс × такт ядра; mac_clk_div_us делит на такт); вход txrx_api_program_ifs_timing. Не литерал (0x80294… */
 #define txq_slot_a                   ((u32 *)0x8029fc)   /* [3] Длины/номера слотов очередей группы A (0..2), tx_slot__pick_queue → MAC-команда v|b24|b28 (A[0] | A[1]<<8 | A[… */
 #define txq_slot_b                   ((u32 *)0x802a08)   /* [3] То же для группы B (3..5), команда с b25|b28. */
 #define tx_dis_mask                  ((u16 *)0x802a90)   /* [8] Маска запрета передачи по станциям (бит — причина): bf__pause_sta_tx / bf__resume_sta_tx; вендорское g_sm_disa… */
@@ -1774,7 +1775,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define rx_resp_skip_cnt             (*(u32 *)0x800480)   /* [с] Обратный счётчик в rx_get_required_response: при ==1 перезаряжается из 0x800484 и ответ не формируется (return 0), при ≥2 — декремент. Периодически... */
 #define rx_resp_skip_period          (*(u32 *)0x800484)   /* [с] Период перезарядки 0x800480; только чтение, задаётся извне (в образе 0 → механизм выключен). */
 #define sleep_ilink2                 (*(u32 *)0x800488)   /* [в] uc_sleep_until_event: ilink2 (r30) перед sleep. UC-REGISTERS.md (§3, «в 0x800488 перед sleep»). */
-#define clk_mhz                      (*(u32 *)0x80048c)   /* Такт ядра, МГц (include/clk.h: из множителя PLL 0x8893f8; uc_main при старте) — делитель мкс MAC и все пересчёты мкс ↔ такты. Прежде — mac_mon_snap vendor (копия 0x85398c при публикации MAC-монитора, только запись). */
+/* 0x80048c — свободно (прежде mac_mon_snap vendor: копия 0x85398c при публикации MAC-монитора, только запись). */
 #define nav_late_cnt                 (*(u32 *)0x800490)   /* [н] rx_nav_set_from_duration: ++, если NAV включён и новое значение позже старого более чем на 0x32; rx_nav_check_idle обнуляет при снятии флага. */
 #define g_800494                     (*(u32 *)0x800494)   /* [н] l1_task_dispatch, событие 3: при l1_fsched_flag≠0 и [0x800494]==0 (и 0x8022a8≠2) — событие 3 автомата BI, иначе mac_compute_bi_mon_timings. Только чтение,... */
 #define r49_snap                     (*(u32 *)0x80049c)   /* [с] Снимок r49 (EVENT_ENGINE2 PHY BRP) в mac_switch_rx_to_tx после смены режима. UC-REGISTERS §2.12. Только запись (в 4.1 по этому адресу — гейт AW, друг... */

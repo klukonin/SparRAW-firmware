@@ -12,7 +12,7 @@
  * SPR (10.39.7.2): Duration = Duration Poll − Response Offset − TXTIME(SPR) (вверх, 9.2.5.1; не меньше 0).
  * GP (10.39.7.3, PLAN.md №48): Grant подряд через SBIFS (после Grant Ack — SIFS); Duration Grant k — до начала
  * выделения (все следующие Grant, Grant Ack и IFS), последнего — 0 или SIFS + TXTIME(Grant Ack).
- * Время — сотые такта 165 МГц (S = 4,95 такта — не целое), вверх до мкс. Не на путях со сроком. */
+ * Время — сотые такта ядра (S = 0,03·f такта — не целое), вверх до мкс. Не на путях со сроком. */
 #include "../include/types.h"
 #include "ifs.h"
 
@@ -21,7 +21,7 @@
 #define DYN_GRANT_LEN     27u                   /* рис. 9-51 */
 #define DYN_GRANT_ACK_LEN 27u                   /* рис. 9-57 */
 #define DYN_CC(clk)       ((clk) * 100u)        /* такты → сотые такта */
-#define DYN_S_CC          495u                  /* aSBIFSAccuracy 0,03 мкс = 4,95 такта */
+#define DYN_S_CC          (3u * DMG_CLK_PER_US)  /* aSBIFSAccuracy 0,03 мкс = 0,03·f такта (495 сотых при 165) */
 #define DYN_US_CC         (DMG_CLK_PER_US * 100u)
 #define DYN_TX_POLL_CC    DYN_CC(DMG_CTRL_TXTIME_CLK(DYN_POLL_LEN))
 #define DYN_TX_SPR_CC     DYN_CC(DMG_CTRL_TXTIME_CLK(DYN_SPR_LEN))

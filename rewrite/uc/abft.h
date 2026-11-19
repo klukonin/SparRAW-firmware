@@ -67,11 +67,14 @@
  *            ~14 мкс от MAC_EVT1_RX_FRAME; станция по стандарту на стенде: первый SSW = конец BTI + 8,73 мкс (оба AP).
  */
 
-#define ABFT_CLK_PER_US     165u
-#define ABFT_SIFS_CLK       495u        /* aSIFSTime 3 мкс (Table 20-30) */
-#define ABFT_MBIFS_CLK      1485u       /* MBIFS = 3 × aSIFSTime = 9 мкс (10.3.2.3.10) = 0x5cd */
-#define ABFT_AIRPROP_CLK    17u         /* aAirPropagationTime 0,1 мкс = 16,5 такта (Table 20-30), вверх */
-#define ABFT_SSFB_CLK       3012u       /* aSSFBDuration = TXTIME(SSW-Feedback, 28 Б, control PHY) = 18,255 мкс */
+/* Интервалы стандарта — от текущего такта ядра (uc/ifs.h: DMG_*_CLK, X_AT(f); значения, зависящие от такта, — CLKK,
+ * вписываются в код при старте, uc/clkk.h). Замеры цифровых задержек MAC/PHY ниже (TRIM, MACLAT, TRIG03 +7, CATCH) — в тактах: [гип] конвейер в
+ * тактах ядра, при другом такте не измерены. */
+#define ABFT_CLK_PER_US     DMG_CLK_PER_US
+#define ABFT_SIFS_CLK       DMG_SIFS_CLK        /* aSIFSTime 3 мкс (Table 20-30) */
+#define ABFT_MBIFS_CLK      DMG_MBIFS_CLK       /* MBIFS = 3 × aSIFSTime = 9 мкс (10.3.2.3.10) */
+#define ABFT_AIRPROP_CLK    CLKK(ABFT_AIRPROP)
+#define ABFT_SSFB_CLK       DMG_TXTIME_SSW_FB_CLK   /* aSSFBDuration = TXTIME(SSW-Feedback, 28 Б, control PHY), 3012 */
 
 /* ---- тайминг A-BFT ---- */
 /* Станция. */
@@ -79,11 +82,8 @@
 #ifndef UC_ABFT_STA_GP0_TRIM_CLK
 #define UC_ABFT_STA_GP0_TRIM_CLK 41u    /* стенд std2: конец GP0 на 0,25 мкс раньше конца BTI (GP2 стартует до конца кадра в эфире) */
 #endif
-#ifndef UC_ABFT_MACLAT_CLK
-#define UC_ABFT_MACLAT_CLK    91u       /* старт прямой передачи после события GP + IFS(0x886d00): стенд 0,55 мкс (H-ORIGIN) */
-#endif
 /* Событие GP1 станции после конца GP0 (= конец BTI): первый SSW в B + MBIFS при IFS ответа = SIFS. */
-#define ABFT_STA_STD_GP1_CLK  (ABFT_MBIFS_CLK - ABFT_SIFS_CLK - UC_ABFT_MACLAT_CLK)
+#define ABFT_STA_STD_GP1_CLK  CLKK(ABFT_STA_STD_GP1)   /* ABFT_STA_STD_GP1_CLK_AT, uc/ifs.h */
 /* AP. */
 /* Пуск GP0/GP2 AP триггером 0x03 (0x…030c/0x…0308) — не по команде uc, а через IFS из 0x886d00 после txop_event
  * (MAC отсчитывает IFS от события, как у прямой передачи): IFS в A-BFT = aSIFSTime (495) + 7 тактов замера.
@@ -91,7 +91,7 @@
  * FSS 15): «граница − (txop + MBIFS)» = −0,32…−0,36 мкс = −bt_frac (53 такта), т. е. фактический пуск совпадает
  * с 502 ±0,02 мкс. Аппаратная величина таймера MAC — от n, L и FSS не зависит по устройству; проверка при других n
  * и FSS — серия ft1/nsec1 (метрика «граница − (txop+9)»). */
-#define ABFT_AP_TRIG03_CLK    (ABFT_SIFS_CLK + 7u)   /* 502 */
+#define ABFT_AP_TRIG03_CLK    CLKK(ABFT_AP_TRIG03)   /* SIFS + 7 тактов замера (ABFT_AP_TRIG03_CLK_AT): 502 при 165 */
 /* Запасной путь TXOP BTI (длина маяка ≠ r47, n вне 1…64, наборов антенн ≥ 2): Duration маяка пишет MAC как
  * ⌊остаток TXOP⌋ (H-DUR), а TXOP кончается событием txop_event. Поэтому объявленный последним маяком конец BTI
  * E = конец кадра + ⌊(txop_event − конец кадра)/1 мкс⌋ лежит в (txop_event − 1 мкс, txop_event] — при любых n, L и
@@ -106,7 +106,7 @@
  * GP0 = граница − aSIFSTime — через MBIFS − SIFS = 6 мкс после Feedback, и у uc остаётся SIFS на выход из
  * abft_initiator_feedback_loop до границы (прежде 2 мкс из 6.2, без обоснования). */
 #define ABFT_AP_STD_END_GUARD_CLK ABFT_SIFS_CLK
-_Static_assert(ABFT_AP_STD_END_GUARD_CLK < ABFT_MBIFS_CLK, "конец A-BFT — после конца последнего Feedback");
+_Static_assert(DMG_SIFS_CLK_AT(1u) < DMG_MBIFS_CLK_AT(1u), "конец A-BFT — после конца последнего Feedback (при любом такте)");
 
 /* Слот A-BFT (802.11-2020 10.42.5.2, Table 11-22): aSSSlotTime = aAirPropagationTime + aSSDuration + MBIFS +
  * aSSFBDuration + MBIFS, aSSDuration = (FSS − 1) × SBIFS + FSS × TXTIME(SSW), FSS — число SSW = поле FSS + 1.
@@ -121,7 +121,8 @@ static inline __attribute__((always_inline)) u32 abft_ssdur_clk(u32 fss_field)
 {
     return (fss_field + 1u) * (DMG_TXTIME_SSW_CLK + DMG_SBIFS_CLK) - DMG_SBIFS_CLK;
 }
-#define ABFT_SLOT_TAIL_CLK  (ABFT_AIRPROP_CLK + ABFT_MBIFS_CLK + ABFT_SSFB_CLK + ABFT_MBIFS_CLK)   /* 5999 */
+#define ABFT_SLOT_TAIL_CLK  CLKK(ABFT_SLOT_TAIL)   /* aAirPropagationTime + MBIFS + aSSFBDuration + MBIFS: 5999 при 165 */
+_Static_assert(ABFT_SLOT_TAIL_CLK_AT(CLK_MHZ_RESET) == 5999u, "хвост слота A-BFT при 165");
 static inline __attribute__((always_inline)) u32 abft_slot_clk(u32 fss_field)
 {
     return abft_ssdur_clk(fss_field) + ABFT_SLOT_TAIL_CLK;
@@ -147,8 +148,8 @@ static inline __attribute__((always_inline)) u32 abft_sta_gp0_clk(u32 dur_us, u3
     *off = (u32)(gp0 - base);
     return (u32)gp0;
 }
-_Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_US < ABFT_STA_STD_GP1_CLK &&
-               ABFT_STA_GP0_CATCH_CLK < ABFT_STA_STD_GP1_CLK, "превышение GP0 меньше GP1 станции");
+_Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + CLK_MHZ_RESET < ABFT_STA_STD_GP1_CLK_AT(CLK_MHZ_RESET) &&
+               ABFT_STA_GP0_CATCH_CLK < ABFT_STA_STD_GP1_CLK_AT(CLK_MHZ_RESET), "превышение GP0 меньше GP1 станции (при 165)");
 
 /* Конец BTI станции — по последнему маяку (поправка GP1/GP2, bti_beacon_track_best_metric, 10.42.5.1). */
 /* Поправка станции по последнему маяку успевает, только если конец GP0 (конец BTI по ПЕРВОМУ маяку) позже конца
@@ -159,9 +160,13 @@ _Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_
  * (abft_sta_gp0_clk); AP после последнего маяка запаса не оставляет (BCN_DUR_DLAST_US = 0). */
 
 /* Duration кадров SLS (9.3.1.15–17). */
-#define ABFT_CLK2FX_MUL      6355u      /* такты → 1/1024 мкс: 1024/165 = 6,2061 ≈ 6355/1024 */
-#define ABFT_SSW_TXTIME_FX   15267u     /* TXTIME(SSW 26 Б) = 14,909 мкс в 1/1024 мкс */
-#define ABFT_SSW_STEP_FX     16291u     /* TXTIME(SSW) + SBIFS = 15,909 мкс */
+/* такты → 1/1024 мкс: round(2^20/f) (6355 при 165); TXTIME(SSW 26 Б) и TXTIME(SSW) + SBIFS в 1/1024 мкс
+ * до ближайшего (15267 = 14,909 мкс и 16291 = 15,909 мкс при 165) — CLKK */
+_Static_assert(ABFT_CLK2FX_MUL_AT(CLK_MHZ_RESET) == 6355u && ABFT_SSW_TXTIME_FX_AT(CLK_MHZ_RESET) == 15267u &&
+               ABFT_SSW_STEP_FX_AT(CLK_MHZ_RESET) == 16291u, "1/1024 мкс при 165");
+#define ABFT_CLK2FX_MUL      CLKK(ABFT_CLK2FX_MUL)
+#define ABFT_SSW_TXTIME_FX   CLKK(ABFT_SSW_TXTIME_FX)
+#define ABFT_SSW_STEP_FX     CLKK(ABFT_SSW_STEP_FX)
 /* Duration кадров SLS вне BTI. Команда 0x15 (код = биты 24/26/28) с последующей 0x14000007 — значение
  * Duration БУКВАЛЬНО (стенд, метка 3, std4/std5/bti1: SSW vendor-станции в ISS/RSS — CDOWN 1/0 → 17/1 =
  * ss_plan_tx_dur; SSW-Feedback vendor — 20 = txss_timing_add 17 + SIFS 3; A-BFT — 254/275). Остаток
@@ -180,23 +185,25 @@ _Static_assert(ABFT_STA_GP2_RXEND_CLK - UC_ABFT_STA_GP0_TRIM_CLK + ABFT_CLK_PER_
  * антенны (несколько DMG-антенн у пира) план добавляет на неё frame + gap (LBIFS, ifs.h) —
  * эту часть Duration берёт из плана как есть (на стенде путь не исполняется). Конец выделения
  * («whichever comes first») — вычетом из плана перед развёрткой (txss.c ssw_plan_cap_by_allocation). */
-_Static_assert(DMG_MBIFS_CLK % DMG_CLK_PER_US == 0, "MBIFS — целое число мкс");
-#define SLS_MBIFS_US          (DMG_MBIFS_CLK / DMG_CLK_PER_US)
+#define SLS_MBIFS_US          9u           /* MBIFS = 3 × aSIFSTime 3 мкс — целое число мкс при любом такте */
+/* m = δ·⌈2^24/f⌉ (101681 при 165; CLKK(SLS_DUR_MUL)) */
+_Static_assert(SLS_DUR_MUL_AT(CLK_MHZ_RESET) == 101681u, "2^24/165 вверх");
 static inline __attribute__((always_inline)) u32 sls_ssw_dur_mul(u32 frame_us)
 {
     s32 d = (s32)(frame_us * DMG_CLK_PER_US) - (s32)DMG_TXTIME_SSW_CLK;
-    return d > 0 ? (u32)d * 101681u : 0u;
+    return d > 0 ? (u32)d * CLKK(SLS_DUR_MUL) : 0u;
 }
 /* Duration SSW с этим cdown; add = SLS_MBIFS_US − gap (считается до развёртки). */
 #define SLS_SSW_DUR(plan, add, cdown, mul) \
     ((plan) + (add) - (((u32)(cdown) * (mul)) >> 24))
 /* SSW-Feedback в DTI (9.3.1.16 a/b): TXTIME(SSW-Ack) + MBIFS; при запросе BRP — + 2·MBIFS; вверх. 28 / 37. */
-#define SSWFB_DUR_US      ((DMG_TXTIME_SSW_ACK_CLK + DMG_MBIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
-#define SSWFB_DUR_BRP_US  ((DMG_TXTIME_SSW_ACK_CLK + 2u * DMG_MBIFS_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
+#define SSWFB_DUR_US      CLKK(SSWFB_DUR_US)
+#define SSWFB_DUR_BRP_US  CLKK(SSWFB_DUR_BRP_US)
 /* SSW-Ack (9.3.1.17): Duration SSW-Feedback − MBIFS − TXTIME(SSW-Ack), вверх; для целого D:
  * ⌈D − x⌉ = D − ⌊x⌋ → D − 27 (28 → 1, 37 → 10). */
-#define SSWACK_DUR_SUB    ((DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK) / DMG_CLK_PER_US)
-_Static_assert(SSWFB_DUR_US == 28u && SSWFB_DUR_BRP_US == 37u && SSWACK_DUR_SUB == 27u, "Duration SLS");
+#define SSWACK_DUR_SUB    CLKK(SSWACK_DUR_SUB)
+_Static_assert(SSWFB_DUR_US_AT(CLK_MHZ_RESET) == 28u && SSWFB_DUR_BRP_US_AT(CLK_MHZ_RESET) == 37u &&
+               SSWACK_DUR_SUB_AT(CLK_MHZ_RESET) == 27u, "Duration SLS при 165");
 
 /* Пропуск A-BFT после Feedback (10.42.5.2, aMaxABFTAccessPeriod): relax_cnt — число следующих A-BFT, а не маяков.
  * Маяков в BTI несколько (путь приёма видит каждый), поэтому уменьшение — один раз на BTI: BTI узнаётся по своему
@@ -284,13 +291,16 @@ static inline __attribute__((always_inline)) u8 snr_report_phy(void)
 #define BCN_DUR_DLAST_US 0u
 #endif
 
-/* x/165 без деления (Timer1/MAC: 165 тактов в мкс), точно для x < 2^26 */
+/* x/f без деления (такты Timer1/MAC → мкс, f — такт ядра): оценка ⌈2^22/f⌉ (25421 при 165, CLKK(US_MUL22)) и поправка,
+ * точно для x < 2^26 */
+_Static_assert(CLK_US_MUL22_AT(CLK_MHZ_RESET) == 25421u, "2^22/165 вверх");
 static inline __attribute__((always_inline)) u32 clk_to_us_floor(u32 x)
 {
-    u32 q = (u32)(((u64)x * 25421u) >> 22);
-    while (q * 165u > x)
+    u32 f = CLKK(MHZ);
+    u32 q = (u32)(((u64)x * CLKK(US_MUL22)) >> 22);
+    while (q * f > x)
         q--;
-    while ((q + 1u) * 165u <= x)
+    while ((q + 1u) * f <= x)
         q++;
     return q;
 }

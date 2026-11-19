@@ -77,13 +77,21 @@ BENCH_FN(bench_br_mis, "b 2f\n\tnop_s\n2:\n\tnop\n\tnop_s")
 #define NOP7 NOP3 NOP3 "\n\tnop"
 BENCH_FN(bench_st_n1, "st %[v],[%[a]]\n\tnop")
 BENCH_FN(bench_st_n3, "st %[v],[%[a]]" NOP3)
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 (рост кода uc, CLKK) */
 BENCH_FN(bench_st_n7, "st %[v],[%[a]]" NOP7)
+#undef BENCH_SET
+#define BENCH_SET 1
 #undef BENCH_SET
 #define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 */
 BENCH_FN(bench_st_n11, "st %[v],[%[a]]" NOP7 NOP3 "\n\tnop")
 #undef BENCH_SET
 #define BENCH_SET 1
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 (рост кода uc, CLKK) */
 BENCH_FN(bench_st_n7_sync, "st %[v],[%[a]]" NOP7 "\n\tsync")
+#undef BENCH_SET
+#define BENCH_SET 1
 BENCH_FN(bench_st_ld, "st %[v],[%[a]]\n\tld %[t],[%[b]]")
 BENCH_FN(bench_ld_n3, "ld %[t],[%[a]]" NOP3)
 BENCH_FN(bench_ld_n7, "ld %[t],[%[a]]" NOP7)
@@ -147,7 +155,11 @@ BENCH_FN2(bench_loop2_lp, "mov lp_count,1\n\tnop\n\tlp 2f\n\tnop\n2:")
 /* короткие циклы lp (memset): 3 прохода тела из 1 / 2 / 4 инструкций, 1 проход тела из 2 */
 BENCH_FN2(bench_lp3_1, "mov lp_count,3\n\tnop\n\tlp 2f\n\tnop\n2:")
 BENCH_FN2(bench_lp3_2, "mov lp_count,3\n\tnop\n\tlp 2f\n\tnop_s\n\tnop_s\n2:")
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 (рост кода uc, CLKK) */
 BENCH_FN2(bench_lp3_4, "mov lp_count,3\n\tnop\n\tlp 2f\n\tnop_s\n\tnop_s\n\tnop_s\n\tnop_s\n2:")
+#undef BENCH_SET
+#define BENCH_SET 2
 BENCH_FN2(bench_lp1_2, "mov lp_count,1\n\tnop\n\tlp 2f\n\tnop_s\n\tnop_s\n2:")
 /* тело из одной инструкции (LP3_1 +1): на цикл или на проход */
 BENCH_FN2(bench_lp1_1, "mov lp_count,1\n\tnop\n\tlp 2f\n\tnop\n2:")
@@ -193,7 +205,11 @@ static __attribute__((noinline)) u32 name(u32 n, u32 a, u32 v, u32 b) \
 BENCH_FN_Q(bench_breqs_nt, "breq_s %[a],0,2f\n\tnop_s\n2:")
 BENCH_FN_Q(bench_brnes, "brne_s %[a],0,2f\n\tnop_s\n2:")
 /* brcc без перехода вдали от конца цикла (BREQ_NT: +0,19 — конец lp?), jcc через такт после cmp и 32-битный jcc */
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 (рост кода uc, CLKK) */
 BENCH_FN(bench_breq_nt_n3, "breq %[a],0,2f\n\tnop\n2:" NOP3)
+#undef BENCH_SET
+#define BENCH_SET 2
 BENCH_FN_CL(bench_cmp_n1_jeqs_nt, "cmp %[a],0\n\tnop\n\tjeq_s [blink]\n\tnop_s", "cc")
 BENCH_FN_CL(bench_cmp_jeq_nt, "cmp %[a],0\n\tjeq [%[b]]\n\tnop", "cc")
 /* чтения регистров подряд: разные адреса (TSF hi + lo — 16, не 24), разные блоки, тройка hi, lo, hi журнала uc */
@@ -219,12 +235,20 @@ BENCH_FN(bench_stw_limm, "stw %[v],[0x800000]")
 BENCH_FN_CL(bench_bl_push, "bl 3f\n\tb 4f\n\t.balign 4\n3:\n\tpush_s blink\n\tpop_s blink\n\tj_s [blink]\n\tnop_s\n4:",
             "blink")
 /* BL_PUSH (11, модель 10): лишний такт — push_s blink сразу после bl или j_s [blink] сразу после pop_s blink */
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 (рост кода uc, CLKK) */
 BENCH_FN_CL(bench_bl_nop_push, "bl 3f\n\tb 4f\n\t.balign 4\n3:\n\t"
             "nop\n\tpush_s blink\n\tpop_s blink\n\tj_s [blink]\n\tnop_s\n4:",
             "blink")
+#undef BENCH_SET
+#define BENCH_SET 2
+#undef BENCH_SET
+#define BENCH_SET 4                    /* набор 4: не помещались в наборы 1–2 (рост кода uc, CLKK) */
 BENCH_FN_CL(bench_bl_pop_nop_j, "bl 3f\n\tb 4f\n\t.balign 4\n3:\n\t"
             "push_s blink\n\tpop_s blink\n\tnop\n\tj_s [blink]\n\tnop_s\n4:",
             "blink")
+#undef BENCH_SET
+#define BENCH_SET 2
 /* BL_PUSH и оба варианта с nop — +1: дорог push_s/pop_s blink, загрузка в blink или переход по загруженному blink */
 BENCH_FN_CL(bench_pushpop_blink, "push_s blink\n\tpop_s blink", "blink")
 BENCH_FN_CL(bench_push_blink, "push_s blink\n\tadd_s sp,sp,4", "blink")
@@ -384,9 +408,9 @@ u32 uc_bench_one(u32 id, u32 n)
     case B_BR_D: f = SET1(bench_br_d); break;
     case B_ST_MAC_N1: f = SET1(bench_st_n1); break;
     case B_ST_MAC_N3: f = SET1(bench_st_n3); break;
-    case B_ST_MAC_N7: f = SET1(bench_st_n7); break;
+    case B_ST_MAC_N7: f = SET4(bench_st_n7); break;
     case B_ST_MAC_N11: f = SET4(bench_st_n11); break;
-    case B_ST_MAC_N7_SYNC: f = SET1(bench_st_n7_sync); break;
+    case B_ST_MAC_N7_SYNC: f = SET4(bench_st_n7_sync); break;
     case B_ST_MAC_LD_MAC: case B_ST_MAC_LD_FW: case B_ST_MAC_LD_DCCM: f = SET1(bench_st_ld); break;
     case B_LD_MAC_N3: case B_LD_FW_N3: f = SET1(bench_ld_n3); break;
     case B_LD_MAC_N7: f = SET1(bench_ld_n7); break;
@@ -435,7 +459,7 @@ u32 uc_bench_one(u32 id, u32 n)
     case B_LD_MAC_LD_LIMM: f = SET2(bench_ld_mac_ld_limm); break;
     case B_BREQS_NT: f = SET2(bench_breqs_nt); break;
     case B_BRNES: f = SET2(bench_brnes); break;
-    case B_BREQ_NT_N3: f = SET2(bench_breq_nt_n3); break;
+    case B_BREQ_NT_N3: f = SET4(bench_breq_nt_n3); break;
     case B_CMP_N1_JEQS_NT: f = SET2(bench_cmp_n1_jeqs_nt); break;
     case B_CMP_JEQ_NT: f = SET2(bench_cmp_jeq_nt); break;
     case B_LD_TSFLO: f = SET2(bench_ld2); break;
@@ -456,10 +480,10 @@ u32 uc_bench_one(u32 id, u32 n)
     case B_BL_PUSH: f = SET2(bench_bl_push); break;
     case B_LP3_1: f = SET2(bench_lp3_1); break;
     case B_LP3_2: f = SET2(bench_lp3_2); break;
-    case B_LP3_4: f = SET2(bench_lp3_4); break;
+    case B_LP3_4: f = SET4(bench_lp3_4); break;
     case B_LP1_2: f = SET2(bench_lp1_2); break;
-    case B_BL_NOP_PUSH: f = SET2(bench_bl_nop_push); break;
-    case B_BL_POP_NOP_J: f = SET2(bench_bl_pop_nop_j); break;
+    case B_BL_NOP_PUSH: f = SET4(bench_bl_nop_push); break;
+    case B_BL_POP_NOP_J: f = SET4(bench_bl_pop_nop_j); break;
     case B_LP1_1: f = SET2(bench_lp1_1); break;
     case B_LP5_1: f = SET2(bench_lp5_1); break;
     case B_PUSHPOP_BLINK: f = SET2(bench_pushpop_blink); break;

@@ -673,7 +673,7 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
      * кадр (vendor не слал при остатке ≤ 27/38 мкс — пороги от своих Duration). Пороги — ifs.h.
      * В 0x15 — Duration + ⌈TXTIME⌉ своего CF-End на его MCS (r14): MAC вычитает его сам (H-DUR18, ifs.h); прежде
      * писали 18 — в эфире было 3. */
-    u32 r17 = (dti_qset_mode == 0) ? (r14 ? DMG_CF_END_HOLDER_CMD_SC1 : DMG_CF_END_HOLDER_CMD_CTRL) : 0;
+    u32 r17 = (dti_qset_mode == 0) ? (r14 ? CLKK(CF_END_CMD_SC1) : CLKK(CF_END_CMD_CTRL)) : 0;
     if (c == 0) {
         u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = r0 | (1u << 12) | (1u << 13);
@@ -687,9 +687,9 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
          * (эмулятор, test_air RD). Байт и переход в отдельную функцию (noipa) — без новых живых регистров (codecmp) */
         if (FWSH(fwsh_sp_gate, init_sp) != 0)
             return tx_sp_end_restore_rx(sta, b);
-        if (rem < DMG_CF_END_MIN_REM_US || (mac_evt1() & MAC_EVT1_TXOP))
+        if (rem < CLKK(CF_END_MIN_REM_US) || (mac_evt1() & MAC_EVT1_TXOP))
             goto cf_end_done;
-        if (rem < DMG_CF_END_NZ_REM_US)
+        if (rem < CLKK(CF_END_NZ_REM_US))
             r17 = 0;
     }
     txr.awaiting = 1;
@@ -1042,7 +1042,7 @@ void internal_tx_keepalive_flow(u32 a)
      * — это перестройка пути CTS → данные (СРОК выше), без стенда не делается.
      * исправлено: RTS пускается 0x18000000 — MAC вычитает из 0x15 ⌈TXTIME(RTS)⌉ (H-DUR18, ifs.h; стенд 2026-11-04:
      * 0x15 40 → в эфире 25), поэтому в 0x15 — 40 + ⌈TXTIME(RTS, control PHY)⌉ = 55. */
-    uc_mac_cmd(0x15000000u | (DMG_KA_RTS_DUR_US + DMG_CLK_TO_US_CEIL(DMG_CTRL_TXTIME_CLK(DMG_RTS_LEN))));
+    uc_mac_cmd(0x15000000u | CLKK(KA_RTS_CMD));
     uc_mac_cmd(0x14000007);
     direct_tx_program_desc(0x10, 0x10);
     mac_program_tx_with_rate(0);

@@ -4,6 +4,7 @@
 #include "../include/bitfield.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "ifs.h"
 #include "../include/sta_max.h"
 
 
@@ -224,7 +225,7 @@ void hwd_abif_rfc_divider_restart_uc(void)
     MMIO32(HW_RFC_DIVIDER_CTRL) &= ~1u;          /* ld.as [r6,0xe5] = 0x889000+0xe5*4 */
     MMIO32(HW_ABIF_FS_CTRL) |= 1u << 3;          /* ld.as [r5,-0xf9] = 0x889800-0xf9*4 */
     MMIO32(HW_ABIF_FS_CTRL) &= ~(1u << 3);       /* vendor перечитывает регистр */
-    uc_delay_clk(0x50 * 2);        /* vendor L_928cb0..L_928cbc: lp 0x50 × 2×nop_s */
+    uc_delay_clk(UC_NS_TO_CLK(970u));    /* vendor L_928cb0..L_928cbc: lp 0x50 × 2×nop_s = 160 тактов при 165 */
     MMIO32(HW_RFC_DIVIDER_CTRL) |= 1;
 }
 /* dma_is_idle_uc — ниже. */

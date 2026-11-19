@@ -6,6 +6,7 @@
 #include "../include/types.h"
 #include "../include/arc.h"
 #include "../include/hw.h"
+#include "../include/clk.h"
 #include "../include/fwdata.h"
 #include "../include/sched.h"
 
@@ -111,7 +112,7 @@ void u_schd_add(u_schd_fn cb, u32 a1, u32 a2, u32 priority)
 
 void u_schd_timer_init(void)
 {
-    u_schd_hw_timer_set_and_start(&u_schd_hw_timer_limit, 0xa50);
+    u_schd_hw_timer_set_and_start(&u_schd_hw_timer_limit, CLK_FW_SCHD_TICK_US * clk_mhz_of_n(MMIO32(CLK_PLL_N_REG)));
     power_start_two_timers();
     u_schd_hw_timer_a_start(1);
 }

@@ -4,6 +4,9 @@
 #include "../include/types.h"
 #include "../include/sched_scheme.h"
 #include "../include/hw.h"
+#include "../include/clk.h"
+#define CLK_MHZ clk_mhz_of_n(MMIO32(CLK_PLL_N_REG))   /* такт ядра fw (include/clk.h) */
+#include "../uc/ifs.h"                      /* формулы величин uc от такта, uc/clkk.h */
 #include "../include/arc.h"
 #include "../include/sysapi_mgr.h"
 #include "../include/rf_obj.h"
@@ -50,6 +53,33 @@ void lmac_if_build_cmd_rings(struct lmac_mbox *mb)
      * и обновляет rx.head (0x8802d8) при постилке события. */
 }
 
+/* Константы uc от такта ядра (uc/clkk.h): вписать в код uc значения при текущем такте — до пуска uc. Таблица — в ICCM uc
+ * (окно fw 0x920000), поле limm — полусловами старшим вперёд; запись — словами (чтение-изменение-запись). Без метки
+ * (vendor uc, гибридная сборка) — ничего. Возврат — число изменённых полей (0 при такте сброса PLL). */
+static u32 clkk_patch_uc(void)
+{
+    u32 ta = MMIO32(UC_CODE_WIN + CLKK_TABLE_PTR_UC);
+    if (ta & 3u || ta >= 0x20000u)
+        return 0;
+    const volatile u32 *t = (const volatile u32 *)(UC_CODE_WIN + ta);
+    if (t[0] != CLKK_MAGIC || t[1] > 0x400u)
+        return 0;
+    u32 f = clk_mhz_of_n(MMIO32(CLK_PLL_N_REG)), n = t[1], changed = 0;
+    for (u32 i = 0; i < n; i++) {
+        u32 e = t[2 + i], a = UC_CODE_WIN + (e & 0xffffffu), v = clkk_value(e >> 24, f);
+        u32 hw[2] = { v >> 16, v & 0xffffu };
+        for (u32 k = 0; k < 2; k++, a += 2) {
+            volatile u32 *w = (volatile u32 *)(a & ~3u);
+            u32 old = *w, nw = (a & 2u) ? ((old & 0xffffu) | (hw[k] << 16)) : ((old & 0xffff0000u) | hw[k]);
+            if (nw != old) {
+                *w = nw;
+                changed++;
+            }
+        }
+    }
+    return changed;
+}
+
 void lmac_if_ucode_init(void)
 {
     fw_log_emit0(0x20, 0x1004868);
@@ -57,6 +87,7 @@ void lmac_if_ucode_init(void)
         fw_sysassert_fatal((void *)0, 0x1045);
     lmac_if_build_cmd_rings(&lmac_mbox);
 
+    (void)clkk_patch_uc();                           /* константы uc от такта ядра — до пуска (uc/clkk.h) */
     fw_log_emit0(0x20, 0x1004888);
     MMIO32(HW_RGF_USER_MAC_CPU_0) = 0x31;            /* запуск ucode */
     arc_sync();

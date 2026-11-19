@@ -783,6 +783,11 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
     /* DMG Antenna ID — 2 бита (B16..B17 поля SSW, 9.5.1); выше — RXSS Length, вне CBAP резерв = 0 (9.2.2).
      * исправлено (vendor: rf_chain_cfg << 16 целиком — RF-цепь ≥ 4 попадала в RXSS Length). Вне цикла: путь короче. */
     u32 ssw_ant = (u32)(*(u8 *)&rf_chain_cfg & 3u) << 16;
+    /* ХРУПКО (раскладка): спины MTP r43/r45 пачки — по адресу ≡ 2 mod 4, как до перевода констант на такт (раскладка, при
+     * которой зазор SSW 1,00–1,01 мкс в эмуляторе и на стенде); ≡ 0 давал 1,030–1,036 мкс (модель стоимости: выборка цели
+     * перехода). Якорь — выравнивание перед циклом: путь до спинов от него фиксирован, раскладка выше на него не влияет
+     * (tests/unit/test_clk_cfg.py test_ssw_burst_spin_alignment). */
+    __asm__ volatile(".balign 4");
     do {
         uc_mac_cmd(ssw_ant | ((r14 << 1) | 0x2d000001 | (r13 << 10)));
         abft_send_ssw_feedback(0);

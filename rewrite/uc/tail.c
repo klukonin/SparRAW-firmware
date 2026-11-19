@@ -252,7 +252,7 @@ void rfca_select_rf_uc(u32 a, u32 b)
 
 void gp0_timer_arm_usec(u32 usec)
 {
-    u32 m = usec * 0xa5;
+    u32 m = usec * DMG_CLK_PER_US;
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x52000000);
     uc_mac_cmd(0x49000040);
@@ -961,6 +961,7 @@ void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a)
 {
     u32 first = 0;                         /* r15 */
     const struct dmg_ssw_frame *cfg = (const struct dmg_ssw_frame *)rx_buf;   /* r13: кадр SSW */
+    u32 fb_late = SIFS_CNT_ABFT_FB_LATE;   /* порог в регистре до цикла: путь «чтение r55 → 0x19» без лишнего mov (СРОК ниже) */
     uc_mac_cmd(0x2011000u);
     uc_mac_cmd(0x3d000400u);
     for (;;) {
@@ -982,7 +983,7 @@ void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a)
             uc_mac_cmd(0x4d000000u);
             arc_nops(3);
             u32 r55 = mac_timer_sel();
-            if (r55 >= SIFS_CNT_ABFT_FB_LATE)
+            if (r55 >= fb_late)
                 return;
             if (r55 == 0 || first == 0)
                 return;
@@ -1744,7 +1745,7 @@ void l1_fixed_sched_sta_sm(u32 a) {
             if (*st == 0) {
                 r15 = 0;
                 u32 v = fsched_assoc_slot_us();
-                sxd_hal_write_qset_field(0, (v - 200) * 165);
+                sxd_hal_write_qset_field(0, (v - 200) * DMG_CLK_PER_US);
                 *st = 1;
                 r13 = r15;
             } else if (*st == 1 || *st == 2) {
@@ -1835,7 +1836,7 @@ u32 l1_fixed_sched_ap_start_slot(u32 a) {
         fsched_flush_stats.qword_start = hw;
         fixed_sched_kick_slot_queue(&fsched_peers);
         fsched_ctx.slot_start_tsf = uc_read_tsf_lo();
-        sxd_hal_write_qset_field(0, fsched_slot_time_before_tx_us(&fsched_peers) * 0xa5);
+        sxd_hal_write_qset_field(0, fsched_slot_time_before_tx_us(&fsched_peers) * DMG_CLK_PER_US);
         *r13 = (r17 == 1) ? 7 : 4;                       /* cmp 1; mov 7; mov.ne 4 */
         return 0;
     }
@@ -2782,23 +2783,19 @@ void bcon_txss_program_sector(u32 a, u32 b, u32 c) {
  *  пришедший в окне, по-прежнему принимается).
  *  Запись ESE: проверка в ней — цикл не длиннее ESE_SLOTS_N, укладывается в окно ожидания Ack (≥ 9 мкс).
  */
-#define SSWFB_ACK_WAIT_CLK  (DMG_MBIFS_CLK + DMG_TXTIME_SSW_ACK_CLK + DMG_PIFS_CLK)  /* 5817 */
-#define SSWFB_RETRY_PATH_CLK 744u      /* замер fbr 2026-10-24 (выше): max(конец Feedback → повтор) − SSWFB_ACK_WAIT_CLK */
-#define SSWFB_RETRY_PATH_MIN_CLK 725u  /* то же, min: 39,65 мкс = 6542 такта − 5817 */
-#define SSWFB_GP1_CLK (SSWFB_ACK_WAIT_CLK - SSWFB_RETRY_PATH_MIN_CLK)  /* 5092: повтор в эфире не раньше 35,255 мкс */
-#define SSWFB_RETRY_NEED_CLK (SSWFB_GP1_CLK + SSWFB_RETRY_PATH_CLK + DMG_TXTIME_SSW_FB_CLK + DMG_MBIFS_CLK + \
-                              DMG_TXTIME_SSW_ACK_CLK)
-#define SSWFB_RETRY_NEED_US  ((SSWFB_RETRY_NEED_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US)
-_Static_assert(SSWFB_GP1_CLK == 5092u && SSWFB_RETRY_NEED_CLK == 13345u && SSWFB_RETRY_NEED_US == 81u,
-               "повтор SSW-Feedback: взвод GP1 и остаток выделения");
+/* SSWFB_* — uc/ifs.h (*_AT от такта; при 165: GP1 5092, повтор 13345 тактов = 81 мкс); значения — CLKK (uc/clkk.h). */
+_Static_assert(SSWFB_GP1_CLK_AT(CLK_MHZ_RESET) == 5092u && SSWFB_RETRY_NEED_CLK_AT(CLK_MHZ_RESET) == 13345u &&
+               SSWFB_RETRY_NEED_US_AT(CLK_MHZ_RESET) == 81u, "повтор SSW-Feedback: взвод GP1 и остаток выделения");
+#define SSWFB_GP1_CLK        CLKK(SSWFB_GP1)
+#define SSWFB_RETRY_NEED_US  CLKK(SSWFB_RETRY_NEED_US)
 static __attribute__((noinline)) u32 sswfb_retry_fits(void)
 {
     return dti_alloc_left_us() > SSWFB_RETRY_NEED_US;
 }
 /* От чтения остатка до конца кадра Feedback: TXTIME 18,255 мкс + путь до эфира (< 1 мкс) + округление регистра
  * (1 мкс) — вверх, в безопасную сторону (Duration занижается). */
-#define SSWFB_FRAME_US  ((DMG_TXTIME_SSW_FB_CLK + DMG_CLK_PER_US - 1u) / DMG_CLK_PER_US + 2u)
-_Static_assert(SSWFB_FRAME_US == 21u, "Feedback до конца кадра");
+_Static_assert(SSWFB_FRAME_US_AT(CLK_MHZ_RESET) == 21u, "Feedback до конца кадра");
+#define SSWFB_FRAME_US  CLKK(SSWFB_FRAME_US)
 void txss_init_send_fdbk_wait_ack(u32 a) {
     /* 6.2 asm 0x93b9c0. */
     txrx_state2 = 0x400000;

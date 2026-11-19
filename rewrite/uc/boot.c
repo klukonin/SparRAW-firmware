@@ -7,6 +7,7 @@
 #include "dbg.h"
 #include "../include/hw.h"
 #include "../include/clk.h"
+#include "ifs.h"
 
 
 /* Многоядерный handshake при старте (0x93e2c0). */
@@ -51,7 +52,6 @@ void uc_main(void)
     memset0_words_uc((void *)&fwsh_sp_gate, sizeof(fwsh_sp_gate));
     g_800428 = 0;
     rx_post_defer = 0;                            /* без начального значения в образе DCCM (uc/rx.c rx_post_run) */
-    clk_mhz = clk_mhz_of_n(MMIO32(CLK_PLL_N_REG));   /* такт ядра — до всех пересчётов мкс ↔ такты (include/clk.h) */
     boot_uc_init_structs();
     boot_uc_init_and_run();
 }
@@ -121,8 +121,8 @@ void boot_uc_publish_mac_cmd_log_snap(u32 v)
 /* Программирование таймеров MAC (0x93c8e0). */
 void uc_timers_start_with_irq(void)
 {
-    uc_timer_start(1, 0, 0x13ab6680, 2);
-    uc_timer_start(0, 0, 0x672, 1);
+    uc_timer_start(1, 0, UC_TIMER1_LIMIT_CLK, 2);
+    uc_timer_start(0, 0, UC_TIMER0_TICK_CLK, 1);
 }
 
 /* BI-mode инициализация (0x9365fc) — портировано. */

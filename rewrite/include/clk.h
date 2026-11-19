@@ -18,4 +18,13 @@ static inline __attribute__((always_inline)) u32 clk_mhz_of_n(u32 n)
 {
     return CLK_REF_MHZ * n / 32u;
 }
+
+/* Таймеры fw (такты ядра; заданы временем, vendor — числа при 165 МГц): тик планировщика u_schd (sys_timer 0x880254)
+ * 16 мкс (0xa50), сторож ARC Timer1 200 мс (0x1f78a40), ARC Timer0 20 мкс (0xce4). */
+#define CLK_FW_SCHD_TICK_US   16u
+#define CLK_FW_WDOG_US        200000u
+#define CLK_FW_TIMER0_US      20u
+_Static_assert(CLK_FW_SCHD_TICK_US * (CLK_REF_MHZ * CLK_PLL_N_RESET / 32u) == 0xa50u &&
+               CLK_FW_WDOG_US * (CLK_REF_MHZ * CLK_PLL_N_RESET / 32u) == 0x1f78a40u &&
+               CLK_FW_TIMER0_US * (CLK_REF_MHZ * CLK_PLL_N_RESET / 32u) == 0xce4u, "таймеры fw при 165");
 #endif

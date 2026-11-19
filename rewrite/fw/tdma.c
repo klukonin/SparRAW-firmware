@@ -33,7 +33,9 @@
 #include "../include/sched_scheme.h"
 #include "../include/abft_cfg.h"
 #include "../include/wmi.h"
-#include "../uc/ifs.h"                      /* только макросы TXTIME/IFS в тактах 165 МГц */
+#include "../include/clk.h"
+#define CLK_MHZ clk_mhz_of_n(MMIO32(CLK_PLL_N_REG))   /* такт ядра fw (include/clk.h) */
+#include "../uc/ifs.h"                      /* макросы TXTIME/IFS в тактах ядра */
 
 /* aSSSlotTime (10.42.5.2) в тактах — та же формула, что abft_slot_clk() в uc/abft.h (тот заголовок в fw не
  * включается: в нём функции uc): aAirPropagationTime (17) + aSSDuration + MBIFS + aSSFBDuration + MBIFS,

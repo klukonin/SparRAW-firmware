@@ -278,7 +278,7 @@ u32 rx_send_cf_end_response(void)
     /* 6.2 asm 0x93626c. */
     /* 9.3.1.6: Duration CF-End DMG — остаток последовательности усечения (i − 1)·(TXTIME(CF-End) + SIFS), т. е.
      * Duration принятого минус TXTIME(CF-End) + SIFS; исправлено (vendor): отвечал с Duration = 0 */
-    u32 d = dmg_cf_end_resp_dur_us(rx_buf_duration);
+    u32 d = dmg_cf_end_resp_dur_us_with(rx_buf_duration, CLKK(MHZ), CLKK(CF_END_X), CLKK(CF_END_MX), CLKK(CF_END_MF));
     tx_send_imm_response(0, d, 0x10);
     arc_core_wr(33, 0xe4);
     tx_fifo_free -= 0x10;
@@ -304,7 +304,8 @@ void rx_send_grant_ack(void)
     /* 9.3.1.18: Duration Grant Ack = Duration Grant − (TXTIME(Grant Ack) + SIFS), не меньше 0; vendor вычитал
      * 20 без отсечки — Grant с Duration < 20 давал Grant Ack с Duration ≈ 32,7 мс (NAV соседям). */
     u32 d = rx_buf_duration;
-    u32 r1 = d > DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) ? d - DMG_RESP_DUR_SUB_US(DMG_GRANT_ACK_LEN) : 0u;
+    u32 sub = CLKK(GRANT_ACK_SUB_US);
+    u32 r1 = d > sub ? d - sub : 0u;
     tx_send_imm_response(ctrl_frame_mcs, r1, 0x17);  /* [gp,-0xec] = [0x80043c] */
     /* Beamforming Training — копия из Grant (10.39.4); при 0 остальные подполя BF Control зарезервированы (9.5.5).
      * исправлено (vendor): всегда 7 — Beamforming Training = 1 и TXSS обеих сторон, даже на Grant без обучения */
@@ -958,7 +959,7 @@ static __attribute__((noinline)) void rx_frame_tx_resp(u32 kind, struct tx_ctx_s
 }
 
 /* Предел ожидания MAC_BAP_RX_UPDATE в rx_get_required_response (проходов по ≥ 4 тактов; первый — вход): aPPDUMaxTime + SIFS. */
-#define BAP_RX_WAIT_PASSES  ((DMG_PPDU_MAX_CLK + DMG_SIFS_CLK) / 4u + 2u)
+#define BAP_RX_WAIT_PASSES  CLKK(BAP_RX_WAIT_PASSES)   /* uc/ifs.h BAP_RX_WAIT_PASSES_AT — от такта */
 
 /* Срыв ожидания MAC_BAP_RX_UPDATE: BAP не отметил приём за предел — ответа нет (возврат 0, как «ответ не нужен»),
  * rx_bap_rx_up = 0 (тень счётчика PPDU — заново в uc_hw_wait_tmo). Отдельной функцией (хвостовой переход) —
@@ -1114,7 +1115,7 @@ static __attribute__((noinline)) u32 rx_fast_resp(struct tx_ctx_s *ctx)
         __asm__ goto("mov\tr12,%0\n"
                      "1:\tsub.f\tr12,r12,1\n\tbeq\t%l[tmo]\n"
                      "\tmov\tr11,r53\n\tbbit0\tr11,3,1b"
-                     :: "i"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : tmo);
+                     :: "r"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : tmo);
         VOL(uc_wait_marker) = 0;
         rx_bap_rx_up = (mac_bap_if() & MAC_BAP_RX_UP_STATUS) ? 1 : 0;
         uc_mac_cmd_nl(0x1c000008);
@@ -1252,7 +1253,7 @@ static __attribute__((noinline)) u32 rx_fast_resp_early(struct tx_ctx_s *ctx, u3
         __asm__ goto("mov\tr12,%0\n"
                      "1:\tsub.f\tr12,r12,1\n\tbeq\t%l[tmo]\n"
                      "\tmov\tr11,r53\n\tbbit0\tr11,3,1b"
-                     :: "i"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : tmo);
+                     :: "r"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : tmo);
         VOL(uc_wait_marker) = 0;
         rx_bap_rx_up = (mac_bap_if() & MAC_BAP_RX_UP_STATUS) ? 1 : 0;
         uc_mac_cmd_nl(0x1c000008);
@@ -1341,7 +1342,7 @@ static __attribute__((noinline)) u32 rx_fast_cts_tail(struct tx_ctx_s *ctx, u32 
         rx_rf_set_rx();
     uc_mac_cmd(0xeeee0c);
     rxf.flags &= ~0x10u;
-    tx_busy_start_tsf = uc_read_tsf_lo() - 0xe - (arc_lr(0x100) - t_in) / 165u;
+    tx_busy_start_tsf = uc_read_tsf_lo() - 0xe - clk_to_us_floor(arc_lr(0x100) - t_in);
     mac_mon_report.rx_rts += 1;
     if (!(txrx_state1 & 8)) {
         uc_stats.rts_rx += 1;
@@ -2419,7 +2420,7 @@ bap_rx_check:   /* L_932fd0 */
         __asm__ goto("mov\tr12,%0\n"
                      "1:\tsub.f\tr12,r12,1\n\tbeq\t%l[bap_tmo]\n"
                      "\tmov\tr11,r53\n\tbbit0\tr11,3,1b"
-                     :: "i"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : bap_tmo);
+                     :: "r"(BAP_RX_WAIT_PASSES) : "r11", "r12", "memory", "cc" : bap_tmo);
         VOL(uc_wait_marker) = 0;
         UC_STAMP(STAMP_BAP_RX, mac_bap_if(), mac_rx_rep1());
         rx_bap_rx_up = (mac_bap_if() & MAC_BAP_RX_UP_STATUS) ? 1 : 0;

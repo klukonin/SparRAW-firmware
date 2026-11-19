@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "ifs.h"
 #include "../include/sta_max.h"
 
 
@@ -124,7 +125,7 @@ u32 fsched_arm_slot_from_cfg(void)
 {
     /* 6.2 asm 0x935a6c: длительность слота (единицы 165) -> поле qset 0; флаг 0x80064c=1.
      * (vendor передаёт r0=0x801be8 в fsched_assoc_slot_us, который его не использует.) */
-    sxd_hal_write_qset_field(0, fsched_assoc_slot_us() * 165);
+    sxd_hal_write_qset_field(0, fsched_assoc_slot_us() * DMG_CLK_PER_US);
     fsched_ctx.state = 1;
     return 0;
 }
@@ -135,7 +136,7 @@ u32 fsched_arm_slot_timer(u32 a)
     fsched_ctx.state = 2;
     if (a == 0)
         return 4;
-    sxd_hal_write_qset_field(0, a * 165);
+    sxd_hal_write_qset_field(0, a * DMG_CLK_PER_US);
     return 0;
 }
 
@@ -182,7 +183,7 @@ void fsched_run_tx_slot_twice(void)
     mac_set_sector_arg_and_select_all(mac_read_usec_to_tbtt_uc(0));
     fsched_slot_clear_rd_counter(&fsched_peers);
     fixed_sched_run_tx_slot();
-    uc_delay_clk(400 * 2);         /* vendor 0x938a3c: lp 0x190 × 2×nop_s */
+    uc_delay_clk(UC_NS_TO_CLK(4848u));   /* vendor 0x938a3c: lp 0x190 × 2×nop_s = 800 тактов при 165 */
     fixed_sched_run_tx_slot();
     fsched_ctx.state = 4;
 }

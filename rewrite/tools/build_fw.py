@@ -239,9 +239,9 @@ def main():
     uc_code_b = None
     if a.uc_elf and not a.no_uc:
         uc_code = os.path.join(tmp, 'uc_code.bin')
-        # .vectors (0x920000) + .text (0x920100..): двоичный образ с 0x920000
+        # .vectors (0x920000) + .text (0x920100..) + таблица CLKK (за кодом): двоичный образ с 0x920000
         subprocess.run([a.objcopy, '-O', 'binary', '--only-section=.vectors', '--only-section=.text',
-                        a.uc_elf, uc_code], check=True)
+                        '--only-section=.clkpatch', a.uc_elf, uc_code], check=True)   # .clkpatch — uc/clkk.h
         uc_code_b = open(uc_code, 'rb').read()
         if uc_code_b:
             records.append(dict(type=2, flags=0,

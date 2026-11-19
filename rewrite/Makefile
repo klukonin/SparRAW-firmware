@@ -40,7 +40,7 @@ all: $(BUILD)/fw.elf $(BUILD)/uc.elf
 # uc: r25 — глобальный указатель кольца MAC-команд (как у vendor), компилятору не трогать
 $(BUILD)/fw/%.o: CFLAGS += -include fw/proto.h -include fw/dccm.h -include include/assert_site.h -include include/logstr.h -fno-strict-aliasing
 $(BUILD)/fw/%.o: fw/proto.h fw/dccm.h
-$(BUILD)/uc/%.o: CFLAGS += -ffixed-r25 -include uc/proto.h -include uc/dccm.h -include uc/mac_regs.h -include uc/mac_cmd.h -include uc/dbg.h -include include/logstr.h -Werror=implicit-function-declaration -fno-ipa-icf -mmul64 -fno-strict-aliasing
+$(BUILD)/uc/%.o: CFLAGS += -DUC_CLKK -ffixed-r25 -include uc/proto.h -include uc/dccm.h -include uc/mac_regs.h -include uc/mac_cmd.h -include uc/dbg.h -include include/logstr.h -Werror=implicit-function-declaration -fno-ipa-icf -mmul64 -fno-strict-aliasing
 $(BUILD)/uc/%.o: uc/proto.h uc/dccm.h uc/mac_regs.h uc/mac_cmd.h
 # отладочные вставки uc (напр. UC_DBG=-DUC_DBG_SIFS); в рабочей сборке пусто
 $(BUILD)/uc/%.o: CFLAGS += $(UC_DBG)

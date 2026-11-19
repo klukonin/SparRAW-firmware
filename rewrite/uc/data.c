@@ -7,11 +7,10 @@
  *
  * Происхождение значений — vendor 6.2 (смысл установлен по чтениям vendor-кода и нашего
  * кода; где не установлен — так и написано). Таблицы переходов vendor-кода, которые читали
- * только его switch'и, сюда не перенесены (0x8017d8 .. 0x801be0, 20 таблиц, 496 Б):
+ * только его switch'и, сюда не перенесены (0x80193c .. 0x801be0, 20 таблиц, 496 Б):
  * в нашем образе там нули. Указатели на код и на данные образа — C-инициализаторы. */
 #include "../include/sta_max.h"
 #include "../include/types.h"
-#include "../include/clk.h"
 /* Здесь — сами объекты: макросы dccm.h выключены (-DUC_DCCM_OBJECTS в Makefile). */
 #include "dccm.h"
 
@@ -34,8 +33,6 @@ UCDATA(800429) u8 rf_normal_abif_field = 0x2a;
 /* MCS управляющих кадров (аргумент rate у direct_tx_send_from_desc / tx_send_imm_response);
  * пишет ucode_cmd_0x49_handler. В 6.4 ps.h назван «PS разрешён» — какое толкование верно, не установлено. */
 UCDATA(80043c) u8 ctrl_frame_mcs = 0x1;
-/* Такт ядра, МГц: в образе — при множителе PLL сброса (вызовы без uc_main, тесты); uc_main пересчитывает по 0x8893f8. */
-UCDATA(80048c) u32 clk_mhz = CLK_REF_MHZ * CLK_PLL_N_RESET / 32u;
 /* Четыре 6-битных поля PHY base+0x1c0/0x1c4 (биты 5:0, 11:6) для режима != 1 (hwd_phy_set_mode_uc). */
 UCDATA(80043d) UCD_ARRAY(u8, 4) phy_mode_fields = {{
     0x1b, 0x1b, 0x1d, 0x1d,

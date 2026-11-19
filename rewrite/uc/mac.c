@@ -3,6 +3,7 @@
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
+#include "ifs.h"
 
 
 
@@ -89,8 +90,8 @@ u32 macq_read_hw_queue_word(u32 q)
 void mac_clk_div_us(u32 a, u32 out)
 {
     /* 0x936b94 (vendor: делитель 165): код {такты, мкс} регистров IFS MAC — out[0] = a % f, out[1] = a / f (по байту),
-     * f = clk_mhz (include/clk.h). */
-    u32 n = 0, f = clk_mhz;
+     * f — такт ядра (CLKK(MHZ), uc/clkk.h). */
+    u32 n = 0, f = CLKK(MHZ);
     while (a >= f) {
         n++;
         a -= f;
@@ -173,8 +174,8 @@ void mac_set_default_slot_timing(void)
 void uc_timers_start_without_irq(void)
 {
     /* 0x93c904 */
-    uc_timer_start(1, 0, 0x13ab6680, 0);
-    uc_timer_start(0, 0, 1650, 0);
+    uc_timer_start(1, 0, UC_TIMER1_LIMIT_CLK, 0);
+    uc_timer_start(0, 0, UC_TIMER0_TICK_CLK, 0);
 }
 u32 mac_program_deadline_slack(u32 a, u32 b, u32 c)
 {
@@ -182,7 +183,7 @@ u32 mac_program_deadline_slack(u32 a, u32 b, u32 c)
     u32 r3 = 0;
     if (c != 0) {
         a = a - b - 1;
-        r3 = 0xa5 - c;
+        r3 = CLKK(MHZ) - c;             /* остаток мкс в тактах (vendor 0xa5 − c при 165) */
     } else {
         a = (b == 0) ? 0 : a - b;
     }
@@ -761,7 +762,7 @@ u32 uc_wait_txop_end(void)
     u32 lim = txop_limit_cur;
     if (lim == 0 || lim > 0xffffu)
         lim = 0xffffu;
-    u32 clk = (lim + DMG_TXOP_END_SLACK_US) * 165u;
+    u32 clk = (lim + DMG_TXOP_END_SLACK_US) * DMG_CLK_PER_US;
     u32 last = uc_clk_now(), el = 0;
     for (u32 n = clk; n != 0; n--) {
         if (mac_evt1() & MAC_EVT1_TXOP)
