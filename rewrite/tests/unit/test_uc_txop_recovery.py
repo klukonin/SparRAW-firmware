@@ -71,6 +71,52 @@ def test_cf_end_without_txop_event_returns(uc):
     assert uc.r8(TXOP_END_TMO) == (n0 + 1) & 0xff
 
 
+# ---- Закрытие TXOP: ожидание конца передачи (событие 6) — только после своей передачи ----------------------------
+
+MGMT_QID = 0x1a
+TX_CTX_QID = TX_CTX0 + 4
+
+
+def _closing_waits(uc, qid, rem, sp_gate=0):
+    """tx_send_and_await_rx_frame(b = 1, c = 0) — закрытие TXOP после кадра очереди qid при остатке TXOP rem (r40).
+    Возвращает (число ожиданий события 6, ушёл ли CF-End, был ли запрос итога)."""
+    from fwsh_addr import A
+    uc.w32(TX_CTX0, 0)
+    uc.w32(TX_CTX_QID, qid)
+    uc.w32(DTI_QSET_MODE, 0)
+    uc.w32(TXOP_LIMIT_CUR, 300)
+    uc.w8(A['fwsh_sp_gate'] + 0x0a, sp_gate)                 # fwsh_sp_gate.init_sp: своё SP
+    uc.ext.update({40: rem, 42: EVT_BUSY2 | EVT_TX_END})
+    k = len(uc.calls)
+    uc.call('tx_send_and_await_rx_frame', TX_CTX0, 1, 0, 0,
+            stub=dict(HOLDER_STUBS, tx_submit_frame=0, uc_spin_until_event=0, tx_await_rx_or_timeout=0,
+                      uc_wait_txop_end=1, ese_dti_sp_src_end=0), max_steps=4_000_000)
+    names = [n for n, _ in uc.calls[k:]]
+    return names.count('uc_wait_one_event'), 'cf_end_send_frame' in names, 'tx_submit_frame' in names
+
+
+@pytest.mark.parametrize('qid', [0, MGMT_QID])
+@pytest.mark.parametrize('rem', [0, 0xffff])
+def test_closing_waits_only_after_own_tx(uc, qid, rem):
+    """Событие 6 — конец своей передачи; каждое ожидание — парой к кадру: QoS Null запроса итога (очереди данных) и
+    CF-End (10.23.2.10, если остаток TXOP его вмещает). У очереди управления запроса итога нет (11.3.3):
+    при малом остатке не передаётся ничего — и ждать нечего. Прежде хвост ждал всегда — ожидание без срока (стенд
+    2026-11-20, u6000hold: assert 0x6000 застал станцию в нём после Probe Request без Ack)."""
+    waits, cf_end, submit = _closing_waits(uc, qid, rem)
+    assert submit == (qid != MGMT_QID)
+    assert cf_end == (rem == 0xffff)
+    assert waits == int(submit) + int(cf_end)
+
+
+@pytest.mark.parametrize('qid', [0, MGMT_QID])
+def test_closing_in_own_sp_waits_only_after_own_tx(uc, qid):
+    """Своё SP (tx_sp_end_restore_rx): CF-End не шлём (усечение SP, 10.39.8.1); событие 6 ждём лишь после QoS Null
+    запроса итога — у очереди управления его нет."""
+    waits, cf_end, submit = _closing_waits(uc, qid, 0xffff, sp_gate=1)
+    assert not cf_end
+    assert waits == int(submit) == int(qid != MGMT_QID)
+
+
 # ---- RTS без DMG CTS: backoff, без закрытия TXOP ---------------------------------------------------------------
 
 RUN_TXOP_STUBS = {n: 0 for n in ('txop_pick_ctrl_code_by_peer', 'handle_bf_triggers', 'tx_cca_check_and_send',

@@ -619,12 +619,13 @@ u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_
 /* Конец обмена в своём SP после запроса итога (tx_send_and_await_rx_frame, ветка без CF-End): приём — после своего
  * кадра запроса итога (b ≠ 0), как в общем хвосте. Отдельная функция: в tx_send_and_await_rx_frame не добавляется
  * живых регистров — пролог и путь «слот → CCA → запрос итога» (СРОК) те же, что без цикла источника (codecmp). */
-static __attribute__((noipa)) u32 tx_sp_end_restore_rx(u32 sta, u32 b)
+static __attribute__((noipa)) u32 tx_sp_end_restore_rx(u32 sta, u32 b, u32 qid)
 {
     ese_dti_sp_src_end(sta);
     if (b != 0) {
         mac_set_rf_chain_state(1, sta_tab[sta].rx_sel);
-        uc_wait_one_event(6);
+        if (qid != MACQ_MGMT_QID)               /* событие 6 — конец QoS Null запроса итога; у очереди управления его нет */
+            uc_wait_one_event(6);
         u32 r0 = abif_dvs_rf_ctrl_shadow;
         r0 &= ~(1u << 24);
         r0 &= ~(1u << 25);
@@ -686,7 +687,7 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
          * раньше: на входе она удлиняла путь «слот → CCA → запрос итога» (СРОК, tx_cca_check_and_send) на 12 тактов
          * (эмулятор, test_air RD). Байт и переход в отдельную функцию (noipa) — без новых живых регистров (codecmp) */
         if (FWSH(fwsh_sp_gate, init_sp) != 0)
-            return tx_sp_end_restore_rx(sta, b);
+            return tx_sp_end_restore_rx(sta, b, a->qid);
         if (rem < CLKK(CF_END_MIN_REM_US) || (mac_evt1() & MAC_EVT1_TXOP))
             goto cf_end_done;
         if (rem < CLKK(CF_END_NZ_REM_US))
@@ -718,7 +719,13 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
 cf_end_done:   /* L_924ba4 */
     if (b != 0 || txr.awaiting != 0) {
         mac_set_rf_chain_state(1, sta_tab[sta].rx_sel);
-        uc_wait_one_event(6);
+        /* Событие 6 — конец своей передачи: CF-End (awaiting) или, без него, QoS Null запроса итога. исправлено
+         * (наше): у очереди управления запроса итога нет, и при остатке TXOP меньше CF-End (или txop_event)
+         * не передаётся ничего — события 6 нет, ожидание без срока. Стенд 2026-11-20 (u6000hold): assert 0x6000
+         * (MAC_HW_ICR б16) застал uc в этом ожидании — txr.awaiting = 0, txr.submit = 0; б16 этим не объяснён (с
+         * исправлением взводится и после выхода отсюда, docs/MAC-STAND.md H-RESULTGO). */
+        if (txr.awaiting != 0 || a->qid != MACQ_MGMT_QID)
+            uc_wait_one_event(6);
         u32 r0 = abif_dvs_rf_ctrl_shadow;
         r0 &= ~(1u << 24);
         r0 &= ~(1u << 25);
