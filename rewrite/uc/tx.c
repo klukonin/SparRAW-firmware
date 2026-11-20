@@ -300,19 +300,16 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
 /* Закрытие TXOP очереди управления без передачи: запроса итога у неё нет (tx_send_and_await_rx_frame), CF-End
  * (10.23.2.10) не уйдёт, если до конца остатка TXOP его не вместить, MAC уже закрыл TXOP (txop_event) или настал TBTT
  * (bi1_event) — дальше BTI, передавать нельзя (10.39.2, 10.39.5: CBAP кончается к TBTT). Остаток — по сроку,
- * запомненному при открытии (txop_rem_end_t1: COUNT1 + REMAINING_TIME), а не по REMAINING_TIME сейчас: за ~2 мкс до
+ * запомненному при открытии (txop_rem_end_tsf: TSF + REMAINING_TIME), а не по REMAINING_TIME сейчас: за ~2 мкс до
  * TBTT он перескакивает на следующий BI (снова большой), bi1_event у станции к этому моменту ещё не поднят — стенд
  * u6000f2 (проверка REMAINING) и u6000f3 (+ bi1_event: ожидание Ack кончилось за 0,7 мкс до TBTT, слот и CCA ушли за
- * TBTT) упали так же. Нужно: слот + CF-End (CF_END_CLOSE = CF_END_MIN_REM_US · такт + aSlotTime). Остаток больше
- * половины периода Timer1 — срок уже прошёл. Отдельная функция (noipa): путь «слот → CCA → пуск» в
- * tx_cca_check_and_send не получает живых регистров. */
+ * TBTT) упали так же. Нужно: слот + CF-End (CF_END_CLOSE = CF_END_MIN_REM_US · такт + aSlotTime). Срок — по TSF
+ * (мкс; разность со знаком — срок прошёл), не по Timer1: COUNT1 обнуляет каждый тик L1 (txop_note_rem_end, tail.c).
+ * Отдельная функция (noipa): путь «слот → CCA → пуск» в tx_cca_check_and_send не получает живых регистров. */
 static __attribute__((noipa)) u32 tx_close_mgmt_nothing_to_send(void)
 {
-    u32 per = CLKK(TIMER1_LIMIT) + 1u, now = arc_lr(0x100), end = txop_rem_end_t1;
-    u32 left = end >= now ? end - now : end + per - now;
-    if (left > per / 2u)
-        left = 0;
-    return left < CLKK(CF_END_CLOSE) || (mac_evt1() & (MAC_EVT1_TXOP | MAC_EVT1_BI1));
+    s32 left = (s32)(txop_rem_end_tsf - MMIO32(HW_MAC_TSF_LO));
+    return left <= 0 || (u32)left * CLKK(MHZ) < CLKK(CF_END_CLOSE) || (mac_evt1() & (MAC_EVT1_TXOP | MAC_EVT1_BI1));
 }
 
 void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)

@@ -2359,16 +2359,14 @@ void tx_mtp_queue_gate(u32 a) {
 }
 
 
-/* Конец остатка TXOP по Timer1 — для решения о закрытии без передачи (tx_close_mgmt_nothing_to_send): 10.39.5, обмен
+/* Конец остатка TXOP по TSF — для решения о закрытии без передачи (tx_close_mgmt_nothing_to_send): 10.39.5, обмен
  * кончается до конца TXOP/CBAP; REMAINING_TIME у самой границы TBTT ненадёжен, срок берём при открытии. Отдельная
- * функция (noipa); зовёт txop_open_release_mgmt — путь открытия txop_initiator_open_txop_flow не меняется. */
+ * функция (noipa); зовёт txop_open_release_mgmt — путь открытия txop_initiator_open_txop_flow не меняется.
+ * Не Timer1: тик L1 (l1_task_entry, режим 3) каждые 10 мкс обнуляет COUNT1 (как vendor) — это такты от последнего
+ * тика, а не часы (стенд ul5 2026-11-20: COUNT1 в метках ≤ 1650 у 99,8 % меток bi1). */
 static __attribute__((noipa)) void txop_note_rem_end(u32 rem_us)
 {
-    u32 per = CLKK(TIMER1_LIMIT) + 1u;              /* COUNT1: 0 … LIMIT, период LIMIT + 1 (H-TVEC) */
-    u32 end = arc_lr(0x100) + rem_us * CLKK(MHZ);
-    if (end >= per)
-        end -= per;
-    txop_rem_end_t1 = end;
+    txop_rem_end_tsf = MMIO32(HW_MAC_TSF_LO) + rem_us;
 }
 
 
