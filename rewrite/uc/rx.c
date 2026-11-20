@@ -577,12 +577,16 @@ u32 rx_flow_run(void)
             rx_latch_cur_gain_db();
             goto tail;                          /* res = 1, hit = 0 — как «hi ≠ seq» после цикла */
         }
-        ppdu_evt_cnt = r13;
+        /* Тень — по числу НАЧАТЫХ PPDU (счётчик CCA), с текущим: он отброшен, следующий вход увидит его конец.
+         * исправлено (vendor: тень = концы PPDU r13, + 1 только при снятом cca_ppdu_comp): до разбора заголовка
+         * cca_ppdu_comp ещё стоит (H-PHYRX), вход по busy_event — раньше заголовка, + 1 не делался — тень навсегда на
+         * один позади, и каждый следующий кадр уходил сюда же до своей передачи (mac_switch_rx_to_tx сверяет тень).
+         * Эмулятор 2026-11-20 (test_fw_sls_collision, ветка точек перехвата): станция после столкновения ISS отбросила
+         * все 32 SSW повторной ISS точки и не ответила RSS (10.42.2.2.1) — «глухота после своей развёртки». */
+        ppdu_evt_cnt = MAC_PHYSIG_CCA_EVT_CNT_OF(mac_status_sel());
         uc_mac_cmd(0x20d2000);
-        if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP)) {
+        if (!(mac_status_sel() & MAC_PHYSIG_CCA_PPDU_COMP))
             mac_wait_evt1_or_status(MAC_EVT1_PPDU_REPORT, MAC_PHYSIG_CCA_PPDU_COMP);
-            ppdu_evt_cnt += 1;
-        }
         rx_flow_noevt_cnt += 1;
         uc_mac_cmd(0xeeee04);
         res = 0;
