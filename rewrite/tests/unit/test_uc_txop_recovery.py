@@ -25,6 +25,7 @@ DTI_QSET_MODE = 0x8004f4
 BF_CTRL = 0x8021b8
 
 EVT_TXOP, EVT_BUSY2, EVT_TX_END = 1 << 7, 1 << 14, 1 << 15
+EVT_BI1 = 1 << 4                                             # bi1_event: TBTT (упреждение ~8 мкс)
 
 
 # ---- uc_wait_txop_end: ожидание конца TXOP со сроком ------------------------------------------------------------
@@ -116,6 +117,70 @@ def test_closing_in_own_sp_waits_only_after_own_tx(uc, qid):
     assert not cf_end
     assert waits == int(submit) == int(qid != MGMT_QID)
 
+
+CLOSE_STUBS = {n: 0 for n in ('ese_dti_sp_src_end', 'mac_select_all_sectors_and_wait', 'mac_cmd_29000001',
+                              'mac_program_tx_vector', 'tx_send_and_await_rx_frame')}
+TX_PATH = ('mac_select_all_sectors_and_wait', 'mac_cmd_29000001')   # слот и проба CCA — до решения CCA (mac_cca_ok встроена)
+
+
+TXOP_REM_END_T1 = 0x80048c                                   # uc/dccm.h txop_rem_end_t1: конец остатка TXOP (COUNT1)
+T1_PERIOD = 0x13ab6680 + 1
+FAR, NEAR, PASSED = 1000, 10, -100                          # срок от открытия, мкс от входа в закрытие
+
+
+@pytest.mark.parametrize('qid,rem,evt,end_us,tx', [
+    (MGMT_QID, 0xffff, EVT_TXOP, FAR, False),  # MAC уже закрыл TXOP (за TBTT)
+    (MGMT_QID, 0xffff, EVT_BI1, FAR, False),   # TBTT настал (bi1_event; u6000f2)
+    (MGMT_QID, 0xffff, 0, NEAR, False),  # до конца остатка от открытия 10 мкс < слот + CF-End, REMAINING уже перескочил (u6000f3)
+    (MGMT_QID, 0xffff, 0, PASSED, False),  # срок прошёл — ожидание Ack кончилось за TBTT (u6000st)
+    (MGMT_QID, 0xffff, 0, FAR, True),   # CF-End вмещается — слот, CCA, CF-End
+    (0, 0, 0, PASSED, True),            # очередь данных — запрос итога (QoS Null в остаток плана)
+])
+def test_close_mgmt_without_tx_skips_tx_path(uc, qid, rem, evt, end_us, tx):
+    """10.39.5: обмен, открытый до конца CBAP, за его конец не продолжают. Закрытие TXOP очереди управления, когда CF-End
+    (10.23.2.10) не вмещается в остаток, TXOP у MAC уже кончился или настал TBTT, — без слота, пробы CCA и команд TX.
+    Остаток — по сроку, запомненному при открытии (txop_rem_end_t1), а не по REMAINING_TIME: у самой границы TBTT тот
+    перескакивает на следующий BI, bi1_event у станции ещё не поднят (u6000f3). Прежде uc давал команды
+    TX за TBTT (после тайм-аута Ack кадра у границы) — MAC_HW_ICR б16 → assert 0x6000 (стенд 2026-11-20, u6000st)."""
+    uc.w32(TX_CTX0, 0)
+    uc.w32(TX_CTX_QID, qid)
+    uc.w32(TXRX_STATE2, 0)
+    uc.w32(TXOP_REM_END_T1, (uc.t1() + end_us * 165) % T1_PERIOD)
+    uc.ext.update({40: rem, 42: evt})
+    k = len(uc.calls)
+    uc.call('tx_cca_check_and_send', TX_CTX0, 1, 1, 0, stub=CLOSE_STUBS)
+    names = [n for n, _ in uc.calls[k:]]
+    assert all((n in names) == tx for n in TX_PATH), names
+    assert uc.r32(TXRX_STATE2) & (1 << 9)
+
+
+
+@pytest.mark.parametrize('end_us,tx', [(FAR, True), (NEAR, False), (PASSED, False)])
+def test_close_mgmt_deadline_across_timer1_wrap(uc, end_us, tx):
+    """Срок закрытия через заворот Timer1 (COUNT1 0 … LIMIT): открытие перед заворотом, закрытие — после или наоборот;
+    решение то же, что без заворота."""
+    uc.t1_base = T1_PERIOD - 300                              # COUNT1 заворачивается во время вызова
+    uc.w32(TX_CTX0, 0)
+    uc.w32(TX_CTX_QID, MGMT_QID)
+    uc.w32(TXRX_STATE2, 0)
+    uc.w32(TXOP_REM_END_T1, (uc.t1() + end_us * 165) % T1_PERIOD)
+    uc.ext.update({40: 0xffff, 42: 0})
+    k = len(uc.calls)
+    uc.call('tx_cca_check_and_send', TX_CTX0, 1, 1, 0, stub=CLOSE_STUBS)
+    names = [n for n, _ in uc.calls[k:]]
+    assert all((n in names) == tx for n in TX_PATH), names
+
+
+@pytest.mark.parametrize('t1_base', [0, T1_PERIOD - 100])
+def test_open_notes_txop_rem_end(uc, t1_base):
+    """Открытие TXOP запоминает конец остатка: COUNT1 + REMAINING_TIME (мкс) · такт по модулю периода Timer1 — тот срок,
+    по которому закрытие решает, вмещается ли CF-End (10.39.5)."""
+    uc.t1_base = t1_base
+    t0 = uc.t1()
+    uc.call('txop_note_rem_end', 76)
+    got = uc.r32(TXOP_REM_END_T1)
+    want = (t0 + 76 * 165) % T1_PERIOD
+    assert 0 <= (got - want) % T1_PERIOD < 40, (hex(got), hex(want))   # + инструкции до чтения COUNT1
 
 # ---- RTS без DMG CTS: backoff, без закрытия TXOP ---------------------------------------------------------------
 

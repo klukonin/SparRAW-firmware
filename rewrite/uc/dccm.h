@@ -1775,7 +1775,7 @@ _Static_assert(__builtin_offsetof(struct link_stat_s, bf_reasons) == 0x11, "link
 #define rx_resp_skip_cnt             (*(u32 *)0x800480)   /* [с] Обратный счётчик в rx_get_required_response: при ==1 перезаряжается из 0x800484 и ответ не формируется (return 0), при ≥2 — декремент. Периодически... */
 #define rx_resp_skip_period          (*(u32 *)0x800484)   /* [с] Период перезарядки 0x800480; только чтение, задаётся извне (в образе 0 → механизм выключен). */
 #define sleep_ilink2                 (*(u32 *)0x800488)   /* [в] uc_sleep_until_event: ilink2 (r30) перед sleep. UC-REGISTERS.md (§3, «в 0x800488 перед sleep»). */
-/* 0x80048c — свободно (прежде mac_mon_snap vendor: копия 0x85398c при публикации MAC-монитора, только запись). */
+#define txop_rem_end_t1              (*(u32 *)0x80048c)   /* [н] Конец остатка TXOP по Timer1 (COUNT1, такты): при открытии (txop_initiator_open_txop_flow) COUNT1 + REMAINING_TIME (мкс, ≤ мкс до TBTT − 2) · такт, по модулю предела Timer1; читает tx_close_mgmt_nothing_to_send (10.39.5). Прежде — mac_mon_snap vendor (только запись). */
 #define nav_late_cnt                 (*(u32 *)0x800490)   /* [н] rx_nav_set_from_duration: ++, если NAV включён и новое значение позже старого более чем на 0x32; rx_nav_check_idle обнуляет при снятии флага. */
 #define g_800494                     (*(u32 *)0x800494)   /* [н] l1_task_dispatch, событие 3: при l1_fsched_flag≠0 и [0x800494]==0 (и 0x8022a8≠2) — событие 3 автомата BI, иначе mac_compute_bi_mon_timings. Только чтение,... */
 #define r49_snap                     (*(u32 *)0x80049c)   /* [с] Снимок r49 (EVENT_ENGINE2 PHY BRP) в mac_switch_rx_to_tx после смены режима. UC-REGISTERS §2.12. Только запись (в 4.1 по этому адресу — гейт AW, друг... */

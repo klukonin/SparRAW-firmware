@@ -2359,6 +2359,19 @@ void tx_mtp_queue_gate(u32 a) {
 }
 
 
+/* Конец остатка TXOP по Timer1 — для решения о закрытии без передачи (tx_close_mgmt_nothing_to_send): 10.39.5, обмен
+ * кончается до конца TXOP/CBAP; REMAINING_TIME у самой границы TBTT ненадёжен, срок берём при открытии. Отдельная
+ * функция (noipa); зовёт txop_open_release_mgmt — путь открытия txop_initiator_open_txop_flow не меняется. */
+static __attribute__((noipa)) void txop_note_rem_end(u32 rem_us)
+{
+    u32 per = CLKK(TIMER1_LIMIT) + 1u;              /* COUNT1: 0 … LIMIT, период LIMIT + 1 (H-TVEC) */
+    u32 end = arc_lr(0x100) + rem_us * CLKK(MHZ);
+    if (end >= per)
+        end -= per;
+    txop_rem_end_t1 = end;
+}
+
+
 /* Запрос MTP кадра открытия TXOP (mtp_queue_release_mgmt) + режим доступа в своём SP (uc/ese_dti.c, цикл источника):
  * без RTS — среда по расписанию у источника, получатель слушает его весь SP (10.39.6.2); RTS/DMG CTS — защита TXOP
  * CBAP. Режим доступа 0 (chan_access) — путь очереди управления (0x1a): кадр очереди сразу после слота и пробы CCA.
@@ -2366,6 +2379,7 @@ void tx_mtp_queue_gate(u32 a) {
  * mtp_queue_release_mgmt (путь продолжения TXOP через SIFS) не меняются — codecmp. */
 static __attribute__((noipa)) u32 txop_open_release_mgmt(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 {
+    txop_note_rem_end((u16)mac_status_sel());      /* выбор статуса — REMAINING_TIME (взведён вызывающим перед r15) */
     u32 r = mtp_queue_release_mgmt(a, b, c, d);
     if (FWSH(fwsh_sp_gate, init_sp) != 0)
         a->chan_access = 0;

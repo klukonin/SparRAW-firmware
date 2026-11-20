@@ -297,10 +297,40 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
  * есть в internal_tx_keepalive_flow (~78 инструкций), direct_tx_send_from_desc (~86), tx_bcast_flow,
  * bcon_txss_sweep_step (b == 5), txop_await_cts_ppdu (txss.c). Срыв: поздний старт после
  * слота — коллизия с соседом, отсчитавшим отсрочку; кадр/TXOP теряется, растёт CW. */
+/* Закрытие TXOP очереди управления без передачи: запроса итога у неё нет (tx_send_and_await_rx_frame), CF-End
+ * (10.23.2.10) не уйдёт, если до конца остатка TXOP его не вместить, MAC уже закрыл TXOP (txop_event) или настал TBTT
+ * (bi1_event) — дальше BTI, передавать нельзя (10.39.2, 10.39.5: CBAP кончается к TBTT). Остаток — по сроку,
+ * запомненному при открытии (txop_rem_end_t1: COUNT1 + REMAINING_TIME), а не по REMAINING_TIME сейчас: за ~2 мкс до
+ * TBTT он перескакивает на следующий BI (снова большой), bi1_event у станции к этому моменту ещё не поднят — стенд
+ * u6000f2 (проверка REMAINING) и u6000f3 (+ bi1_event: ожидание Ack кончилось за 0,7 мкс до TBTT, слот и CCA ушли за
+ * TBTT) упали так же. Нужно: слот + CF-End (CF_END_CLOSE = CF_END_MIN_REM_US · такт + aSlotTime). Остаток больше
+ * половины периода Timer1 — срок уже прошёл. Отдельная функция (noipa): путь «слот → CCA → пуск» в
+ * tx_cca_check_and_send не получает живых регистров. */
+static __attribute__((noipa)) u32 tx_close_mgmt_nothing_to_send(void)
+{
+    u32 per = CLKK(TIMER1_LIMIT) + 1u, now = arc_lr(0x100), end = txop_rem_end_t1;
+    u32 left = end >= now ? end - now : end + per - now;
+    if (left > per / 2u)
+        left = 0;
+    return left < CLKK(CF_END_CLOSE) || (mac_evt1() & (MAC_EVT1_TXOP | MAC_EVT1_BI1));
+}
+
 void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 {
     /* Закрытие обмена в своём SP — без передачи (uc/ese_dti.c, рычаг 3): ни запроса итога (QoS Null), ни CF-End */
     if (ese_dti_sp_src_end(a->sta)) {
+        txrx_state2 |= (1u << 9);
+        return;
+    }
+    /* Очередь управления, CF-End не вмещается до конца TXOP (срок от открытия) или настал TBTT: передавать нечего — ни
+     * слота, ни CCA, ни команд TX.
+     * исправлено (наше):
+     * прежде закрытие шло до решения о CF-End и за TBTT — после тайм-аута Ack кадра, кончившегося у границы
+     * (10.39.5: обмен открыт до конца CBAP), uc давал 0x29000001, TX-вектор и 1 << 29 уже в BTI; через ~1 мкс —
+     * MAC_HW_ICR б16 → INT6 → assert 0x6000. Стенд 2026-11-20 (u6000st, метки 45/38/40/11): Probe Request станции к
+     * точке, не отвечающей Ack, открыт за 69 мкс до TBTT; ожидание ответа кончилось за TBTT, вход L2 — через 167
+     * тактов после закрытия. */
+    if (d == 0 && a->qid == MACQ_MGMT_QID && tx_close_mgmt_nothing_to_send()) {
         txrx_state2 |= (1u << 9);
         return;
     }
