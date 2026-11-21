@@ -61,3 +61,25 @@ def test_extension_subtypes_other_than_dmg_beacon_freed(fw):
         fc = (3 << 2) | (stype << 4)
         _dispatch(fw, struct.pack('<HH', fc, 0) + bytes(F.STA_MAC) * 3 + bytes(10))
     assert _rx_used(fw) == used
+
+
+WMI_P2P_CFG, WMI_DISCOVERY_START = 0x910, 0x916
+
+
+def test_p2p_search_probe_req_from_unknown_peer(fw):
+    """P2P поиск (find_sm STATE_SEARCHING): Probe Request с адреса, для которого нет соединения (cid не наш), —
+    vendor: фатальный ассерт 0x1447/0x1448 (соединение искалось по cid дескриптора). Теперь — журнал и отброс."""
+    f = F.Fw(fw)
+    fw.wmi(WMI_P2P_CFG, struct.pack('<BBH', 1, 2, 100))
+    F.settle(fw)
+    fw.wmi(WMI_DISCOVERY_START, b'')
+    F.settle(fw)
+    fw.advance(20_000, between=F.settle)
+    used = _rx_used(fw)
+    bc = b'\xff' * 6
+    for _ in range(3):
+        fw.call('rx_pkt_srvs_dispatch', fw.a('rx_pkt_srvs'),
+                fw.rx_pkt(fw.mgmt_frame(4, bc, F.STA_MAC, bc, bytes([0, 0])), cid=F.SPARRAW_PEER_UNKNOWN))
+        fw.run_tasks()
+        F.settle(fw)
+    assert _rx_used(fw) == used

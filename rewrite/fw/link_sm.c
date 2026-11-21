@@ -1922,7 +1922,9 @@ static void find_sm_probe_req(struct find_sm *f, struct rx_pkt *pkt, u32 searchi
     struct conn *c;
     c = mid_conn_by_cid(x->mid, pkt->info.cid);
     if (c == 0) {
-        fw_sysassert_fatal((void *)0, searching ? 0x1447 : 0x1448);
+        /* исправлено (vendor: фатальный ассерт 0x1447/0x1448): Probe Request с адреса без соединения (cid
+         * дескриптора не наш) — обычный кадр эфира, любой передатчик рядом ронял fw (аудит границ 2026-11-21) */
+        fw_log_emit1(0x2c, LS_FW(P2P_PROBE_NO_CONN), pkt->info.cid);
         return;
     }
     peer = (u32)c->peer;

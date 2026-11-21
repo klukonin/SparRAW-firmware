@@ -27,3 +27,4 @@ X(TEMP_LEVEL, "temperature level %u (0 normal, 1 high, 2 critical): BB %d mC, RF
 X(PRING_STOP_FORCED, "pring stop: vring %u DMA not idle after %u polls, MACQ empty - forced stop of suspended vring")
 X(TDMA_SP_SCHED, "tdma: strict SP schedule, %u stations, SP %u us, guard %u us")
 X(TDMA_CFG, "tdma cfg: enable %u, min_sta %u, mode %u")
+X(P2P_PROBE_NO_CONN, "p2p find: probe request cid %u without connection, dropped")
