@@ -147,14 +147,17 @@
   заходило в соседнее (TXSS Span → N BIs A-BFT, N A-BFT in Ant → PCP Association Ready), в Reserved B44..B47 и в код
   команды; при N BIs A-BFT = 0 счётчик 0xff давал Next A-BFT = 15, Fragmented TXSS = 1, B44..B46 = 1. Теперь каждое
   подполе — по своей ширине. Тест: test_uc_beacon_tx test_bic_field_wider_than_subfield, test_bic_counters_masked.
-- **Grant фиксированного расписания** (uc/fsched.c `fsched_tx_ctrl_frame`, uc/tx.c, fw/conn.c, 2026-10-31): AP отдаёт
+- **Фиксированное расписание vendor удалено** (2026-11-21): собственная схема опроса vendor (WMI 0x85f/0xa02/0xa03/0xa0f,
+  LMAC 0x3e/0x45/0x47/0x48/0x4a, события uc 0x2e/0x2f/0x30, режим пар vring_schd), не 802.11-2020; драйвер её не
+  включал. WMI отвечают «не поддерживается», LMAC — в default ucode. Пункты ниже о нём — история.
+- **Grant фиксированного расписания** (удалено 2026-11-21; был uc/fsched.c `fsched_tx_ctrl_frame`, 2026-10-31): AP отдаёт
   TXOP станции — по 802.11-2020 10.39.7.3 Source AID = AID станции (ответчика), Destination AID = AID AP (0, 9.4.1.8),
   AllocationType CBAP, Allocation Duration = 32768 («в текущем TXOP», 9.5.2 b), Beamforming Training = 0. vendor:
   Source AID 0, Destination AID 1 (AID произвольной станции), Allocation Duration = длине слота (по 9.5.2 a — «AP начнёт
   доступ через …»), BF Control = 7 (обещание SLS, которого нет; при Beamforming Training = 1 роли TXOP не меняются).
   AID станций uc берёт из нового общего fwsh_peer_aid (0x857964; fw пишет при WMI_CONNECT_EVENT). Grant Ack:
   Beamforming Training — копия из Grant (10.39.4), при 0 BF Control = 0 (vendor — всегда 7). Тесты: test_uc_grant_frame
-  test_fsched_grant_fields, test_grant_ack_copies_beamforming_training; test_fw_reassoc (fwsh_peer_aid).
+  test_grant_ack_copies_beamforming_training; test_fw_reassoc (fwsh_peer_aid).
 - **Старт AP/PCP без своего BSSID** (fw/wmi_h_pcp.c `l2mgr_pcp_start_flow`, 2026-10-31): vendor не ставил BSSID = свой
   адрес (802.11-2020 3.1) — он оставался от последнего WMI_SET_MAC_ADDRESS / WMI_CONNECT (адрес прошлого AP) /
   WMI_DISCOVERY_STOP; DMG Capabilities не пересобирался с max_assoc из WMI_PCP_START (поле Max Associated STA Number,
@@ -205,7 +208,8 @@
 - Проверка входных данных хоста и эфира (аудит 2026-10-24), vendor не проверял:
   - WMI_SET_PASSPHRASE: пароль и SSID копировались по старой длине SSID (до 255 Б в буферы 64/32 Б
     dashboard) — теперь по своей длине, не больше буфера;
-  - WMI_FIXED_SCHEDULING_CONFIG: индекс MCS до 255 в таблицу из 13 — записи с MCS ≥ 13 пропускаются;
+  - WMI_FIXED_SCHEDULING_CONFIG: индекс MCS до 255 в таблицу из 13 — записи с MCS ≥ 13 пропускались (команда удалена
+    2026-11-21);
   - WMI_SCHEDULING_SCHEME: num_allocs до 255 (2 + 15·n Б в TX-буфер 0x500) — не больше 4, как в драйвере;
   - SW_TX_REQ (split MAC, Assoc Response): длина < 0x18 давала тело ~65 КБ — тело 0;
   - WMI_RF_XPM_READ: при отказе проверки событие уходило длиной num_bytes + 4 (память fw за элементом
@@ -233,9 +237,11 @@
   - uc, CF-End: ответный CF-End уходил с Duration 0 — теперь остаток последовательности по 9.3.1.6; CF-End нам NAV
     не сбрасывал — теперь в конце интервала Duration (10.23.2.10), как для чужих CF-End.
   - uc, L-RX из BRP Request: резервные 17–31 (9.5.4) принимались как длина TRN-R — теперь как 0.
-  - uc, фиксированное расписание: 5-битный MCS из MAC (0..31) индексировал таблицу из 13 — вне её запись MCS 1.
+  - uc, фиксированное расписание: 5-битный MCS из MAC (0..31) индексировал таблицу из 13 — вне её запись MCS 1 (удалено
+    2026-11-21).
   - fw, TDMA точки (код SparRAW, не vendor): PCP Active (B10) = 0 во всех окнах ESE — по 10.39.6.1 AP ставит 1 везде; фиксированное
-    расписание (WMI 0xa03) и TDMA работали одновременно — теперь включение первого снимает TDMA.
+    расписание (WMI 0xa03) и TDMA работали одновременно — включение первого снимало TDMA (фиксированное расписание удалено
+    2026-11-21).
   - uc, маяк: флаг готовности PCP ставил и B43 (PCP Association Ready), и Reserved B44 (байт 5 BI Control
     0x18 в эфире) — теперь только B43 (0x08); станция вместо B43 принимала и Reserved B44–B45 — теперь только B43.
   - fw, маяк AP: PCP Association Ready (B43) по 9.3.4.2 зарезервирован у non-PCP STA — точка в режиме AP шлёт 0

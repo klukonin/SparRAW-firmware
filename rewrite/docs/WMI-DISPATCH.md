@@ -6,8 +6,9 @@
 сигнатурой в файле своей области и удалить заглушку (и строку из этой таблицы).
 
 В SparRAW вырезаны сознательно и отвечают «не поддерживается»: энергосбережение 802.11
-(0x960 UPM_CFG, power_mgr_ut — модуль 13 в 0x900) и PCIe (0x904/0x905); FTM/TOF/AoA — только
-в SparRAW-pro. Устройство vendor-диспетчера ниже описано как у vendor.
+(0x960 UPM_CFG, power_mgr_ut — модуль 13 в 0x900) и PCIe (0x904/0x905); фиксированное расписание vendor
+(0x85f, 0xa02, 0xa03, 0xa0f; удалено 2026-11-21: собственная схема опроса vendor, не 802.11-2020, драйвер её не
+включал); FTM/TOF/AoA — только в SparRAW-pro. Устройство vendor-диспетчера ниже описано как у vendor.
 
 ## Устройство vendor-диспетчера
 
@@ -116,7 +117,7 @@
 | 0x085c | WMI_SET_ACTIVE_SILENT_RSSI_TABLE_CMDID | 0x8e6120 | wmi_set_active_silent_rssi_table | ported: wmi_h_bf.c:wmi_set_active_silent_rssi_table | 88 Б / ~33 |
 | 0x085d | WMI_RF_PWR_ON_DELAY_CMDID | 0x8e6e40 | wmi_rf_pwr_on_delay | ported: wmi_h_misc.c:wmi_rf_pwr_on_delay | 74 Б / ~26 |
 | 0x085e | WMI_SET_HIGH_POWER_TABLE_PARAMS_CMDID | 0x8ec3f0 | wmi_set_high_power_table_params | ported: wmi_h_bf.c:wmi_set_high_power_table_params | 68 Б / ~25 |
-| 0x085f | WMI_FIXED_SCHEDULING_UL_CONFIG_CMDID | 0x8ec5fc | wmi_fixed_scheduling_ul_config | ported: wmi_h_bf.c:wmi_fixed_scheduling_ul_config | 142 Б / ~50 |
+| 0x085f | WMI_FIXED_SCHEDULING_UL_CONFIG_CMDID | 0x8ec5fc | wmi_fixed_scheduling_ul_config | cut: «не поддерживается» — фиксированное расписание vendor удалено 2026-11-21 (собственная схема опроса vendor, не 802.11-2020; драйвер её не включал) | 142 Б / ~50 |
 | 0x0862 | WMI_BF_CTRL_CMDID | 0x8dd028 | host_if__bf_ctrl_hal | ported: wmi_h_bf.c:host_if_bf_ctrl_hal | 62 Б / ~22 |
 | 0x0863 | WMI_NOTIFY_REQ_CMDID | 0x8dd4b8 | wmi__bump_cmd_counter | ported: wmi_h_sta.c:wmi_notify_req | 110 Б / ~41 |
 | 0x0864 | WMI_GET_STATUS_CMDID | 0x8cccbc | host_if__get_status_hal | ported: wmi_h_sta.c:host_if_get_status_hal | 344 Б / ~115 |
@@ -168,15 +169,15 @@
 | 0x09a7 | WMI_PRIO_TX_SECTORS_SET_DEFAULT_CFG_CMDID | 0x8ecf54 | wmi_prio_tx_sectors_set_default_cfg | ported: wmi_h_bf.c:wmi_prio_tx_sectors_set_default_cfg | 76 Б / ~27 |
 | 0x09aa | WMI_BF_CONTROL_CMDID | 0x8ec068 | wmi_bf_control | ported: wmi_h_bf.c:wmi_bf_control | 284 Б / ~105 |
 | 0x0a01 | WMI_SCHEDULING_SCHEME_CMDID | 0x8fbb20 | wmi_ese_cfg | ported: wmi_h_bf.c:wmi_ese_cfg | 110 Б / ~39 |
-| 0x0a02 | WMI_FIXED_SCHEDULING_CONFIG_CMDID | 0x8ec56c | wmi_fixed_scheduling_config | ported: wmi_h_bf.c:wmi_fixed_scheduling_config | 144 Б / ~55 |
-| 0x0a03 | WMI_ENABLE_FIXED_SCHEDULING_CMDID | 0x8ec500 | wmi_enable_fixed_scheduling | ported: wmi_h_bf.c:wmi_enable_fixed_scheduling | 108 Б / ~34 |
+| 0x0a02 | WMI_FIXED_SCHEDULING_CONFIG_CMDID | 0x8ec56c | wmi_fixed_scheduling_config | cut: «не поддерживается» — фиксированное расписание vendor удалено 2026-11-21 (собственная схема опроса vendor, не 802.11-2020; драйвер её не включал) | 144 Б / ~55 |
+| 0x0a03 | WMI_ENABLE_FIXED_SCHEDULING_CMDID | 0x8ec500 | wmi_enable_fixed_scheduling | cut: «не поддерживается» — фиксированное расписание vendor удалено 2026-11-21 (собственная схема опроса vendor, не 802.11-2020; драйвер её не включал) | 108 Б / ~34 |
 | 0x0a04 | WMI_SET_MULTI_DIRECTED_OMNIS_CONFIG_CMDID | 0x8ece20 | wmi_set_multi_directed_omnis_config_cmd | ported: wmi_h_bf.c:wmi_set_multi_directed_omnis_config | 66 Б / ~24 |
 | 0x0a05 | WMI_SET_LONG_RANGE_CONFIG_CMDID | 0x8ecdcc | wmi_set_long_range | ported: wmi_h_bf.c:wmi_set_long_range | 80 Б / ~29 |
 | 0x0a06 | WMI_GET_ASSOC_LIST_CMDID | 0x8ec68c | wmi_get_assoc_list | ported: wmi_h_sta.c:wmi_get_assoc_list | 150 Б / ~48 |
 | 0x0a07 | WMI_GET_CCA_INDICATIONS_CMDID | 0x8fb598 | wmi__post_pct_stats_evt | ported: wmi_h_sta.c:wmi_get_cca_indications | 82 Б / ~31 |
 | 0x0a08 | WMI_SET_CCA_INDICATIONS_BI_AVG_NUM_CMDID | 0x8fbbe8 | wmi_set_cca_indications_bi_avg_num | ported: wmi_h_bf.c:wmi_set_cca_indications_bi_avg_num | 124 Б / ~43 |
 | 0x0a0e | WMI_SET_GRANT_MCS_CMDID | 0x8e66ac | wmi_set_grant_mcs | ported: wmi_h_bf.c:wmi_set_grant_mcs | 86 Б / ~33 |
-| 0x0a0f | WMI_SET_AP_SLOT_SIZE_CMDID | 0x8e6178 | wmi_set_ap_slot_size | ported: wmi_h_bf.c:wmi_set_ap_slot_size | 70 Б / ~26 |
+| 0x0a0f | WMI_SET_AP_SLOT_SIZE_CMDID | 0x8e6178 | wmi_set_ap_slot_size | cut: «не поддерживается» — фиксированное расписание vendor удалено 2026-11-21 (собственная схема опроса vendor, не 802.11-2020; драйвер её не включал) | 70 Б / ~26 |
 | 0x0fff | (0xfff) | 0x8dc4d8 | orig_fract | ported: wmi_h_misc.c:wmi_dbg_cmd_fff | 226 Б / ~68 |
 | 0xf003 | WMI_SET_MAC_ADDRESS_CMDID | 0x8ece1c | wmi__set_mac_address_thunk | ported: wmi_cmd.c:l2mgr_set_mac_address (переход → 0x8fbc64) | 4 Б / ~1 |
 | 0xf007 | WMI_ABORT_SCAN_CMDID | 0x8eca3c | wmi_abort_scan | ported: wmi_cmd.c:wmi_abort_scan | 28 Б / ~9 |

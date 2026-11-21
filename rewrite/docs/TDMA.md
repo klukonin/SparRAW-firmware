@@ -9,7 +9,8 @@
 | 1 — строгий SP (решение 2026-11-07, open: это стандарт) | общее CBAP + на станцию i SP «точка → i» и SP «i → точка» поровну (+ CBAP остатка BI) | в SP — только источник, получатель только отвечает, прочие молчат (10.39.6.2); в CBAP — 10.39.5 | fw/tdma.c `tdma_sp_build`, uc/ese_dti.c |
 
 Включается сам при `min_sta` (по умолчанию 2) и более станциях, при меньшем — снимается (CBAP Only = 1). Расписание
-хоста (WMI 0xa01) и фиксированное расписание vendor (WMI 0xa03) TDMA точки не трогает / снимает.
+хоста (WMI 0xa01) TDMA точки не трогает. Фиксированное расписание vendor (WMI 0xa02/0xa03) удалено 2026-11-21:
+собственная схема опроса vendor, не 802.11-2020; драйвер её не включал (WMI отвечают «не поддерживается»).
 
 ## 1. Что было до строгого режима
 
@@ -29,7 +30,8 @@
   `REMAINING_TIME` = min(лимит TXOP, до TBTT − 2 мкс) (MAC-STAND «NAV RTS и TBTT»); SP-конца MAC не знает (не
   установлено), лимит TXOP при открытии на текущий TXOP не действует (опыт 2026-10-31).
 * **Ветка pro**: наработок строгого TDMA (SP/Poll/SPR/Grant) нет — только тот же простой TDMA; кадры Grant/Grant Ack
-  в uc есть у фиксированного расписания vendor (uc/fsched.c, test_uc_grant_frame.py).
+  в uc были у фиксированного расписания vendor (удалено 2026-11-21); остались сборка кадра Grant/SPR `frame_hdr_init` и
+  ответ Grant Ack `rx_send_grant_ack` (test_uc_grant_frame.py).
 
 ## 2. Строгий SP: устройство
 
@@ -91,7 +93,7 @@ TBTT | BTI | A-BFT | g | CBAP 255→255 2 мс | g | SP 0→1 w | L | SP 1→0 w
      после слота и пробы CCA; стенд: режим 0 работает, MAC-STAND «Режим доступа очереди данных»);
    * **обмен** — кадр → ответ через SIFS → следующий кадр: продолжение MAC (`tx_sta_flow_loop`, `rx_txop_continue`),
      как прежде; конец обмена (`tx_cca_check_and_send` → `ese_dti_sp_src_end`) — **без передачи**: ни запроса итога
-     (QoS Null MAC), ни CF-End; ожидания txop_event нет (`fixed_sched_run_tx_slot`). Закрытие из `mtp_get_tx_permission`
+     (QoS Null MAC), ни CF-End; ожидания txop_event нет (`sp_run_tx_slot`). Закрытие из `mtp_get_tx_permission`
      (MTP кадра не дал в фазе поиска скорости) идёт через `tx_send_and_await_rx_frame`: запрос итога (QoS Null, No Ack —
      допустимый кадр источника в SP) остаётся, CF-End — нет; проверка раньше запроса итога удлиняла путь «слот → CCA →
      запрос итога» на 12 тактов (эмулятор) — не принято. План
@@ -296,7 +298,8 @@ CBAP остатка ~32,7 мс. Проверить:
 кадры Poll и SPR (ref/fields.parse_frame, check_dai). В эфир ещё не подключено.
 
 Что мешает следующему шагу (найдено 2026-11-07):
-* опыт для отчёта приёма Poll/SPR (стенд): vendor-AP с фиксированным расписанием (WMI 0xa03) шлёт Grant, Poll — нет;
+* опыт для отчёта приёма Poll/SPR (стенд): vendor-AP с фиксированным расписанием (WMI 0xa03; у нас удалено) шлёт Grant,
+  Poll — нет;
   поэтому кадры Poll/SPR — от своей точки: образ точки с `UC_DBG` — на начале DTI один Poll (dynalloc.c, RA —
   станция, Response Offset 20) через FIFO прямой передачи (как CF-End); образ станции с меткой `STAMP_RESP_REP` (30:
   r36…r39, r53) и записью 16 октетов буфера приёма 0x804010 на каждом кадре управления. Ждём: какой бит r37 (рядом с
@@ -319,7 +322,8 @@ CBAP остатка ~32,7 мс. Проверить:
 негативы), PLAN.md №45–53.
 
 1. **Кадры** (uc): Poll (9.3.1.10: Response Offset), SPR (9.3.1.11: Dynamic Allocation Info, BF Control), Grant
-   (9.3.1.12; уже есть у fsched — `frame_hdr_init`/`fsched_tx_ctrl_frame`, проверен test_uc_grant_frame), Grant Ack
+   (9.3.1.12; сборка кадра есть — `frame_hdr_init`, проверен test_uc_grant_frame; передача была только у удалённого
+   фиксированного расписания vendor), Grant Ack
    (9.3.1.18; есть `rx_send_grant_ack`). Отправка — FIFO прямой передачи (как CF-End/BRP), приём — отчёты r36..r39
    (Grant уже распознаётся, `MAC_RX_REP2_GRANT`).
 2. **PP** (10.39.7.2, точка, SP broadcast/broadcast Truncatable): Poll подряд через SBIFS, Duration и Response Offset —
