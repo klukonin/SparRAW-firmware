@@ -54,3 +54,19 @@ def test_last_beacon_does_not_wait(uc):
     t0 = uc.t1()
     uc.call('bti_sta_beacon_abft_flow', BI_CTX, stub=STUBS)
     assert (uc.t1() - t0) / CLK_PER_US < 50
+
+
+BCN_BI_LEN_US = 0x80229c + 8        # bcn_bi.bi_len_us (uc/dccm.h)
+
+
+@pytest.mark.parametrize('duration_us,bi_us,limit_us', [(0xffff, 0, 20), (0x8000, 0, 20), (30000, 2000, 2000)])
+def test_bogus_beacon_duration_bounded(uc, duration_us, bi_us, limit_us):
+    """Поддельный маяк с CDOWN > 0: Duration/ID ≥ 32768 — не длительность (9.2.4.2), ожидания нет; Duration больше
+    BI — не дольше BI. vendor ждал по Duration как есть — до ~65 мс на каждый такой маяк до ассоциации."""
+    enter(uc, duration_us, cdown=40)
+    uc.w32(BCN_BI_LEN_US, bi_us)
+    uc.ext[42] = 0
+    t0 = uc.t1()
+    uc.call('bti_sta_beacon_abft_flow', BI_CTX, stub=STUBS, max_steps=40 * 70000 * CLK_PER_US)
+    waited_us = (uc.t1() - t0) / CLK_PER_US
+    assert waited_us <= limit_us * 1.05 + 30, 'ждал %.0f мкс' % waited_us

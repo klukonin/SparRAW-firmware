@@ -1058,7 +1058,13 @@ static u32 bti_beacon_rx_step_chk(struct bi_ctx_s *c, u32 chk)
      * Duration последнего принятого маяка), счётом проходов опроса (Timer1 сбрасывает тик L1). Без срока станция,
      * не услышав маяк (сектор развёртки мимо), ждала до маяка следующего BI и отбрасывала кадры DTI — стенд 2026-10-28:
      * шторм CTS, провал BRP, «lost link: no beacons» (test_uc_bti_rx_entry). */
-    u32 left = UC_SPIN_PASSES_N((u32)rx_buf_duration * ABFT_CLK_PER_US, BTI_RX_ENTRY_PASS_CLK);
+    /* исправлено (vendor/порт: Duration без проверки): Duration/ID ≥ 32768 — не длительность (9.2.4.2), больше BI —
+     * бессмысленна; поддельный маяк с CDOWN > 0 и Duration 0xffff держал станцию в этом опросе до ~65 мс на каждый
+     * маяк до ассоциации (аудит границ 2026-11-21). */
+    u32 dur = (rx_buf_duration & 0x8000u) ? 0u : rx_buf_duration;
+    if (VOL(bcn_bi.bi_len_us) != 0 && dur > VOL(bcn_bi.bi_len_us))
+        dur = VOL(bcn_bi.bi_len_us);
+    u32 left = UC_SPIN_PASSES_N(dur * ABFT_CLK_PER_US, BTI_RX_ENTRY_PASS_CLK);
     for (;;) {                                        /* L_936e90 */
         if (chk != 0) {
             uc_wait_event_busy(MAC_EVT1_BI2 | MAC_EVT1_RX_FRAME, 0);
