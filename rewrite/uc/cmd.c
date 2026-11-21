@@ -668,7 +668,13 @@ void txrx_api_program_edca_ac(u32 a, u32 b)
     u32 i = a;
     u32 mask = (1u << e->ecw_min) - 1;
     MMIO32(HW_MAC_EDCA_AIFS + i * 4) = ((u32)e->aifsn << 28) | 0x201ff;   /* add2 = ×4 */
-    MMIO32(HW_MAC_EDCA_SEED + i * 4) = 0xc0adc0adu << i;
+    /* Затравка ГПСЧ отсрочки AC (гипотеза о смысле регистра — hw_regs.h). исправлено (vendor: 0xc0adc0ad << AC —
+     * одинаково у всех узлов: узлы с общим моментом начала, например конец ассоциации, выбирали одни и те же слоты и
+     * сталкивались снова; 10.23.2.2 — число слотов отсрочки случайно и равномерно). Аппаратный ГСЧ (его читал и vendor
+     * uc, rng__rand_below 0x936de0) с примесью своего адреса — узлы различаются, даже если ГСЧ после сброса
+     * повторяется; ноль затравки исключён. */
+    u32 seed = MMIO32(HW_RNG_VALUE) ^ MMIO32(HW_PRS_OWN_ADDR_LO) ^ (MMIO32(HW_PRS_OWN_ADDR_HI) << 16) ^ (0xc0adc0adu << i);
+    MMIO32(HW_MAC_EDCA_SEED + i * 4) = seed != 0 ? seed : 0xc0adc0adu;
     uc_mac_cmd(((i + 9) << 24) | mask);
     u32 bits = (1u << (i + 0x14)) | (1u << (i + 8));
     u32 m = (edca_ac_en_shadow & ~bits) | bits;          /* ld_s [gp,-28] / st.as [gp,-7] */
