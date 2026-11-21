@@ -5,6 +5,7 @@
 #include "../include/sta_max.h"
 
 #include "../include/hw.h"
+#include "hot.h"
 
 
 /* 64-битный сдвиг влево (0x920458). */
@@ -256,14 +257,7 @@ void ucode_pm_stamp_tsf_slots(void)
 /* Ожидание готовности direct-TX (0x925874). */
 void uc_wait_direct_tx_ready(void)
 {
-    u32 r0 = mac_sel_shadow & 0xfff0ffff;
-    mac_sel_shadow = r0;
-    uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL);
-    arc_nops_nop(2);
-    u32 v;
-    do {
-        v = mac_txctl_sel();
-    } while (!(v & MAC_DTX_CMD_READY));
+    uc_wait_direct_tx_ready_i();                /* тело — hot.h */
 }
 
 /* memset: gcc сам вставляет вызов для инициализации локальных массивов/структур.

@@ -16,8 +16,7 @@ from test_uc_beacon_tx import CLK, SBIFS, SSW_LEN, ctrl_txtime, ss_slot_time, ss
 REC = 0x807e80                      # sls_peer_rec ответа (bi_ctx.rec), 0x18 Б
 SSW_TPL = 0x802b4c                  # шаблон SSW: +0 FC, +4 RA, +0x13 SSW Feedback (3 Б)
 RESP_STUBS = ['mac_switch_rx_to_tx', 'uc_spin_until_event4', 'abft_arm_response_window', 'l1_task_dispatch',
-              'abft_send_ssw_feedback', 'mac_program_tx_common', 'mac_evt_enable_bit_sync_b', 'mac_evt_enable_bit_sync',
-              'tx_program_vector_rf', 'mac_set_rf_chain_state_with_sta_sector', 'uc_wait_event1_or_event4',
+              'mac_evt_enable_bit_sync', 'mac_set_rf_chain_state_with_sta_sector', 'uc_wait_event1_or_event4',
               'uc_evt_build_and_post_report', 'uc_assert']
 
 
@@ -31,7 +30,9 @@ def respond(uc, slot=0):
 
     def r54(n, k):                                      # чтения r54: вход, затем одно на событие; конец A-BFT — после Feedback
         return 0x100 if k >= slot + 2 else 0
-    uc.ext.update({54: r54, 55: 0x10, 43: 1 << 31, 42: (1 << 15) | (1 << 12), 45: 1 << 31})
+    # r42: tx_end (б15), busy2 (б14 — подтверждение 0x27, mac_evt_enable_bit_sync), б12; r47 б0 — direct TX готов: тела
+    # примитивов пачки SSW встроены (uc/hot.h), заглушками их не подменить
+    uc.ext.update({54: r54, 55: 0x10, 43: 1 << 31, 42: (1 << 15) | (1 << 14) | (1 << 12), 45: 1 << 31, 47: 1})
     s = stubs(uc, RESP_STUBS)
     s.update(abft_resp_parse_fdbk=1, tx_ctx_alloc_next=0x807f80)
     uc.call('abft_responder_fast', REC, 1, slot, stub=s)
@@ -40,9 +41,10 @@ def respond(uc, slot=0):
     for i, c in enumerate(cmds):
         if c >> 24 == 0x2d:
             ssw.append(ssw_field(c & 0xffffff))
-            nxt = cmds[i + 1]
-            assert nxt >> 24 == 0x15 and cmds[i + 2] == 0x14000007, [hex(x) for x in cmds[i:i + 3]]
-            dur.append(nxt & 0xffffff)
+            # между 0x2d и Duration — запись шаблона в TX FIFO (direct TX: 0x33…/0x34…, abft_send_ssw_feedback)
+            j = next(k for k in range(i + 1, len(cmds)) if cmds[k] >> 24 in (0x15, 0x2d))
+            assert cmds[j] >> 24 == 0x15 and cmds[j + 1] == 0x14000007, [hex(x) for x in cmds[i:j + 2]]
+            dur.append(cmds[j] & 0xffffff)
     slot_evts = [i for i, c in enumerate(cmds) if c == 0x49000080]
     first = next(i for i, c in enumerate(cmds) if c >> 24 == 0x2d)
     return ssw, dur, sum(1 for i in slot_evts if i < first)

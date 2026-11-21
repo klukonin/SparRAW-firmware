@@ -1312,7 +1312,7 @@ void config_brp_rf(u32 a, u32 b)
 }
 
 
-void direct_tx_ssw_feedback(struct sls_peer_rec *a)
+__attribute__((flatten)) void direct_tx_ssw_feedback(struct sls_peer_rec *a)
 {
     UC_PAD(PAD_SSWFB_ABFT);
     UC_STAMP(STAMP_ABFT_FDBK_CMD, 0, 0);

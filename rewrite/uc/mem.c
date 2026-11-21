@@ -6,6 +6,7 @@
  * распознавание циклов как memcpy/memset выключено (иначе GCC подставит вызов самого себя). */
 #include "../include/types.h"
 #include "../include/arc.h"
+#include "hot.h"
 
 #define MEM_FAST __attribute__((optimize("O2", "no-tree-loop-distribute-patterns")))
 
@@ -112,40 +113,7 @@ void *memset0_words_uc(void *dst, u32 len)
 MEM_FAST
 void tx_fifo_write_bytes(u32 src, u32 len)
 {
-    if (src & 3)
-        uc_assert((u32)__builtin_return_address(0), 0x37);
-    const u32 *w = (const u32 *)src;
-    u32 n = len >> 2;
-    if (n) {
-        /* Слово прямо в r33 (порт FIFO), цикл без накладных расходов: 2 инструкции на
-         * слово, как раньше (C-цикл с ld + mov r33 — в 2,5 раза медленнее). Пустая
-         * инструкция после записи в r33 — как было; убирать без проверки на железе нельзя. */
-        __asm__ volatile("mov lp_count,%1\n\t"
-                         "nop_s\n\t"
-                         "lp 1f\n\t"
-                         "ld.ab r33,[%0,4]\n\t"
-                         "mov 0,0\n"
-                         "1:"
-                         : "+r"(w)
-                         : "r"(n)
-                         : "lp_count", "memory");
-    }
-    /* ХРУПКО: хвост 1..3 байта — загрузкой прямо в порт r34 («ldb.ab r34,[src,1]», одна
-     * инструкция на байт, как vendor 0x9257f4); функция на пути подачи кадра в FIFO во время
-     * передачи (см. fifo_write_chunked в txss.c) — не замедлять. */
-    const u8 *b = (const u8 *)w;
-    switch (len & 3) {
-    case 3:
-        __asm__ volatile("ldb.ab r34,[%0,1]\n\tldb.ab r34,[%0,1]\n\tldb r34,[%0]" : "+r"(b) :: "memory");
-        break;
-    case 2:
-        __asm__ volatile("ldb.ab r34,[%0,1]\n\tldb r34,[%0]" : "+r"(b) :: "memory");
-        break;
-    case 1:
-        __asm__ volatile("ldb r34,[%0]" :: "r"(b) : "memory");
-        break;
-    }
-    tx_fifo_free -= len;
+    tx_fifo_write_bytes_i(src, len);            /* тело — hot.h */
 }
 
 /* Число ведущих нулей x != 0 через norm (без __clzsi2 из libgcc). */

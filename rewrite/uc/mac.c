@@ -4,6 +4,7 @@
 #include "../include/hw.h"
 #include "../include/arc.h"
 #include "ifs.h"
+#include "hot.h"
 
 
 
@@ -232,27 +233,18 @@ void mac_program_gp_timer0(u32 a, u32 b)
  * Срыв: устаревший бит 14 — выход до применения маски; молчание MAC — зависание. То же в _b. */
 void mac_evt_enable_bit_sync(u32 a)
 {
-    u32 mask = (1u << a) << 8;
-    u32 r1 = mac_evt_en_shadow | (mask | 0x27000000u);
-    uc_mac_cmd(r1);
-    uc_mac_cmd(0x2004000);
-    arc_nops(3);
-    uc_spin_until_event(MAC_EVT1_BUSY2);
+    mac_evt_enable_bit_sync_i(a);              /* тело — hot.h */
 }
 
 /* 0x936544 */
 void mac_evt_enable_bit_sync_b(u32 a)
 {
-    uc_mac_cmd(mac_evt_en_shadow | ((1u << a) << 8) | 0x27000000);   /* ld.as [gp,-18] */
-    uc_mac_cmd(0x2004000);
-    arc_nops(3);
-    uc_spin_until_event(MAC_EVT1_BUSY2);
+    mac_evt_enable_bit_sync_i(a);              /* ld.as [gp,-18]; тело — hot.h */
 }
 
 void mac_program_tx_common(void)
 {
-    /* 0x92d990 */
-    MTP_REQUEST(MTP_W16(0x1f0040u), MTP_W17(MTP_RATE(0u)));
+    mac_program_tx_common_i();                 /* 0x92d990; тело — hot.h */
 }
 
 void mac_program_tx_beacon(void)
@@ -604,11 +596,7 @@ void mac_mode_enter_idle_seq(u32 a)
  * задержка реакции — единицы тактов. Срыв: зависание при молчании MAC. */
 u32 uc_spin_until_event(u32 mask)
 {
-    u32 v;
-    do {
-        v = mac_evt1();                    /* 0x9366dc: tst r42,r0 */
-    } while (!(v & mask));
-    return mask;                                /* r0 не меняется */
+    return uc_spin_until_event_i(mask);         /* 0x9366dc; r0 не меняется; тело — hot.h */
 }
 
 /* Ожидание конца TXOP у MAC (txop_event, r42 б7) после своего обмена: tx_send_and_await_rx_frame (после CF-End)

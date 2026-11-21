@@ -12,6 +12,7 @@ __attribute__((noinline)) u32 abft_discovery_addressed_call(void) { return abft_
 #define UC_PATHT(i) do { } while (0)                 /* точки Timer1 опыта gp0path — только в exp/abft-stamps */
 #endif
 #include "ifs.h"
+#include "hot.h"
 static u32 abft_sta_arm_bti_end_timer(void);
 static u32 bti_beacon_rx_step_chk(struct bi_ctx_s *c, u32 chk);
 
@@ -131,19 +132,24 @@ void aw_collect_bf_peers(u32 a, u32 b, u32 c)
 }
 
 /* СРОК: на пути между соседними SSW ответчика (SBIFS) — см. abft_ssw_burst. */
-void abft_send_ssw_feedback(u32 a)
+UC_INL void abft_send_ssw_feedback_i(void)
 {
-    (void)a;
-    direct_tx_program_desc(0x10, 0x16);
-    tx_fifo_write_bytes((u32)&ssw_tpl_fc, 0xa);
+    direct_tx_program_desc_i(0x10, 0x16);
+    tx_fifo_write_bytes_i((u32)&ssw_tpl_fc, 0xa);
     tx_fifo_free -= 9;                  /* ld_s [gp,-20] / st.as [gp,-5] */
     uc_mac_cmd(0x330004c3);
-    uc_wait_direct_tx_ready();
+    uc_wait_direct_tx_ready_i();
     arc_core_wr(34, ssw_tpl_fb_sector);
     arc_core_wr(34, ssw_tpl_fb_snr);
     arc_core_wr(34, ssw_tpl_fb_b2);
     tx_fifo_free -= 3;
-    direct_tx_commit();
+    direct_tx_commit_i();
+}
+
+void abft_send_ssw_feedback(u32 a)
+{
+    (void)a;
+    abft_send_ssw_feedback_i();
 }
 
 void aw_start_window(struct aw_win_s *w, u32 b)
@@ -760,7 +766,7 @@ static void abft_ssw_rf_back(struct abft_ssw_st *s)
 /* Пачка SSW с первого кадра (0x2d …). */
 static u32 abft_ssw_burst(struct abft_ssw_st *s)
 {
-    u32 r13 = s->r13, r16 = s->r16, r15 = s->r15, r19 = s->r19, r14 = s->fss, n;
+    u32 r13 = s->r13, r16 = s->r16, r15 = s->r15, r14 = s->fss, n;
     struct bcn_rx_s *r18 = &bcn_rx;
     u32 r17 = 1;
 #ifdef UC_PATH_T
@@ -788,17 +794,17 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
     __asm__ volatile(".balign 4");
     do {
         uc_mac_cmd(ssw_ant | ((r14 << 1) | 0x2d000001 | (r13 << 10)));
-        abft_send_ssw_feedback(0);
+        abft_send_ssw_feedback_i();
         uc_mac_cmd(((r15 + 1023u) >> 10) | 0x15000000);
         uc_mac_cmd(0x14000007);
-        mac_program_tx_common();
+        mac_program_tx_common_i();
         while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
             ;
         u32 aux51 = mac_mtp_desc();
         mtp_desc_lo = aux51 & 0xf;
         /* ХРУПКО: без маски MTP_DESC_HI_OF — запас цикла 0…2 такта до SBIFS; r51 [31:14] на стенде 0 (dccm.h) */
         mtp_desc_hi = aux51 >> 4;
-        mac_evt_enable_bit_sync_b(6);
+        mac_evt_enable_bit_sync_i(6);
         if (r17 != 0) {
             u32 r4 = mac_sel_shadow & 0xfff0ffff;
             mac_sel_shadow = r4 | (1u << 18);
@@ -824,6 +830,9 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
 #ifdef UC_PATH_T
         if (pt12) { UC_PATHT(12); pt12 = 0; }
 #endif
+        /* ХРУПКО (раскладка): nop_s ставит спин r45 на ≡ 2 mod 4 (test_ssw_burst_spin_alignment) — после 0x19, вне
+         * отрезка «передатчик свободен → 0x19»; нужен, пока тела примитивов в цикле встроены (hot.h). */
+        __asm__ volatile("nop_s");
         while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
             ;
         uc_mac_cmd((txrx_state1 & 0x10) ? 0x18000000 : 0x18001000);
@@ -834,7 +843,7 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
         __asm__ volatile("norm %0, %1" : "=r"(n) : "r"(r16));
         r13 = (u8)(n + 1);
         r16 = r16 & ~(1u << ((0x1f - r13) & 31));
-        tx_program_vector_rf(r19, (rf_chain_cfg | 0x30) | (r13 << 8));
+        tx_program_vector_rf_i((rf_chain_cfg | 0x30) | (r13 << 8));
         while (!(mac_evt1() & MAC_EVT1_TX_END))
             ;
         UC_STAMP(STAMP_SSW_TX_EVT, r14, 0);
@@ -845,7 +854,7 @@ static u32 abft_ssw_burst(struct abft_ssw_st *s)
         ssw_tpl_ra[0] = r18->bssid[0];
         ssw_tpl_ra[1] = r18->bssid[1];
         ssw_tpl_ra[2] = r18->bssid[2];
-        mac_evt_enable_bit_sync(5);
+        mac_evt_enable_bit_sync_i(5);
         UC_STAMP(STAMP_SSW_TX_FREE, r14, 0);
     } while (1);
     mac_set_rf_chain_state_with_sta_sector();

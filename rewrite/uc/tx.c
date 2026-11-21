@@ -5,6 +5,7 @@
 #include "../include/hw.h"
 #include "../include/sta_max.h"
 #include "abft.h"
+#include "hot.h"
 static inline s32 min(s32 a, s32 b) { return a < b ? a : b; }   /* ARC min (знаковое) */
 static inline s32 max(s32 a, s32 b) { return a > b ? a : b; }   /* ARC max (знаковое) */
 
@@ -76,17 +77,12 @@ void internal_tx_set_pending_bit(u32 a)
 
 void direct_tx_commit(void)
 {
-    uc_mac_cmd(0x33000002);
-    if (tx_fifo_free != 0)
-        uc_assert((u32)__builtin_return_address(0), 0x36);
+    direct_tx_commit_i();                       /* тело — hot.h */
 }
 
 void direct_tx_program_desc(u32 a, u32 b)
 {
-    uc_mac_cmd(0x33000001);
-    tx_fifo_free = b;
-    direct_tx_cmd34_hi = a;
-    uc_mac_cmd((a << 16) | (b | 0x34000000));
+    direct_tx_program_desc_i(a, b);             /* тело — hot.h */
 }
 
 /* bf_ctl — младший октет BF Control (9.5.5, рис. 9-851/9-852): 0 — без обучения (Beamforming Training = 0, остальные
@@ -341,15 +337,7 @@ void tx_cca_check_and_send(struct tx_ctx_s *a, u32 b, u32 c, u32 d)
 void tx_program_vector_rf(u32 a, u32 b)
 {
     (void)a;
-    uc_mac_cmd(0x38000200);
-    uc_mac_cmd(b | 0x3f000000);
-    uc_mac_cmd(0x3e000000);
-    uc_mac_cmd(0x37000020);
-    uc_stats.tx_start += 1;
-    u32 r0 = abif_dvs_rf_ctrl_shadow & 0xfcffffff;
-    r0 |= rf_set_tx << 24;
-    abif_dvs_rf_ctrl_shadow = r0;
-    *(volatile u32 *)HW_ABIF_DVS_RF_CTRL = r0;
+    tx_program_vector_rf_i(b);                  /* тело — hot.h */
 }
 
 void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b)   /* 6.2 asm 0x92bf38 */

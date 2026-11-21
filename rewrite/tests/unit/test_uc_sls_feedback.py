@@ -353,8 +353,11 @@ def abft_respond(uc, fss_field, bcn_sector=17, bcn_antenna=1, rf_chain=0, abft_l
     uc.wbytes(SCRATCH, bytes(0x18))
     uc.ext[55] = 1                                # SIFS_CNT: событие слота только что (сторож не сработал)
     uc.ext[54] = lambda n, k: 0x180 if uc._ext_reads.get(43, 0) else 0
+    # r42 б15 tx_end, б14 busy2 (подтверждение 0x27); r47 б0 — direct TX готов: тела примитивов пачки SSW встроены
+    # (uc/hot.h), заглушками их не подменить
+    uc.ext.update({42: (1 << 15) | (1 << 14), 47: 1})
     stubs = dict(TX_STUBS, uc_spin_until_event4=0, uc_wait_event1_or_event4=0, abft_arm_response_window=0,
-                 tx_ctx_alloc_next=0, tx_program_vector_rf=0, mac_evt_enable_bit_sync=0, l1_task_dispatch=0,
+                 tx_ctx_alloc_next=0, mac_evt_enable_bit_sync=0, l1_task_dispatch=0,
                  mac_switch_rx_to_tx=0, uc_evt_build_and_post_report=0)
     uc.call('abft_responder_fast', SCRATCH, 1, 0, stub=stubs)
     fr = tx_frames(uc)
