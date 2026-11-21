@@ -1414,6 +1414,12 @@ void rx_pkt_handler(struct rx_pkt *pkt)
     }
     case 1: {                                             /* Assoc Response */
         u32 st = sm->sm.state;
+        /* исправлено (vendor): у AP/PCP Association Response принимался автоматом MLME, который у точки пакет не
+         * хранит и не освобождает — утечка буфера приёма и записи разбора на каждый кадр, после пяти — фатальный
+         * ассерт 0x10a2 на следующем кадре управления (удалённое падение от любой станции, прошедшей ассоциацию).
+         * Ответ на ассоциацию получает только станция (11.3.5). */
+        if (conn->mid->bss.mode == MID_MODE_PCP || conn->mid->bss.mode == MID_MODE_AP)
+            goto drop;
         if (sm->busy == 0 || st == 2)
             goto drop;
         /* AID DMG-станции — 1..254 (9.4.1.8; 0 — AP/PCP, 255 — широковещательный). vendor брал любой: с AID 0/255
