@@ -27,6 +27,8 @@
 #include "../include/conn.h"
 #include "../include/lmac_cmd.h"
 #include "../include/fwdata.h"
+#include "../include/fwq_tx.h"
+#include "../include/ieee80211.h"
 
 /* otp.c */
 /* calib_engine.c / radio_mgr.c */
@@ -57,8 +59,17 @@ void wmi_deep_echo(struct wmi_mbox *mb, u32 value)
  * «No CID» не освобождался (0x8e55b6 → 0x8e55d0..0x8e55de: free нет) — исправлено. */
 void wmi_add_debug_tx_pckt(const struct wmi_add_debug_tx_pckt_cmd *cmd, u32 mid)
 {
-    u32 pl = TX_API_alloc_tx_payload();
+    u32 pl;
     struct conn *conn = mid_conn_by_cid(mid_list_by_mid_fw(mid), cmd->cid);
+
+    /* исправлено (vendor: длина не проверялась): кадр — заголовок QoS Data + cmd->len байт тестовой
+     * последовательности в данных буфера TX (0x500 Б); len до 0xffff писал за буфер — в соседние элементы пула
+     * (указатель done) и дальше по DCCM (аудит границ 2026-11-21). */
+    if (cmd->len > sizeof(((struct tx_pkt *)0)->payload) - IEEE80211_QOS_HDR_LEN) {
+        wmi_reject_param(0x808, cmd->len, 0);
+        return;
+    }
+    pl = TX_API_alloc_tx_payload();
 
     if (conn == 0) {
         fw_log_emit1(0x27, 0x100ba78, cmd->cid);   /* "CMD TX DATA failed - No CID found..." */

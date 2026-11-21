@@ -368,3 +368,15 @@ def test_bcast_vring_before_bss(fw):
     b[4 + 0xc] = 1
     evts = send(fw, F.WMI_BCAST_VRING_CFG, bytes(b))
     assert _vring_done(evts) == [(1, 1)]
+
+
+WMI_ADD_DEBUG_TX_PCKT = 0x808
+
+
+@pytest.mark.parametrize('n', [0x500 - 0x1a + 1, 0xffff])
+def test_add_debug_tx_pckt_too_long_rejected(conn_fw, n):
+    """WMI_ADD_DEBUG_TX_PCKT: длина тестовой последовательности больше данных буфера TX (0x500 − заголовок QoS Data
+    0x1a) — vendor писал её за буфер (соседние элементы пула, указатель done, DCCM). Отказ, кадр не ставится."""
+    body = struct.pack('<IIH2xB7x', n, 0, 1, 0)
+    send(conn_fw, WMI_ADD_DEBUG_TX_PCKT, body)
+    assert rejected(conn_fw, WMI_ADD_DEBUG_TX_PCKT, n)
