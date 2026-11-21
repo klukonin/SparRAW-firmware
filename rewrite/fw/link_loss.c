@@ -44,7 +44,7 @@ void periodic_service_timer_expired(u32 a0, u32 a1)
 /* periodic_service__tick (0x8e4828, 124 Б): завести таймер следующего прогона.
  * delay == 0xffffffff — вычислить: период минус прошедшее с конца прошлого прогона
  * (run_end; при «догонять» и прогоне короче периода — от начала, run_start); времени
- * u_schd — в тиках, период — в тиках << 4. Меньше 0x11 — прогон сразу. Возврат — задача. */
+ * u_schd — в тиках, период — в тиках << 4. Меньше 0x11 — через минимальную задержку. Возврат — задача. */
 u32 periodic_service_tick(struct psvc *svc, u32 delay)
 {
     volatile struct psvc *o = svc;
@@ -64,13 +64,15 @@ u32 periodic_service_tick(struct psvc *svc, u32 delay)
         else
             d = (s32)(o->period - ((u_schd_now() - ref) << 4));
     }
-    if (d < 0x11) {
-        o->vt->run(svc);
-    } else {
-        timer_task_cancel(svc);
-        o->timer = u_schd_schedule(periodic_service_timer_expired, (u32)svc, 0,
-                                   o->timer_arg, (u32)d, 0, 0);
-    }
+    /* исправлено (vendor: при d < 0x11 — прогон сразу, vt->run → periodic_service_run → снова сюда): период хоста
+     * меньше минимальной задержки u_schd (WMI_LINK_MAINTAIN_CFG_WRITE period < 0x11 или ≥ 0x80000000) или прогон
+     * дольше периода — рекурсия без конца, стек затирал DCCM (аудит границ 2026-11-21). Теперь прогон — не раньше
+     * минимальной задержки планировщика. */
+    if (d < 0x11)
+        d = 0x11;
+    timer_task_cancel(svc);
+    o->timer = u_schd_schedule(periodic_service_timer_expired, (u32)svc, 0,
+                               o->timer_arg, (u32)d, 0, 0);
     return o->timer;
 }
 

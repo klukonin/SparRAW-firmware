@@ -184,6 +184,16 @@ def test_link_maintain_cfg_cid_out_of_range(conn_fw, cid):
     assert [struct.unpack_from('<I', e.body, 4)[0] for e in evts if e.id == 0x1843] == [1]   # status
 
 
+@pytest.mark.parametrize('period', [0, 0x10, 0x80000000])
+def test_link_maintain_cfg_short_period_no_recursion(conn_fw, period):
+    """WMI_LINK_MAINTAIN_CFG_WRITE с периодом меньше минимальной задержки u_schd (0x11) или со знаковым переполнением:
+    vendor periodic_service_tick запускал прогон сразу, прогон — снова tick: рекурсия без конца, стек — по DCCM.
+    Теперь прогон ставится в планировщик не раньше минимальной задержки."""
+    cfg = struct.pack('<IIIIIiiIi', 3, period, 1000, 1000, 1000, 0, 0, 10, 0)    # детекторы старения и keep-alive
+    send(conn_fw, WMI_LINK_MAINTAIN_CFG_WRITE, struct.pack('<II', 4, 0xffffffff) + cfg)
+    conn_fw.advance(2000, between=F.settle)
+
+
 @pytest.mark.parametrize('cid', [SPARRAW_MAX_STA, 0xff])
 def test_bf_trig_by_cid_out_of_range(conn_fw, cid):
     send(conn_fw, WMI_BF_TRIG, struct.pack('<II', 1, cid) + bytes(16))
