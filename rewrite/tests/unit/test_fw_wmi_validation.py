@@ -390,3 +390,42 @@ def test_add_debug_tx_pckt_too_long_rejected(conn_fw, n):
     body = struct.pack('<IIH2xB7x', n, 0, 1, 0)
     send(conn_fw, WMI_ADD_DEBUG_TX_PCKT, body)
     assert rejected(conn_fw, WMI_ADD_DEBUG_TX_PCKT, n)
+
+
+WMI_SW_TX_REQ, WMI_SW_TX_COMPLETE = 0x82b, 0x182b
+SYSCFG_AP_SME_OFFLOAD = 0x80 + 0x28           # dashboard.cfg.ap_sme_offload_mode (include/sys_cfg.h)
+
+
+@pytest.fixture
+def splitmac_ap(fw):
+    """AP в режиме split MAC (SME точки на хосте): Assoc Request станции cid 0 ушёл хосту, MLME ждёт его ответ."""
+    f = F.Fw(fw)
+    f.ap_start()
+    fw.w8(fw.a('dashboard') + SYSCFG_AP_SME_OFFLOAD, 1)
+    f.ap_sta_join()
+    return f
+
+
+def _sw_tx(fw, frame):
+    return send(fw, WMI_SW_TX_REQ, F.STA_MAC + struct.pack('<H', len(frame)) + frame)
+
+
+@pytest.mark.parametrize('body_len', [0, 2, 5])
+def test_splitmac_assoc_resp_too_short_rejected(splitmac_ap, body_len):
+    """Assoc Response хоста с телом короче Capability + Status + AID (6 Б): vendor — длина IE хоста через 0
+    ((len − 2) & 0xffff − 4 ≈ 0xfffa), слияние читало ~64 КБ и писало за буфер TX. Отказ, SW_TX_COMPLETE (1)."""
+    fw = splitmac_ap.fw
+    own = splitmac_ap.own_mac()
+    evts = _sw_tx(fw, fw.mgmt_frame(1, F.STA_MAC, own, own, bytes(body_len)))
+    assert [e.body[0] for e in evts if e.id == WMI_SW_TX_COMPLETE] == [1]
+
+
+def test_splitmac_assoc_resp_long_ies_fit_tx_buffer(splitmac_ap):
+    """Assoc Response хоста с IE до предела: слитый кадр (IE хоста + свои ≤ 0x100 + WFA 0x11) не выходит за буфер TX;
+    длиннее предела — отказ (vendor: слияние за буфер 0x500)."""
+    fw = splitmac_ap.fw
+    own = splitmac_ap.own_mac()
+    ies = b''.join(bytes([0xdd, 0xfd]) + bytes([0x00, 0x11, 0x22, i]) + bytes(0xf9) for i in range(4))   # 4 × 255 Б
+    evts = _sw_tx(fw, fw.mgmt_frame(1, F.STA_MAC, own, own, struct.pack('<HHH', 0x10, 0, 0xc001) + ies))
+    assert [e.body[0] for e in evts if e.id == WMI_SW_TX_COMPLETE] == [1]
+    _sw_tx(fw, fw.mgmt_frame(1, F.STA_MAC, own, own, struct.pack('<HHH', 0x10, 0, 0xc001) + ies[:0x3ef - 0x1e]))

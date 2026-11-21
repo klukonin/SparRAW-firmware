@@ -813,7 +813,8 @@ static void sw_tx_mgmt_send_packet(const u8 *dst, u32 mid, u32 payload, u32 len,
  * Не нашли — 0 и *outlen = 0.
  * Ошибка vendor (доказательство — 0x8e9dec: brge r13,0x3 не взят → сразу 0x8e9df0, где
  * проверяется только размер): когда остаётся < 3 Б, текущий IE возвращается без сравнения
- * eid — например, последний IE нулевой длины с другим eid. Оставлено как у vendor. */
+ * eid — например, последний IE нулевой длины с другим eid. Оставлено как у vendor (читает только внутри списка).
+ * Пропуск IE длиннее остатка — конец списка (у vendor — переход длины через 0). */
 static u8 *tx_mgmt_get_ie(u8 *buf, u32 len, u32 eid, u8 *outlen)
 {
     u32 n;
@@ -825,7 +826,12 @@ static u8 *tx_mgmt_get_ie(u8 *buf, u32 len, u32 eid, u8 *outlen)
     while (buf[0] != eid && (s32)len >= 3) {
         *outlen = (u8)len;
         n = (u32)buf[1] + 2;
-        len = (len - n) & 0xffu;
+        if (n > len) {                  /* исправлено (vendor: (len − n) & 0xff — переход через 0 к ~255, обход за
+                                         * конец списка хоста и копии за буфер TX; аудит границ 2026-11-21) */
+            *outlen = 0;
+            return 0;
+        }
+        len -= n;
         buf += n;
     }
     if ((s32)len >= (s32)((u32)buf[1] + 2))
@@ -841,7 +847,7 @@ static u8 *tx_mgmt_get_ie(u8 *buf, u32 len, u32 eid, u8 *outlen)
  * размер IE), где *outlen — значение из tx_mgmt_get_ie (0 для первого IE списка, иначе
  * остаток ДО последнего пропуска), а не остаток после найденного IE; при 0 длина
  * становится 256 − размер и поиск идёт за конец списка (0x8e9e78: ldb r1,[r13] / sub /
- * extb). Оставлено как у vendor. */
+ * extb). Исправлено: остаток считается от конца найденного IE. */
 static u8 *ie_classify_vendor_oui(u8 *buf, u32 len, u32 eid, u32 kind, u8 *outlen)
 {
     u8 *ie;
@@ -871,9 +877,15 @@ static u8 *ie_classify_vendor_oui(u8 *buf, u32 len, u32 eid, u32 kind, u8 *outle
             fw_log_emit1(0x2d, 0x100fcb4, n & 0xffu);
             return ie;
         }
-        len = ((u32)*outlen - n) & 0xffu;
+        /* исправлено (vendor: остаток (u8)(*outlen − n) — *outlen это остаток ДО последнего пропуска, а не после
+         * найденного IE; при 0 — 256 − n, поиск за конец списка): остаток — от конца найденного IE до конца списка */
+        if ((u32)(ie + n - buf) >= len)
+            break;
+        len -= (u32)(ie + n - buf);
         buf = ie + n;
     }
+    *outlen = 0;
+    return 0;
 }
 
 /* Одна IE хоста src (eid) в dst: найдена — копия, счёт total += длина, журнал tok. */
@@ -1026,7 +1038,7 @@ static u32 mgmt_tx_build_assoc_resp_sm(u8 *dst, struct mid *e, u8 *src, u32 len)
         fw_log_emit1(0x2d, 0x1010084, m);
         app_ies_set_buffer(&blk_fw, tlv, m, 0);
         app_ies_set_buffer(&blk_host, src + 4, len, 0);
-        n = ies_block_merge(&dstp, &blk_host, &blk_fw) & 0xffu;
+        n = ies_block_merge(&dstp, &blk_host, &blk_fw);   /* исправлено (vendor: & 0xff — IE длиннее 255 Б обрезали длину кадра) */
         fw_log_emit1(0x2d, 0x10100b0, n);
     }
     n = (n + hdr) & 0xffffu;
@@ -1057,6 +1069,7 @@ static void mgmt_tx_rebuild_assoc_resp(u8 *dst, u16 *lenp, struct mid *e, u8 *sr
  * без SW_TX_COMPLETE хосту (payload терялся, драйвер ждал события 2 с; 0x8f3bdc / 0x8f3be8 → 0x8f3c96).
  * Соединения нет при гонке с уходом станции (кадр хоста к уже отключённой) — SparRAW: кадр освобождается,
  * хосту SW_TX_COMPLETE (1). */
+#define SPLITMAC_ASSOC_RESP_MAX  (0x500u - 0x100u - 0x11u)   /* буфер TX − свои IE (tmp 0x100) − WFA vendor IE */
 static void sw_tx_splitmac_handle_frame(const struct wmi_sw_tx_req_cmd *cmd, u32 payload, u32 len, u32 mid)
 {
     u16 nlen = 0;                                   /* sth.aw r15,[sp,-4] */
@@ -1075,6 +1088,15 @@ static void sw_tx_splitmac_handle_frame(const struct wmi_sw_tx_req_cmd *cmd, u32
     sub = (*(u16 *)payload >> 4) & 0xfu;
     if (sub == 1) {
         fw_log_emit0(0x2b, 0x100dd5c);
+        /* Тело Assoc Response хоста — Capability Info, Status Code, AID (6 Б) и IE; IE хоста сливаются со своими (до
+         * 0x100 Б) и WFA vendor IE (0x11 Б) в буфер TX 0x500 Б. исправлено (vendor: короче 6 Б — длина IE через 0,
+         * ~64 КБ записи; длиннее — слияние за буфер; аудит границ 2026-11-21): иначе отказ. */
+        if (len < IEEE80211_HDR_LEN + 6 || len > SPLITMAC_ASSOC_RESP_MAX) {
+            wmi_reject_param(0x82b, len, 0);
+            TX_API_free_memory(payload);
+            l2mgr_send_sw_tx_complete(1, mid);
+            return;
+        }
         tmp = TX_API_alloc_tx_payload();
         mgmt_tx_rebuild_assoc_resp((u8 *)tmp, &nlen, e, (u8 *)payload, len);   /* буферы TX (u32 fwq_tx) */
         len = nlen;
