@@ -210,6 +210,25 @@ def test_set_appie_too_long_rejected(fw):
     assert rejected(fw, WMI_SET_APPIE, 1025)
 
 
+def test_set_appie_frame_type_out_of_range_rejected(fw):
+    """Тип кадра вне 0..4 (wmi_mgmt_frame_type): vendor — фатальный ассерт 0x11f4."""
+    send(fw, WMI_SET_APPIE, struct.pack('<BBH', 5, 0, 4) + bytes([0xdd, 2, 0, 0]))
+    assert rejected(fw, WMI_SET_APPIE, 5)
+
+
+def test_set_appie_long_rsn_rejected(fw):
+    """RSN IE длиннее буфера своего RSN (0x28 Б) — по 9.4.2.24 законен (до 257 Б: несколько AKM, PMKID, Group
+    Management Cipher): vendor падал фатальным ассертом 0x1482. Отказ в журнал, свой RSN не ставится, поля за буфером
+    не тронуты."""
+    mid = F.Fw(fw).mid0
+    rsn = bytes([0x30, 42]) + bytes(range(42))                     # 44 Б
+    nxt = fw.rbytes(mid + F.MID_BSS + 0x1a8, 8)
+    send(fw, WMI_SET_APPIE, struct.pack('<BBH', 2, 0, len(rsn)) + rsn)       # 2 — Probe Response
+    assert rejected(fw, WMI_SET_APPIE, len(rsn))
+    assert fw.rbytes(mid + F.MID_BSS + 0x181, 1) == b'\x00'       # mid_bss.rsn_ie[1]: длина своего RSN — 0
+    assert fw.rbytes(mid + F.MID_BSS + 0x1a8, 8) == nxt
+
+
 @pytest.mark.parametrize('n', [33, 0xffffffff])
 def test_set_ssid_too_long_ignored(fw, n):
     mid = F.Fw(fw).mid0

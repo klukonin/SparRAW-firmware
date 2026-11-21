@@ -841,6 +841,7 @@ done:
 static inline __attribute__((always_inline)) void
 rx_frame_tx_resp_after_req(u32 kind, struct tx_ctx_s *ctx, u32 sta, u32 resp, int fast)
 {
+    (void)kind;                         /* только в отладочных метках (UC_EVM, UC_STAMP) */
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     UC_EVM(0x0600 | kind);

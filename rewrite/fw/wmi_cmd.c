@@ -899,14 +899,20 @@ void mid_set_app_ie_block(struct mid_bss *obj, u32 type, u32 len, u32 buf)
     }
 }
 
-/* mid__replace_rsn_ie (0x8e6f34, 84 Б): RSN IE целиком (до 0x28 Б) в rsn_ie (obj+0x180). */
+/* mid__replace_rsn_ie (0x8e6f34, 84 Б): RSN IE целиком (до 0x28 Б) в rsn_ie (obj+0x180) — свой RSN Probe Response.
+ * исправлено (vendor: фатальный ассерт 0x1482 при IE длиннее буфера): RSN IE приходит от хоста (WMI_SET_APPIE), а по
+ * 9.4.2.24 он бывает до 257 Б (несколько AKM/шифров, PMKID, Group Management Cipher) — отказ в журнал, свой RSN не
+ * ставится (буфер в раскладке mid_bss vendor, расширить его — сдвинуть поля за ним). */
 void mid_replace_rsn_ie(struct mid_bss *obj, const u8 *ie)
 {
     u32 n = ie[1] + 2;
     hexdump_words(ie, n);
     fw_log_emit2(0x2b, 0x100c634, ie[0], n);
-    if (n >= 0x29)
-        fw_sysassert_fatal((void *)0, 0x1482);
+    if (n > sizeof(obj->rsn_ie)) {
+        wmi_reject_param(0x3f, n, 0);
+        obj->rsn_ie[1] = 0;
+        return;
+    }
     memcpy_fw(obj->rsn_ie, ie, n);
     hexdump_words(obj->rsn_ie, n);
 }
@@ -951,6 +957,12 @@ void l2mgr_set_app_ie(const struct wmi_set_appie_cmd *cmd, u32 mid)
         memcpy_fw((void *)buf, cmd->ie_info, cmd->ie_len);
     }
     fw_log_emit1(0x2b, 0x100def4, cmd->mgmt_frm_type);
+    if (cmd->mgmt_frm_type >= 5) {      /* vendor: фатальный ассерт 0x11f4 в mid_set_app_ie_block на значение хоста */
+        wmi_reject_param(0x3f, cmd->mgmt_frm_type, 0);
+        if (buf != 0)
+            TX_API_free_memory(buf);
+        return;
+    }
     mid_apply_app_ies(e, cmd->mgmt_frm_type, cmd->ie_len, buf);
 }
 
