@@ -623,14 +623,20 @@ FWDATA(802b64) const struct sm_trans wait_sm_trans[4][3] = {
         { SM_ACT(basic_sm_error_handler), 2 },               /* WAIT_FOR_DELBA_TX_COMPLETE → WAIT_FOR_DELBA_TX_COMPLETE */
     },
     [2] = {   /* DELBA_TX_COMPLETE */
-        { SM_ACT(basic_sm_error_handler), 0 },               /* WAIT_FOR_START → WAIT_FOR_START */
+        /* исправлено (vendor: basic_sm_error_handler — фатальный ассерт 0x1033): лишнее завершение передачи DELBA
+         * (см. [3][2]) — не ошибка. */
+        { SM_ACT(sm_action_nop_b), 0 },                      /* WAIT_FOR_START → WAIT_FOR_START */
         { SM_ACT(sm_action_nop_b), 1 },                      /* WAIT_FOR_PERMIT → WAIT_FOR_PERMIT */
         { SM_ACT(wait_sm_act_done), 0 },                     /* WAIT_FOR_DELBA_TX_COMPLETE → WAIT_FOR_START */
     },
     [3] = {   /* RCP_DELBA_ARRIVED */
         { SM_ACT(wait_sm_act_store), 1 },                    /* WAIT_FOR_START → WAIT_FOR_PERMIT */
         { SM_ACT(sm_action_nop_b), 1 },                      /* WAIT_FOR_PERMIT → WAIT_FOR_PERMIT */
-        { SM_ACT(sm_action_nop_b), 0 },                      /* WAIT_FOR_DELBA_TX_COMPLETE → WAIT_FOR_START */
+        /* исправлено (vendor: → WAIT_FOR_START): встречный DELBA пира, пока наш DELBA в передаче (гонка разборки с двух
+         * сторон — обычная, или подделка TA): ждать завершения своей передачи — по нему wait_sm_act_done закрывает
+         * стрим (событие 9). vendor сбрасывал автомат: стрим навсегда ждал 9, а завершение передачи в WAIT_FOR_START
+         * давало ассерт 0x1033. */
+        { SM_ACT(sm_action_nop_b), 2 },                      /* WAIT_FOR_DELBA_TX_COMPLETE → WAIT_FOR_DELBA_TX_COMPLETE */
     },
 };
 /* 0x802ba0: описатель wait_sm (состояний 3, событий 4, старт WAIT_FOR_START); ид [0x10] пишет

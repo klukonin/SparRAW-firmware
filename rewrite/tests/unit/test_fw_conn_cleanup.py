@@ -376,6 +376,23 @@ def test_ba_teardown_returns_stream_to_idle(sta_ba, teardown):
     assert [e.body[0] for e in fw.wmi_evts if e.id == 0x1823][-1] == 0      # WMI_BA_STATUS: успех
 
 
+def test_ba_crossing_delba_no_assert(sta_ba):
+    """Встречный DELBA: наш DELBA (WMI_VRING_BA_DIS) ещё в передаче, пир шлёт свой (гонка разборки с двух сторон,
+    или подделанный TA пира). vendor: wait_sm уходил в WAIT_FOR_START, а завершение передачи нашего DELBA в нём —
+    basic_sm_error_handler (фатальный ассерт 0x1033). Теперь завершение игнорируется, стрим — в покое."""
+    w = sta_ba
+    fw = w.fw
+    _ba_up(w)
+    fw.wmi(F.WMI_VRING_BA_DIS, struct.pack('<BBH', 0, 0, 39))
+    fw.run_tasks()
+    assert fw.tx_pending() > 0, 'наш DELBA уже завершён — гонки нет'
+    delba = bytes([3, 2]) + struct.pack('<BBH', 0, 0, 37)
+    fw.call('stream_mgr_action', fw.rx_pkt(fw.mgmt_frame(13, F.OWN_MAC, F.AP_MAC, F.AP_MAC, delba), cid=CID))
+    fw.run_tasks()
+    F.settle(fw)
+    assert _ba_state(fw, _stream(fw)) == BA_IDLE
+
+
 def test_disconnect_with_ba_agreed_returns_to_idle(fw):
     boot = F.idle_state(fw)
     w = F.Fw(fw)
