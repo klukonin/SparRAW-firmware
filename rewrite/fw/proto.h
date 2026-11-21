@@ -714,6 +714,7 @@ void host_if_get_status_hal (struct wmi_mbox *mb, const void *cmd, u32 mid);    
 void host_if_read_rf_xpm (struct wmi_mbox *mb, const struct wmi_rf_xpm_read_cmd *cmd);               /* wmi_h_misc.c */
 void host_if_send_event (void *payload, u32 evt, u32 len, u32 mid, u32 a4, u32 a5, u32 a6);          /* discovery.c */
 void *host_if_send_pair (void);                                                                      /* tx_helpers.c */
+u32 host_evt_room (void);                                                                              /* tx_helpers.c */
 void host_if_send_scan_complete (u32 mid);                                                           /* wmi_cmd.c */
 void host_if_set_sectors_hal (struct wmi_mbox *mb, const struct wmi_set_sectors_cmd *cmd);           /* wmi_h_bf.c */
 void host_if_write_rf_xpm (struct wmi_mbox *mb, const struct wmi_rf_xpm_write_cmd *cmd);             /* wmi_h_misc.c */

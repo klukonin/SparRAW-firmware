@@ -95,6 +95,16 @@ void *host_if_send_pair(void)
     return mem_pool_alloc_locked(&operational_mbox.wm.mb);
 }
 
+/* Есть ли место для одного события хосту: буфер пула и запись кольца operational (без них — фатальные ассерты 0xc1 в
+ * mem_pool_alloc_locked и 0xc4 в wmi_evt_build_and_post). Для событий, порождённых кадром из эфира: нет места —
+ * кадр отбрасывается (аудит границ 2026-11-21: поток ADDBA Request / Probe Request / Action с TA пира, пока хост не
+ * разгребает события, ронял fw). */
+u32 host_evt_room(void)
+{
+    struct fw_mailbox *m = &operational_mbox.wm.mb;
+    return m->tx.pool->used < m->tx.pool->count && mbox_ring_advance(&m->tx);
+}
+
 /* mid__state_is_2_or_3 (0x8da488, 30 Б): запись mid — PCP/AP (режим BSS 2 или 3). */
 u32 mid_is_pcp_or_ap(u32 mid)
 {

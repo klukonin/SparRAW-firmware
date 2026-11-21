@@ -83,3 +83,30 @@ def test_p2p_search_probe_req_from_unknown_peer(fw):
         fw.run_tasks()
         F.settle(fw)
     assert _rx_used(fw) == used
+
+
+
+def _evt_ring_fill(fw):
+    """Кольцо событий operational полно: курсор читателя (хост) — на записи после курсора писателя (struct mbox_ring
+    operational_mbox.wm.mb.tx: cur +0, base +4, end +8, hw +0xc; hw->tail +8). Возврат — прежний tail."""
+    ring = fw.a('operational_mbox') + 4
+    cur, base, end, hw = (fw.r32(ring + o) for o in (0, 4, 8, 0xc))
+    nxt = cur + 8 if cur + 8 != end else base
+    old = fw.r32(hw + 8)
+    fw.w32(hw + 8, nxt)
+    return hw, old
+
+
+def test_probe_flood_with_host_event_ring_full(fw):
+    """Хост не разбирает события (кольцо событий operational полно), в эфире поток Probe Request: vendor падал
+    фатальным ассертом 0xc4 при пересылке кадра хосту. Теперь кадр отбрасывается, буфер приёма возвращается."""
+    f = F.Fw(fw)
+    f.ap_start()
+    hw, old = _evt_ring_fill(fw)
+    rx_used = _rx_used(fw)
+    bc = b'\xff' * 6
+    for _ in range(30):
+        _dispatch(fw, fw.mgmt_frame(4, bc, F.STA_MAC, bc, bytes([0, 0])))
+    assert _rx_used(fw) == rx_used
+    assert fw.logged('HOST_EVT_FULL_DROP')
+    fw.w32(hw + 8, old)

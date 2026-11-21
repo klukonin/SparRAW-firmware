@@ -27,6 +27,14 @@ __attribute__((section(".textlate"))) void host_if_send_event(void *payload, u32
 {
     if (a4 == 0 && a5 == 0 && len + 0x10 > 0x100)
         fw_sysassert_fatal((void *)0, 0x1061);
+    /* Кадр из эфира хосту во внешнем буфере (a4: буфер приёма вернёт free_cb), который fw после этого не держит (a6 = 0):
+     * кольцо событий полно — отбросить кадр (освободить буфер приёма), а не фатальный ассерт 0xc4 */
+    if (evt == 0x1840 && a4 == 1 && a6 == 0 && host_evt_room() == 0) {
+        struct rx_pkt *pkt = (struct rx_pkt *)((u8 *)payload - __builtin_offsetof(struct rx_pkt, info));
+        fw_log_emit1(0x1b, LS_FW(HOST_EVT_FULL_DROP), evt);
+        mem_pool_free_thunk(pkt);
+        return;
+    }
     mbox_evt_send_fn h = operational_if_get_mbox()->evt_send;
     h((u32)payload, evt, len, mid, a4, a5, a6);   /* mbox_evt_send_fn: буфер числом */
 }

@@ -1303,6 +1303,11 @@ void stream_mgr_addba_req_handler(const struct ieee80211_addba *f, u32 cid)
         fw_log_emit0(0x1b, 0x10104ec);
         return;
     }
+    if (host_evt_room() == 0) {          /* поток ADDBA Request при неразобранных событиях хоста: не ронять fw (0xc1/0xc4),
+                                         * пир повторит запрос по своему таймеру */
+        fw_log_emit1(0x1b, LS_FW(HOST_EVT_FULL_DROP), 0x1824);
+        return;
+    }
     e = host_if_send_pair();
     e->cidxtid = (u8)((((f->params[0] >> 2) & 0xfu) << 4) | (cid & 0xfu));
     e->dialog_token = f->token;
@@ -1346,6 +1351,10 @@ void stream_mgr_delba_handler(const struct ieee80211_delba *f, u32 cid)
     if ((f->params[1] >> 3) & 1u) {
         struct wmi_delba_event *e;
         fw_log_emit0(0x2b, 0x1010658);
+        if (host_evt_room() == 0) {
+            fw_log_emit1(0x1b, LS_FW(HOST_EVT_FULL_DROP), 0x1826);
+            return;
+        }
         e = host_if_send_pair();
         e->from_initiator = 1;
         e->cidxtid = (u8)((cid & 0xfu) | ((f->params[1] >> 4) << 4));
