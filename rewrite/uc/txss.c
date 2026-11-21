@@ -266,7 +266,9 @@ void sta_reset_link_state(u32 a, u32 b, u32 c)
     memset0_words_uc(txss_retry_cnt, 3);
     if (b != 0 && a < SPARRAW_MAX_STA)      /* у пира 8 (A-BFT) записи link_stat нет */
         VOL(link_stat[a].bf_reasons) = 0;
-    if (c != 0) {
+    if (c != 0 && a < SPARRAW_MAX_STA) {    /* исправлено (vendor): у пира 8 выбора скорости нет — rate_search_abort(8)
+                                             * писал rs_state[8] = rs_stats[0] (SSW незнакомого TA → bf_abort_unexpected
+                                             * → sta_apply_bf_result(…, 8); аудит границ 2026-11-21) */
         if (rs_internal_trigger_disabled(a) == 0)
             rate_search_abort(a);
     }
@@ -280,7 +282,7 @@ void sta_apply_bf_result(u32 a, u32 b)
     if (a == 1) {
         bf_sta_rx_sector = bf_res.rx_sector;
         bf_sta_tx_sector = bf_res.tx_sector;
-        if (sta_tab[b].fixed_link != 0 || flag == 0)
+        if (sta_tab[b].fixed_link != 0 || flag == 0 || b >= SPARRAW_MAX_STA)   /* пир 8: выбора скорости нет */
             return;
         u32 r1 = rs_internal_trigger_disabled(b);
         rs_start(b, r1);

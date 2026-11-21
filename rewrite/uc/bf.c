@@ -902,6 +902,9 @@ void bf_pause_sta_tx(u32 a0, u32 a1)
  * Вызывать с запрещёнными L1. */
 static u32 bf_resume_sta_tx_masks(u32 a0, u32 a1)
 {
+    if (a1 >= SPARRAW_MAX_STA)          /* исправлено (vendor): у неизвестного пира (8, SLS до ассоциации) маски нет —
+                                         * tx_dis_mask[8] = itx.abif_overridden (аудит границ 2026-11-21) */
+        return 0;
     u16 *pm = &tx_dis_mask[a1];       /* add1_s r2,r2,r1 */
     u16 v = *pm & ~(1u << (a0 & 0x1f));         /* bclr r13,r13,r0 */
     u16 w = sta_tab[a1].flags;
