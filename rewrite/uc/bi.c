@@ -326,7 +326,10 @@ void bi_ctx_clear_counters(struct pm_ctx_s *p)
 
 void bi_run_bti_cycle(struct bi_ctx_s *c)
 {
-    if (mac_ifs_shadow != 0x300)
+    /* Инвариант: вне SLS в MAC — SIFS. исправлено (vendor: сравнение с литералом 0x300 = {0 тактов, 3 мкс}): любое
+     * другое значение SIFS из настройки IFS (команда 0, txrx_api_program_ifs_timing) давало assert 0x59/0x60 через
+     * ~0,4 с после старта — стенд 2026-11-21, опыт sadv (uCode assert 0x60 at bi_run_bti_cycle, точка и станция). */
+    if (mac_ifs_shadow != ifs.sifs)
         uc_assert((u32)__builtin_return_address(0), 0x59);
     struct sls_peer_rec *r13 = &c->rec;
     if (bcn_rx.abft_here != 0) {
@@ -339,7 +342,7 @@ void bi_run_bti_cycle(struct bi_ctx_s *c)
     }
     bi_bti_end_update_counters(c);
     bi_bti_end_reset_timers(r13);
-    if (mac_ifs_shadow != 0x300)
+    if (mac_ifs_shadow != ifs.sifs)
         uc_assert((u32)__builtin_return_address(0), 0x60);
     l1_task_dispatch(3, 0);
 }

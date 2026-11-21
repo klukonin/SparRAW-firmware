@@ -724,6 +724,7 @@ void txrx_api_program_ifs_timing(u32 a)
     mac_clk_div_us(c[0] * 3, (u32)&ifs.mbifs);   /* add1_s r0,r0,r0 = ×3 */
     mac_clk_div_us(c[2], (u32)&ifs.slot);        /* ldw_s [r13,4] = c[2] */
     *(volatile u32 *)HW_MAC_IFS_SIFS = ifs.sifs | 0x1730000;
+    mac_ifs_shadow = ifs.sifs;                    /* исправлено (vendor: тень не обновлялась — оставалась 0x300 из data.c) */
     *(volatile u32 *)HW_MAC_IFS_SLOT = ifs.slot | (1u << 22) | (1u << 24) | (1u << 25);
     *(volatile u32 *)HW_MAC_IFS_CONST_452 = 0x452;
     mac_clk_div_us(c[0] + c[2], (u32)&ifs.pifs);

@@ -76,7 +76,8 @@ UCDATA(800584) u32 bg_task_mask = 0xffffffff;
 UCDATA(8005ac) u32 bi_sm_name_ptr = (u32)bi_sm_name;
 /* Побитовая маска станций для BF/BRP. */
 UCDATA(8005b8) u16 bf_sta_mask = 0xffff;
-/* Тень текущего значения IFS/SIFS в MAC (сравнивается с 0x802974; bi_run_bti_cycle ждёт 0x300). */
+/* Тень текущего значения IFS/SIFS в MAC (сравнивается с 0x802974; bi_run_bti_cycle ждёт ifs.sifs). Начальное 0x300 =
+ * {0 тактов, 3 мкс} — до команды 0; настройка IFS переписывает её вместе с регистром. */
 UCDATA(8005be) u16 mac_ifs_shadow = 0x300;
 /* Структура 0x800610: те же значения пишет boot_uc_init_and_run, читателей нет ни у vendor, ни у нас.
  * Смысл не установлен. */
