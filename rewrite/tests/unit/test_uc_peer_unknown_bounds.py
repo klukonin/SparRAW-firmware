@@ -24,3 +24,42 @@ def test_exit_tx_pause_unknown_peer(uc):
     uc.w32(TX_DIS_MASK + 2 * PEER_UNKNOWN, 0xffffffff)
     uc.call('bf_exit_sta_tx_pause', PEER_UNKNOWN)
     assert uc.r32(TX_DIS_MASK + 2 * PEER_UNKNOWN) == 0xffffffff
+
+
+# ---- команды fw → uc с номером станции / очереди за массивом (H2–H4) ----
+
+SCRATCH = 0x806800                       # свободная часть разделяемой области DCCM (тело LMAC-команды)
+DCCM_LO, DCCM_HI = 0x800000, 0x803c00    # DCCM uc без стека (вершина 0x804000, вызов обработчика — сотни байт)
+CASES = [                                # (обработчик, тело, код останова)
+    ('keep_alive_arm_slot', None, 0x15a0),
+    ('ucode_cmd_0x12_handler_uc', bytes([8]), 0x15a1),
+    ('ucode_cmd_0x30_handler_uc', bytes([8, 1, 3, 0]), 0x15a3),
+    ('ucode_cmd_0x32_handler', bytes([0xc8, 1, 3, 0]), 0x15a4),
+    ('ucode_cmd_0x13_handler', bytes([8, 1]) + bytes(0x26), 0x15a5),
+    ('ucode_cmd_0x05_handler', bytes(0xc) + bytes([9]) + bytes(0x1b), 0x15a8),        # cid +0x0c, op 0
+    ('ucode_cmd_0x0f_handler', bytes([8, 0, 0, 0, 1, 0]), 0x15a9),
+    ('ucode_cmd_0x08_handler', bytes([40, 0]) + bytes(0x1e), 0x15aa),
+]
+
+
+@pytest.mark.parametrize('fn,body,code', CASES, ids=[c[0] for c in CASES])
+def test_lmac_index_out_of_range_halts_without_write(uc, fn, body, code):
+    """vendor индексировал таблицы uc номером из команды fw без проверки (запись по DCCM uc и в общую с fw память).
+    Теперь — uc_assert со своим кодом до любой записи."""
+    if body is None:
+        arg = PEER_UNKNOWN
+    else:
+        uc.cpu.write(SCRATCH, body)
+        arg = SCRATCH
+    before = bytes(uc.cpu.read(a, 1) for a in range(DCCM_LO, DCCM_HI))
+    uc.calls.clear()
+    lo = uc.sym[fn] & 0x1ffff                # хвостовой «b» в uc_assert cpu.py ловит только при заданном func_range
+    uc.cpu.func_range = (lo, min(a & 0x1ffff for a in uc.sym.values() if (a & 0x1ffff) > lo))
+    try:
+        uc.call(fn, arg, stub={'uc_assert': 0})
+    finally:
+        uc.cpu.func_range = None
+    assert [c[1][1] for c in uc.calls if c[0] == 'uc_assert'] == [code]
+    after = bytes(uc.cpu.read(a, 1) for a in range(DCCM_LO, DCCM_HI))
+    diff = [hex(DCCM_LO + i) for i in range(len(before)) if before[i] != after[i]]
+    assert not diff, diff[:8]

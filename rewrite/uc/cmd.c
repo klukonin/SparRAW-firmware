@@ -9,8 +9,21 @@
 
 
 
+/* Номер станции / очереди из команды fw — в пределах массива, куда он пишется; иначе останов uc со своим кодом
+ * (ошибка fw; vendor индексировал без проверки — запись по DCCM uc и в общую с fw память; аудит границ
+ * 2026-11-21). Коды 0x15a0.. — по обработчикам. */
+static inline __attribute__((always_inline)) u32 lmac_idx_bad(u32 v, u32 n, u32 code)
+{
+    if (v < n)
+        return 0;
+    uc_assert((u32)__builtin_return_address(0), code);
+    return 1;
+}
+
 void keep_alive_arm_slot(u32 a)          /* 6.2 asm 0x939484 */
 {
+    if (lmac_idx_bad(a, SPARRAW_MAX_STA, 0x15a0))
+        return;
     itx_ka_pending |= 1u << a;
     internal_tx_set_pending_bit(2);
     uc_res_vote_acquire(2);
@@ -121,6 +134,8 @@ void ucode_cmd_0x16_handler(u32 a)
 
 void ucode_cmd_0x12_handler_uc(u32 a)
 {
+    if (lmac_idx_bad(*(u8 *)a, SPARRAW_MAX_STA, 0x15a1))
+        return;
     rate_search_abort(*(u8 *)a);
     rs_start(*(u8 *)a, 0);
 }
@@ -206,6 +221,8 @@ void ucode_cmd_trigger_bf(u32 a)
         bf_init_sm(a, 1);
         return;
     }
+    if (lmac_idx_bad(((const struct lmac_cmd_trigger_bf *)a)->cid, SPARRAW_MAX_STA, 0x15a2))
+        return;
     ucode_pm_set_busy_flag(0);
     uc_tx_is_idle();
     VOL(link_stat[((const struct lmac_cmd_trigger_bf *)a)->cid].bf_reasons) |= 1u << 4;
@@ -467,6 +484,8 @@ void ucode_cmd_0x24_handler(const struct lmac_cmd_discovery *c)
 
 void ucode_cmd_0x30_handler_uc(const struct lmac_cmd_sta_byte2 *c)
 {
+    if (lmac_idx_bad(c->cid, SPARRAW_MAX_STA, 0x15a3))
+        return;
     rate_search_abort(c->cid);                                   /* vendor: сначала abort */
     u32 bit = c->mode & 1;
     u8 *p = &rs_sta_flags[c->cid];
@@ -478,6 +497,8 @@ void ucode_cmd_0x30_handler_uc(const struct lmac_cmd_sta_byte2 *c)
 void ucode_cmd_0x32_handler(const struct lmac_cmd_sta_byte2 *c)
 {
     u32 sta = c->cid;
+    if (lmac_idx_bad(sta, SPARRAW_MAX_STA, 0x15a4))
+        return;
     u32 b1 = c->mode & 3;
     bits_set_u8_s6_w2_uc((u32)&brp_rf_cfg.sta_sel[sta], b1);
     u32 b2 = c->val & 0x3f;
@@ -518,6 +539,8 @@ void ucode_cmd_0x3d_handler(struct rx_meas_ctx *m, u32 b) { rx_meas_stop(m, b, R
 void ucode_cmd_0x13_handler(const struct lmac_cmd_rs_cfg *c)
 {
     u32 r14 = 0;
+    if (lmac_idx_bad(c->cid, SPARRAW_MAX_STA, 0x15a5))
+        return;
     if (c->enable != 0) {
         uc_log_emit1(0x20, 0x10013d0, c->enable);
         u32 sta = c->cid;
@@ -547,6 +570,8 @@ void get_selected_rf_sector_index_cmd_handler(const struct lmac_cmd_rf_sector_se
     memset0_words_uc(buf, 0x10);
     u32 sub = c->sub;
     u32 sta = c->cid;
+    if (lmac_idx_bad(sta, SPARRAW_STA_SLOTS, 0x15a6))
+        return;
     if (sub == 1 || sub == 0) {
         u32 sel = (sub == 1) ? sta_tab[sta].tx_sel : sta_tab[sta].rx_sel;
         *(u16 *)buf = (sel >> 8) & 0x7fff;          /* bmsk 0xe */
@@ -565,6 +590,8 @@ void set_selected_rf_sector_index_cmd_handler(const struct lmac_cmd_rf_sector_se
     u32 sub = c->sub;
     u32 sta = c->cid;
     u16 v = c->sector;
+    if (lmac_idx_bad(sta, SPARRAW_STA_SLOTS, 0x15a7))
+        return;
     if (sub == 1) {
         if (v != 0xffff) {
             bf_ctrl.tx_sector_force = 1;
@@ -882,11 +909,14 @@ void ucode_cmd_0x05_handler(const struct lmac_cmd_sta_cfg *c)
     u32 r0 = c->op;
     struct sta_entry *st = &sta_tab[r15];
 
+    if (lmac_idx_bad(r15, SPARRAW_STA_SLOTS, 0x15a8))
+        return;
     if (r0 == 1) {
         /* disable: выключение станции */
         st->flags &= ~1u;
         mac_mon_report.bcons_atim_fail_vec &= ~(1u << r15);
-        sta_miss_cnt[r15] = 0;
+        if (r15 < SPARRAW_MAX_STA)           /* sta_miss_cnt — на SPARRAW_MAX_STA станций, [8] = sta_slot_fail_cnt[0] */
+            sta_miss_cnt[r15] = 0;
         u32 saved = arc_lr(10);
         arc_flag(saved & ~(1u << 1));
         bf_reset_sta(r15, 1);
@@ -897,7 +927,8 @@ void ucode_cmd_0x05_handler(const struct lmac_cmd_sta_cfg *c)
     if (r0 == 0) {
         /* enable: инициализация станции */
         mac_mon_report.bcons_atim_fail_vec &= ~(1u << r15);
-        sta_miss_cnt[r15] = 0;
+        if (r15 < SPARRAW_MAX_STA)
+            sta_miss_cnt[r15] = 0;
         memset0_words_uc(st, sizeof(*st));
         if (r15 < SPARRAW_MAX_STA)
             FWSH_AT(fwsh_rssi, cnt, r15) = 0;  /* SparRAW: RSSI новой станции — заново (uc_rssi_sample) */
@@ -942,6 +973,8 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
     /* cid (+1) читается через целый адрес: с c->cid gcc иначе раскладывает блоки функции
      * (и сливает qid|cid<<8 в ldw в ветке 4) — код пути с ожиданиями MAC меняется (codecmp). */
     u32 cidp = (u32)c + 1;
+    if (lmac_idx_bad(c->qid, 32, 0x15aa) || lmac_idx_bad(*(u8 *)cidp, SPARRAW_STA_SLOTS, 0x15aa))
+        return;                             /* qid_cfg[32], маски очередей 1 << qid; sta_tab[SPARRAW_STA_SLOTS] */
     struct tx_ctx_s *r15 = tx_ctx_alloc_next(1);
     r15->qid = c->qid;
     u32 r0 = c->op;
@@ -1149,6 +1182,8 @@ void ucode_cmd_0x0f_handler(const struct lmac_cmd_maint_sta *c)
 {
     /* 0x93477c: установить/снять бит STA в 0x802194 и сопроводить BF/AoA. */
     u32 sta = c->cid;                       /* ld_s r14,[r0] */
+    if (lmac_idx_bad(sta, SPARRAW_MAX_STA, 0x15a9))
+        return;
     u8  r1  = maint_sta_mask;
     maint_sta_mask_prev = r1;
     u16 v = c->on;                          /* ldw_s r0,[r0,0x4] */
