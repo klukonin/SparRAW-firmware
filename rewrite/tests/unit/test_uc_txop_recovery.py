@@ -21,7 +21,6 @@ TX_CTX0 = 0x802978
 TX_CTX_CUR = 0x802978 + 0x78
 LINK_STAT = 0x857e38
 CTS_FAIL = LINK_STAT + 0x10
-DTI_QSET_MODE = 0x8004f4
 BF_CTRL = 0x8021b8
 
 EVT_TXOP, EVT_BUSY2, EVT_TX_END = 1 << 7, 1 << 14, 1 << 15
@@ -62,7 +61,6 @@ def test_cf_end_without_txop_event_returns(uc):
     MAC не поднимает: tx_send_and_await_rx_frame возвращается не позже лимита TXOP + запас, txop_end_tmo + 1.
     Прежде основной поток uc висел здесь навсегда (команды LMAC ещё обслуживались прерыванием, приём и TX — нет)."""
     uc.w32(TX_CTX0, 0)
-    uc.w32(DTI_QSET_MODE, 0)
     uc.w32(TXOP_LIMIT_CUR, 300)
     uc.ext.update({40: 0xffff, 42: EVT_BUSY2 | EVT_TX_END})   # остаток TXOP большой; txop_event нет
     n0 = uc.r8(TXOP_END_TMO)
@@ -84,7 +82,6 @@ def _closing_waits(uc, qid, rem, sp_gate=0):
     from fwsh_addr import A
     uc.w32(TX_CTX0, 0)
     uc.w32(TX_CTX_QID, qid)
-    uc.w32(DTI_QSET_MODE, 0)
     uc.w32(TXOP_LIMIT_CUR, 300)
     uc.w8(A['fwsh_sp_gate'] + 0x0a, sp_gate)                 # fwsh_sp_gate.init_sp: своё SP
     uc.ext.update({40: rem, 42: EVT_BUSY2 | EVT_TX_END})

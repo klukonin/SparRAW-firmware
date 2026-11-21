@@ -17,7 +17,7 @@ static void bitfield_set32(u32 *w, u32 lo, u32 n, u32 v)
     *w = (*w & ~m) | ((v << lo) & m);
 }
 
-/* fixed_sched__get_entry_count (0x8ccec8, 4 Б): число TX-очередей [gp+112] = [0x8001f4]
+/* txq__get_count (vendor-имя fixed_sched__get_entry_count; 0x8ccec8, 4 Б): число TX-очередей [gp+112] = [0x8001f4]
  * (в образе 10; vendor его не меняет). */
 u32 txq_get_count(void)
 {
@@ -112,7 +112,7 @@ void tx_macq_setup(struct vring_tbl_entry *e, u32 mode, u32 a2, u32 a3, u32 a4, 
     tx_macq_setup_params(e, 0, a3, 0xa, 0);
     tx_macq_build_mode_desc(e, &buf);
     tx_macq_build_ba_desc(e, &buf, a6, a4, a5, a7, 1);
-    macq_qh_write(e->macq, 0x14, &buf, a5);
+    macq_qh_write_by_flags(e->macq, 0x14, &buf, a5);
     if (mode != 5 && mode != 6)
         mac_ring_enable(e->macq, 0);
     e->state = 2;

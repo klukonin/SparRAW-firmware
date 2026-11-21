@@ -288,7 +288,8 @@ void conn_mgr_start_link_loss_monitoring(struct conn *conn)
 
 /* ps__sta_has_pending_data (0x8ccf0c, 88 Б): у cid есть данные — в кольце хоста (метод
  * +0x24 планировщика vring даёт кольцо, 0xff — нет), или биты cid в ll_ctx.pending_mask
- * (0x8571c4) / fwq_tx_avail.prio_mask (0x857060) / ll_ctx.fsched_flush_mask (0x857248). */
+ * (0x8571c4) / fwq_tx_avail.prio_mask (0x857060). (vendor ещё ll_ctx.fsched_flush_mask 0x857248 —
+ * фиксированное расписание, удалено.) */
 static u32 ps_sta_has_pending_data(u32 cid)
 {
     volatile struct ll_ctx *ctx = LLC;
@@ -298,8 +299,7 @@ static u32 ps_sta_has_pending_data(u32 cid)
     u32 bit = 1u << cid;
     u32 a = ctx->pending_mask & bit;
     u32 b = fwq_tx_avail.prio_mask & bit;
-    u32 c = bit & ctx->fsched_flush_mask;
-    return (host != 0 || a != 0 || b != 0 || c != 0) ? 1 : 0;
+    return (host != 0 || a != 0 || b != 0) ? 1 : 0;
 }
 
 /* ka__period_for_snr (0x8c6b4c, 58 Б): период keep-alive cid по SNR: с данными SNR
@@ -362,9 +362,8 @@ static void ka_send_trigger(u32 cid)
 
 /* ka_necessity_detector::task (0x8e8bfc, 488 Б) — vt->task детектора keep-alive cid.
  * Без трафика (ctx->traffic[cid] не менялся) и без ожидающих данных копит прошедшее время
- * в ctx->ka_acc[cid]; превысив период (по SNR, ctx->ka_period[cid]) или по запросу
- * (fsched_flush_mask/fsched_flush_over при [0x847ae1]) — журнал, счётчик ctx->ka_cnt[cid]++, сброс
- * накопленного и битов cid. Раз в DET_LOG_INTERVAL — журнал состояния. Все поля
+ * в ctx->ka_acc[cid]; превысив период (по SNR, ctx->ka_period[cid]) — журнал, счётчик ctx->ka_cnt[cid]++,
+ * сброс накопленного (vendor ещё по запросу фиксированного расписания — удалено). Раз в DET_LOG_INTERVAL — журнал состояния. Все поля
  * детектора и контекста vendor перечитывает при каждом обращении — volatile. */
 void ka_necessity_detector_task(struct psvc *svc, u32 count)
 {
@@ -410,24 +409,18 @@ void ka_necessity_detector_task(struct psvc *svc, u32 count)
     cid = d->cid;
     acc = c->ka_acc[cid];
     period = c->ka_period[cid];
-    if (period < acc ||
-        (*(volatile u8 *)&fixed_sched.enabled != 0 && ((LLC->fsched_flush_over >> cid) & 1) != 0)) {
+    if (period < acc) {
         fw_log_emit1(0x2b, 0x1014c48, cid);
         c = d->ctx;
         cid = d->cid;
         detector_log_state(&d->cid, d->log_tsf, now, c->ka_acc[cid], traffic, d->last_traffic,
                            pending, mask160 & bit, c->ka_period[cid], c->ka_cnt[cid],
                            (u32)VOL(mac_mon_pub.bti.snr), 1);
-        if (*(volatile u8 *)&fixed_sched.enabled != 0)
-            fw_log_emit3(0x2b, 0x1014cc0, LLC->fsched_flush_mask,
-                         d->cid, LLC->fsched_flush_over);
         c = d->ctx;
         cid = d->cid;
         c->ka_cnt[cid] = c->ka_cnt[cid] + 1;
         ka_send_trigger(cid);
         VCTX(d)->ka_acc[d->cid] = 0;
-        LLC->fsched_flush_mask &= ~(1u << d->cid);
-        LLC->fsched_flush_over &= ~(1u << d->cid);
     }
     if (DET_LOG_INTERVAL >= now[0] - d->log_tsf[0])
         return;

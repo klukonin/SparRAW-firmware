@@ -113,7 +113,7 @@ WAKE_VEC = 10
 # (ключ + запрос MTP с ожиданием r43 до программы TX) — через 122. Срок — между: 100 тактов (0,61 мкс), запас 48 над
 # рабочими путями.
 TXVEC5_LATE_CLK = 100
-FSCHED_PEER_ID = 0x800468              # uc DCCM: очередь широковещательного кольца точки (0xff — нет)
+BCAST_QID_ADDR = 0x800468              # uc DCCM: очередь широковещательного кольца точки (0xff — нет)
 HW_UC_SLEEP_WAKE_MASK = 0x886d3c
 # H-FW2UC: прерывание fw → uc — L1 вектор 8 (l1_task_entry(0)): блок RGF_ICR fw2uc с 0x886dcc (ICC, ICR W1C, ICM =
 # ICR & ~IMV, ICS — установка, IMV — маска (1 = закрыто), IMS/IMC — установка/снятие маски; HARDWARE-BLOCKS
@@ -1757,8 +1757,8 @@ class HW:
         if isinstance(f, list):                           # A-MPDU — ждёт BlockAck
             n, f = len(f), f[0]
         if f[4] & 1:
-            if qid == self._raw(FSCHED_PEER_ID) & 0xff:
-                # H-BAPREL: кадр широковещательного кольца точки (fsched_peer_id, tx_bcast_flow) остаётся в очереди
+            if qid == self._raw(BCAST_QID_ADDR) & 0xff:
+                # H-BAPREL: кадр широковещательного кольца точки (bcast_qid, tx_bcast_flow) остаётся в очереди
                 # до освобождения 0x46 — копии на секторы станций обхода (uc: перед освобождением очередь не пуста,
                 # иначе assert 7)
                 self.q_hold = qid

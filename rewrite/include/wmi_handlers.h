@@ -42,7 +42,6 @@ u32 set_selected_rf_sector_index_set(struct rf_sector_sel_req *self,
                                      const struct wmi_set_selected_rf_sector_index_cmd *cmd,
                                      struct wmi_mbox *mb);                                   /* 0x8e5fb4 wmi_set_selected_rf_sector_index */
 void wmi_set_active_silent_rssi_table(struct wmi_mbox *mb, u32 table, u32 mid);              /* 0x8e6120 wmi_set_active_silent_rssi_table */
-void wmi_set_ap_slot_size(struct wmi_mbox *mb, u32 slot_size);                               /* 0x8e6178 wmi_set_ap_slot_size */
 void wmi_set_grant_mcs(struct wmi_mbox *mb, u32 mcs);                                        /* 0x8e66ac wmi_set_grant_mcs */
 void wmi_rf_pwr_on_delay(struct wmi_mbox *mb, const struct wmi_rf_pwr_on_delay_cmd *cmd, u32 mid); /* 0x8e6e40 wmi_rf_pwr_on_delay */
 void wmi_vring_switch_config(struct wmi_mbox *mb, const struct wmi_vring_switch_timing_config_cmd *cmd,
@@ -55,11 +54,6 @@ void l2mgr_new_sta(const struct wmi_new_sta_cmd *cmd, u32 mid, struct wmi_mbox *
 void wmi_set_high_power_table_params(const struct wmi_set_high_power_table_params_cmd *cmd, u32 mid,
                                      struct wmi_mbox *mb);                                   /* 0x8ec3f0 wmi_set_high_power_table_params */
 void wmi_delete_cipher_key(const struct wmi_delete_cipher_key_cmd *cmd, u32 mid);            /* 0x8ec4bc wmi_delete_cipher_key */
-void wmi_enable_fixed_scheduling(struct wmi_mbox *mb, const void *cmd, u32 mid);             /* 0x8ec500 wmi_enable_fixed_scheduling */
-void wmi_fixed_scheduling_config(struct wmi_mbox *mb, const struct wmi_fixed_scheduling_config_cmd *cmd,
-                                 u32 mid);                                                   /* 0x8ec56c wmi_fixed_scheduling_config */
-void wmi_fixed_scheduling_ul_config(struct wmi_mbox *mb, const struct wmi_fixed_scheduling_ul_config_cmd *cmd,
-                                    u32 mid);                                                /* 0x8ec5fc wmi_fixed_scheduling_ul_config */
 void wmi_get_assoc_list(struct wmi_mbox *mb, u32 mid);                                       /* 0x8ec68c wmi_get_assoc_list */
 void wmi_mac_addr_req(u32 mid, struct wmi_mbox *mb);                                         /* 0x8ec724 wmi_mac_addr_req */
 void wmi_link_maintain_cfg_read(const struct wmi_link_maintain_cfg_read_cmd *cmd);           /* 0x8ec7b0 wmi_link_maintain_cfg_read */

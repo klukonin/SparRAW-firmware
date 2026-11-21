@@ -441,20 +441,18 @@ void bti_ap_beacon_sweep_tx(struct bi_ctx_s *c)
     }
 
     /* L_923d84 */
-    if (fsched_enabled == 0) {              /* ldb [gp,-0xdf]; brne → L_923df8 */
-        rx_nav_arm_flag_if_enabled();
-        if (bi_remaining_time_us() != 0) {   /* breq → L_923df8 */
-            FWSH(fwsh_diag, bcn_nav) += 1;
-            if (bti_defer_active == 0) {     /* brne r1,0x0 → L_923de0 */
-                bcn_nav_wait_tsf = uc_read_tsf_lo();
-                bti_defer_active = 1;
-                return;
-            }
-            u32 d = uc_read_tsf_lo() - bcn_nav_wait_tsf;   /* L_923de0 */
-            bcn_nav_wait_us = d;
-            if ((s32)d < 0x7530)             /* blt → L_9241f8 */
-                return;
+    rx_nav_arm_flag_if_enabled();
+    if (bi_remaining_time_us() != 0) {   /* breq → L_923df8 */
+        FWSH(fwsh_diag, bcn_nav) += 1;
+        if (bti_defer_active == 0) {     /* brne r1,0x0 → L_923de0 */
+            bcn_nav_wait_tsf = uc_read_tsf_lo();
+            bti_defer_active = 1;
+            return;
         }
+        u32 d = uc_read_tsf_lo() - bcn_nav_wait_tsf;   /* L_923de0 */
+        bcn_nav_wait_us = d;
+        if ((s32)d < 0x7530)             /* blt → L_9241f8 */
+            return;
     }
 
     /* L_923df8 */

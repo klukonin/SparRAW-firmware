@@ -4,8 +4,8 @@
  * board-файла (handle_rf_sets_info / build_tx_sector_list, fw/brd_if.c) и RF-объект
  * (fw/rf.c); ucode читает его volatile (include/fwsh.h: FWSH(fwsh_sets, …), псевдонимы
  * fwsh_n_sets, fwsh_set_ranges).
- * Диапазоны секторов конфигураций по набору — rf_set_ranges (0x84783c, 8 × 64 Б; до таблицы
- * fixed-sched 0x847a3c). Символы — fw/fw.ld. */
+ * Диапазоны секторов конфигураций по набору — rf_set_ranges (0x84783c, 8 × 64 Б, до 0x847a3c). Символы —
+ * fw/fw.ld. */
 #ifndef RF_SETS_H
 #define RF_SETS_H
 #include "types.h"

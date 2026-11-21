@@ -116,7 +116,7 @@ static inline __attribute__((always_inline)) void arc_nop_mb(void)
  *
  * arc_zol_nops2(n): n — константа → загрузка «mov rX,K» внутри asm (gcc не может вынести её
  * из цикла или переиспользовать регистр с K от прошлой выдержки — иначе выдержка на 1–2 такта
- * короче vendor; с формой "r" так и было: if_gain_adjust, l2mgr, uc vring_disconnect_flush);
+ * короче vendor; с формой "r" так и было: if_gain_adjust, l2mgr);
  * n — переменная → её вычисляет gcc (как vendor: ldb/asl/add2 в регистр), в asm только
  * mov lp_count (форма arc_zol_nops2_r — для констант не применять).
  * arc_zol_nops2_shl(b, s): константа, которую vendor собирает двумя короткими инструкциями

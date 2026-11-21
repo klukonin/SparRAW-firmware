@@ -153,8 +153,6 @@ struct wmi_brp_set_ant_limit_cmd;
 struct wmi_connect_cmd;
 struct wmi_delete_cipher_key_cmd;
 struct wmi_disconnect_sta_cmd;
-struct wmi_fixed_scheduling_config_cmd;
-struct wmi_fixed_scheduling_ul_config_cmd;
 struct wmi_get_detailed_rs_res_cmd;
 struct wmi_get_rf_sector_params_cmd;
 struct wmi_get_selected_rf_sector_index_cmd;
@@ -240,7 +238,6 @@ void assert_notify_host (void);                                                 
 void assert_restore_hw_for_dump (void);                                                              /* sysassert.c */
 void assoc_ready_check_trig (struct mid *mid);                                                       /* conn.c */
 void ba_addba_req_tx_done (u32 pl, u32 status, u32 a2);                                              /* ba.c */
-void ba_on_uc_timeout_evt (const struct lmac_evt_ba_timeout *e);                                     /* lmac_evt.c */
 void ba_setup_act_abort (struct ba_setup_sm *b);                                                     /* ba.c */
 void ba_setup_act_arm_retry (struct ba_setup_sm *b);                                                 /* ba.c */
 void ba_setup_act_finish (struct ba_setup_sm *b);                                                    /* ba.c */
@@ -616,7 +613,6 @@ void ese_rx_on_own_beacon (const struct rx_pkt *pkt);                           
 void ese_set_alloc_type (void *p, u32 mode, u32 type, u32 flag);                                     /* rx_chain.c */
 void ese_slot_table_add (struct ese_sched *obj, const void *slot);                                   /* rx.c */
 void event_flush_q_done (const struct lmac_evt_u32 *e);                                              /* lmac_evt.c */
-void evt_fixed_scheduling_enabled (const struct lmac_evt_typed *e);                                  /* lmac_evt.c */
 void evt_get_selected_rf_sector_index_done (struct rf_sector_sel_req *r, u8 *e);                     /* lmac_evt.c */
 void evt_set_selected_rf_sector_index_done (struct rf_sector_sel_req *r, u8 *e);                     /* lmac_evt.c */
 void find_main_sm_bcon (struct find_sm *f, struct rx_pkt *pkt);                                      /* link_sm.c */
@@ -667,7 +663,6 @@ void fw_status_set_state (u32 v);                                               
 void fw_sysapi_mgr_arm_timeout (struct fw_sysapi_mgr *mgr, u32 timeout, u_schd_fn cb);               /* phy_ext.c */
 void fw_sysapi_mgr_channel_estimation_cmd_complete (struct fw_sysapi_mgr *mgr, u32 status);          /* phy_ext.c */
 void fw_sysapi_mgr_complete_pending_request (struct fw_sysapi_mgr *mgr, u32 a, const void *b);       /* lmac_evt.c */
-void fw_sysapi_mgr_get_flush_statistics_cmd_start (struct fw_sysapi_mgr *mgr, const u32 *ctx);       /* sysapi_stats.c */
 void fw_sysapi_mgr_get_rssi_and_snr_statistics (struct fw_sysapi_mgr *mgr, u32 n, u32 locked, const u32 *rssi, const u32 *idx, struct sysapi_energy_stats *out); /* sysapi_stats.c */
 void fw_sysapi_mgr_mac_ampdu_statistics_cmd_start (struct fw_sysapi_mgr *o, const u8 *filter, u32 timeout, const u32 *req); /* mac_ext.c */
 void fw_sysapi_mgr_phy_rx_statistics_cmd_start (struct fw_sysapi_mgr *mgr, const u8 *p, u32 timeout, const u32 *ctx); /* phy_ext.c */
@@ -1213,7 +1208,6 @@ void lmac_if_send_brp_snr_cfg (u32 v);                                          
 void lmac_if_send_calib_gain (void);                                                                 /* lmac.c */
 void lmac_if_send_cmd_u32 (u32 type, u32 v);                                                         /* misc_ext.c */
 void lmac_if_send_edca_cfg (u32 mode);                                                               /* lmac.c */
-void lmac_if_send_fsched_peer (u32 vr, u32 on);                                                      /* vring.c */
 void lmac_if_send_get_selected_rf_sector_index (const struct rf_sector_sel_req *self);               /* wmi_h_bf.c */
 void lmac_if_send_mac_cfg (const struct lmac_mac_cfg_src *cfg, u32 a1, u32 a2);                      /* l2mgr.c */
 void lmac_if_send_mac_init_cfg (void);                                                               /* l2mgr.c */
@@ -1229,7 +1223,6 @@ void lmac_if_send_set_selected_rf_sector_index (const struct rf_sector_sel_req *
 void lmac_if_send_sta_cfg (struct conn *a, u32 b);                                                   /* discovery.c */
 void lmac_if_send_sta_rs_mcs (u32 a, u32 b, u32 c);                                                  /* pcp_ext.c */
 void lmac_if_send_vring_cfg (u32 a0, u32 a1, u32 pring, u32 vr, u32 f6, u32 f5, u32 flag);           /* vring.c */
-void lmac_if_send_write_qh (u32 a0, u32 a1, const struct macq_qdesc *a2, u32 a3);                    /* tx_helpers.c */
 void lmac_if_sta_field_rsp_evt (const struct lmac_evt_field_rsp *e);                                 /* lmac_evt.c */
 void lmac_if_trigger_bf (u32 cid, u32 a1);                                                           /* conn.c */
 void lmac_if_ucode_event_dispatch (struct lmac_mbox *mb, u8 *evt);                                   /* lmac.c */
@@ -1320,7 +1313,6 @@ void macq_hw_disable_queue_fw (u32 idx);                                        
 void macq_hw_sync_dma_wptr_fw (u32 vr, u32 q);                                                       /* vring.c */
 void macq_kick_queue (u32 q);                                                                        /* vring.c */
 void macq_pulse_txq_ptr_reset (void);                                                                /* vring.c */
-u32 macq_qh_write (u32 a, u32 b, struct macq_qdesc *c, u32 d);                                       /* tx_helpers.c */
 void macq_qh_write_by_flags (u32 a, u32 b, struct macq_qdesc *c, u32 d);                             /* tx_helpers.c */
 void mailbox_debug_dump (struct mbox_ring *r);                                                       /* tx_helpers.c */
 void maintain_sm_ctor (struct maintain_sm *a, struct lm_sm *l);                                      /* discovery.c */
@@ -1732,7 +1724,7 @@ void scan_mngr_clean_all_lists (struct scan_mngr *scan);                        
 void scan_mngr_config_dwell_time (struct scan_mngr *scan, u32 dwell);                                /* scan.c */
 void scan_mngr_connect (struct scan_mngr *scan, struct dband_info *e);                               /* scan_mngr.c */
 void scan_mngr_connect_task (u32 a0, u32 a1);                                                        /* scan_mngr.c */
-u32 scan_mngr_dband_beacon_ind (struct scan_mngr *scan, struct rx_pkt *pkt, u32 a2);                 /* scan_mngr.c */
+u32 scan_mngr_dband_beacon_ind (struct scan_mngr *scan, struct rx_pkt *pkt);                 /* scan_mngr.c */
 void scan_mngr_dwelling_done (struct scan_mngr *scan, u32 flag);                                     /* scan.c */
 void scan_mngr_free_channel_list (struct scan_mngr *obj);                                            /* wmi_cmd.c */
 u32 scan_mngr_get_connected_scan_time (struct scan_mngr *scan);                                      /* scan.c */
@@ -2018,7 +2010,6 @@ void ut_hw_modes_set_analog_loopback (u32 on, u32 tx_idx, u32 rx_idx);          
 void ut_hw_modes_set_sleep_clk (u32 on);                                                             /* misc_ext.c */
 void ut_module_hw_flows_delayed_assert (u32 v, u32 a1);                                              /* misc_ext.c */
 void ut_module_hw_flows_sysapi_cmd_handler (struct wmi_mbox *mb, const struct ut_cmd *cmd);          /* sysapi_stats.c */
-void ut_sysapi_flush_stats_start (const u32 *ctx);                                                   /* sysapi_stats.c */
 void vendor_ie_build_wilocity (struct mid_bss *obj, u32 type, u32 f);                                /* wmi_cmd.c */
 void vring_ack_and_unmask_irq (struct vring_rec *entry);                                             /* discovery.c */
 struct vring_schd_if *vring_active_ring_table (void);                                                /* stream_mgr.c */
@@ -2050,17 +2041,6 @@ void vring_reinstall_key (const struct stream_ctx *s, u32 flag, u32 key_idx);   
 void vring_reinstall_keys_for_conn (struct conn *conn, u32 flag);                                    /* discovery.c */
 void vring_schd_add_sniffer_vring (u32 id, u32 b, u32 c);                                            /* vring.c */
 void vring_schd_alloc_pring (u32 vr);                                                                /* vring.c */
-void vring_schd_alt_vt_add_vring (struct vring_schd_if *self, const struct wmi_sw_ring_cfg *cfg, struct stream_ctx *ctx, const struct wmi_vring_cfg_schd *schd, u32 en); /* vring.c */
-void vring_schd_alt_vt_allow_nop (struct vring_schd_if *self, u32 mask);                             /* vring.c */
-void vring_schd_alt_vt_clear_time (struct vring_schd_if *self, u32 pr);                              /* vring.c */
-void vring_schd_alt_vt_delete_nop (struct vring_schd_if *self, u32 vr);                              /* vring.c */
-u32 vring_schd_alt_vt_prohibit_nop (struct vring_schd_if *self, u32 mask);                           /* vring.c */
-void vring_schd_alt_vt_reset (struct vring_schd_if *self);                                           /* vring.c */
-void vring_schd_alt_vt_reset_nop (struct vring_schd_if *self);                                       /* vring.c */
-void vring_schd_alt_vt_resume (struct vring_schd_if *self, u32 vr);                                  /* vring.c */
-void vring_schd_alt_vt_suspend (struct vring_schd_if *self, u32 vr);                                 /* vring.c */
-u32 vring_schd_alt_vt_time_of_pring (struct vring_schd_if *self, u32 pr);                            /* vring.c */
-u32 vring_schd_alt_vt_vring_of_pring (struct vring_schd_if *self, u32 pr);                           /* vring.c */
 void vring_schd_bind_if_free (struct vring_schd *s, struct vring_rec *e, struct pring *p);           /* vring.c */
 void vring_schd_disconnect_notify (u32 mid, u32 detail);                                             /* discovery.c */
 void vring_schd_fill_vring_cfg (struct vring_rec *e, const struct stream_ctx *ctx, u32 prio, u32 slot, u32 bcast, u32 en); /* vring.c */
@@ -2091,7 +2071,6 @@ struct vring_tbl_entry *vring_tbl_entry_addr (u32 idx);                         
 struct stream_ctx *vring_tbl_find_by_id (struct conn *conn);                                         /* conn.c */
 struct stream_ctx *vring_tbl_find_by_tid_cid (u32 tid, u32 cid);                                     /* ba.c */
 void vring_tbl_init (void);                                                                          /* l2mgr.c */
-struct stream_ctx *vring_tbl_ptr_by_index (u32 idx);                                                 /* ba.c */
 void vring_wait_drain (u32 rq);                                                                      /* ba.c */
 void wait_sm_act_delba (struct ba_wait_sm *w);                                                       /* ba.c */
 void wait_sm_act_done (struct ba_wait_sm *w, u32 a0, u32 a1, u32 a2);                                /* ba.c */
@@ -2110,7 +2089,6 @@ void wmi_connect (const struct wmi_connect_cmd *cmd, u32 mid);                  
 void wmi_deep_echo (struct wmi_mbox *mb, u32 value);                                                 /* wmi_h_misc.c */
 void wmi_delete_cipher_key (const struct wmi_delete_cipher_key_cmd *cmd, u32 mid);                   /* wmi_h_sta.c */
 void wmi_disconnect (u32 mid);                                                                       /* wmi_cmd.c */
-void wmi_enable_fixed_scheduling (struct wmi_mbox *mb, const void *cmd, u32 mid);                    /* wmi_h_bf.c */
 void wmi_ese_cfg (const struct wmi_scheduling_scheme_cmd *cmd, u32 mid, struct wmi_mbox *mb);        /* wmi_h_bf.c */
 void wmi_evt_build_and_post (struct fw_mailbox *mb, void *b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h); /* tx_helpers.c */
 void wmi_evt_fill_payload (struct mbox_ring *ring, struct mbox_hdr *buffer);                         /* tx_helpers.c */
@@ -2120,8 +2098,6 @@ void wmi_evt_post (struct wmi_mbox *mb, void *b, u32 c, u32 d, u32 e, u32 f, u32
 void wmi_evt_send_command_not_supported (struct wmi_mbox *mb, u32 cmd_id, u32 reason, u32 mid);      /* wmi_cmd.c */
 void wmi_evt_send_words (struct wmi_mbox *mb, volatile struct ut_rsp *buf, u32 len);                 /* ut_resp.c */
 void wmi_evt_walk_list (struct mbox_ring *ring, struct mbox_entry *e);                               /* tx_helpers.c */
-void wmi_fixed_scheduling_config (struct wmi_mbox *mb, const struct wmi_fixed_scheduling_config_cmd *cmd, u32 mid); /* wmi_h_bf.c */
-void wmi_fixed_scheduling_ul_config (struct wmi_mbox *mb, const struct wmi_fixed_scheduling_ul_config_cmd *cmd, u32 mid); /* wmi_h_bf.c */
 void wmi_fw_ver (struct wmi_mbox *mb, u32 mid);                                                      /* wmi_h_sta.c */
 void wmi_get_assoc_list (struct wmi_mbox *mb, u32 mid);                                              /* wmi_h_sta.c */
 void wmi_get_baseband_type (struct wmi_mbox *mb, u32 mid);                                           /* wmi_h_sta.c */
@@ -2151,7 +2127,6 @@ void wmi_rf_bringup_extra (void);                                               
 void wmi_rf_pwr_on_delay (struct wmi_mbox *mb, const struct wmi_rf_pwr_on_delay_cmd *cmd, u32 mid);  /* wmi_h_misc.c */
 void wmi_rs_cfg (struct wmi_mbox *mb, const struct wmi_rs_cfg_cmd *cmd, u32 mid);                    /* wmi_h_bf.c */
 void wmi_set_active_silent_rssi_table (struct wmi_mbox *mb, u32 value, u32 mid);                     /* wmi_h_bf.c */
-void wmi_set_ap_slot_size (struct wmi_mbox *mb, u32 value);                                          /* wmi_h_bf.c */
 void wmi_set_cca_indications_bi_avg_num (const struct wmi_set_cca_indications_bi_avg_num_cmd *cmd, struct wmi_mbox *mb, u32 mid); /* wmi_h_bf.c */
 void wmi_set_grant_mcs (struct wmi_mbox *mb, u32 value);                                             /* wmi_h_bf.c */
 void wmi_set_high_power_table_params (const struct wmi_set_high_power_table_params_cmd *cmd, u32 mid, struct wmi_mbox *mb); /* wmi_h_bf.c */

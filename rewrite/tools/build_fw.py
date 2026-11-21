@@ -56,7 +56,6 @@ SM_TABLES = [(0x8015dc, 20, 5)]
 #  - дескриптор очереди команд 0x800730 (+4), вызывается uc_queue_dispatch_and_commit;
 #  - слоты колбэков bf_req_enqueue (0x800fec, 0x8013f4/f8), вызываются bf_sm_process_request_fifo.
 UC_DATA_PTRS = {
-    0x8007cc: (0x92097c, 'uc_init_cb_globals'),
     0x800fe4: (0x920968, 'uc_init_cb_copy_rf_mask'),
     0x8013ec: (0x9209a4, 'uc_init_cb_cmdq'),
     0x801644: (0x920994, 'uc_init_cb_bi_sm_name'),

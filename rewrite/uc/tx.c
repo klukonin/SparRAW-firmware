@@ -226,21 +226,6 @@ void direct_tx_send_short_frame(u32 a)   /* 6.2 asm 0x93b32c */
     direct_tx_commit();
 }
 
-u32 direct_tx_send_ctrl_frame(const struct dtx_grant_req *a)
-{
-    struct dtx_ctrl_frame buf;
-    /* BF Control = 0: обучения в начале выделения фиксированное расписание не планирует (9.5.5 — Beamforming
-     * Training = 0, прочие подполя зарезервированы). исправлено (vendor): 7 — Beamforming Training = 1, IsInitiatorTXSS =
-     * IsResponderTXSS = 1, обещание SLS, которого не было */
-    frame_hdr_init(&buf, 0, a);
-    u32 r = direct_tx_send_from_desc((u32)&buf, a->sta, 0, 0, 0, ctrl_frame_mcs, 0x17);
-    if (r == 0)
-        return 0;
-    (uc_stats.ctrl_tx)++;
-    return 1;
-}
-
-
 void internal_tx_clear_pending(u32 a)
 {
     u32 saved = arc_lr(ARC_STATUS32);
@@ -294,7 +279,7 @@ u32 tx_await_rx_or_timeout(void)   /* 6.2 asm 0x924c78 */
  * Аппаратный срок MAC (что считает «поздно» после 0x29000001) не установлен.
  * Путь ~160 инструкций + ответ MTP (vendor ~ так же, тот же порядок команд); запас: сотни
  * тактов до конца слота. Тот же участок «слот → CCA → mac_program_tx_vector(5) → 0x19000001»
- * есть в internal_tx_keepalive_flow (~78 инструкций), direct_tx_send_from_desc (~86), tx_bcast_flow,
+ * есть в internal_tx_keepalive_flow (~78 инструкций), tx_bcast_flow,
  * bcon_txss_sweep_step (b == 5), txop_await_cts_ppdu (txss.c). Срыв: поздний старт после
  * слота — коллизия с соседом, отсчитавшим отсрочку; кадр/TXOP теряется, растёт CW. */
 /* Закрытие TXOP очереди управления без передачи: запроса итога у неё нет (tx_send_and_await_rx_frame), CF-End
@@ -565,7 +550,7 @@ void tx_slot_dispatch(u32 a)   /* 6.2 asm 0x938e34 */
         mac_mon_report.fs_no_slot_cnt += 1;           /* [0x8010b0 + 0x48] */
         return;
     }
-    u32 r0 = fsched_peer_id;           /* [gp,-0xc0] */
+    u32 r0 = bcast_qid;           /* [gp,-0xc0] */
     if (sp != r0)
         tx_sta_run_txop(ctx);
     else if (r0 != 0xff)
@@ -573,75 +558,6 @@ void tx_slot_dispatch(u32 a)   /* 6.2 asm 0x938e34 */
     else
         tx_sta_run_txop(ctx);
 }
-
-/* 0x93869c. r0 = desc, r1 = sta, r2/r3 — сектор из [gp,-12] | 0x30 | r3<<8 (если r2 != 0),
- * r4 — источник RF-цепей (0x801024 при r4 != 0), r5 — rate, r6 — длина.
- * СРОК (1): слот CBAP → 0x19000001 — см. tx_cca_check_and_send; здесь ~86 инструкций.
- * СРОК (2): после 0x19000001/r45 кадр дописывается в FIFO во время передачи: RA (r34 ×3),
- * ожидание события 6, проверка r47 (RFC_SWITCH2TX), mac_set_rf_chain_state, 0x33000443,
- * хвост 7 Б, 0x33000002 — до того, как PHY дойдёт до этих байт PSDU (аппаратный срок).
- * Кадр Grant (fsched_tx_ctrl_frame) идёт с ctrl_frame_mcs = 1 (SC): преамбула+заголовок
- * ~2.2 мкс (~360 тактов), байты с 10-го нужны через ~2.4 мкс после начала передачи.
- * Путь r45 → 0x33000002 ~167 инструкций + ожидание события 6 (vendor ~172); запас: десятки
- * тактов (не измерен; зависит от того, когда PHY реально стартует после r45). Срыв: опустошение
- * TX FIFO — испорченный кадр в эфире / ошибка MAC. Не вставлять код между 0x19000001 и
- * direct_tx_commit. */
-u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_cfg, u32 rate, u32 len)
-{
-    const struct dtx_ctrl_frame *fd = (const void *)desc;   /* FC/Duration — общие для кадров direct TX */
-    u32 r17 = fd->fc;                               /* ldh r17,[r0] */
-    u32 r13;
-    if (use_cfg != 0)
-        r13 = (rf_chain_cfg | 0x30) | (cfg_hi << 8);   /* ld_s [gp,-12] */
-    else
-        r13 = sta_tab[sta].tx_sel;
-    direct_tx_program_desc(0x10, len);
-    uc_mac_cmd(fd->duration | (1u << 24) | (1u << 26) | (1u << 28));
-    uc_mac_cmd(0x14000007);
-    mac_program_tx_with_rate(rate);
-    u32 cfg = mac_sel_shadow & ~MAC_SEL_FIELD;
-    mac_sel_shadow = cfg | (1u << 13) | (1u << 15);
-    uc_mac_cmd(cfg | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
-    arc_core_wr(33, r17);                           /* mov r33,r17 */
-    tx_fifo_free -= 4;
-    rx_mode_configure(0, sta);
-    mac_select_all_sectors_and_wait();
-    mac_cmd_29000001();
-    if (!mac_cca_ok()) {
-        while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-            ;
-        uc_mac_cmd(0x29000002);
-        rx_mode_configure(3, sta);
-        return 0;
-    }
-    mac_program_tx_vector(5, r13, rate);
-    uc_mac_cmd(0x2008000);
-    uc_mac_cmd(0x19000001);
-    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-        ;
-    uc_mac_cmd(0x18001000);
-    struct sta_entry *r1 = &sta_tab[sta];
-    arc_core_wr(34, r1->mac[0] | (1u << 24));
-    arc_core_wr(34, r1->mac[1] | (1u << 24));
-    arc_core_wr(34, r1->mac[2] | (1u << 24));
-    tx_fifo_free -= 6;
-    mac_evt_enable_bit_sync_b(6);
-    cfg = mac_sel_shadow & 0xfff0ffff;
-    mac_sel_shadow = cfg | (1u << 18);
-    uc_mac_cmd(cfg | 0x1d040000);
-    arc_nops(3);
-    if (!(mac_txctl_sel() & 0x70))                  /* bic.f -113 = &0x70 */
-        uc_assert((u32)__builtin_return_address(0), 0x133b);
-    mac_set_rf_chain_state(1, rf_cfg ? rf_chain_word : sta_tab[sta].rx_sel);
-    tx_fifo_free -= 6;
-    uc_mac_cmd(0x33000443);
-    uc_wait_direct_tx_ready();
-    tx_fifo_write_bytes(desc + 0x10, len - 0x10);
-    direct_tx_commit();
-    uc_spin_until_event(MAC_EVT1_TX_END);
-    return 1;
-}
-
 
 /* Конец обмена в своём SP после запроса итога (tx_send_and_await_rx_frame, ветка без CF-End): приём — после своего
  * кадра запроса итога (b ≠ 0), как в общем хвосте. Отдельная функция: в tx_send_and_await_rx_frame не добавляется
@@ -692,16 +608,15 @@ u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d)   /* 6.2
         UC_STAMP(STAMP_MTP_RESULT, mac_mtp_resp(), (mac_mtp_perm() & 0xffff) | mac_mtp_desc() << 16);
         UC_STAMP(STAMP_MTP_RESULT, arc_lr(0x100) - t_go, a->qid | sta << 8);
     }
-    u32 v = ((sta_tab[sta].flags >> 1) & 1) ^ 1;   /* ldw; lsr; bxor bit0 */
-    u32 r14 = (dti_qset_mode == 0) ? v : 1;
+    u32 r14 = ((sta_tab[sta].flags >> 1) & 1) ^ 1;   /* ldw; lsr; bxor bit0 */
     /* Duration CF-End (9.3.1.6): CBAP — i = 2, ⌈TXTIME(CF-End) + SIFS⌉ = 18 (ответный CF-End пира — i = 1, последний).
-     * Фиксированное расписание (усечение SP) — 0. исправлено (vendor): 0x22 = 34 или 0x17 = 23 по MCS CF-End
+     * исправлено (vendor): 0x22 = 34 или 0x17 = 23 по MCS CF-End
      * (sta_tab[].flags б1) — в эфире 19 на обоих MCS (H-DUR18), на 1 мкс больше 9.3.1.6.
      * 10.23.2.10: при остатке < 2·T(CF-End) + 2·SIFS после кадра — Duration 0; CF-End не шлём, если не хватает на сам
      * кадр (vendor не слал при остатке ≤ 27/38 мкс — пороги от своих Duration). Пороги — ifs.h.
      * В 0x15 — Duration + ⌈TXTIME⌉ своего CF-End на его MCS (r14): MAC вычитает его сам (H-DUR18, ifs.h); прежде
      * писали 18 — в эфире было 3. */
-    u32 r17 = (dti_qset_mode == 0) ? (r14 ? CLKK(CF_END_CMD_SC1) : CLKK(CF_END_CMD_CTRL)) : 0;
+    u32 r17 = r14 ? CLKK(CF_END_CMD_SC1) : CLKK(CF_END_CMD_CTRL);
     if (c == 0) {
         u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
         mac_sel_shadow = r0 | (1u << 12) | (1u << 13);
@@ -771,7 +686,7 @@ cf_end_done:   /* L_924ba4 */
             uc_wait_txop_end();                 /* исправлено (vendor): ожидание без срока — см. uc_wait_txop_end */
             if (rx_resp_wait_en != 0) {
                 uc_mac_cmd(0x1f000601);
-                fsched_rx_resp_seen = 1;
+                tx_slot_resp_seen = 1;
             }
         } else {
             uc_mac_cmd(0x14000100);
@@ -1053,8 +968,6 @@ void internal_tx_keepalive_flow(u32 a)
         internal_tx_clear_pending(sta);
         return;
     }
-    if (dti_qset_mode == 1)
-        rx_cfg_set_sta_omni_sector(sta);
     struct tx_ctx_s *ctx = tx_ctx_alloc_next(1);
     sta = sp[0];
     VOL(link_stat[sta].ka_sent) += 1;

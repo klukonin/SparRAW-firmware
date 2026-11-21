@@ -20,10 +20,9 @@
 #include "../include/radio_mgr.h"
 
 
-/* Планировщик (0x804dbc) и вариант для [0x80006c] == 1 (0x804e64): в образе нули, vptr
- * ставит конструктор 0x8c19ec. */
+/* Планировщик (0x804dbc): в образе нули, vptr ставит конструктор 0x8c19ec. (vendor — ещё вариант 0x804e64 для режима
+ * пар [0x80006c] == 1 фиксированного расписания; удалён.) */
 FWDATA(804dbc) struct vring_schd vring_schd = { 0 };
-FWDATA(804e64) struct vring_schd_alt vring_schd_alt = { 0 };
 
 /* Элементы пула записей vring (0x804c40, 9 × 0x28 Б). */
 FWDATA(804c40) struct vring_rec vring_recs[VRING_RECS_N] = { 0 };
@@ -414,15 +413,6 @@ void lmac_if_send_vring_cfg(u32 a0, u32 a1, u32 pring, u32 vr, u32 f6, u32 f5, u
     if (flag != 0)
         c->flags |= 2u;
     lmac_if_post_cmd(c, 8, 0x14, 0);
-}
-
-/* lmac_if_send_fsched_peer (0x8db79c, 32 Б): LMAC-команда 0x47 {vr, on}. */
-void lmac_if_send_fsched_peer(u32 vr, u32 on)
-{
-    struct lmac_cmd_fsched_peer *c = lmac_cmd_pool_alloc();
-    c->vr = (u8)vr;
-    c->on = (u8)on;
-    lmac_if_post_cmd(c, 0x47, 2, 0);
 }
 
 /* ---------------- pring ---------------- */
@@ -1234,98 +1224,6 @@ void vring_schd_vt_clear_time(struct vring_schd_if *self, u32 pr)
         e->time = 0;
 }
 
-/* ---------------- методы варианта (таблица 0x800918) ---------------- */
-
-/* (0x8c984c, 8 Б) — vt[1]: обнулить карту pring → vring. */
-void vring_schd_alt_vt_reset(struct vring_schd_if *self)
-{
-    struct vring_schd_alt *a = (struct vring_schd_alt *)self;
-    memset0_words(a->vr_of_pring, sizeof(a->vr_of_pring));
-}
-
-/* (0x8ed598, 2 Б) — vt[2]: пусто. */
-void vring_schd_alt_vt_reset_nop(struct vring_schd_if *self)
-{
-    (void)self;
-}
-
-/* (0x8c2fcc, 90 Б) — vt[3]: зарегистрировать vring ctx без планирования.
- * Карта — 8 байт, а bcast-vring даёт pring-id 8 (vring_get_pring_id) — vendor пишет и
- * туда (0x804e70 — счётчик списка mid); повторено как есть. */
-void vring_schd_alt_vt_add_vring(struct vring_schd_if *self, const struct wmi_sw_ring_cfg *cfg,
-                                 struct stream_ctx *ctx, const struct wmi_vring_cfg_schd *schd,
-                                 u32 en)
-{
-    struct vring_schd_alt *a = (struct vring_schd_alt *)self;
-    u32 vr = ctx->vr;
-    u32 pr = vring_get_pring_id(ctx);
-    (void)schd;
-    (void)en;
-    a->vr_of_pring[pr] = (u8)vr;
-    hwd_dma_reset_vring(vr);
-    hwd_dma_program_vring_desc(vr, cfg->ring_mem_base32[0], cfg->ring_mem_base32[1], cfg->ring_size);
-    lmac_if_send_vring_cfg(3, 0, (u8)pr, vr, 0, 0, 0);
-    fw_log_emit3(0x27, 0x100bca8, vr, pr, vr);
-}
-
-/* (0x8c8f64, 2 Б) — vt[4]: пусто. */
-void vring_schd_alt_vt_delete_nop(struct vring_schd_if *self, u32 vr)
-{
-    (void)self;
-    (void)vr;
-}
-
-/* (0x8e819c, 8 Б) — vt[5]: LMAC 0x47 {vr, 0}. */
-void vring_schd_alt_vt_suspend(struct vring_schd_if *self, u32 vr)
-{
-    (void)self;
-    lmac_if_send_fsched_peer(vr, 0);
-}
-
-/* (0x8e2d54, 8 Б) — vt[6]: LMAC 0x47 {vr, 1}. */
-void vring_schd_alt_vt_resume(struct vring_schd_if *self, u32 vr)
-{
-    (void)self;
-    lmac_if_send_fsched_peer(vr, 1);
-}
-
-/* (0x8ed9bc, 4 Б) — vt[7]: 0. */
-u32 vring_schd_alt_vt_prohibit_nop(struct vring_schd_if *self, u32 mask)
-{
-    (void)self;
-    (void)mask;
-    return 0;
-}
-
-/* (0x8ed594, 2 Б) — vt[8]: пусто. */
-void vring_schd_alt_vt_allow_nop(struct vring_schd_if *self, u32 mask)
-{
-    (void)self;
-    (void)mask;
-}
-
-/* (0x8cd078, 6 Б) — vt[9]: vring по pring из карты. */
-u32 vring_schd_alt_vt_vring_of_pring(struct vring_schd_if *self, u32 pr)
-{
-    struct vring_schd_alt *a = (struct vring_schd_alt *)self;
-    return a->vr_of_pring[pr];
-}
-
-/* (0x8cd050, 10 Б) — vt[10]. */
-u32 vring_schd_alt_vt_time_of_pring(struct vring_schd_if *self, u32 pr)
-{
-    (void)self;
-    return fwsh_sets.fsched_airtime[pr];
-}
-
-/* (0x8c6938, 14 Б) — vt[11]. */
-void vring_schd_alt_vt_clear_time(struct vring_schd_if *self, u32 pr)
-{
-    (void)self;
-    fwsh_sets.fsched_airtime[pr] = 0;
-}
-
-
 /* ---------------- таблицы методов (fw_data) ---------------- */
 
 /* Таблица методов vring_schd (vendor 0x8008e8; vptr объекта 0x804dbc). */
@@ -1342,20 +1240,4 @@ FWDATA(8008e8) const struct vring_schd_vt vring_schd_vtbl = {
     .vring_of_pring = vring_schd_vt_vring_of_pring, /* 0x8cd05c */
     .time_of_pring = vring_schd_vt_time_of_pring,   /* 0x8cd034 */
     .clear_time = vring_schd_vt_clear_time,         /* 0x8c6924 */
-};
-
-/* Таблица методов варианта (vendor 0x800918; vptr объекта 0x804e64). */
-FWDATA(800918) const struct vring_schd_vt vring_schd_alt_vtbl = {
-    .rsv0 = 0,
-    .reset_irq = vring_schd_alt_vt_reset,                   /* 0x8c984c */
-    .reset = vring_schd_alt_vt_reset_nop,                        /* 0x8ed598 */
-    .add_vring = vring_schd_alt_vt_add_vring,               /* 0x8c2fcc */
-    .delete_vring = vring_schd_alt_vt_delete_nop,                 /* 0x8c8f64 */
-    .suspend_vring = vring_schd_alt_vt_suspend,             /* 0x8e819c */
-    .resume_vring = vring_schd_alt_vt_resume,               /* 0x8e2d54 */
-    .prohibit = vring_schd_alt_vt_prohibit_nop,                     /* 0x8ed9bc */
-    .allow = vring_schd_alt_vt_allow_nop,                        /* 0x8ed594 */
-    .vring_of_pring = vring_schd_alt_vt_vring_of_pring,     /* 0x8cd078 */
-    .time_of_pring = vring_schd_alt_vt_time_of_pring,       /* 0x8cd050 */
-    .clear_time = vring_schd_alt_vt_clear_time,             /* 0x8c6938 */
 };

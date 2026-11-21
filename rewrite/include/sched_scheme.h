@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* Расписание (vendor 6.2): схема расписания записи mid (schedule_scheme_builder, ESE —
- * Extended Schedule Element) и фиксированное расписание (fixed_sched).
+ * Extended Schedule Element).
  *
  * Схема расписания (0x805234, DCCM; mid.sched): сборщик распределений из WMI_SCHEDULING_SCHEME
  * (fw/wmi_h_bf.c) или из Extended Schedule бикона (fw/rx.c); свои слоты — в таблице ESE
@@ -8,9 +8,8 @@
  * alloc-слота. Конструкторы — fw/ctors.c (0x8c18bc, 0x8c18a0), привязка к mid —
  * mid__init_sched_scheme (0x8d96fc, fw/mid.c).
  *
- * Фиксированное расписание (0x847a3c, рабочая память; символ fw/fw.ld): параметры по MCS
- * и общие длительности из WMI_FIXED_SCHEDULING_CONFIG (fw/wmi_h_bf.c); адрес таблицы
- * fixed_sched__start пишет в общую с uc ячейку 0x857744 (fwsh_sets.fsched_tbl, include/fwsh.h).
+ * Фиксированное расписание vendor (WMI 0xa02/0xa03, таблица 0x847a3c) удалено 2026-11-21: собственная схема опроса
+ * vendor, не 802.11-2020; драйвер её не включал.
  * Смещения закреплены _Static_assert. */
 #ifndef SCHED_SCHEME_H
 #define SCHED_SCHEME_H
@@ -65,10 +64,5 @@ _Static_assert(sizeof(struct sched_scheme) == 0x2c, "sched_scheme");
 /* Экземпляры (DCCM, fw/rx.c) и таблица слотов (рабочая память, fw.ld). */
 extern struct sched_scheme sched_scheme;      /* 0x805234 */
 extern struct ese_sched ese_sched;            /* 0x8052e4 */
-
-/* struct fixed_sched_mcs, struct fixed_sched — include/fwsh.h (uc читает по указателю
- * fwsh_sets.fsched_tbl). */
-
-extern struct fixed_sched fixed_sched;                        /* 0x847a3c (fw.ld) */
 
 #endif

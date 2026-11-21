@@ -963,12 +963,12 @@ __attribute__((section(".textlate"))) u32 mgmt_tx_copy_bi_ctrl(u8 *dst, const st
     memcpy_fw(dst, obj->bss.bi_ctrl, 6);
     return 6;
 }
-/* CBAP Only (9.4.1.46): 1 — весь DTI CBAP (нет ни схемы ESE, ни фиксированного расписания). Общий для DMG Parameters
+/* CBAP Only (9.4.1.46): 1 — весь DTI CBAP (нет схемы ESE). Общий для DMG Parameters
  * маяка и поля DMG Parameters в Capability Information Probe/(Re)Association Response (push_cap_info_resp): по
  * 9.4.1.46 поле в этих кадрах значит то же, что в маяке. */
 __attribute__((section(".textlate"))) u32 dmg_cbap_only(const struct mid *obj)
 {
-    return (fixed_sched.enabled != 0 || sched_scheme_is_built(obj->sched) != 0) ? 0u : 1u;
+    return sched_scheme_is_built(obj->sched) != 0 ? 0u : 1u;
 }
 /* BUILDER_push_dmg_parameters (0x8c06d0, 104 Б): DMG-параметры в байт IE.
  * CBAP Only (B2) = 1 только когда весь DTI — CBAP: нет ни расписания ESE, ни фиксированного

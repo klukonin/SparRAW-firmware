@@ -383,9 +383,7 @@ void tdma_ap_update(struct mid *mid, const struct conn *exclude)
     if (ss->built != 0 && ss->tdma_owned == 0)
         return;                             /* расписание задал хост (WMI 0xa01) — не трогать */
     u32 min = ss->ese->tdma_min_sta != 0 ? ss->ese->tdma_min_sta : TDMA_MIN_STA;
-    /* фиксированное расписание (WMI 0xa03) само распределяет DTI — ESE TDMA рядом с ним объявлял бы окна,
-     * которых точка не держит */
-    if (ss->ese->tdma_off != 0 || n < min || VOL(fixed_sched.enabled) != 0) {
+    if (ss->ese->tdma_off != 0 || n < min) {
         tdma_clear(mid);
         return;
     }

@@ -37,7 +37,6 @@ FWDATA(80005c) u32 fw_ver_build = 0x0;
 FWDATA(800060) u32 fw_ver_major = 0x6;
 FWDATA(800064) u32 fw_ver_minor = 0x4;
 FWDATA(800068) u32 fw_ver_sub = 0x1;
-FWDATA(80006c) volatile u32 vring_pair_mode = 0x0;
 FWDATA(800070) volatile u32 vring_switch_idle_th_us = 0xa;
 FWDATA(800074) volatile u32 vring_switch_interval_us = 0x2710;
 FWDATA(800078) u32 vring_slot_opt_delay = 0x186a0;
@@ -148,7 +147,6 @@ FWDATA(800234) volatile u8 rf_fs8_unlock_fatal = 0x1;
 /* 1 — RTS перед каждым TXOP в CBAP. Без него (0) ответчик на стенде не принимает первый A-MPDU TXOP (слушает
  * квазиненаправленно, наводится по RTS): TCP 908–919/954 → 436–484/250–259 Мбит/с (MAC-STAND H-PKTMODE). */
 FWDATA(800235) volatile u8 txq_pkt_mode = 0x1;
-FWDATA(800236) volatile u8 sched_fixed_active = 0x0;
 FWDATA(800237) u8 chsw_rx_agc_step_c0_lo = 0x1b;
 FWDATA(800238) u8 chsw_rx_agc_step_c0_hi = 0x1b;
 FWDATA(800239) u8 chsw_rx_agc_step_c4_lo = 0x1d;

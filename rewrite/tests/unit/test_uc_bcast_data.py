@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Групповые данные точки (tx_bcast_flow — широковещательное кольцо, очередь fsched_peer_id) без DMG CTS-to-self.
+"""Групповые данные точки (tx_bcast_flow — широковещательное кольцо, очередь bcast_qid) без DMG CTS-to-self.
 
 802.11-2020 защиты группового кадра не требует: NAV distribution (10.3.2.15) — «the node may first transmit … DMG
 CTS-to-self», в TXOP — «any frames required for protection» (10.23.2.8 c); групповой кадр без ответа (Ack Policy —
@@ -19,7 +19,7 @@ import fwflows as F
 
 STA_TAB = 0x801104                     # struct sta_entry[SPARRAW_STA_SLOTS], 0x50 Б: tx_sel +0x08, MAC +0x30
 MAINT_STA_MASK = 0x80212c + 0x68       # sls.maint_sta_mask
-FSCHED_PEER_ID = 0x800468
+BCAST_QID_ADDR = 0x800468
 BCAST_X0C = 0x802eac + 0xc
 BCAST_TX1 = 0x802eac + 3
 TX_BCAST_DESC_ID = 0x8005b0
@@ -44,7 +44,7 @@ def run(uc, mask, x0c=0):
         uc.w32(STA_TAB + i * 0x50 + 8, 0x30 | SECTOR[i] << 8)
     uc.w32(RF_CHAIN_CFG, 0)
     uc.w8(MAINT_STA_MASK, mask)
-    uc.w32(FSCHED_PEER_ID, BCAST_QID)
+    uc.w32(BCAST_QID_ADDR, BCAST_QID)
     uc.w32(BCAST_X0C, x0c)
     uc.w8(BCAST_TX1, 0)
     uc.w16(TX_BCAST_DESC_ID, 0)

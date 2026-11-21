@@ -19,34 +19,9 @@
 /* 0x9215c4 — не функция, а метка цикла внутри background_task_dispatch
  * (восстановление STATUS32 из r13 и переход к 0x9215d2); см. sched.c. */
 
-/* qid пира idx (ucode_cmd_0x08_handler, тип 3). */
-void fsched_peer_set_qid(struct fsched_peer_ctx *p, u32 idx, u32 qid)
-{
-    /* 6.2 asm 0x920cd4 */
-    p->ent[idx].qid = (u8)qid;
-}
-
-void fsched_peer_clear_qid(struct fsched_peer_ctx *p, u32 idx)
-{
-    /* 6.2 asm 0x92ebe0 */
-    p->ent[idx].qid = 0xff;
-}
-
 void mem_write_u32(u32 a, u32 b)
 {
     *(u32 *)a = b;
-}
-
-void fsched_bf_req_clear(struct fsched_peer_ctx *p, u32 idx)
-{
-    /* 6.2 asm 0x924fb4 */
-    p->bf_req_mask &= ~(1u << idx);
-}
-
-void fsched_peer_deactivate(struct fsched_peer_ctx *p, u32 idx)
-{
-    /* 6.2 asm 0x92ebec */
-    p->active_mask &= ~(1u << idx);
 }
 
 /* frame_hdr bits-примитивы — thunk'и к bf_set_field_word, 2-арг. */
@@ -80,109 +55,6 @@ void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 bf_ctl, const struct dtx_gra
 /* СРОК: импульс сброса указателей TXQ (|=3, sync, &=~3, sync — ~6 инструкций, vendor 0x925a48 так
  * же; аппаратная минимальная ширина не известна), затем два запроса MTP с ожиданием MAC_MTP_RESP_VALID/MAC_MTP_PERM_VALID
  * без ограничения. Срыв: при молчании MAC — зависание uc. */
-/* macq_kick_queue_tx (0x925a48). */
-void macq_kick_queue_tx(u32 q, u32 b, u32 c)
-{
-    if (macq_is_idle(q) == 0) {
-        dump_mac_buffer_bases(q, q);
-        uc_assert((u32)__builtin_return_address(0), 0x157a);
-    }
-    MMIO32(HW_TXQ_PTR_RESET) |= 3;
-    arc_sync();
-    MMIO32(HW_TXQ_PTR_RESET) &= ~3u;
-    arc_sync();
-
-    u8 sp[0x18];
-    struct qh_buf_win *w = (struct qh_buf_win *)(sp + 4);   /* окно — с sp+4, как у vendor */
-    qh_read_desc_window((u32)w, q, 2, 0, 1);
-    u16 v = w->buf_base;
-    w->buf_mac = v;
-    w->buf_pal = v;
-    w->buf_len8 = (u16)((c + 7) >> 3);
-    qh_write_desc_window((u32)w, q, 2, 0, 0, 0, 0, 1);
-
-    struct tx_ctx_s *ctx = tx_ctx_alloc_next(1);
-    ctx->qid = q;
-    mac_program_tx_with_qid(q);
-    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
-        ;
-    u32 r51 = mac_mtp_desc();
-    mtp_desc_lo = r51 & 0xf;
-    mtp_desc_hi = MTP_DESC_HI_OF(r51);
-    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-        ;
-
-    /* 2-я половина (0x925afc..): addr_of_slot + kick + повторный alloc/program. */
-    macq_hw_enable_queue(b, 0, q);
-    MMIO32(HW_TXQ_RING_ENABLE) |= 1u << q;
-    MMIO32(HW_TXQ_REQ_SELECT) = 1u << q;
-    MMIO32(HW_TXQ_REQ_VALUE) = 1u << q;
-    MMIO32(HW_TXQ_REQ_APPLY) = 1;
-
-    ctx = tx_ctx_alloc_next(1);
-    ctx->qid = q;
-    mac_program_tx_with_qid(q);
-    while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
-        ;
-    r51 = mac_mtp_desc();
-    mtp_desc_lo = r51 & 0xf;
-    mtp_desc_hi = MTP_DESC_HI_OF(r51);
-    while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-        ;
-}
-void dump_mac_buffer_bases(u32 a, u32 b)
-{
-    /* 0x925c0c: дамп баз MAC-буфера + контроль 0x2000. */
-    struct qh_buf_win buf;
-    dump_vring_pring_info(a);
-    qh_read_desc_window((u32)&buf, b, 2, 0, 1);
-    uc_log_emit3(0x21, 0x1001ac8, buf.buf_base, buf.buf_mac, buf.buf_pal);   /* «MAC buffer: base mac pal» */
-    u32 v = buf.wc;
-    uc_log_emit3(0x21, 0x1001af0, (v >> 16) & 0xfff,          /* «MAC desc: base mac pal»; bmsk 0xb = 12 бит */
-                 (buf.w8 >> 12) & 0xfff,
-                 buf.desc_pal_lo | ((v & 0xf) << 8));
-    if (buf.buf_base != 0x2000)
-        uc_assert((u32)__builtin_return_address(0), 0x1583);
-}
-/* СРОК: окно наблюдения «труба TX пуста» задаётся скоростью цикла (аппаратный: DMA/MAC должны
- * успеть показать незавершённый перенос): на проход — lp 0x28 × 2 nop (~80 тактов) + тело (~9 вызовов
- * чтения MMIO, ~100–150 инструкций), c проходов (c = 10/15 у вызывающих) ≈ 1,5–2 мкс × c. vendor
- * 0x926184 — та же петля и те же вызовы; запас не оценён. Ускорение тела сокращает окно — ложное
- * «idle» и отключение vring при недокачанном кадре. */
-u32 dma_is_tx_pipe_idle(u32 a, u32 b, u32 c)
-{
-    /* 0x926184: c итераций опроса; 1 если все условия «idle» на каждой. */
-    u32 r24 = macq_hw_read_rptr(b);
-    if (c == 0)
-        return 1;
-    u32 r22 = c;
-    for (;;) {
-        u32 r19 = dma_is_idle_uc(b, 0);              /* L_9290f4 */
-        u32 rptr = macq_hw_read_rptr(b);             /* L_929088 */
-        u32 r16 = (r24 == rptr) ? 1 : 0;
-        u32 trig = macq_hw_trigger_read_state(b);    /* L_928fcc */
-        u32 r17 = (trig == 0) ? 1 : 0;
-        u32 dma881 = dma_fw_icr_c24_read();              /* L_928fa8 */
-        u32 r18 = (dma881 & (1u << ((b + 8) & 0x1f))) ? 1 : 0;
-        u32 r20 = txq_fifo_ptp_idle_snapshot();      /* L_92e8a8 */
-        u32 r15 = macq_is_idle(a);                   /* L_92609c */
-        u32 s0 = macq_hw_read_state0(b);             /* L_929020 */
-        u32 s1 = macq_hw_read_state1(b);             /* L_929044 */
-        u32 r0 = (s0 == s1) ? 1 : 0;
-        u32 r13 = (r19 && r16 && r17 && r18 && r20 && r15 && r0) ? 1 : 0;
-        u8 status = (u8)((r0 << 7) | (r15 << 6) | (r20 << 5) | (r18 << 4) |
-                         (r17 << 3) | (r16 << 2) | (r19 << 1));
-        vring_dbg.tx_pipe_idle_cases = status;              /* stb_s r0,[0x80070c,0x2] */
-        if (r13 == 0) {
-            uc_log_emit1(0x21, 0x1001b18, (u32)(u8)status);
-            return 0;
-        }
-        arc_zol_nops2(0x28);           /* vendor L_926264..L_926272: lp 0x28 × 2×nop_s */
-        r22 -= 1;
-        if (r22 == 0)
-            return 1;
-    }
-}
 void ll_ctx_merge_keepalive_pending(u32 a)
 {
     /* 0x9263d0: для каждого установленного бита маски a взять бит из 0x800570
@@ -197,25 +69,6 @@ void ll_ctx_merge_keepalive_pending(u32 a)
         r1 = (u32)(u8)(u8)r1;               /* extb_s r1,r1 */
     }
 }
-void peer_masks_update_sta_bit(struct fsched_peer_ctx *p, u32 sta, u32 set)
-{
-    /* 6.2 asm 0x926404 (отдельная функция внутри блока peer_masks__or_into_8571c4;
-     * вход из ucode_cmd_0x47_handler). Пир по qid sta — в active_mask или из неё; снятие
-     * текущего пира откладывается до конца слота (fixed_sched_complete_peer_off). */
-    u32 idx = sta_find_by_qid(p, sta);
-    if (idx >= SPARRAW_MAX_STA)
-        uc_assert((u32)__builtin_return_address(0), 0x1584);
-    if (set != 0) {
-        p->active_mask |= (u8)(1u << (idx & 31));
-        uc_evt_send_vring_ssn(sta, 1, qh_read_desc_start(sta));
-    } else if (idx == p->cur_idx) {
-        p->pend_off_qid = (u8)sta;
-        p->pend_off_idx = (u8)idx;
-    } else {
-        p->active_mask &= (u8)~(1u << (idx & 31));
-        uc_evt_send_vring_ssn(sta, 0, qh_read_desc_start(sta));
-    }
-}
 /* СРОК: пауза между импульсом FS_CTRL.3 и пуском делителя RFC — 160 тактов ≈ 0,97 мкс, как vendor
  * 0x928c78 (lp 0x50 × 2×nop_s). Это время установления железа с неизвестным минимумом, поэтому
  * длительность прежняя, но по часам ядра (uc_delay_clk): прерывание её не удлиняет, ускорение кода
@@ -228,7 +81,6 @@ void hwd_abif_rfc_divider_restart_uc(void)
     uc_delay_clk(UC_NS_TO_CLK(970u));    /* vendor L_928cb0..L_928cbc: lp 0x50 × 2×nop_s = 160 тактов при 165 */
     MMIO32(HW_RFC_DIVIDER_CTRL) |= 1;
 }
-/* dma_is_idle_uc — ниже. */
 void hwd_dma_set_mode_map(u32 a)
 {
     if (a != 1 && a != 2 && a != 4)
@@ -238,40 +90,6 @@ void hwd_dma_set_mode_map(u32 a)
     MMIO32(HW_PWR_MODE_MAP_BE8) = pat;
     MMIO32(HW_PWR_MODE_MAP_BEC) = (u8)pat;
     MMIO32(HW_PWR_MODE_MAP_C0C) = pat & 0x0fffffffu;
-}
-u32 dump_pring_hw(u32 q)
-{
-    /* 0x9291d8: прочитать 4 поля PRING HW, сверить, вернуть 1 если все равны. */
-    u32 base = q * 896;                     /* asl3; sub; asl7 = q*7*128 */
-    u32 f1 = (MMIO32(((base + 0x4409800) >> 3) & ~3u) >> ((base + 0x4409800) & 0x1f)) & 0xf;
-    u32 f2 = (MMIO32(((base + 0x4409840) >> 3) & ~3u) >> ((base + 0x4409840) & 0x1f)) & 0xf;
-    u32 f3 = (MMIO32(((base + 0x4409820) >> 3) & ~3u) >> ((base + 0x4409820) & 0x1f)) & 0xf;
-    u32 f4 = (MMIO32(((base + 0x4409860) >> 3) & ~3u) >> ((base + 0x4409860) & 0x1f)) & 0xf;
-    if (f1 == f2 && f3 == f4 && f1 == f3)
-        return 1;
-    uc_log_emit2(0x20, 0x1002e88, f1, f2);
-    uc_log_emit2(0x20, 0x1002de0, f3, f4);
-    return 0;
-}
-void dump_vring_pring_info(u32 q)
-{
-    u32 r13 = q;
-    uc_log_emit2(0x20, 0x1002d40, r13, 0);
-
-    /* MMIO 0x8818xx: vendor L_929354/L_929372/L_92938e — 32-бит ld по порядку v1,v2,v3 */
-    u32 r5 = (r13 << 8) + 0x440c0c0;
-    u32 v1 = (u16)(MMIO32((r5 >> 3) & ~3u) >> (r5 & 0x1f));
-    u32 r4 = (r13 << 8) + 0x440c120;
-    u32 v2 = (u16)(MMIO32((r4 >> 3) & ~3u) >> (r4 & 0x1f));
-    u32 r13b = (r13 << 8) + 0x440c100;
-    u32 v3 = (u16)(MMIO32((r13b >> 3) & ~3u) >> (r13b & 0x1f));
-    uc_log_emit3(0x20, 0x1002d60, v1, v2, v3);
-
-    volatile u32 *r13c = (volatile u32 *)HW_PRING_BASE;
-    uc_log_emit3(0x20, 0x1002d90, (u16)r13c[0xc4], (u16)r13c[0xc6], (u16)r13c[0xba]);
-    uc_log_emit2(0x20, 0x1002dc0, r13c[0xc0] & 0xf, r13c[0xc2] & 0xf);
-    uc_log_emit2(0x20, 0x1002de0, r13c[0xc1] & 0xf, r13c[0xc3] & 0xf);
-    uc_log_emit1(0x20, 0x1002e04, r13c[0x4d] & 0xf);
 }
 /* clk_gate_ext0_enable — ниже. */
 /* clk_gate_ext1_enable — ниже. */
@@ -525,14 +343,6 @@ u32 hwd_rfc_auto_fill_verify(const struct rf_fill_info *f, u32 b, u32 c)
     return 1;
 }
 
-/* Пир idx в расписание: запись обнулить, бит в active_mask (LMAC 0x05 CREATE). */
-void fsched_peer_add(struct fsched_peer_ctx *p, u32 idx)
-{
-    /* 6.2 asm 0x920cdc */
-    memset0_words_uc(&p->ent[idx], sizeof(p->ent[idx]));
-    p->active_mask |= (1u << idx);
-}
-
 /* uc_sysassert_emit_mac_trace (0x92f2f0). */
 void uc_sysassert_emit_mac_trace(u32 a)
 {
@@ -543,17 +353,6 @@ void uc_sysassert_emit_mac_trace(u32 a)
 
 /* 0x920484 — на деле 64-бит multiply-хелпер (__muldi3) + sign-ror; имя в blocks.json неточное; libgcc даёт эквивалент (мёртвый код). */
 
-
-/* DMA простаивает — rptr == wptr (0x9290f4). */
-u32 dma_is_idle_uc(u32 q, u32 verbose)
-{
-    u32 base = (q * 7) << 7;
-    u32 rptr = MMIO32(((base + 0x4409880) >> 3) & ~3u);
-    u32 wptr = MMIO32(((base + 0x44098c0) >> 3) & ~3u);
-    if (verbose != 0)
-        uc_log_emit2(0x20, 0x1002ce4, rptr, wptr);
-    return (rptr == wptr) ? 1 : 0;
-}
 
 /* Обработчик кольца команд (0x92d880; cmdq_desc_handler): ucode_cmd_dispatch(запись, тело),
  * освободить запись, сдвинуться. */

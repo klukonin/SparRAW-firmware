@@ -192,40 +192,6 @@ void rf_update_active_antenna(u32 a, u32 b)
 
 /* ---------------- STA/PEER ---------------- */
 
-/* Индекс пира с данным qid среди станций maint_sta_mask, 0xff — нет. */
-u32 sta_find_by_qid(struct fsched_peer_ctx *p, u32 qid)
-{
-    for (u32 i = 0; i < SPARRAW_MAX_STA; i++) {
-        if ((maint_sta_mask & (1u << i)) && p->ent[i].qid == qid)   /* brne r1,r3 — r1 целиком */
-            return i;
-    }
-    return 0xff;
-}
-
-/* 1 — пир с qid активен и сейчас в слоте. */
-u32 peer_is_active_in_slot(struct fsched_peer_ctx *p, u32 qid)
-{
-    u32 r = sta_find_by_qid(p, qid);           /* 0x92be68: r1 проходит насквозь */
-    if (r == 0xff)
-        return 0;
-    if (!(p->active_mask & (1u << (r & 0x1f))))
-        return 0;
-    return (r == p->cur_idx) ? 1 : 0;
-}
-
-u32 peer_lookup_if_fixed_sched(u32 a0)
-{
-    if (dti_qset_mode == 0)
-        return 0;
-    if (a0 == fsched_peer_id)                 /* ld_s [gp,-0xc0] — байтовое смещение */
-        return 0;
-    if (a0 >= 0x18)
-        return 0;
-    if (fixed_sched_is_engaged() == 0)
-        return 0;
-    return peer_is_active_in_slot(&fsched_peers, a0);
-}
-
 void sta_apply_rx_sector_and_mcs(u32 a)
 {
     struct sta_entry *e = &sta_tab[a];
@@ -289,7 +255,7 @@ u32 qid_cfg_get_sta(u32 a, u32 out)
 {
     /* 6.2 asm 0x93dad0. */
     u8 r0 = qid_cfg[a].cid;
-    *(u32 *)out = (a != fsched_peer_id) ? 1 : 0;
+    *(u32 *)out = (a != bcast_qid) ? 1 : 0;
     return r0;
 }
 
@@ -828,15 +794,7 @@ void sls_build_ssw_ack(struct ssw_ack_frame *f, u32 idx, u32 flag)
 
 void qh_reset_desc_window(void)
 {
-    if (fsched_qh_mode != 0)
-        return;
     MMIO32(HW_QDESC_WIN_CTRL) = 0;
-}
-
-u32 dmaq_hw_read_ptr(u32 q)
-{
-    u32 addr = ((q << 8) + 0x440c120) >> 3;
-    return MMIO32(addr & ~3u);
 }
 
 void txop_clear_l2_offload_tx_ctl_bit1(void)
@@ -854,90 +812,6 @@ u32 txop_pick_ctrl_code_by_peer(struct tx_ctx_s *a)
     return (u32)a;   /* vendor возвращает r0=a */
 }
 
-u32 dma_fw_icr_c24_read(void)
-{
-    u32 saved = arc_lr(ARC_STATUS32);
-    arc_flag(saved & ~(1u << 1));
-    u32 r = MMIO32(HW_DMA_FW_ICR_C24_ICR);
-    arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
-    return r;
-}
-
-void dma_fw_icr_c24_write(u32 v)
-{
-    u32 saved = arc_lr(ARC_STATUS32);
-    arc_flag(saved & ~(1u << 1));
-    MMIO32(HW_DMA_FW_ICR_C24_ICR) = v;
-    /* 0x928e18: vendor r1!=0 → sync; единственный вызов (0x9262b4) передаёт r1=1 */
-    arc_sync();
-    arc_flag((saved & (1u << 1)) | arc_lr(ARC_STATUS32));
-}
-
-void qh_pack_descriptor(u32 dst, u32 a, u32 count, u32 c, u32 flag, u32 loopcnt, u32 copycnt)
-{
-    /* 6.2 0x92420c: пакование дескриптора через DMA-окно. */
-    u32 sp[4] = {0, 0, 0, 0};
-    sp[1] = ror32((count & 7) | (ror32(sp[1], 4) & ~7u), 28) & ~3u;
-    u32 r17 = 0;
-    u32 cnt = count - 1;
-    if (cnt < 6) {
-        if (cnt <= 1) {
-            sp[0] = ror32((a & 0x1f) | (ror32(c & 3, 2) & ~0x1fu), 28);
-            r17 = 1;
-        } else if (cnt >= 3) {
-            sp[0] = flag;
-        }
-    }
-    qh_wait_desc_window_ready();
-    *(volatile u32 *)HW_QDESC_WIN_CMD = sp[1] << 16;
-    u32 r13 = 0;
-    u32 *d = (u32 *)dst;
-    for (u32 r14 = loopcnt; r14 >= 1; r14--, r13++) {
-        u32 r2;
-        if (r17 == 0)
-            r2 = r13 + flag;
-        else
-            r2 = ((r13 + flag) & 3) | (sp[0] & ~3u);
-        *(volatile u32 *)HW_QDESC_WIN_ADDR = r2;
-        sp[0] = r2;
-        *(volatile u32 *)HW_QDESC_WIN_CTRL = (fsched_qh_mode != 0) ? 0x40000000 : 0xc0000000;
-        arc_sync();
-        while (*(volatile u32 *)HW_QDESC_WIN_CTRL & (1u << 29))
-            ;
-        for (u32 i = 0; i < copycnt; i++)
-            *d++ = *(volatile u32 *)(HW_QDESC_WIN_DATA0 + i * 4);
-    }
-    qh_reset_desc_window();
-}
-
-void qh_write_desc_window(u32 data, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 count)
-{
-    /* 6.2 asm 0x924348. DMA-окно дескриптора: запись count окон × (2|4) слова. */
-    u32 packed_low = (a4 & 3) | ((a2 & 7) << 4);
-    u32 base = ror32((a1 & 0x1f) | (ror32(a3 & 3, 2) & ~0x1fu), 28) & ~3u;
-    qh_wait_desc_window_ready();
-    *(volatile u32 *)HW_QDESC_WIN_CMD = a5 | ((u16)packed_low << 16) | (1u << 31);
-    if (count < 1) {                            /* brlo r7,1 → L_924460: сброс окна */
-        qh_reset_desc_window();
-        return;
-    }
-    u32 r13 = 0;
-    u32 *src = (u32 *)data;
-    do {
-        *(volatile u32 *)HW_QDESC_WIN_ADDR = ((r13 + a6) & 3) | base;
-        u32 n = (a3 == 2) ? 2 : 4;
-        for (u32 i = 0; i < n; i++)
-            *(volatile u32 *)(HW_QDESC_WIN_DATA0 + i * 4) = *src++;
-        *(volatile u32 *)HW_QDESC_WIN_CTRL = (fsched_qh_mode != 0) ? 0x40000000 : 0xc0000000;
-        arc_sync();                             /* vendor: sync перед опросом */
-        while (*(volatile u32 *)HW_QDESC_WIN_CTRL & (1u << 29))
-            ;
-        r13++;
-        count--;
-    } while (count >= 1);
-    qh_reset_desc_window();
-}
-
 void qh_read_desc_window(u32 dst, u32 a1, u32 a2, u32 a3, u32 count)
 {
     /* 6.2 asm 0x92449c. DMA-окно дескриптора: читает count окон × (2|4) слова. */
@@ -953,7 +827,7 @@ void qh_read_desc_window(u32 dst, u32 a1, u32 a2, u32 a3, u32 count)
     }
     do {
         *(volatile u32 *)HW_QDESC_WIN_ADDR = base | (r13 & 3);
-        *(volatile u32 *)HW_QDESC_WIN_CTRL = (fsched_qh_mode != 0) ? 0x40000000 : 0xc0000000;
+        *(volatile u32 *)HW_QDESC_WIN_CTRL = 0xc0000000;
         arc_sync();                             /* vendor: sync перед опросом */
         while (*(volatile u32 *)HW_QDESC_WIN_CTRL & (1u << 29))
             ;
@@ -989,10 +863,8 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     (void)a;
     /* СРОК: проба CCA (0x29000001 + mac_cca_ok) → пуск TX (0x19000001 … итоговая 0x18…|б27|б28)
      * должен уложиться в окно, где проба ещё верна (aCCATime/aSlotTime = 5 мкс, 802.11-2020
-     * 10.3.2.3, Table 20-30). Путь ~40 инструкций (mac_program_tx_vector, 2 команды, чтение r43),
-     * при dti_qset_mode ≠ 0 ещё fsched_slot_rd_counter_nonzero и декремент счётчика RD — между 0x19 и
-     * 0x18 (vendor так же); запас: десятки–сотни. Срыв: TX в уже занятую среду (коллизия
-     * RTS/CTS-обмена TXOP). */
+     * 10.3.2.3, Table 20-30). Путь ~40 инструкций (mac_program_tx_vector, 2 команды, чтение r43);
+     * запас: десятки–сотни. Срыв: TX в уже занятую среду (коллизия RTS/CTS-обмена TXOP). */
     u32 r0 = mac_sel_shadow & ~MAC_SEL_FIELD;
     mac_sel_shadow = r0 | (1u << 13) | (1u << 15);
     uc_mac_cmd(r0 | MAC_CMD_STATUS_SEL | MAC_SEL_PHY_SIGNALS);
@@ -1013,8 +885,6 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b)
     /* RDG не даём (б11 — RDG/More PPDU в QoS Control A-MPDU, при RD_SUPP r43): RD отключён намеренно — ответчик RD на
      * железе глохнет (rx_flow_handle_frame, «RD отключён»; MAC-STAND «Ответчик RD глохнет»). Без RDG и вопроса AC
      * Constraint (802.11-2020 10.29.3: при RDG в TXOP EDCA — 1, у нас было 0) нет. vendor: б11 = RD_SUPP. */
-    if (dti_qset_mode != 0 && fsched_slot_rd_counter_nonzero(&fsched_peers) != 0)
-        fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
     uc_mac_cmd((1u << 14) | (1u << 27) | (1u << 28));
 #ifdef UC_STAMP_MASK
     if (UC_STAMP_ON(STAMP_TXOP_CTS)) {          /* после пуска: путь до него не меняется (три чтения выше) */
@@ -1122,72 +992,10 @@ u32 rfc_clear_sector_row(u32 a)
 
 void qh_wait_desc_window_ready(void)
 {
-    if (fsched_qh_mode != 0)
-        return;
     while (MMIO32(HW_QDESC_WIN_CTRL) & (1u << 31))
         ;
 }
 
-void qh_build_descriptor(u32 a, u32 b, struct qh_desc3_win *d)
-{
-    u32 r4 = a, r14 = b;
-    u32 sp[0x30/4];
-    qh_read_desc_window((u32)sp, r4, 2, 0, 1);  /* 0x92d448: bl qh__read_desc_window */
-    u32 r0 = sp[1] & 0xfff;                     /* bmsk 0xb */
-    d->start_b2 = 0;
-    d->start = (d->start & 0xfffff000u) | r0;
-    d->n_m1 = (u8)(r14 - 1);
-    r0 = (r0 + r14 - 1) & 0xfff;
-    d->end = (d->end & 0xfffff000u) | r0;
-}
-u32 qh_read_desc_start(u32 a)
-{
-    u32 sp[0x30/4];
-    qh_read_desc_window((u32)sp, a, 2, 3, 1);   /* 0x92d410 */
-    return sp[1] & 0xfff;
-}
-void qh_write_by_flags(u32 a, u32 b, u32 c, u32 d)
-{
-    u32 r14 = a, r15 = c, r17 = d;
-    if ((b & 0x21) == 0x21)
-        uc_assert((u32)__builtin_return_address(0), 0x1585);   /* затем b_s L_92d4b4 — продолжать */
-    if (b & (1u << 4)) {
-        u32 r16 = r15 + 0x40;            /* add3 r16,r15,0x8 = +0x40 */
-        qh_build_descriptor(r14, r17, (struct qh_desc3_win *)r16);
-        qh_write_desc_window(r16, r14, 2, 3, 0, 0, 0, 3);
-    }
-    if (b & (1u << 0))
-        qh_write_desc_window(r15, r14, 2, 0, 0, 0, 0, 1);
-    if (b & (1u << 1))
-        qh_write_desc_window(r15 + 0x10, r14, 2, 0, 0, 0, 1, 1);
-    if (b & (1u << 2))
-        qh_write_desc_window(r15 + 0x20, r14, 2, 0, 0, 0, 2, 1);
-    if (b & (1u << 3))
-        qh_write_desc_window(r15 + 0x30, r14, 2, 0, 0, 0, 3, 1);
-    if (b & (1u << 5)) {
-        u32 sp[4];
-        qh_pack_descriptor((u32)sp, r14, 2, 0, 0, 1, 4);
-        /* sp — окно 0x20 («типизированное») по образцу окна набора (r15 = macq_qdesc.win).
-         * Чтения окна r15 (lines +4, base +6, w2 +8, w3 +0xc) — на смещениях: через
-         * const struct macq_desc * gcc меняет распределение регистров всей функции (codecmp). */
-        struct macq_desc *spd = (struct macq_desc *)sp;
-        spd->base = *(u16 *)((u8 *)r15 + 6);
-        spd->lines = *(u16 *)((u8 *)r15 + 4);
-        u32 r3 = sp[2] & 0xfffff000;
-        r3 |= *(u32 *)((u8 *)r15 + 8) & 0xfff;
-        sp[2] = r3;
-        u32 r0 = (*(u32 *)((u8 *)r15 + 0xc) >> 4) & 0xfff;
-        u32 r1 = ror32(sp[3], 4) & 0xfffff000;
-        r0 |= r1;
-        u32 r3b = ror32(r0, 28);
-        sp[3] = r3b;
-        u32 r1b = (*(u32 *)((u8 *)r15 + 0xc) >> 16) & 0xfff;
-        u32 r2 = 0xfffff000 & ror32(r3b, 16);
-        r1b |= r2;
-        sp[3] = ror32(r1b, 16);
-        qh_write_desc_window((u32)sp, r14, 2, 0, 0, 0, 0, 1);
-    }
-}
 /* Одно слово дескриптора MAC-очереди через окно 0x886608..0x886618 (vendor 0x9245b0 /
  * 0x92462c). Командное слово 0x88660c: [31] запись, [22:20] поле A, [17:16] поле B,
  * [15:0] смещение — формат как у qh_read/write_desc_window; здесь A = 6, B = 0 (чтение)
@@ -1206,7 +1014,7 @@ static void macq_desc_window_go(u32 cmd, u32 addr)
 
 static void macq_desc_window_run(void)
 {
-    *(volatile u32 *)HW_QDESC_WIN_CTRL = (fsched_qh_mode != 0) ? 0x40000000 : 0xc0000000;
+    *(volatile u32 *)HW_QDESC_WIN_CTRL = 0xc0000000;
     arc_sync();
     while (*(volatile u32 *)HW_QDESC_WIN_CTRL & (1u << 29))
         ;
@@ -1228,23 +1036,6 @@ void macq_desc_write_uc(u32 addr, u32 value)
     *(volatile u32 *)HW_QDESC_WIN_DATA1 = value;
     macq_desc_window_run();
     qh_reset_desc_window();
-}
-
-u8 txq_fifo_ptp_idle_snapshot(void)
-{
-    MMIO32(HW_TXQ_FIFO_SM_A) = 0x80000000;
-    MMIO32(HW_TXQ_FIFO_SM_C) = 0x80000000;
-    MMIO32(HW_TXQ_FIFO_SM_B) = 0x80000000;
-    MMIO32(HW_TXQ_PTP_SM) = 0x80000000;
-    arc_sync();
-    u32 r0 = MMIO32(HW_TXQ_FIFO_SM_A);
-    u32 r3 = MMIO32(HW_TXQ_FIFO_SM_C);
-    u32 r2 = MMIO32(HW_TXQ_PTP_SM);
-    u32 r1 = MMIO32(HW_TXQ_FIFO_SM_B);
-    u8 res = 0;
-    if ((r0 & 3) == 0 && (r3 & 3) == 0 && (r2 & 7) == 0 && (r1 & 7) == 0)
-        res = 1;
-    return res;
 }
 
 /* СРОК (минимальная выдержка, аппаратный): импульс сброса RFC (HW_RFC_RESET_CTRL б4 = 0) —

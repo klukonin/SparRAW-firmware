@@ -119,7 +119,7 @@ void stream_mgr_build_params(struct vring_tbl_entry *e, u32 mode, u32 flag, u32 
     buf.ba.w0 = (buf.ba.w0 & ~1u) | (flag & 1u);
     bitfield_set32(&buf.ba.w0, 16, 4, tid & 0xfu);
     stream_params_copy_hdr(e, &buf.win);
-    macq_qh_write(e->macq, 0x1f, &buf, 0);
+    macq_qh_write_by_flags(e->macq, 0x1f, &buf, 0);
     if (e->mode != 5 && e->mode != 6)
         mac_ring_disable(e->macq);
     e->state = 1;
@@ -135,7 +135,7 @@ void sw_vring_ba_params(const struct vring_tbl_entry *e)
     if (n < 0)
         n += 7;                                     /* asr со знаком (add.n) */
     bitfield_set32(&buf.win.w2, 0, 12, (u32)(n >> 3) & 0xfffu);
-    macq_qh_write(e->macq, 0x20, &buf, 0);
+    macq_qh_write_by_flags(e->macq, 0x20, &buf, 0);
 }
 
 /* ba_sm__build_addba_params (0x8ea62c, 88 Б): тип mode, секторный и типовой дескрипторы
@@ -147,7 +147,7 @@ void ba_sm_build_addba_params(struct vring_tbl_entry *e, u32 mode, u32 a2, u32 a
     tx_macq_build_sector_desc(e, &buf, e->sector_mode, (e->ctl >> 1) & 1u, e->to_res, a5);
     tx_macq_build_mode_desc(e, &buf);
     tx_macq_build_ba_desc(e, &buf, a4, a2, a3, 0, 0);
-    macq_qh_write(e->macq, 0x16, &buf, a3);
+    macq_qh_write_by_flags(e->macq, 0x16, &buf, a3);
 }
 
 /* sw_vring__program_ba_win (0x8e4094, 64 Б): окно BA RX-MACQ q (rx_macq_bufs.ba_win 0x847fc8). */
@@ -240,8 +240,7 @@ void stream_ctx_vt_ready(struct stream_ctx *ctx)
     struct vring_tbl_entry *e = vring_tbl_entry_addr(ctx->vr);
     struct stream_sm *s = &ctx->sm;
     u32 go;
-    if (fixed_sched.enabled == 0)
-        ctx->ssn = (u16)stream_mgr_get_win_start_seq(e);
+    ctx->ssn = (u16)stream_mgr_get_win_start_seq(e);
     go = (s->setup.hdr.state == 6 && s->hdr.state == 1) || s->hdr.state == 3 || s->hdr.state == 4;
     if (go)
         SM_EV(s, 2, 0, 0, 0);
@@ -752,12 +751,6 @@ u32 stream_mgr_remove_conn_stream(struct conn *conn, u32 a1, u32 a2)
     return 0;
 }
 
-/* vring_tbl__ptr_by_index (0x8cce84, 22 Б): стрим vring idx. */
-struct stream_ctx *vring_tbl_ptr_by_index(u32 idx)
-{
-    return stream_by_vr[idx];
-}
-
 /* vring__enable_first_pending_gtk (0x8cd0a4, 96 Б): первый bcast-стрим (не 9) —
  * установить ключ группы (0x8eacb0) и событие 0x1865. */
 void vring_enable_first_pending_gtk(void)
@@ -895,8 +888,7 @@ void ba_sm_send_addba_req(struct stream_sm *s, u32 token, u32 win, u32 timeout, 
      * окна TX MACQ стрима. Исправлено (vendor): ctx->ssn обновлялся только в ready (после ADDBA Response, при
      * остановке vring) — запрос уходил с прежним 0, а очередь начинает с 0x800 (стенд 2026-10-26: группа 3, слово 1
      * дескриптора = 0x800 = SN первого кадра под BA); получатель сдвигал окно костылём «1-st frame wrong sequence». */
-    if (fixed_sched.enabled == 0)
-        ctx->ssn = (u16)stream_mgr_get_win_start_seq(vring_tbl_entry_addr(ctx->vr));
+    ctx->ssn = (u16)stream_mgr_get_win_start_seq(vring_tbl_entry_addr(ctx->vr));
     len += frame_build_addba_req((struct ieee80211_addba *)(pl + len), (u8)token, win, ctx->tid, timeout,
                                  ctx->ssn, amsdu != 0);
     fw_log_emit2(0x2b, 0x10135bc, ctx->vr, ctx->tid);

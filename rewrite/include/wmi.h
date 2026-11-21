@@ -30,12 +30,10 @@
 
 /* Событие из одного статуса {status, reserved[3]} — у драйвера отдельная структура на
  * каждое событие; vendor пишет только status (байты 1..3 — где обнулены, отмечено у места):
- * RF_PWR_ON_DELAY 0x185d, SET_HIGH_POWER_TABLE_PARAMS 0x185e, FIXED_SCHEDULING_UL_CONFIG
- * 0x185f, VRING_SWITCH_TIMING_CONFIG 0x1868, TOF_SET_TX_RX_OFFSET 0x1997, SET_RF_SECTOR_ON
- * 0x19a4, PRIO_TX_SECTORS_* 0x19a5, BF_CONTROL 0x19aa, FIXED_SCHEDULING_CONFIG_COMPLETE
- * 0x1a02, ENABLE_FIXED_SCHEDULING_COMPLETE 0x1a03, SET_MULTI_DIRECTED_OMNIS_CONFIG 0x1a04,
- * SET_LONG_RANGE_CONFIG_COMPLETE 0x1a05, SET_CCA_INDICATIONS_BI_AVG_NUM 0x1a08,
- * SET_GRANT_MCS 0x1a0e, SET_AP_SLOT_SIZE 0x1a0f, BRP_SET_ANT_LIMIT 0x1924,
+ * RF_PWR_ON_DELAY 0x185d, SET_HIGH_POWER_TABLE_PARAMS 0x185e, VRING_SWITCH_TIMING_CONFIG 0x1868,
+ * TOF_SET_TX_RX_OFFSET 0x1997, SET_RF_SECTOR_ON 0x19a4, PRIO_TX_SECTORS_* 0x19a5, BF_CONTROL 0x19aa,
+ * SET_MULTI_DIRECTED_OMNIS_CONFIG 0x1a04, SET_LONG_RANGE_CONFIG_COMPLETE 0x1a05, SET_CCA_INDICATIONS_BI_AVG_NUM
+ * 0x1a08, SET_GRANT_MCS 0x1a0e, BRP_SET_ANT_LIMIT 0x1924,
  * SET_SELECTED_RF_SECTOR_INDEX_DONE 0x19a3, RF_XPM_WRITE_RESULT 0x1857 (длина 1),
  * SET_RF_SECTOR_PARAMS_DONE 0x19a1 (длина 1), SET_MGMT_RETRY_LIMIT 0x1930, SW_TX_COMPLETE
  * 0x182b, P2P_CFG_DONE 0x1910, PORT_ALLOCATED 0x1911, PCP_STARTED 0x1918, TRAFFIC_RESUME
@@ -474,14 +472,6 @@ WMI_OFF(struct wmi_set_high_power_table_params_cmd, rx_etype_conf, 0x50);
 WMI_OFF(struct wmi_set_high_power_table_params_cmd, rx_2_tx_offs, 0x74);
 WMI_SIZE(struct wmi_set_high_power_table_params_cmd, 0x78);
 
-/* WMI_FIXED_SCHEDULING_UL_CONFIG_CMDID (0x85f). */
-struct wmi_fixed_scheduling_ul_config_cmd {
-    s8  mcs;                                   /* 0x00: −1 — все записи */
-    u8  rd_count_per_slot;                     /* 0x01 */
-    u8  reserved[2];                           /* 0x02 */
-};
-WMI_SIZE(struct wmi_fixed_scheduling_ul_config_cmd, 4);
-
 /* WMI_NOTIFY_REQ_CMDID (0x863). */
 struct wmi_notify_req_cmd {
     u8  cid;                                   /* 0x00 */
@@ -746,31 +736,6 @@ struct wmi_scheduling_scheme_cmd {
     struct wmi_sched_scheme_slot allocs[];     /* 0x10: до WMI_SCHED_MAX_ALLOCS_PER_CMD */
 };
 WMI_OFF(struct wmi_scheduling_scheme_cmd, allocs, 0x10);
-
-/* WMI_FIXED_SCHEDULING_CONFIG_CMDID (0xa02). */
-struct wmi_map_mcs_to_schd_params {
-    u8  mcs;                                   /* 0x00: индекс записи (vendor не проверяет) */
-    u8  time_in_usec_before_initiate_tx;       /* 0x01 */
-    u8  rd_enabled;                            /* 0x02 */
-    u8  reserved;                              /* 0x03 */
-    u16 time_in_usec_to_stop_vring;            /* 0x04 */
-    u16 flush_to_in_usec;                      /* 0x06 */
-    u32 mac_buff_size_in_bytes;                /* 0x08 */
-};
-WMI_SIZE(struct wmi_map_mcs_to_schd_params, 0xc);
-
-struct wmi_fixed_scheduling_config_cmd {
-    struct wmi_map_mcs_to_schd_params mcs_to_schd_params_map[WMI_NUM_MCS];   /* 0x00 */
-    u16 max_sta_rd_ppdu_duration_in_usec;      /* 0x9c */
-    u16 max_sta_grant_ppdu_duration_in_usec;   /* 0x9e */
-    u16 assoc_slot_duration_in_usec;           /* 0xa0 */
-    u16 virtual_slot_duration_in_usec;         /* 0xa2 */
-    u8  number_of_ap_slots_for_initiate_grant; /* 0xa4 */
-    u8  reserved[3];                           /* 0xa5 */
-};
-WMI_OFF(struct wmi_fixed_scheduling_config_cmd, max_sta_rd_ppdu_duration_in_usec, 0x9c);
-WMI_OFF(struct wmi_fixed_scheduling_config_cmd, number_of_ap_slots_for_initiate_grant, 0xa4);
-WMI_SIZE(struct wmi_fixed_scheduling_config_cmd, 0xa8);
 
 /* WMI_SET_MULTI_DIRECTED_OMNIS_CONFIG_CMDID (0xa04). */
 struct wmi_set_multi_directed_omnis_config_cmd {

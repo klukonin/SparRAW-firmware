@@ -116,8 +116,8 @@ def test_ack_wait_silent_peer_ends_by_ack_timeout(uc):
 
 
 def test_txop_response_wait_silent_peer_times_out(uc):
-    """tx_await_rx_or_timeout (ответ на кадр TXOP, tx_send_and_await_rx_frame: gp0_timer_arm_usec(0x12) при
-    dti_qset_mode 0) — выход по GP0, возврат 1 (тайм-аут), не позже AckTimeout (10.3.2.11)."""
+    """tx_await_rx_or_timeout (ответ на кадр TXOP, tx_send_and_await_rx_frame: gp0_timer_arm_usec(0x12)) — выход по
+    GP0, возврат 1 (тайм-аут), не позже AckTimeout (10.3.2.11)."""
     GP(uc)
     uc.ext[42] = 0
     t0 = uc.t1()

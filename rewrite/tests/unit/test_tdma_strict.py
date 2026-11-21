@@ -209,7 +209,7 @@ def test_strict_default_is_equal(fw):
 # =====================================================================================================================
 # uc: доступ к среде по своей таблице окон (uc/ese_dti.c)
 # =====================================================================================================================
-UC_ROLE_AP, DTI_QSET_MODE = 0x8014c0, 0x8004f4                  # uc/dccm.h
+UC_ROLE_AP = 0x8014c0                                          # uc/dccm.h
 TXOP_LIMIT_CUR, TXOP_LIMIT_US = 0x800478, 0x80294c
 STA_TAB, STA_ENTRY = 0x801104, 0x50                            # struct sta_entry: +2 flags, +0x18 q6, +0x1c q5
 TX_DIS_MASK = 0x802a90
@@ -237,7 +237,6 @@ def own_table(uc, wins):
 
 def uc_ap(uc, lim=2048, stas=2):
     uc.w32(UC_ROLE_AP, 1)
-    uc.w32(DTI_QSET_MODE, 0)
     uc.w32(TXOP_LIMIT_CUR, lim)
     for i in range(4):
         uc.w32(TXOP_LIMIT_US + 4 * i, lim)
@@ -487,8 +486,8 @@ def test_uc_sp_source_cycle(uc):
     (10.39.6.2 «at the start of the SP»); не своё SP или не DTI — нет; следующий доступ — пока был доступ (src_more),
     иначе выход."""
     uc_ap(uc)
-    run = lambda fn: (uc.calls.clear(), uc.call(fn, stub={'fixed_sched_run_tx_slot': 0}),
-                      sum(n == 'fixed_sched_run_tx_slot' for n, _ in uc.calls))[2]
+    run = lambda fn: (uc.calls.clear(), uc.call(fn, stub={'sp_run_tx_slot': 0}),
+                      sum(n == 'sp_run_tx_slot' for n, _ in uc.calls))[2]
     uc.w32(BI_PHASE, 1)
     uc.w8(SP_GATE + SG_INIT_SP, 1)
     assert run('ese_dti_sp_src_start') == 1                          # стаб доступа src_more не ставит — один круг

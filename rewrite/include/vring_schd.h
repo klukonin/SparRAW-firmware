@@ -123,13 +123,6 @@ VRS_OFF(struct vring_schd, n_pring, 0xa0);
 VRS_OFF(struct vring_schd, blocked, 0xa4);
 _Static_assert(sizeof(struct vring_schd) == 0xa8, "vring_schd");
 
-/* Вариант для режима пар (0xc Б): только карта pring-id → vring. */
-struct vring_schd_alt {
-    struct vring_schd_if base;                 /* 0x00 */
-    u8 vr_of_pring[8];                         /* 0x04 */
-};
-_Static_assert(sizeof(struct vring_schd_alt) == 0xc, "vring_schd_alt");
-
 /* Запись vring_tbl (16 Б, по номеру vring/MACQ): окно TX MACQ (tx_macq_config_ring_params,
  * поля — как в struct txq_ring_param, include/macq_desc.h), тип и параметры очереди. */
 struct vring_tbl_entry {
@@ -162,11 +155,9 @@ _Static_assert(sizeof(struct vring_tbl_entry) == 0x10, "vring_tbl_entry");
 
 /* Экземпляры (DCCM, FWDATA): vring.c, tx_helpers.c. */
 extern struct vring_schd vring_schd;                       /* 0x804dbc */
-extern struct vring_schd_alt vring_schd_alt;               /* 0x804e64 */
 extern struct vring_rec vring_recs[VRING_RECS_N];          /* 0x804c40: элементы пула 0x804da8 */
 extern struct vring_tbl_entry vring_tbl[VRING_TBL_N];      /* 0x806014 */
 extern const struct vring_schd_vt vring_schd_vtbl;         /* 0x8008e8 */
-extern const struct vring_schd_vt vring_schd_alt_vtbl;     /* 0x800918 */
 
 /* Обработчик завершения остановки pring (pring__set_done_handler 0x8e7334): id pring и
  * аргумент [0x80018c]. */

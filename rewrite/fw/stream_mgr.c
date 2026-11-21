@@ -39,11 +39,10 @@ u32 stream_mgr_vring_is_bcast(u32 vr)
     return s->bcast;
 }
 
-/* vring__active_ring_table (0x8cd080, 22 Б): объект vring_schd текущего режима. */
+/* vring__active_ring_table (0x8cd080, 22 Б): объект vring_schd. vendor при режиме пар [gp,-0x118] = 1 отдавал вариант
+ * 0x804e64 — его включало только фиксированное расписание (удалено). */
 struct vring_schd_if *vring_active_ring_table(void)
 {
-    if (vring_pair_mode == 1u)
-        return &vring_schd_alt.base;
     return &vring_schd.base;
 }
 
@@ -112,7 +111,8 @@ u32 l2mgr_program_macq_ra_ta(const struct vring_tbl_entry *e, const void *p1, co
 {
     struct macq_qdesc buf;
     tx_dma_build_desc(buf.addr, p1, p2, a3, 0, a5, a4);
-    return macq_qh_write(e->macq, 8, &buf, 0);
+    macq_qh_write_by_flags(e->macq, 8, &buf, 0);
+    return 0;
 }
 
 /* mac_enable_bcast_ring (0x8c14d4, 28 Б). */
@@ -137,7 +137,7 @@ void tx_macq_setup_params(struct vring_tbl_entry *e, u32 a1, u32 a2, u32 a3, u32
     e->to_res = (u8)a3;
     e->ctl = (u16)((e->ctl & ~2u) | ((a2 & 1u) << 1));
     tx_macq_build_sector_desc(e, &buf, a1, a2, e->to_res, a4);
-    macq_qh_write(e->macq, 2, &buf, 0);
+    macq_qh_write_by_flags(e->macq, 2, &buf, 0);
 }
 
 /* 0x802450: адреса MACQ-записи широковещательного vring (vring__configure_tx: mov_s

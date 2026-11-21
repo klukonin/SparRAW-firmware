@@ -267,11 +267,11 @@ void ctor_rf_mgmt_sm_id(void)
     sm_set_id(&rf_mgmt_sm_desc, &rf_kill_sm_name_id);
 }
 
-/* (0x8c19ec) таблицы методов vring_schd (0x804dbc) и его варианта (0x804e64). */
+/* (0x8c19ec) таблица методов vring_schd (0x804dbc). vendor ставил и таблицу варианта 0x804e64 (режим пар
+ * фиксированного расписания — удалён). */
 void ctor_vring_schd_vtables(void)
 {
     vring_schd.base.vt = &vring_schd_vtbl;
-    vring_schd_alt.base.vt = &vring_schd_alt_vtbl;
 }
 
 /* (0x8c1abc) массив 0x854dd4 (8 × 0xa4, ctor 0x8ed15c, флаги 0x402). */

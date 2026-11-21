@@ -88,15 +88,6 @@ void uc_evt_send_pmc(u32 a, u32 b, u32 c)
     uc_evt_enqueue(evt, 0x2c, sizeof(*e), 0);
 }
 
-void uc_evt_send_fixed_sched_enabled(const u32 *a)
-{
-    u32 evt = uc_evt_write_slot(&uc_mbox);
-    struct lmac_evt_typed *e = (struct lmac_evt_typed *)evt;
-    e->w0 = a[0];
-    e->val = a[1];
-    uc_evt_enqueue(evt, 0x30, sizeof(*e), 0);
-}
-
 void uc_evt_send_sp_slots_reload(u32 a)
 {
     u32 evt = uc_evt_write_slot(&uc_mbox);
@@ -139,16 +130,6 @@ void uc_evt_send_plcp_header_ready(u8 a0, const void *a1)
     *(u8 *)evt = a0;                  /* stb.ab r14,[r0,4]: пишет в evt+0, затем r0+=4 */
     memcpy_uc((void *)(evt + 4), a1, 0x20);
     uc_evt_enqueue(evt, 0x21, 0x24, 0);
-}
-
-void uc_evt_send_vring_ssn(u32 a, u32 b, u32 c)
-{
-    u32 evt = uc_evt_write_slot(&uc_mbox);
-    struct lmac_evt_ba_timeout *e = (struct lmac_evt_ba_timeout *)evt;
-    e->vr = (u8)a;
-    e->kind = (u8)b;
-    e->ssn = (u16)c;
-    uc_evt_enqueue(evt, 0x2e, sizeof(*e), 0);
 }
 
 /* Получить поле 0x4 очереди событий (0x927320). */

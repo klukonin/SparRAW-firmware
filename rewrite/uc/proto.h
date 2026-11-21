@@ -9,10 +9,8 @@ struct aw_win_s;
 struct bi_ctx_s;
 struct dtx_ctrl_frame;
 struct dtx_grant_req;
-struct fsched_peer_ctx;
 struct lmac_cmd_bf_ctrl;
 struct lmac_cmd_discovery;
-struct lmac_cmd_fsched_peer;
 struct lmac_cmd_mac_cfg;
 struct lmac_cmd_maint_sta;
 struct lmac_cmd_qset_ranges;
@@ -27,11 +25,9 @@ struct lmac_cmd_sta_byte2;
 struct lmac_cmd_sta_cfg;
 struct lmac_cmd_sta_field;
 struct lmac_cmd_vring_cfg;
-struct lmac_cmd_write_qh;
 struct lmac_mac_regs;
 struct mbox_ring_ctl;
 struct pm_ctx_s;
-struct qh_desc3_win;
 struct rf_fill_info;
 struct rx_meas_ctx;
 struct sls_peer_rec;
@@ -160,12 +156,12 @@ void bi_timing_snapshot(void);                                /* bi.c */
 u64 bi_tsf_delta64(u32 a, u32 b);                               /* bi.c */
 void mac_backoff_settle_set_chain_modes(u32 a);                      /* bf.c */
 u32 bit_iter_has_more_uc(u32 a);                                /* bi.c */
-u32 bit_index_lsb(u32 a);                                        /* fsched.c */
+u32 bit_index_lsb(u32 a);                                        /* util.c */
 void bits_set_u8_s0_w5_uc(u32 ptr, u32 value);                  /* bi.c */
 void bits_set_u8_s0_w6_uc(u32 ptr, u32 value);                  /* bi.c */
 void bits_set_u8_s0_w7_uc(u32 ptr, u32 value);                  /* bi.c */
 void bits_set_u8_s6_w2_uc(u32 ptr, u32 value);                  /* bi.c */
-u32 bit_hist_push(u32 a, u32 b, u32 c, u32 d);                 /* fsched.c */
+u32 bit_hist_push(u32 a, u32 b, u32 c, u32 d);                 /* util.c */
 void boot_uc_init_and_run(void);                                /* boot.c */
 void rx_meas_ctx_init(struct rx_meas_ctx *m);                  /* tail.c */
 void boot_uc_init_structs(void);                                /* boot.c */
@@ -222,33 +218,22 @@ u32 cf_end_send_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d, u32 e); /* tail.c
 void clk_gate_vec3_enable(u32 a);                                    /* util.c */
 void config_brp_rf(u32 a, u32 b);                               /* tail.c */
 void uc_irq_enable_e1_e2(void);                                /* boot.c */
-void fixed_sched_sta_tx_delayed(void);                                     /* util.c */
 void direct_tx_build_desc(const struct sls_peer_rec *s, u32 *b); /* tx.c */
 void direct_tx_init_grant_ack(struct dtx_ctrl_frame *a, u32 bf_ctl);   /* tx.c */
 void direct_tx_commit(void);                              /* tx.c */
 void direct_tx_program_desc(u32 a, u32 b);                     /* tx.c */
 void direct_tx_send_after_delay(u32 a, u32 b, u32 c);           /* tx.c */
-u32 direct_tx_send_ctrl_frame(const struct dtx_grant_req *a);   /* tx.c */
-u32 direct_tx_send_from_desc(u32 desc, u32 sta, u32 use_cfg, u32 cfg_hi, u32 rf_cfg, u32 rate, u32 len); /* tx.c */
 void direct_tx_send_short_frame(u32 a);                         /* tx.c */
 void direct_tx_short_frame0_cb(void);                           /* cmd.c */
 void direct_tx_short_frame2_cb(void);                           /* cmd.c */
 void direct_tx_ssw_feedback(struct sls_peer_rec *a);                    /* tail.c */
 void disable_tsf_event(void);                                   /* tail.c */
-u32 dma_is_idle_uc(u32 q, u32 verbose);                         /* misc.c */
-u32 dma_is_tx_pipe_idle(u32 a, u32 b, u32 c);                   /* misc.c */
 void clk_gate_ext0_enable(u32 a);                                 /* misc.c */
 void clk_gate_ext1_enable(u32 a);                                 /* misc.c */
 void sw_rst_ext1_set(u32 v);                                 /* phy.c */
-u32 dma_fw_icr_c24_read(void);                                      /* txss.c */
-void dma_fw_icr_c24_write(u32 v);                                   /* txss.c */
-u32 dmaq_hw_read_ptr(u32 q);                                    /* txss.c */
 void dti_alloc_dispatch(struct bi_ctx_s *c);                    /* tail.c */
 void dti_alloc_scheduled_event_thunk(u32 *wake);                /* tail.c */
 void dti_worker_scheduled_dti_allocation_event(u32 *wake);      /* tail.c */
-void dump_mac_buffer_bases(u32 a, u32 b);                       /* misc.c */
-u32 dump_pring_hw(u32 q);                                       /* misc.c */
-void dump_vring_pring_info(u32 q);                              /* misc.c */
 void ese_dti_on_dti_start(void);                                   /* ese_dti.c */
 void ese_dti_slot_end(void);                                    /* ese_dti.c */
 void ese_dti_slot_start(u32 ctrl);                              /* ese_dti.c */
@@ -271,53 +256,8 @@ void evt_queue_noop_lock_hook(void);                            /* util.c */
 void evt_queue_take_locked(struct uc_mbox_ctx *a, u32 a1, u32 a2, u32 a3); /* tail.c */
 void mem_clear_word(u32 a);                              /* bi.c */
 void mem_write_u32(u32 a, u32 b);                       /* misc.c */
-u32 fixed_sched_kick_slot_queue(struct fsched_peer_ctx *p);     /* l1.c */
-u32 fixed_sched_is_engaged(void);                               /* fsched.c */
-void fixed_sched_manager_decrement_curr_sta_rd_counter(struct fsched_peer_ctx *p); /* l1.c */
-u32 fixed_sched_complete_peer_off(struct fsched_peer_ctx *p);        /* l1.c */
-void fixed_sched_run_tx_slot(void);                             /* l1.c */
-u16 fixed_sched_slot_stop_vring_us(struct fsched_peer_ctx *p);      /* l1.c */
-void fixed_sched_slot_prepare(u32 a);                           /* l1.c */
-void fixed_sched_slot_setup(struct fsched_peer_ctx *p);         /* l1.c */
-u32 fixed_sched_slot_mac_buff_size(struct fsched_peer_ctx *p);          /* l1.c */
 void frame_hdr_init(struct dtx_ctrl_frame *dst, u32 bf_ctl, const struct dtx_grant_req *src); /* misc.c */
-void fsched_ap_init_slot_rd_counter(struct fsched_peer_ctx *p);      /* fsched.c */
-u32 fsched_ap_next_station(struct fsched_peer_ctx *p);          /* fsched.c */
-u32 fsched_ap_poll_station(struct fsched_peer_ctx *p);          /* fsched.c */
-u32 fsched_ap_start_slot(void);                                 /* fsched.c */
-u32 fsched_ap_station_done(struct fsched_peer_ctx *p);          /* fsched.c */
-u32 fsched_arm_slot_from_cfg(void);                             /* fsched.c */
-u32 fsched_arm_slot_timer(u32 a);                               /* fsched.c */
-void fsched_bf_req_clear(struct fsched_peer_ctx *p, u32 idx);   /* misc.c */
-void fsched_bf_req_set(struct fsched_peer_ctx *p, u32 idx);     /* bf.c */
-u8 fsched_cur_entry_qid(struct fsched_peer_ctx *p);           /* fsched.c */
-u8 fsched_cur_entry_cfg_idx(struct fsched_peer_ctx *p);           /* fsched.c */
-void fsched_drop_station(u32 bit);                              /* fsched.c */
-u8 fsched_get_cur_idx(struct fsched_peer_ctx *p);               /* fsched.c */
-void fsched_log_phase(u32 phase, u32 idx);                      /* fsched.c */
-void fsched_peer_add(struct fsched_peer_ctx *p, u32 idx);       /* misc.c */
-void fsched_peer_clear_qid(struct fsched_peer_ctx *p, u32 idx); /* misc.c */
-void fsched_peer_deactivate(struct fsched_peer_ctx *p, u32 idx); /* misc.c */
-void fsched_peer_set_qid(struct fsched_peer_ctx *p, u32 idx, u32 qid); /* misc.c */
-u32 fsched_pick_any_ready_queue(u32 a);                               /* fsched.c */
-u32 fsched_pick_ready_queue(u32 a);                             /* fsched.c */
-void fsched_run_tx_slot_twice(void);                            /* fsched.c */
-u32 fsched_rx_slot(void);                                       /* fsched.c */
-u8 fsched_slot_time_before_tx_us(struct fsched_peer_ctx *p);                /* fsched.c */
-void fsched_slot_clear_slot_cnt(struct fsched_peer_ctx *p);           /* fsched.c */
-void fsched_slot_clear_rd_counter(struct fsched_peer_ctx *p);           /* fsched.c */
-void fsched_slot_clear_miss_cnt(struct fsched_peer_ctx *p);           /* fsched.c */
-u32 fsched_slot_rd_counter_nonzero(struct fsched_peer_ctx *p);         /* fsched.c */
-u16 fsched_slot_flush_to_us(struct fsched_peer_ctx *p);               /* fsched.c */
-void fsched_slot_inc_slot_cnt(struct fsched_peer_ctx *p);             /* fsched.c */
-u32 fsched_slot_inc_miss_cnt_reached_7(struct fsched_peer_ctx *p);    /* fsched.c */
-u32 fsched_bf_req_mask_bit(struct fsched_peer_ctx *p, u32 bit); /* fsched.c */
-u32 fsched_time_left_class(u32 a);                              /* fsched.c */
-u32 fsched_tx_ctrl_frame(void);                                 /* fsched.c */
-void fwif_write_qh(const struct lmac_cmd_write_qh *c);          /* cmd.c */
 void sls_reset_sweep_results(void);                                      /* bf.c */
-u32 fsched_assoc_slot_us(void);                                    /* util.c */
-u32 fsched_virtual_slot_us(void);                             /* tail.c */
 void get_selected_rf_sector_index_cmd_handler(const struct lmac_cmd_rf_sector_sel *c); /* cmd.c */
 void gp0_timer_arm_usec(u32 usec);                                  /* tail.c */
 void gp_timer_arm(u32 a, u32 b, u32 c, u32 d);                  /* tail.c */
@@ -362,19 +302,12 @@ u32 itx_ka_rr_pick(u32 out);                             /* tx.c */
 u32 itx_wait_ack(void);                                         /* tx.c */
 u32 itx_wait_cts_b(void);                                       /* tx.c */
 void keep_alive_arm_slot(u32 a);                                /* cmd.c */
-void l1_enter_fixed_sched(u32 a);                               /* l1.c */
-u32 l1_fixed_sched_ap_start_slot(u32 a);                        /* tail.c */
-u32 l1_fixed_sched_ap_run_slot(u32 a);                        /* tail.c */
-void l1_fixed_sched_ap_sm(u32 a);                               /* tail.c */
-void l1_fixed_sched_event_entry(void);                          /* l1.c */
-void l1_fixed_sched_sta_sm(u32 a);                              /* tail.c */
 void l1_task_on_evt4(void);                                        /* l1.c */
 u32 l1_rx_then_check_bf_abort(void);                            /* l1.c */
 void l1_snapshot_bi_counter(void);                              /* l1.c */
 void l1_task_sel_nbr_update(void);                               /* l1.c */
 void l1_task_dispatch(u32 a, u32 b);                            /* l1.c */
 void l1_task_entry(u32 mode);                                   /* l1.c */
-void l1_task_dispatch_evt1(void);                                    /* l1.c */
 void l1_task_kick_and_dispatch_uc(void);                        /* l1.c */
 void l1_task_on_evt1(void);                                   /* l1.c */
 void l1_task_mask_halt_req_and_defer(void);                     /* l1.c */
@@ -385,12 +318,10 @@ void l1_task_reset_units(void);                                 /* l1.c */
 u32 l1_task_rx_flow_run(void);                                /* l1.c */
 u32 l1_task_rx_flow_thunk_b(void);                              /* l1.c */
 void l1_task_check_bf_req_timeout(void);                              /* l1.c */
-void l1_task_on_evt1_fixed_sched(void);                            /* l1.c */
 void l2_handle_watchdog(void);                                  /* tail.c */
 void l2_task_entry(u32 a);                                      /* l1.c */
 void l2_task_kick_mac_events(void);                             /* l1.c */
 void l2_task_report_error_bits(void);                           /* l1.c */
-u32 mac_wait_busy2_or_gp0_timeout(void);                                 /* mac.c */
 u32 mac_build_qset_mask(const struct lmac_mac_regs *a);         /* mac.c */
 void mac_install_rf_gain_cb(void);                      /* mac.c */
 void mac_clk_div_us(u32 a, u32 out);                            /* mac.c */
@@ -408,7 +339,6 @@ void mac_fill_mode_nibbles(u32 mode);                           /* mac.c */
 u16 mac_get_beacon_interval_tu_uc(void);                        /* mac.c */
 void mac_ifs_restore_sifs(void);                                /* mac.c */
 void mac_load_tx_key(const u32 *key);                           /* mac.c */
-void macq_hw_enable_queue(u32 a, u32 b, u32 c);                 /* tail.c */
 void mac_mode_enter_idle_seq(u32 a);                            /* mac.c */
 void abft_initiator_feedback_loop(struct sls_peer_rec *a);                     /* bf.c */
 void abft_rx_ssw_tx_feedback(struct sls_peer_rec *a);                /* tail.c */
@@ -445,7 +375,6 @@ void mac_select_all_sectors_and_wait(void);                     /* mac.c */
 void mac_select_rf_module_cmd31(u32 a, u32 b);                  /* mac.c */
 void clk_gate_vec2_enable(u32 a);                                /* mac.c */
 void mac_set_pwr_mode_map_bf0(u32 mode);                             /* mac.c */
-void mac_set_chain_mask_924f00(void);                           /* mac.c */
 void mac_set_chain_modes(u32 a);                                /* mac.c */
 void mac_set_cid_mcs_uc(u32 a, u32 b);                          /* mac.c */
 void mac_wait_mode_ack_if_idle(void);                                   /* mac.c */
@@ -454,29 +383,12 @@ u32 mac_switch_rx_to_tx_wait_brp(u32 ra);                             /* mac.c *
 u32 mac_switch_rx_to_tx_again(u32 a);                              /* mac.c */
 void mac_set_rf_chain_state(u32 a, u32 b);                      /* mac.c */
 void mac_set_rf_chain_state_with_sta_sector(void);              /* mac.c */
-void mac_set_sector_arg_and_select_all(u32 a);                  /* mac.c */
-void mac_set_slot_mask_924000(void);                            /* mac.c */
 void mac_set_default_slot_timing(void);                          /* mac.c */
 void mac_wait_evt1_or_status(u32 a, u32 b);                   /* mac.c */
 u32 macq_desc_read_uc(u32 addr, u32 unused);                    /* txss.c */
 void macq_desc_write_uc(u32 addr, u32 value);                   /* txss.c */
-void macq_flush_queue(u32 a, u32 b, u32 c);                     /* l1.c */
-void macq_hw_clear_2d8(u32 q);                                  /* mac.c */
-void macq_hw_commit_rptr(u32 q);                                /* mac.c */
-void macq_hw_disable_queue(u32 q);                              /* mac.c */
-u32 macq_hw_read_rptr(u32 q);                                   /* mac.c */
-u32 macq_hw_read_state0(u32 q);                                 /* mac.c */
-u32 macq_hw_read_state1(u32 q);                                 /* mac.c */
-u32 macq_hw_read_wptr(u32 q);                                   /* mac.c */
-void macq_hw_set_ctrl_bit(u32 q);                               /* mac.c */
-void macq_hw_sync_dma_wptr(u32 a, u32 q, u32 dma);              /* mac.c */
-u32 macq_hw_trigger_read_state(u32 q);                          /* mac.c */
-u32 macq_is_idle(u32 a);                                        /* l1.c */
-void macq_kick_queue_tx(u32 q, u32 b, u32 c);                   /* misc.c */
 u32 macq_probe_empty(u32 q);                                    /* mac.c */
-u32 macq_read_hw_queue_word(u32 q);                             /* mac.c */
 void mailbox_debug_dump_uc(struct uc_ring *r);                  /* stubs.c */
-void macq_disable_queue_and_ack_irq(u32 a, u32 b);                   /* l1.c */
 void *memcpy_uc(void *dst, const void *src, u32 len);          /* mem.c */
 void *memset(void *d, int c, unsigned int n);                  /* uutil.c */
 void *memset0_words_uc(void *dst, u32 len);                    /* mem.c */
@@ -488,12 +400,9 @@ void mtp_service_dispatch(u32 a, u32 b, u32 c, u32 d);          /* tail.c */
 u32 nav_read_hw_duration_flag(u32 *out);                        /* txss.c */
 void bf_done_report_build_send(u32 arg0, u32 arg1, u32 arg2);            /* tail.c */
 void bi_sm_obj_init(struct sm_obj *a);                       /* util.c */
-u32 peer_lookup_if_fixed_sched(u32 a0);                         /* txss.c */
-u32 peer_is_active_in_slot(struct fsched_peer_ctx *p, u32 qid);      /* txss.c */
 void peer_masks_apply_op(struct pm_ctx_s *p, u32 op, u32 val);  /* misc.c */
 void ll_ctx_merge_keepalive_pending(u32 a);                          /* misc.c */
 void itx_ka_publish_sta_pending(u32 a);                  /* bf.c */
-void peer_masks_update_sta_bit(struct fsched_peer_ctx *p, u32 sta, u32 set); /* misc.c */
 void peer_slots_scan_by_masks(u32 a);                           /* misc.c */
 void phy_params_snapshot(u32 a, u32 b);                         /* tail.c */
 u32 phy_read_signal_gain_adc_db(void);                          /* phy.c */
@@ -514,15 +423,9 @@ void power_manager_tick_if_elapsed(void);                       /* power.c */
 u32 power_mngr_stats_calc_delta(u32 a);                         /* power.c */
 void power_mngr_stats_mark_base(u32 a);                         /* power.c */
 void ppdu_unpack_desc_word(u32 a, u32 *o0, u32 *o1, u32 *o2, u32 *o3, u32 *o4, u32 *o5); /* phy.c */
-void qh_build_descriptor(u32 a, u32 b, struct qh_desc3_win *d); /* txss.c */
-u32 qh_read_desc_start(u32 a);                               /* txss.c */
-void qh_pack_descriptor(u32 dst, u32 a, u32 count, u32 c, u32 flag, u32 loopcnt, u32 copycnt); /* txss.c */
 void qh_read_desc_window(u32 dst, u32 a1, u32 a2, u32 a3, u32 count); /* txss.c */
 void qh_reset_desc_window(void);                                /* txss.c */
 void qh_wait_desc_window_ready(void);                           /* txss.c */
-void qh_write_by_flags(u32 a, u32 b, u32 c, u32 d);             /* txss.c */
-void qh_write_desc_window(u32 data, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 count); /* txss.c */
-void qh_write_while_dma_open_check(u32 a);                      /* tail.c */
 u32 qset1_mask_any_pending_uc(u32 a);                           /* tail.c */
 u32 queue_sel_get_qset4(u32 a);                                 /* tail.c */
 void rate_search_apply_mcs(u32 a, u32 b);                       /* rate_search.c */
@@ -560,7 +463,6 @@ u32 rss_wait_get(u32 a);                                        /* util.c */
 void rx_arm_window(void);                                       /* rx.c */
 u32 rx_ppdu_is_ssw(void);                                      /* rx.c */
 u32 rx_capture_match_filter(struct rx_meas_ctx *m);             /* rx.c */
-void rx_cfg_set_sta_omni_sector(u32 a);                                  /* rx.c */
 u32 rx_flow_decode_result(void);                               /* rx.c */
 void rx_check_mode_2(struct rx_meas_ctx *m, u32 b);             /* rx.c */
 u32 rx_match_expected_response(void);                              /* rx.c */
@@ -570,7 +472,6 @@ u32 rx_flow_handle_frame(struct tx_ctx_s *a);                   /* rx.c */
 void rx_latch_cur_gain_db(void);                    /* rx.c */
 void rx_flow_measure_snr_select_best(void);                     /* rx.c */
 u32 rx_flow_run(void);                                          /* rx.c */
-u32 rx_flow_run_and_check_bf_abort(u32 a);                      /* rx.c */
 u32 rx_send_cf_end_response(void);                            /* rx.c */
 void rx_cf_end_nav_reset(u32 dur);                              /* rx.c */
 u32 rx_flow_step(struct tx_ctx_s *a, u32 b);                    /* rx.c */
@@ -590,7 +491,6 @@ void rx_meas_capture_frame(struct rx_meas_ctx *m, u32 mp);      /* rx.c */
 void rx_meas_finish_plcp(struct rx_meas_ctx *m);         /* rx.c */
 void rx_mode_configure(u32 a, u32 b);                           /* bf.c */
 void rx_nav_arm_flag_if_enabled(void);                          /* rx.c */
-void rx_nav_clear_flags(void);                                  /* rx.c */
 void rx_nav_reset_flags_arm(u32 a);                      /* rx.c */
 void rx_nav_set_from_duration(u32 a, u32 b, u32 c, u32 d);      /* rx.c */
 void rx_nav_update(u32 a, u32 b, u32 c, u32 d);                 /* rx.c */
@@ -606,23 +506,20 @@ void rx_post_late(void);                                 /* rx.c */
 void rx_update_nav_from_frame(u32 a);                           /* rx.c */
 u32 rs_next_enabled_mcs(u32 a, u32 b);                    /* rate_search.c */
 u32 rs_prev_enabled_mcs(u32 a, u32 b);                    /* rate_search.c */
-void sched_cfg_merge_update(const struct lmac_cmd_write_qh *sr); /* tail.c */
 u32 rfc_clear_sector_row(u32 a);                                  /* txss.c */
-void fsched_slot_resetup_if_time_left(struct fsched_peer_ctx *p, u32 b);   /* tail.c */
-void fsched_bf_req_trigger(u32 a);                              /* tail.c */
 void set_selected_rf_sector_index_cmd_handler(const struct lmac_cmd_rf_sector_sel *c); /* cmd.c */
 void set_tsf_event(u32 a);                                      /* tail.c */
 void sls_build_ssw_ack(struct ssw_ack_frame *f, u32 idx, u32 flag); /* txss.c */
 void sls_clear_rx_state(void);                                  /* txss.c */
 u32 sls_rx_ssw_frame(void);                                     /* txss.c */
 void sls_send_ssw_ack(u32 a, u32 b);                            /* txss.c */
+void sp_run_tx_slot(void);                                      /* l1.c */
 void ss_copy_cfg_from_cmd(const struct lmac_cmd_ss_order *c);   /* cmd.c */
 u32 ss_plan_next_sector(u32 a, u32 b);                          /* tail.c */
 void ss_update_frames_number(u32 a);                            /* cmd.c */
 void sta_apply_bf_result(u32 a, u32 b);                         /* txss.c */
 void sta_apply_rx_sector_and_mcs(u32 a);                        /* txss.c */
 void sta_ctx_reset_counters(struct pm_ctx_s *p, u32 a1);        /* tail.c */
-u32 sta_find_by_qid(struct fsched_peer_ctx *p, u32 qid);       /* txss.c */
 u32 qid_cfg_get_sta(u32 a, u32 out);                         /* txss.c */
 u8 rs_internal_trigger_disabled(u32 idx);                             /* rate_search.c */
 u32 sta_queue_class(u32 a, u32 b);                              /* txss.c */
@@ -643,10 +540,8 @@ void tx_ctx_post_status(struct pm_ctx_s *p, u32 arg, u32 type); /* tx.c */
 void tx_fifo_write_bytes(u32 src, u32 len);                     /* mem.c */
 void tx_crypto_ctl_arm(void);                            /* tx.c */
 u32 rate_search_per_check(struct tx_ctx_s *a);                        /* tail.c */
-void tx_initiator_flow_fixed_scheduling(u32 a);                 /* tail.c */
 void tx_initiator_reset_slot_counters(u32 a);                   /* tx.c */
 void tx_mtp_queue_gate(u32 a);                                  /* tail.c */
-void tx_non_data_flow_fixed_scheduling(u32 a);                  /* tail.c */
 void tx_pick_slot_for_peer(u32 a, u32 b, u32 c);                /* tx.c */
 void tx_program_vector_rf(u32 a, u32 b);                        /* tx.c */
 u32 tx_send_and_await_rx_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d); /* tx.c */
@@ -662,7 +557,6 @@ u32 txop_await_cts_ppdu(struct tx_ctx_s *a, u32 b);             /* txss.c */
 void txop_clear_l2_offload_tx_ctl_bit1(void);                             /* txss.c */
 u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a);          /* tail.c */
 u32 txop_pick_ctrl_code_by_peer(struct tx_ctx_s *a);            /* txss.c */
-u8 txq_fifo_ptp_idle_snapshot(void);                            /* txss.c */
 void txrx_api_program_bi_tsf_control(const struct lmac_cmd_rx_on *a);         /* cmd.c */
 void txrx_api_program_ifs_timing(u32 a);                                 /* cmd.c */
 void txrx_api_program_edca_ac(u32 a, u32 b);                             /* cmd.c */
@@ -683,7 +577,6 @@ u32 txss_sweep_duration_for_sta(u32 a);                         /* txss.c */
 void txss_sweep_timing(u32 out, u32 byte1, u32 byte2);          /* txss.c */
 void uc_assert(u32 caller, u32 code);                           /* misc.c */
 u32 uc_bi_counter_in_window(u32 a);                             /* uutil.c */
-void l1_task_dispatch_evt4(void);                              /* uutil.c */
 u32 uc_clk_now(void);                                           /* util.c */
 u32 uc_clk_since(u32 *last);                                    /* util.c */
 void uc_delay_clk(u32 clk);                                     /* util.c */
@@ -702,17 +595,13 @@ void uc_evt_send_phy_stats_ready(u32 a);                                     /* 
 void uc_evt_send_sp_slots_reload(u32 a);                                /* evt.c */
 void uc_evt_send_channel_estimation(u8 a);                                      /* evt.c */
 void uc_evt_send_pmc(u32 a, u32 b, u32 c);                   /* evt.c */
-void uc_evt_send_vring_ssn(u32 a, u32 b, u32 c);                       /* evt.c */
-void uc_evt_send_fixed_sched_enabled(const u32 *a);                              /* evt.c */
 u32 uc_cmd_ring_pending(struct uc_mbox_ctx *m);               /* uutil.c */
 u32 uc_ring_cur_empty(struct uc_ring *r);                     /* uutil.c */
 void uc_init(void);                                             /* boot.c */
 void uc_init_cb_bi_sm_name(void);                                   /* boot.c */
 void uc_init_cb_cmdq(void);                                     /* boot.c */
 void uc_init_cb_copy_rf_mask(void);                              /* boot.c */
-void uc_init_cb_globals(void);                                  /* boot.c */
 void uc_init_cb_rx_meas(void);                                     /* boot.c */
-void uc_init_globals(struct fsched_peer_ctx *p);                /* uutil.c */
 void uc_irq_set_level(u32 a, u32 b);                            /* uutil.c */
 u32 uc_ring_cur_addr(struct uc_ring *r);                     /* uutil.c */
 void uc_list_insert_by_prio(u32 obj);                           /* util.c */
@@ -807,10 +696,7 @@ void ucode_cmd_0x3b_handler(u32 a);                             /* cmd.c */
 void ucode_cmd_0x3c_handler(struct rx_meas_ctx *m, u32 b);      /* cmd.c */
 void ucode_cmd_0x3d_handler(struct rx_meas_ctx *m, u32 b);      /* cmd.c */
 void ucode_cmd_0x41_handler(u32 a);                             /* cmd.c */
-void ucode_cmd_0x47_handler(const struct lmac_cmd_fsched_peer *c); /* cmd.c */
-void ucode_cmd_0x48_handler(u32 a);                             /* cmd.c */
 void ucode_cmd_0x49_handler(u32 a);                             /* cmd.c */
-void ucode_cmd_0x4a_handler(u32 a);                             /* cmd.c */
 u32 rx_meas_arm_request(struct rx_meas_ctx *m, u32 b);           /* cmd.c */
 void ucode_cmd_apply_mac_cfg(u32 a);                            /* cmd.c */
 void ucode_cmd_dispatch(u32 a, u32 b);                          /* cmd.c */
@@ -822,9 +708,7 @@ void ucode_cmdq_handler(struct uc_mbox_ctx *m, u32 item);       /* misc.c */
 void ucode_pm_set_busy_flag(u32 a);                             /* uutil.c */
 void ucode_pm_stamp_tsf_slots(void);                            /* uutil.c */
 void update_sector_sweep_frames_number(u32 a, u32 b);           /* tail.c */
-void vring_disconnect_flush(u32 a, u32 b, u32 c, u32 d);        /* tail.c */
 void boot_uc_publish_mac_cmd_log_snap(u32 v);                                  /* boot.c */
-u32 vring_hw_is_empty(u32 a);                             /* util.c */
 void wmi_cmd_txss_set_sectors_number(u32 a);                    /* cmd.c */
 void wmi_cmd_txss_set_sectors_order(const struct lmac_cmd_ss_order *c); /* cmd.c */
 

@@ -19,8 +19,6 @@
  *    0x857ed8..0x857eec задевает link_stat[8] (sta = SPARRAW_PEER_UNKNOWN), 0x857f00.. — тесты (test_uc_sls_sweep),
  *    поэтому fwsh_uc_wait — с 0x857f80. Прежде (до строгого TDMA) он стоял на 0x857978.
  *  - всю SRAM 0x840000..0x860000, кроме board-файла, обнуляет crt0 fw (fw/fw.ld __peri_clr_*) — и все блоки выше.
- *  - fixed_sched (0x847a3c) — объект fw (символ fw/fw.ld); uc читает его по указателю
- *    fwsh_sets.fsched_tbl.
  *
  * fw: объекты — символы fw/fw.ld (extern ниже). uc: те же имена — макросы на литеральный
  * адрес (uc/dccm.h определяет FWSH_UC до включения): с extern-символами gcc теряет общую базу
@@ -108,7 +106,7 @@ struct mac_mon_report_s {
     u32  nav_accum;                 /* +0x4c накопитель NAV (+0x4c): rx_nav_set_from_duration += r13 (rx.c 2352) */
     u32  rx_listen_time;            /* +0x50 +0x50 (только 6.2, смысл по MAC-MON.md не установлен): l1.c 660 += TSF − [0x8006e0] (метка */
     u32  busy_time;                 /* +0x54 +0x54 занятость среды [гипотеза MAC-MON.md]: l1_task_entry += 0xa при [0x800634] != 0 (l1. */
-    u16  dti_backoff;               /* +0x58 backoff DTI (+0x58): fixed_sched_run_tx_slot ++ (l1.c 616) */
+    u16  dti_backoff;               /* +0x58 backoff DTI (+0x58): sp_run_tx_slot ++ (l1.c 616) */
     u16  tx_rts;                    /* +0x5a tx rts (+0x5a): tail.c 2561 */
     u16  rx_cts;                    /* +0x5c rx cts (+0x5c): tx_sta_wait_slot_and_tx, обычная передача (tx.c 1112) */
     u16  rx_dts;                    /* +0x5e rx dts (+0x5e): tx.c 1105 */
@@ -250,11 +248,8 @@ struct ll_ctx {
     u32 ka_acc[SPARRAW_MAX_STA];               /* 0x184: накопленное время без трафика (keep-alive) */
     u32 ka_period[SPARRAW_MAX_STA];            /* 0x1a4: текущий период keep-alive */
     u32 ka_cnt[SPARRAW_MAX_STA];               /* 0x1c4: срабатываний keep-alive */
-    u32 fsched_flush_mask;                     /* 0x1e4: uc — станции, у которых слот fixed-sched кончился
-                                                *       flush (fsched_ctx.flush_cnt); fw — «есть ожидающее» и
-                                                *       запрос keep-alive по cid */
-    u32 fsched_flush_over;                     /* 0x1e8: uc — flush_cnt ≥ fsched_ctx.max_cnt; fw — запрос
-                                                *       keep-alive при fixed_sched.enabled */
+    u32 rsv_1e4[2];                            /* 0x1e4: свободно (vendor — маски flush фиксированного расписания;
+                                                *       удалено 2026-11-21) */
     u16 bcn_cnt[SPARRAW_MAX_STA];              /* 0x1ec: BI без бикона подряд */
     u8  drop_req;                              /* 0x1fc: запрос разрыва по cid (детектор старения) */
     u8  rsv_1fd[3];
@@ -266,7 +261,6 @@ FWSH_OFF(struct ll_ctx, idle, 0x164);
 FWSH_OFF(struct ll_ctx, ka_acc, 0x184);
 FWSH_OFF(struct ll_ctx, ka_period, 0x1a4);
 FWSH_OFF(struct ll_ctx, ka_cnt, 0x1c4);
-FWSH_OFF(struct ll_ctx, fsched_flush_mask, 0x1e4);
 FWSH_OFF(struct ll_ctx, bcn_cnt, 0x1ec);
 FWSH_OFF(struct ll_ctx, drop_req, 0x1fc);
 _Static_assert(sizeof(struct ll_ctx) == 0x200, "ll_ctx");
@@ -399,39 +393,6 @@ FWSH_OFF(struct fwsh_phy_blk, tof_req, 0x08);
 FWSH_OFF(struct fwsh_phy_blk, st, 0x0c);
 _Static_assert(sizeof(struct fwsh_phy_blk) == 0x90, "fwsh_phy_blk");
 
-/* Параметры фиксированного расписания по MCS (12 Б). uc (по чтениям): byte0 — длительность
- * слота (×165 → поле qset), byte1 — начальный счётчик RD пира, +2/+4 — границы слота (+4
- * сравнивается с мкс до TBTT), +8 — 3-й аргумент macq_kick_queue_tx. */
-struct fixed_sched_mcs {
-    u8  time_before_tx_us;                     /* 0x00: time_in_usec_before_initiate_tx */
-    u8  rd_count;                              /* 0x01: rd_enabled / rd_count_per_slot (UL) */
-    u16 stop_vring_us;                         /* 0x02: time_in_usec_to_stop_vring */
-    u16 flush_to_us;                           /* 0x04: flush_to_in_usec */
-    u16 rsv_06;
-    u32 mac_buff_size;                         /* 0x08: mac_buff_size_in_bytes */
-};
-_Static_assert(sizeof(struct fixed_sched_mcs) == 0xc, "fixed_sched_mcs");
-#define FIXED_SCHED_MCS_N 13
-
-/* Фиксированное расписание (0x847a3c, 0xa8 Б; дальше — calib_lo_power_obj 0x847ae4). Объект
- * fw (WMI_FIXED_SCHEDULING_CONFIG), uc читает по указателю fwsh_sets.fsched_tbl. */
-struct fixed_sched {
-    struct fixed_sched_mcs mcs[FIXED_SCHED_MCS_N]; /* 0x00 */
-    u16 max_sta_rd_ppdu_us;                    /* 0x9c */
-    u16 max_sta_grant_ppdu_us;                 /* 0x9e */
-    u16 assoc_slot_us;                         /* 0xa0: uc — длительность слота (×165) */
-    u16 virtual_slot_us;                       /* 0xa2: 0 — таблица не настроена; uc — длительность Grant/слота */
-    u8  ap_slots_initiate_grant;               /* 0xa4: uc — предел slot_cnt станции (fsched_ap_station_done) */
-    u8  enabled;                               /* 0xa5: 1 — фиксированное расписание включено */
-    u8  rsv_a6[2];
-};
-FWSH_OFF(struct fixed_sched, max_sta_rd_ppdu_us, 0x9c);
-FWSH_OFF(struct fixed_sched, assoc_slot_us, 0xa0);
-FWSH_OFF(struct fixed_sched, virtual_slot_us, 0xa2);
-FWSH_OFF(struct fixed_sched, ap_slots_initiate_grant, 0xa4);
-FWSH_OFF(struct fixed_sched, enabled, 0xa5);
-_Static_assert(sizeof(struct fixed_sched) == 0xa8, "fixed_sched");
-
 /* Наборы RF (RF-сеты) и параметры развёртки секторов (0x857730, 0x88 Б; include/rf_sets.h).
  * Заполняет разбор board-файла (handle_rf_sets_info / build_tx_sector_list, fw/brd_if.c) и
  * RF-объект (fw/rf.c); uc читает. */
@@ -449,8 +410,8 @@ struct fwsh_sets {
      * (диапазонов rf_set_ranges[s]) набора; n_sec[1][0] — «число наборов» ucode (fwsh_n_sets),
      * его же пишет rf.c (sector_cfg_cnt). */
     u8  n_sec[2][RF_SETS_MAX];
-    struct fixed_sched *volatile fsched_tbl;   /* 0x14 (0x857744): таблица fixed-sched (fixed_sched__start) */
-    u32 fsched_airtime[SPARRAW_MAX_STA];       /* 0x18 (0x857748): uc — время слотов fixed-sched по станции, TSF-мкс */
+    u8  rsv14[0x24];                           /* 0x14 (0x857744): свободно (vendor — указатель на таблицу и время слотов
+                                                *       фиксированного расписания по станциям; удалено 2026-11-21) */
     u32 n_sets;                                /* 0x38 (0x857768): число наборов RF (2/3 — также поправка silent RSSI) */
     u32 brp_cfg_mask[RF_SETS_MAX];             /* 0x3c (0x85776c): по RF — разрешённые конфигурации BRP */
     union {                                    /* 0x5c (0x85778c): маска RF-модулей набора */
@@ -469,8 +430,7 @@ struct fwsh_sets {
     u8  rsv86[2];                              /* 0x86 */
 };
 FWSH_OFF(struct fwsh_sets, n_sec, 0x04);
-FWSH_OFF(struct fwsh_sets, fsched_tbl, 0x14);
-FWSH_OFF(struct fwsh_sets, fsched_airtime, 0x18);
+FWSH_OFF(struct fwsh_sets, rsv14, 0x14);
 FWSH_OFF(struct fwsh_sets, n_sets, 0x38);
 FWSH_OFF(struct fwsh_sets, brp_cfg_mask, 0x3c);
 FWSH_OFF(struct fwsh_sets, set_rf_mask, 0x5c);
@@ -503,8 +463,9 @@ struct fwsh_sect_snr {
 FWSH_OFF(struct fwsh_sect_snr, cnt, 0x84);
 
 /* AID станций у AP/PCP (0x857964, SparRAW): fw пишет при ассоциации (l2mgr_send_host_event — тот AID, что ушёл
- * станции в Association Response и хосту в WMI_CONNECT_EVENT), uc читает в Source AID кадра Grant фиксированного
- * расписания (fsched_tx_ctrl_frame; 9.5.2). Индекс — cid (= индекс станции uc). AID DMG — 1…254 (9.4.1.8). */
+ * станции в Association Response и хосту в WMI_CONNECT_EVENT). Читателя в uc сейчас нет (прежде — Source AID кадра
+ * Grant фиксированного расписания vendor, удалено 2026-11-21); AID нужны кадрам Grant/SPR/Poll динамического
+ * выделения (uc/dynalloc.c, 9.5.2, 10.39.7). Индекс — cid (= индекс станции uc). AID DMG — 1…254 (9.4.1.8). */
 struct fwsh_peer_aid {
     u8  aid[SPARRAW_MAX_STA];                  /* 0x00 */
 };

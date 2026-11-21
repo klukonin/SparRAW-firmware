@@ -70,7 +70,6 @@ def test_counters_survive_publish(uc):
 
 # ---- RD отключён намеренно: держатель RDG не даёт (MAC-STAND «Ответчик RD глохнет») --------------------------------
 
-DTI_QSET_MODE = 0x8004f4
 TXRX_STATE1 = 0x8005f4
 MTP_RESP_VALID, MTP_RESP_RD_SUPP = 1 << 31, 1 << 26
 GO18_RDG = 1 << 11                                         # б11 пуска 0x18 — RDG/More PPDU (vendor: = RD_SUPP r43)
@@ -84,7 +83,6 @@ def _go18(cmds):
 def test_txop_open_no_rdg(uc):
     """Первый PPDU TXOP (txop_await_cts_ppdu): MTP сообщает RD_SUPP — пуск 0x18 без б11 (RDG не даём; 802.11-2020
     10.29.3 — RDG по усмотрению держателя). vendor: б11 = RD_SUPP."""
-    uc.w32(DTI_QSET_MODE, 0)
     uc.ext[43] = MTP_RESP_VALID | MTP_RESP_RD_SUPP
     uc.ext[40] = PHYSIG_CCA_PPDU_COMP                       # mac_cca_ok: среда свободна
     uc.ext[42] = 0
@@ -96,7 +94,6 @@ def test_txop_open_no_rdg(uc):
 
 def test_txop_continue_no_rdg(uc):
     """Следующий PPDU TXOP (mtp_get_tx_permission, хвост при txrx_state1 б1): RD_SUPP в r43 — пуск без б11."""
-    uc.w32(DTI_QSET_MODE, 0)
     uc.w32(TXRX_STATE1, 2)
     uc.ext[43] = MTP_RESP_VALID | MTP_RESP_RD_SUPP
     uc.ext[45] = (1 << 31) | 0xff                          # разрешение, ack_mask совпал — без ветки ответа

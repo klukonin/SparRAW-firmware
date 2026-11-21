@@ -772,7 +772,6 @@ def test_cbap_slot_to_tx_start(uc):
     ctx = 0x807e00
     zero(uc, ctx, 0x3c)
     uc.w8(ctx, STA_IDX)
-    uc.w32(0x8004f4, 0)                                     # dti_qset_mode
     uc.w32(0x8005f4, 0)
 
     def r42(n, k):

@@ -26,7 +26,6 @@ extern u32 fw_ver_build;                             /* 0x80005c: [gp,-0x128]: �
 extern u32 fw_ver_major;                             /* 0x800060: [gp,-0x124]: версия fw: major (6) */
 extern u32 fw_ver_minor;                             /* 0x800064: [gp,-0x120]: версия fw: minor (vendor 6.2 — 2) */
 extern u32 fw_ver_sub;                               /* 0x800068: [gp,-0x11c]: версия fw: sub (vendor 6.2 — 0) */
-extern volatile u32 vring_pair_mode;                 /* 0x80006c: [gp,-0x118]: режим vring_schd (1 — вариант 0x804e64) */
 extern volatile u32 vring_switch_idle_th_us;         /* 0x800070: [gp,-0x114]: порог простоя vring (WMI_VRING_SWITCH_TIMING idle_th_usec) */
 extern volatile u32 vring_switch_interval_us;        /* 0x800074: [gp,-0x110]: интервал переключения vring (WMI_VRING_SWITCH_TIMING interval_usec), период таймера связи pring */
 extern u32 vring_slot_opt_delay;                     /* 0x800078: [gp,-0x10c]: задержка таймера slot_optimized pring (100000) */
@@ -135,8 +134,7 @@ extern u8 vring_pring_stop_max_polls;                /* 0x800232: [gp,0xae]: п�
 extern volatile u8 calib_lo_power_level;             /* 0x800233: [gp,0xaf]: сохранённый уровень LO power (calib_lo_power__save_level; образ 0xc) */
 extern volatile u8 rf_fs8_unlock_fatal;              /* 0x800234: [gp,0xb0]: != 0 — «FS8 UNLOCK» (вектор 13, бит 7) → фатал 0x12ee */
 extern volatile u8 txq_pkt_mode;          /* 0x800235: [gp,0xb1]: packet_mode очередей данных — поле [7:4] дескриптора сектора (режимы 5/6), MAC отдаёт его
-                                                    * в r43 [7:4]: 0 сразу, 1 RTS, 2 DMG CTS-to-self (стенд 2026-10-31, MAC-STAND H-PKTMODE); fixed_sched__start = 0 */
-extern volatile u8 sched_fixed_active;               /* 0x800236: [gp,0xb2]: фиксированное расписание запущено (0 в STA, 1 в AP); режим окна MACQ */
+                                                    * в r43 [7:4]: 0 сразу, 1 RTS, 2 DMG CTS-to-self (стенд 2026-10-31, MAC-STAND H-PKTMODE) */
 extern u8 chsw_rx_agc_step_c0_lo;                    /* 0x800237: [gp,0xb3]: AGC-шаг → 0x8831c0[5:0] (hwd_phy__rx_agc_steps_disable(0); образ 0x1b) */
 extern u8 chsw_rx_agc_step_c0_hi;                    /* 0x800238: [gp,0xb4]: AGC-шаг → 0x8831c0[11:6] (образ 0x1b) */
 extern u8 chsw_rx_agc_step_c4_lo;                    /* 0x800239: [gp,0xb5]: AGC-шаг → 0x8831c4[5:0] (образ 0x1d) */

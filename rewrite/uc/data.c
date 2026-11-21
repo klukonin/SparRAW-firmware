@@ -30,7 +30,7 @@ extern char bi_sm_name[], bi_state_name_bti[], bi_state_name_abft[], bi_state_na
 /* ---- gp-окно 0x800429..0x80051c (gp = 0x800528) ---- */
 /* Значение поля abif 0x88a204 в нормальном режиме RF, если 0x80042a != 0 (rf_set_normal_mode). */
 UCDATA(800429) u8 rf_normal_abif_field = 0x2a;
-/* MCS управляющих кадров (аргумент rate у direct_tx_send_from_desc / tx_send_imm_response);
+/* MCS управляющих кадров (аргумент rate у tx_send_imm_response: Grant Ack);
  * пишет ucode_cmd_0x49_handler. В 6.4 ps.h назван «PS разрешён» — какое толкование верно, не установлено. */
 UCDATA(80043c) u8 ctrl_frame_mcs = 0x1;
 /* Четыре 6-битных поля PHY base+0x1c0/0x1c4 (биты 5:0, 11:6) для режима != 1 (hwd_phy_set_mode_uc). */
@@ -49,17 +49,15 @@ UCDATA(80044c) u32 uc_cold_boot = 0x1;
 /* Маска MAC-команды каналов/слотов: 0x924000 или 0x924f00 (mac_set_slot_mask / mac_set_chain_mask).
  * Не адрес кода, хотя похоже. */
 UCDATA(800454) u32 mac_chain_mask = 0x924f00;
-/* Флаг фиксированного расписания для L1 (l1_enter_fixed_sched пишет 0, l1_task_dispatch читает). */
-UCDATA(80045c) u32 l1_fsched_flag = 0x1;
-/* Станция/очередь фиксированного расписания, 0xff — нет (пишет ucode_cmd_0x08_handler). */
-UCDATA(800468) u32 fsched_peer_id = 0xff;
+/* Очередь широковещательного кольца точки (cid 8, набор 3), 0xff — нет (пишет ucode_cmd_0x08_handler, tx_bcast_flow). */
+UCDATA(800468) u32 bcast_qid = 0xff;
 /* При assert перевести детектор в режим 0 (uc_assert -> phy_rx_set_ina_det_mode_uc(0)). */
 UCDATA(800474) u32 assert_reset_ina_det = 0x1;
 /* Разрешение команды 0x08 MAC-очереди (mac_q_tx_ppdu_vring_cfg). */
 UCDATA(80047c) u32 macq_cmd08_en = 0x1;
 /* Флаг PM из команды 0x1b (читает pm_idle_try_enter). */
 UCDATA(8004dc) u32 pm_cfg_flag = 0x1;
-/* Разрешение ожидания ответа / RX-потока (tx_send_and_await_rx_frame, rx_flow_step, fixed_sched_run_tx_slot). */
+/* Разрешение ожидания ответа / RX-потока (tx_send_and_await_rx_frame, rx_flow_step, sp_run_tx_slot). */
 UCDATA(8004ec) u32 rx_resp_wait_en = 0x1;
 /* Сдвиг лимита TXOP (txop_apply_limits_regs). */
 UCDATA(800504) u32 txop_limit_shift = 0x2;
@@ -89,12 +87,8 @@ UCDATA(800610) UCD_BYTES(18) g800610_init = {{
 UCDATA(800640) u8 busy_gap_us = 0xf;
 /* Порог АЦП (phy_signal_gain_adc_in_range, база 0x800634 + 0xd). */
 UCDATA(800641) u8 adc_gain_thresh = 0x2;
-/* Порог времени L1 (×16 из команды 0x4a; читает l1_task_entry). */
-UCDATA(800644) u32 l1_time_thresh = 0x3e80;
 /* Биты ожидающих фоновых задач, исходно 1 и 5. */
 UCDATA(800648) u32 bg_task_pending = 0x22;
-/* Порог счётчика структуры фиксированного расписания 0x80064c (+0x18). */
-UCDATA(800664) u8 fsched_max_cnt = 0xc8;
 /* Структура 0x80066c (BRP RF): +4 разрешение/режим. */
 UCDATA(800670) u32 brp_rf_cfg_enable = 0x1;
 /* +8: номер RF (config_brp_rf). */
@@ -133,8 +127,6 @@ UCDATA(800778) u32 uc_log_module_tab[16] = {
     0x01000060, 0x0100006c, 0x01000078, 0x01000084,
     0x01000090, 0x0100009c, 0x010000a8, 0x010000b4,
 };
-/* Init-дескриптор 0x8007c8 {ключ, функция, приоритет}: функция. */
-UCDATA(8007cc) u32 init_desc_globals_fn = (u32)&uc_init_cb_globals;
 /* Слово конфигурации BRP: биты 15..20 = 10, 24..26 = 5 (brp_pick_sector_cfg, config_brp_rf).
  * +4 (0x800828) пишет uc_init_cb_copy_rf_mask. */
 UCDATA(800824) u32 brp_ctx_cfg = 0x5850000;

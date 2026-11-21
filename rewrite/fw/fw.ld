@@ -61,7 +61,7 @@ op_mbox_rx_bufs  = 0x845634; /* u8 [5][0x518] — буферы команд хо
 dbg_mbox_rx_bufs = 0x846fac; /* u8 [4][0x64] — буферы команд debug_mbox */
 dbg_mbox_tx_bufs = 0x84713c; /* u8 [7][0x100] — буферы событий debug_mbox */
 rf_set_ranges        = 0x84783c; /* struct rf_sec_range [8][32] — диапазоны секторов конфигураций наборов */
-fixed_sched  = 0x847a3c;  /* struct fixed_sched — фиксированное расписание (include/fwsh.h; uc — по указателю) */
+/* 0x847a3c..0x847ae4 — свободно (vendor: таблица фиксированного расписания, удалено 2026-11-21) */
 calib_lo_power_obj   = 0x847ae4; /* struct calib_lo_power */
 stream_pool  = 0x847b34;  /* struct mem_pool — контексты стримов (fw/stream_mgr.c) */
 stream_ctxs  = 0x847b48;  /* struct stream_ctx[9] — элементы stream_pool (include/stream.h) */

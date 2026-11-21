@@ -80,23 +80,38 @@ u32 popcount8(u32 a)
     return n;
 }
 
-/* СРОК: пауза 9,697 мкс (1600 тактов при 165 МГц) перед fixed_sched_run_tx_slot (станция в фиксированном
- * расписании: после принятого кадра AP — свой TX, вызов из l1_fixed_sched_sta_sm). Схема не из
- * 802.11 (9,7 мкс + путь — не SIFS/MBIFS), что ждёт пауза, не установлено — длительность как у
- * vendor 0x938a64 (lp 0x320 × 2×nop_s), но по часам ядра (uc_delay_clk). Изменение сдвигает начало
- * слота TX относительно события L1. */
-void fixed_sched_sta_tx_delayed(void)
+u32 bit_index_lsb(u32 a)
 {
-    /* 6.2 asm 0x938a64. */
-    uc_delay_clk(UC_NS_TO_CLK(9697u));    /* vendor: lp 0x320 × 2×nop_s = 1600 тактов при 165 */
-    mac_set_sector_arg_and_select_all(rx_resp_dur);
-    fixed_sched_run_tx_slot();
+    /* 6.2 asm 0x92d034: несмотря на имя (из blocks.json) — индекс МЛАДШЕГО
+     * установленного бита (двоичный поиск по нижним 16/8/4/2/1 битам); 0 -> 0. */
+    u32 n = 0;
+    if (a == 0)
+        return 0;
+    if ((a & 0xffff) == 0) { n += 16; a >>= 16; }
+    if ((a & 0xff) == 0)   { n += 8;  a >>= 8; }
+    if ((a & 0xf) == 0)    { n += 4;  a >>= 4; }
+    if ((a & 0x3) == 0)    { n += 2;  a >>= 2; }
+    if ((a & 0x1) == 0)    n += 1;
+    return n;
 }
 
-u32 fsched_assoc_slot_us(void)
+u32 bit_hist_push(u32 a, u32 b, u32 c, u32 d)
 {
-    /* 6.2 asm 0x927a34. */
-    return FWSH(fwsh_sets, fsched_tbl)->assoc_slot_us;
+    /* 6.2 asm 0x93cd00: сдвиг буфера, при c!=0 вставка d|buf, возврат b<=count. */
+    u32 *bs = (u32 *)a;                 /* {биты, число единиц} (rs_sta_state.back_fail и др.) */
+    u32 r14 = bs[0];
+    u32 r13 = bs[1];
+    if (r14 & (1u << 31))
+        r13--;
+    bs[1] = r13;
+    r14 <<= 1;
+    bs[0] = r14;
+    if (c != 0) {
+        bs[0] = d | r14;
+        r13++;
+        bs[1] = r13;
+    }
+    return (b <= r13) ? 1 : 0;
 }
 
 u32 rss_wait_get(u32 a)
@@ -113,14 +128,6 @@ void bg_task_call_report_cb(struct rx_meas_ctx *m)
     u32 cb = m->report_cb;
     if (cb != 0)
         ((void (*)(struct rx_meas_ctx *, u32))cb)(m, cb);   /* vendor: r0 = m, r1 = cb */
-}
-
-u32 vring_hw_is_empty(u32 a)
-{
-    /* 6.2 asm 0x926298 (→0x92a6fc): r14/r13 = vring head/tail. */
-    u32 r14 = *(u32 *)((((a << 8) + 0x440c0c0) >> 3) & ~3u);
-    u32 r13 = *(u32 *)((((a << 8) + 0x440c100) >> 3) & ~3u);
-    return (r14 == r13) ? 1 : 0;
 }
 
 s32 bf_rep_record_snr_level(u32 a)

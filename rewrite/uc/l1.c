@@ -34,15 +34,6 @@ void l1_task_mask_wake_req_and_defer(void)
     bg_task_set_pending_bit(4);
 }
 
-void l1_task_dispatch_evt1(void)
-{
-    u32 r0 = dti_qset_mode;
-    if (r0 == 0)
-        l1_task_on_evt1();
-    else if (r0 == 1 || r0 == 2)
-        l1_task_on_evt1_fixed_sched();
-}
-
 
 void l2_task_entry(u32 a)
 {
@@ -68,52 +59,6 @@ void l2_task_kick_mac_events(void)
     arc_sync();
 }
 
-
-/* ---- fixed_sched accessors ---- */
-
-u32 fixed_sched_kick_slot_queue(struct fsched_peer_ctx *p)
-{
-    if (p->slot_kicked != 0)
-        uc_assert((u32)__builtin_return_address(0), 0x158e);
-    u32 qid = fsched_cur_entry_qid(p);
-    u32 arg = fixed_sched_slot_mac_buff_size(p);
-    macq_kick_queue_tx(qid, 0, arg);
-    p->slot_kicked = 1;
-    return 1;
-}
-
-u32 fixed_sched_slot_mac_buff_size(struct fsched_peer_ctx *p)
-{
-    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_cfg_idx(p)].mac_buff_size;
-}
-u16 fixed_sched_slot_stop_vring_us(struct fsched_peer_ctx *p)
-{
-    /* 0x927d94 */
-    return FWSH(fwsh_sets, fsched_tbl)->mcs[fsched_cur_entry_cfg_idx(p)].stop_vring_us;
-}
-
-/* Завершить отложенное снятие пира (peer_masks_update_sta_bit): снять бит, событие 0x2e. */
-u32 fixed_sched_complete_peer_off(struct fsched_peer_ctx *p)
-{
-    u8 id = p->pend_off_qid;
-    if (id == 0xff)
-        return id;
-    p->active_mask &= ~(1u << (p->pend_off_idx & 0x1f));
-    u32 desc = qh_read_desc_start(id);
-    uc_evt_send_vring_ssn(id, 0, desc);
-    p->pend_off_qid = 0xff;
-    return id;
-}
-
-void fixed_sched_manager_decrement_curr_sta_rd_counter(struct fsched_peer_ctx *p)
-{
-    /* 6.2 asm 0x92574c: ноль — лог вместо декремента. */
-    struct fsched_peer_ent *e = &p->ent[p->cur_idx];
-    if ((s32)e->rd_counter >= 1)
-        e->rd_counter -= 1;
-    else
-        uc_log_emit_snapshot(0x10, 0x1000738);
-}
 
 /* ---- L1 task-слой ---- */
 void l1_task_check_bf_req_timeout(void)
@@ -177,19 +122,6 @@ u32 l1_rx_then_check_bf_abort(void)
     return r14;
 }
 
-void l1_enter_fixed_sched(u32 a)
-{
-    l1_fsched_flag = 0;
-    mac_set_slot_mask_924000();
-    rx_nav_clear_flags();
-    dti_qset_mode = (uc_role_ap == 0) ? 2 : 1;
-    u32 e30[2] = {0, 0};
-    uc_evt_send_fixed_sched_enabled(e30);
-    if (uc_role_ap == 0) {
-        rx_mode_configure(2, a);
-        mac_read_tsf64_uc(fsched_peers.rx_tsf);
-    }
-}
 void l1_task_on_evt4(void)
 {
     /* 0x92cd20: r54 перечитывается перед каждой проверкой. */
@@ -203,19 +135,6 @@ void l1_task_on_evt4(void)
         uc_mac_cmd(0x49020000);                 /* таймер простоя UPM: PS вырезан, не взводится */
     } else {
         uc_assert((u32)__builtin_return_address(0), 0x2c);
-    }
-}
-void l1_fixed_sched_event_entry(void)
-{
-    /* 0x92cd94 */
-    if (mac_evt4() & MAC_EVT4_EXT_GP012_END) {
-        uc_mac_cmd(0x49008000);
-        if (dti_qset_mode == 1)
-            l1_fixed_sched_ap_sm(4);
-        else
-            l1_fixed_sched_sta_sm(4);
-    } else if (mac_evt4() & MAC_EVT4_EXT_GP6789_END) {
-        uc_mac_cmd(0x49020000);
     }
 }
 void l1_task_reset_units(void)
@@ -304,7 +223,7 @@ void l1_task_dispatch(u32 a, u32 b)
     case 3:
         peer_slots_scan_by_masks(a);
         l1_snapshot_bi_counter();
-        if (l1_fsched_flag != 0 && g_800494 == 0 && bi_cfg.bi_mode != 2) {
+        if (g_800494 == 0 && bi_cfg.bi_mode != 2) {
             uc_sm_handle_event(&bi_sm, 3, 0);
         } else {
             mac_compute_bi_mon_timings();
@@ -367,7 +286,7 @@ void l1_task_entry(u32 mode)
  * перед кадром, сдвигает вход так, что кадр кончается раньше проверки, и ответ уже не укладывается в срок
  * (SIFS_CNT_RX_LATE_END_SC, ifs.h). Поэтому между шагами тика (и сразу после перевзвода таймеров) — проверка
  * busy_event (r42 б19): начался приём — сначала обработчик событий L1 (тот же, что вызвал бы вектор 9 сразу после
- * тика: l1_task_dispatch_evt1), затем оставшиеся шаги тика — каждый ровно один раз за тик, порядок шагов прежний,
+ * тика: l1_task_on_evt1), затем оставшиеся шаги тика — каждый ровно один раз за тик, порядок шагов прежний,
  * всё на уровне L1 (как у vendor, без вложенных прерываний). Задержка начала приёма тиком — не больше самого длинного
  * шага (rx_nav_check_idle, ~90 тактов) вместо всего тика. Проверка — чтение r42, 3–4 инструкции.
  * Только при включённом приёме и не остановленном MAC — предусловия l1_task_on_evt1 (uc_assert 0x27 / 0x1314): busy_event
@@ -377,7 +296,7 @@ void l1_task_entry(u32 mode)
 static __attribute__((noinline)) void l1_tick_rx_dispatch(void)
 {
     if (rx_on_state != 0 && mac_mode_sw.halted == 0)
-        l1_task_dispatch_evt1();
+        l1_task_on_evt1();
 }
 static inline __attribute__((always_inline)) void l1_tick_rx_first(void)
 {
@@ -413,11 +332,11 @@ void l1_task_entry(u32 mode)
         return;
     }
     if (mode == 1) {
-        l1_task_dispatch_evt1();
+        l1_task_on_evt1();
         return;
     }
     if (mode == 2) {
-        l1_task_dispatch_evt4();
+        l1_task_on_evt4();
         return;
     }
     if (mode != 3)                              /* cmp_s r0,3; bne_s L_92cacc — выход */
@@ -457,20 +376,6 @@ void l1_task_entry(u32 mode)
     l1_task_sel_nbr_update();
     if (*r13 == 0 && phy_signal_gain_adc_in_range() == 1)
         *r13 = uc_read_tsf_lo();
-    if (rx_on_state != 0 && dti_qset_mode == 2 &&
-        !(rx_mode_flags & 1u) && maint_sta_mask != 0) {
-        u64 d = bi_tsf_delta64(fsched_peers.rx_tsf[0], fsched_peers.rx_tsf[1]);
-        if (l1_time_thresh < (u32)d) {
-            u32 n;
-            n = arc_norm((u32)maint_sta_mask);
-            u32 idx = 0x1e - n;
-            volatile struct link_stat_s *r0 = &link_stat[idx];
-            if (r0->bf_reasons == 0) {
-                r0->bf_reasons |= 0x4;
-                rx_mode_configure(2, idx);      /* r1 = индекс станции */
-            }
-        }
-    }
 }
 #ifdef UC_STAMP_MASK
 #undef l1_task_entry
@@ -550,19 +455,6 @@ void l1_task_on_evt1(void)
 #endif
             l1_task_run_bi_phase(&bi_ctx);
         } else if (mac_evt1() & MAC_EVT1_BI1) {
-            if (fsched_enabled != 0) {
-                if (uc_role_ap == 1) {
-                    l1_enter_fixed_sched(0);
-                    return;
-                }
-                if (maint_sta_mask != 0) {
-                    u32 idx = 30 - arc_norm(maint_sta_mask);
-                    if (sta_tab[idx].qid_mask_q6 != 0) {
-                        l1_enter_fixed_sched(idx);      /* r0 = индекс станции */
-                        return;
-                    }
-                }
-            }
             bi_win.tbtt_cnt += 1;
             l1_task_dispatch(0, 0);
         } else if (mac_evt1() & MAC_EVT1_BACKOFF) {
@@ -581,47 +473,6 @@ void l1_task_on_evt1(void)
         if (!(mac_evt1() & (MAC_EVT1_BI1 | MAC_EVT1_BACKOFF | MAC_EVT1_BUSY)))
             return;
     }
-}
-
-/* 6.2 asm 0x92cc48: шаг L1 в режимах 1/2 (отдельная функция внутри блока
- * l1_task__main_step; вход из l1_task_dispatch_evt1). Событие -> фаза SM fixed-sched. */
-void l1_task_on_evt1_fixed_sched(void)
-{
-    do {
-        u32 phase = 0;
-        if (mac_evt1() & MAC_EVT1_BUSY) {          /* vendor перечитывает r42 на каждой проверке */
-            u32 tsf = uc_read_tsf_lo();
-            busy_acct.busy_start_tsf = tsf;
-            if (busy_acct.sig_start_tsf != 0) {
-                if (tsf - busy_acct.sig_start_tsf >= 0xa)
-                    mac_mon_report.busy_time += 0xa;
-                busy_acct.sig_start_tsf = 0;
-            }
-            phase = 2;
-        } else if (mac_evt1() & MAC_EVT1_BI1) {
-            bi_win.tbtt_cnt += 1;
-            uc_log_emit1(0x20, 0x10006dc, uc_read_tsf_lo());
-            l1_task_dispatch(0, 0);
-            phase = 1;
-        } else if (mac_evt1() & MAC_EVT1_BACKOFF) {
-            if (busy_acct.sig_start_tsf != 0) {
-                mac_mon_report.busy_time += 0xa;
-                busy_acct.sig_start_tsf = 0;
-            }
-            phase = 6;
-        }
-        if (l2_wd_fired != 0) {
-            phase = 0;
-            l2_wd_fired = 0;
-            l1_task_report_link_lost();
-        }
-        if (phase != 0) {
-            if (dti_qset_mode == 1)
-                l1_fixed_sched_ap_sm(phase);
-            else
-                l1_fixed_sched_sta_sm(phase);
-        }
-    } while (mac_evt1() & (MAC_EVT1_BI1 | MAC_EVT1_BACKOFF | MAC_EVT1_BUSY));
 }
 
 /* Отчёт об ошибках L2 (0x92cdd8) — портировано. */
@@ -645,78 +496,6 @@ void l2_task_report_error_bits(void)
     uc_assert((u32)__builtin_return_address(0), 0x26);   /* 0x92cf56: нет бита — код 0x26 */
 }
 
-void macq_flush_queue(u32 a, u32 b, u32 c)  /* 6.2 asm 0x925b7c */
-{
-    macq_hw_sync_dma_wptr(a, b, c);
-    volatile u32 *q = (volatile u32 *)HW_TXQ_REGS;
-    u32 bit = 1u << c;
-    u32 r3 = q[7] & ~bit;                   /* чтение 0x886a1c до записей (как vendor) */
-    q[6] = bit;                             /* 0x886a18 */
-    q[7] = r3;                              /* 0x886a1c */
-    q[8] = 1;                               /* 0x886a20 */
-    arc_sync();
-    u32 wptr = macq_hw_read_wptr(b);
-    for (;;) {
-        uc_mac_cmd(0xaaad00);
-        uc_mac_cmd(arc_lr(uc_timer[1].count) & 0xffffff);
-        if (dmaq_hw_read_ptr(a) != wptr)
-            continue;
-        if (macq_read_hw_queue_word(a) != macq_hw_read_rptr(b))
-            continue;
-        break;
-    }
-    arc_sync();
-    macq_hw_clear_2d8(b);
-    arc_sync();
-}
-
-u32 macq_is_idle(u32 a)                     /* 6.2 asm 0x92609c */
-{
-    u32 g = mac_sel_shadow & 0xfffff0ff;
-    mac_sel_shadow = g | (1u << 8) | (1u << 9) | (1u << 11);
-    uc_mac_cmd(g | 0x1d000b00);
-    arc_nops(3);
-    vring_dbg.macq_busy_a = mac_queue_sel();
-    g = mac_sel_shadow & 0xfffff0ff;
-    mac_sel_shadow = g | (1u << 10) | (1u << 11);
-    uc_mac_cmd(g | 0x1d000c00);
-    arc_nops(3);
-    vring_dbg.macq_busy_b = mac_queue_sel();
-    u32 bit = 1u << a;
-    if ((bit & vring_dbg.macq_busy_a) || (bit & vring_dbg.macq_busy_b))
-        return 0;
-    u32 sp[4];
-    qh_read_desc_window((u32)sp, a, 2, 0, 1);
-    const struct macq_desc *d = (const struct macq_desc *)sp;   /* окно очереди */
-    u32 computed = ((d->w3 & 0xf) << 8) | d->param_a_lo;
-    u32 masked = (d->w2 >> 12) & 0xfff;
-    u32 m1 = (computed == masked) ? 1 : 0;
-    u32 m2 = (d->rd == d->wr) ? 1 : 0;
-    return (m1 && m2) ? 1 : 0;
-}
-void macq_disable_queue_and_ack_irq(u32 a, u32 b)   /* 6.2 asm 0x9262a0 */
-{
-    (void)a;
-    dma_fw_icr_c24_write(1u << (b + 8));
-    macq_hw_disable_queue(b);
-}
-
-void fixed_sched_slot_prepare(u32 a)
-{
-    macq_flush_queue(a, 0, a);
-    if (macq_is_idle(a) != 0)
-        return;
-    dump_mac_buffer_bases(a, a);
-    uc_assert((u32)__builtin_return_address(0), 0x157b);
-}
-
-void fixed_sched_slot_setup(struct fsched_peer_ctx *p)
-{
-    u32 qid = fsched_cur_entry_qid(p);
-    macq_disable_queue_and_ack_irq(qid, 0);          /* vendor: r0 = qid, не используется */
-    p->slot_kicked = 0;
-}
-
 /* 0x92b648: возвращаемое значение (r0 после l1_task_dispatch) вызывающий не использует. */
 void l1_task_run_bi_phase(struct bi_ctx_s *c)
 {
@@ -735,8 +514,8 @@ void l1_task_run_bi_phase(struct bi_ctx_s *c)
     l1_task_dispatch(5, v);
 }
 
-/* Запуск TX-слота fixed-sched (0x93768c) — портировано. */
-void fixed_sched_run_tx_slot(void)
+/* Запуск TX-слота (0x93768c): своё SP строгого TDMA (uc/ese_dti.c) и слот DTI автомата BI (uc/bi.c). */
+void sp_run_tx_slot(void)
 {
     /* 6.2 asm 0x93768c. */
     mac_mon_report.dti_backoff = mac_mon_report.dti_backoff + 1;
@@ -744,25 +523,22 @@ void fixed_sched_run_tx_slot(void)
         mac_set_chain_modes(2);
         uc_mac_cmd(0x81 << 18);
         uc_tx_is_idle();
-        fsched_slot_skip_cnt = fsched_slot_skip_cnt + 1;
+        tx_slot_skip_cnt = tx_slot_skip_cnt + 1;
         return;
     }
-    uc_stats.fsched_tx_slot = uc_stats.fsched_tx_slot + 1;
+    uc_stats.tx_slot = uc_stats.tx_slot + 1;
     tx_resp_sent = 0;
     tx_rx_flow_ran = 0;
     rx_cts_rf_restore = 0;
     uc_mac_cmd(0x14000100);
-    if (dti_qset_mode == 0)
-        tx_slot_dispatch(0);
-    else
-        tx_initiator_flow_fixed_scheduling(dti_qset_mode);
+    tx_slot_dispatch(0);
     /* своё SP: обмен без CF-End, план TXOP MAC кончается сам внутри SP — не ждать (uc/ese_dti.c ese_dti_sp_src_end) */
     if (tx_resp_sent != 0 && FWSH(fwsh_sp_gate, init_sp) == 0) {
         uc_wait_txop_end();                     /* исправлено (vendor): без срока — см. uc_wait_txop_end (mac.c) */
-        if (rx_resp_wait_en == 1 && fsched_rx_resp_seen == 0)
+        if (rx_resp_wait_en == 1 && tx_slot_resp_seen == 0)
             uc_mac_cmd(0x1f000601);
     }
-    fsched_rx_resp_seen = 0;
+    tx_slot_resp_seen = 0;
     if (tx_rx_flow_ran != 0) {
         u32 r1 = tx_ctx_pool.cur->sta;
         if (r1 < 8)

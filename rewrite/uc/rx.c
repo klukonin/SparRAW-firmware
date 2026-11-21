@@ -54,11 +54,6 @@ static inline __attribute__((always_inline)) void uc_nop3(void)
 }
 
 
-void rx_nav_clear_flags(void)
-{
-    rx_nav.flags = 0;
-}
-
 void rx_nav_arm_flag_if_enabled(void)
 {
     if (rx_nav.enable == 0) {
@@ -92,11 +87,6 @@ void rx_latch_cur_gain_db(void)
     sel_nbr.cur_gain_db = (u8)v;
     if (v > 0x3f)
         sel_nbr.cur_gain_db = 0;
-}
-
-void rx_cfg_set_sta_omni_sector(u32 a)
-{
-    rf_chain_word = sta_tab[a].omni_rx_sel;
 }
 
 void rx_listen_set_flag_and_stamp_tsf(void)
@@ -137,20 +127,6 @@ void rx_end_switch_to_tx(void)
         uc_mac_cmd_nl(0x1f000601);
         rx_end_tx_late_cnt += 1;                  /* ld_s [gp,4] (байты) / st.as [gp,1] */
     }
-}
-
-u32 rx_flow_run_and_check_bf_abort(u32 a)
-{
-    /* 6.2 asm 0x926310. */
-    (void)a;
-    u32 r14 = rx_flow_main();
-    if (r14 != 1)
-        return r14;
-    if (bf_abort_unexpected(VOL(rxf.sta), 0xa) != 0) {
-        bf_store_flow_status(VOL(rxf.sta), 0);
-        bf_sm_run_sta(VOL(rxf.sta));
-    }
-    return r14;
 }
 
 u32 rx_ppdu_is_ack(void)
@@ -204,8 +180,6 @@ u32 rx_flow_decode_result(void)
         return 0;
     if (v & (1u << 25))
         return 1;
-    if (v & (1u << 12))
-        return 2;
     uc_assert((u32)__builtin_return_address(0), 0x3e);
     return 3;
 }
@@ -809,7 +783,7 @@ noframe:                                        /* 0x931244 */
                 e3_sfd = 0;
             }
 #endif
-            if (!txop_sent && (txrx_state2 & 0x3001000)) {
+            if (!txop_sent && (txrx_state2 & 0x3000000)) {
                 busy_acct.busy_start_tsf = 0;
                 return 0;
             }
@@ -989,10 +963,10 @@ static inline __attribute__((always_inline)) u32 rx_fast_ctrl_rep1_ok(u32 r1)
     return !(r1 & (MAC_RX_REP1_SS | MAC_RX_REP1_NOACK_MGMT | MAC_RX_REP1_BEACON | MAC_RX_REP1_QOS_DATA |
                    MAC_RX_REP1_MGMT));
 }
-/* без измерения кадра (rx_meas), пропуска ответов (rx_resp_skip_cnt) и фиксированного расписания (dti_qset_mode) */
+/* без измерения кадра (rx_meas) и пропуска ответов (rx_resp_skip_cnt) */
 static inline __attribute__((always_inline)) u32 rx_fast_allowed(void)
 {
-    return VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0 && dti_qset_mode == 0;
+    return VOL(rx_meas.state) != 2 && rx_resp_skip_cnt == 0;
 }
 /* Ack/BlockAck: без режима BF приёма; станция s не уходит из сопровождения (как midbrp в rx_get_required_response) */
 static inline __attribute__((always_inline)) u32 rx_fast_ack_sta_ok(u32 s)
@@ -1886,7 +1860,7 @@ u32 rx_flow_main(void)
     *sta = SPARRAW_PEER_UNKNOWN;
     rxf.flags = 0;
     rx_flow_run();
-    if (*st & 0x3001000) {
+    if (*st & 0x3000000) {
         u32 r = rx_flow_decode_result();
         *f4 = 0;
         *st = 0;
@@ -1920,7 +1894,7 @@ u32 rx_flow_main(void)
                 v |= (1u << 16);
                 *st = v;
             }
-            if (v & 0x11600)
+            if (v & 0x10600)
                 break;
 #ifdef UC_STAMP_MASK
             if (UC_STAMP_ON(STAMP_BUSY_LOST) && (mac_evt1() & MAC_EVT1_BUSY))
@@ -1996,8 +1970,6 @@ u32 rx_flow_main(void)
                 *st |= (1u << 10);
         }
         /* 0x933ca8 */
-        if (*st & (1u << 12))
-            ret = rx_flow_decode_result();
         u32 t0 = tx_busy_start_tsf;
         if (t0 != 0) {
             mac_mon_report.rx_listen_time += tsf - t0;
@@ -2175,8 +2147,6 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
     u32 r14 = 0;
 
     UC_EVM(0x10);
-    if (dti_qset_mode == 1)
-        fsched_slot_resetup_if_time_left(&fsched_peers, b);
 
     /* Метка 0xeeee0b (MAC: NOP 0x00, только журнал) — у vendor здесь; у нас на выходе (в
      * продолжении TXOP — после 0x37000020, иначе — перед возвратом): до 0x1b001111 не нужна. */
@@ -2283,7 +2253,7 @@ u32 rx_flow_step(struct tx_ctx_s *a, u32 b)
         if (r17 == 0) {
             txrx_state2 |= (1u << 10);
             if ((mac_evt1() & MAC_EVT1_TXOP) && rx_resp_wait_en != 0) {   /* ld.as [gp,-15] */
-                fsched_rx_resp_seen = 1;                                   /* st.as [gp,-14] */
+                tx_slot_resp_seen = 1;                                   /* st.as [gp,-14] */
                 uc_mac_cmd(0x1f000601);
             }
         }
@@ -2359,9 +2329,6 @@ u32 rx_get_required_response(struct tx_ctx_s *frame, u32 *out)
     u32 r14 = 0, r16 = 0, r17 = 0;
     UC_STAMP(STAMP_RESP_REP, mac_rx_rep1(), mac_rx_rep2());
     UC_STAMP(STAMP_RESP_REP, mac_rx_rep3(), mac_rx_misc());
-
-    if (dti_qset_mode == 2 && maint_sta_mask != 0)
-        mac_read_tsf64_uc(fsched_peers.rx_tsf);
 
     u32 r3 = rx_resp_skip_cnt;
     if (r3 == 1) {
@@ -2522,15 +2489,6 @@ not_rts:   /* L_93327c */
 not_cf_end:   /* L_933300 */
     if (!(mac_rx_rep2() & MAC_RX_REP2_GRANT))
         goto not_grant;
-    if (dti_qset_mode == 2) {
-        u32 r3 = rxf.sta;
-        if (VOL(link_stat[r3].bf_reasons) != 0) {
-            uc_log_emit2(0x22, 0x1001168, VOL(link_stat[r3].bf_reasons), r3);
-            return 0;
-        }
-        rx_resp_dur = rx_buf_duration;
-        txrx_state2 |= (1u << 12);
-    }
     uc_stats.grant_rx += 1;
     *out = 0;
     return 9;

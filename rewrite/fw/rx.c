@@ -437,13 +437,11 @@ static u32 ese_may_initiate(struct sched_scheme *obj, const struct ese_alloc *b)
         return 1;                               /* в таблице только разрешённые CBAP */
     return (b->src_aid == obj->mid->aid) ? 1u : 0u;
 }
-/* Маяк своей точки (dmg_bcon_rx_handler): флаг «DTI расписан» для uc — ESE в маяке, CBAP Only = 0,
- * нет фиксированного расписания vendor (WMI 0xa03 идёт своим путём). */
+/* Маяк своей точки (dmg_bcon_rx_handler): флаг «DTI расписан» для uc — ESE в маяке, CBAP Only = 0. */
 __attribute__((section(".textlate"))) void ese_rx_on_own_beacon(const struct rx_pkt *pkt)
 {
     const u8 *dmg = pkt->ei->dmg_params;
-    u32 sched = pkt->ei->ext_sched.body != 0 && dmg != 0 && !(*dmg & 4u) &&
-                *(volatile u8 *)&fixed_sched.enabled == 0;
+    u32 sched = pkt->ei->ext_sched.body != 0 && dmg != 0 && !(*dmg & 4u);
     FWSH(fwsh_diag, ese_dti_sched) = (u8)sched;
     if (sched)
         FWSH(fwsh_diag, ese_dti_bcons) += 1;

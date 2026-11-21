@@ -109,16 +109,6 @@ void ucode_cmd_0x3b_handler(u32 a)
     brp_snr_cfg_enable = a;
 }
 
-void ucode_cmd_0x4a_handler(u32 a)
-{
-    l1_time_thresh = *(u32 *)a << 4;
-}
-
-void ucode_cmd_0x47_handler(const struct lmac_cmd_fsched_peer *c)
-{
-    peer_masks_update_sta_bit(&fsched_peers, c->vr, c->on);
-}
-
 void ucode_cmd_0x11_handler(u32 a)
 {
     memcpy_uc((void *)&agc_cfg, (const void *)a, sizeof(agc_cfg));
@@ -323,20 +313,6 @@ u32 ucode_cmd_0x28_handler(struct rx_meas_ctx *m, u32 b, u32 c)
     return 0;
 }
 
-void ucode_cmd_0x48_handler(u32 a)
-{
-    (void)a;
-    u16 *d = (u16 *)uc_evt_write_slot(&uc_mbox);
-    d[0] = VOL(fsched_flush_stats.slots);
-    d[1] = VOL(fsched_flush_stats.flushes);
-    d[2] = VOL(fsched_flush_stats.qword_end) - VOL(fsched_flush_stats.qword_start);
-    d[3] = VOL(fsched_flush_stats.last_sent);
-    d[4] = VOL(fsched_flush_stats.last_flushed);
-    d[5] = VOL(fsched_flush_stats.sum_sent);
-    d[6] = VOL(fsched_flush_stats.sum_flushed);
-    uc_evt_enqueue((u32)d, 0x2f, 0xe, 0);
-    memset0_words_uc((void *)&fsched_flush_stats, 0x10);
-}
 void wmi_cmd_txss_set_sectors_order(const struct lmac_cmd_ss_order *c)
 {
     /* 0x93e1c0: скопировать 76-байтный порядок секторов в набор c->set (< SPARRAW_STA_SLOTS). */
@@ -634,18 +610,6 @@ void txrx_umac_if_config_pmc_triggers_handler(u32 a)
     }
 }
 
-void fwif_write_qh(const struct lmac_cmd_write_qh *c)
-{
-    u32 sta = c->q;
-    u32 sub = c->flags;
-    uc_log_emit2(0x20, 0x10011b4, sta, sub);
-    (void)sub;
-    if (peer_lookup_if_fixed_sched(c->q) == 0)       /* bl.d L_926890; brne_s r0,0 */
-        qh_write_by_flags(c->q, c->flags, (u32)c->desc, c->n);
-    else
-        sched_cfg_merge_update(c);
-}
-
 void ss_copy_cfg_from_cmd(const struct lmac_cmd_ss_order *c)
 {
     /* L_93e152: r1 = c (сама команда), target ≠ 0 — конфиг и для маяка */
@@ -797,21 +761,18 @@ void ucode_cmd_dispatch(u32 a, u32 b)
     case 0x3b: ucode_cmd_0x3b_handler(c[0]); break;
     case 0x3c: ucode_cmd_0x3c_handler(&rx_meas, b); break;
     case 0x3d: ucode_cmd_0x3d_handler(&rx_meas, c[0]); break;
-    case 0x3e: fsched_enabled = 1; fsched_qh_mode = 1; break;
     case 0x41: ucode_cmd_0x41_handler(b); break;
     case 0x42: txrx_umac_if_config_pmc_triggers_handler(b); break;
-    case 0x45: fwif_write_qh((const struct lmac_cmd_write_qh *)b); break;
-    case 0x47: ucode_cmd_0x47_handler((const struct lmac_cmd_fsched_peer *)b); break;
-    case 0x48: ucode_cmd_0x48_handler(b); break;
     case 0x49: ucode_cmd_0x49_handler(b); break;
-    case 0x4a: ucode_cmd_0x4a_handler(b); break;
     default:                                    /* 0x22,0x25,0x33,0x34 (расписание PS, Awake Window, UPM —
                                                    энергосбережение вырезано, см. fw/action.c psc_req_reject),
                                                    0x27 (отсрочка трафика при D3 PCIe — см. fw/vectors.c
                                                    pcie_pm_event_unsupported),
                                                    0x0a,0x0d,0x0e,0x17,0x1a,0x1c,0x1d,0x1f,0x3f,0x40,
                                                    0x2c,0x2d,0x31 (TOF/FTM/AoA — только SparRAW-pro),
-                                                   0x43,0x44,0x46, > 0x4a */
+                                                   0x3e,0x45,0x47,0x48,0x4a (фиксированное расписание vendor
+                                                   — удалено: собственная схема опроса vendor, не 802.11-2020),
+                                                   0x43,0x44,0x46, > 0x49 */
         uc_assert((u32)__builtin_return_address(0), 0xa4);
         break;
     }
@@ -925,14 +886,12 @@ void ucode_cmd_0x05_handler(const struct lmac_cmd_sta_cfg *c)
         bf_reset_sta(r15, 1);
         sta_ctx_reset_counters(&pm_ctx, r15);
         arc_flag((saved & (1u << 1)) | arc_lr(10));
-        fsched_peer_deactivate(&fsched_peers, r15);
         return;
     }
     if (r0 == 0) {
         /* enable: инициализация станции */
         mac_mon_report.bcons_atim_fail_vec &= ~(1u << r15);
         sta_miss_cnt[r15] = 0;
-        fsched_peer_add(&fsched_peers, r15);
         memset0_words_uc(st, sizeof(*st));
         if (r15 < SPARRAW_MAX_STA)
             FWSH_AT(fwsh_rssi, cnt, r15) = 0;  /* SparRAW: RSSI новой станции — заново (uc_rssi_sample) */
@@ -1033,10 +992,6 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
         }
         return;                                     /* vendor: b L_93b1f4, хвост не выполняется */
     } else if (r0 == 1) {
-        if (dti_qset_mode == 2) {                /* L_93b020: brne r0,2 → пропуск */
-            mac_set_chain_mask_924f00();
-            dti_qset_mode = 0;
-        }
         if (c->flags & (1u << 1)) {
             mac_q_tx_ppdu_vring_cfg(c->qid, *(u8 *)cidp);
             mac_program_tx_with_qid(r15->qid);
@@ -1079,20 +1034,13 @@ void ucode_cmd_0x08_handler(const struct lmac_cmd_vring_cfg *c)
         u8 r0t = *(u8 *)cidp;
         if (r0t == 8) {
             if (r13 != 0)                           /* L_93b118: brne_s r13,0 → 0xff */
-                fsched_peer_id = 0xff;
+                bcast_qid = 0xff;
             else
-                fsched_peer_id = c->qid;
+                bcast_qid = c->qid;
         }
         r18 = &qset_shadow.qset6_mask;
         r17 = &st->qid_mask_q6;
         r16v = 6;
-        if (r0t < 8) {
-            u32 r0c = c->op;
-            if (r0c == 0)
-                fsched_peer_set_qid(&fsched_peers, r0t, c->qid);
-            else if (r0c == 1)
-                fsched_peer_clear_qid(&fsched_peers, r0t);
-        }
     } else {
         uc_assert((u32)__builtin_return_address(0), 0x83);
         return;

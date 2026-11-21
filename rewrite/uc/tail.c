@@ -91,14 +91,6 @@ void internal_tx_isr(void)
 /* ---- Простые thunk/accessor ---- */
 void dti_alloc_scheduled_event_thunk(u32 *wake) { dti_worker_scheduled_dti_allocation_event(wake); }
 
-/* noinline: vendor — отдельная функция (0x928308); с полем struct gcc иначе встраивает её
- * в l1_fixed_sched_ap_start_slot (codecmp). */
-__attribute__((noinline))
-u32 fsched_virtual_slot_us(void)
-{
-    return FWSH(fwsh_sets, fsched_tbl)->virtual_slot_us;
-}
-
 /* abft_cfg_load_from_cmd - в другом файле. */
 
 void rate_search_commit_mcs(struct tx_ctx_s *a)
@@ -344,48 +336,6 @@ void pm_event_mask_restore(void)
 
 /* uc_sysassert_idle_hist - в другом файле. */
 
-/* ---- прочее ---- */
-void qh_write_while_dma_open_check(u32 a)
-{
-    (void)a;
-    if (qh_dma_open == 0)
-        return;
-    struct qh_write_cmd *q = &fsched_peers.qh_pend;
-    u8 r0 = fsched_peers.slot_kicked;
-    u8 r2b = q->qid;                            /* L_92685c: r2 читается до ветки */
-    if (r0 != 0) {
-        u8 r3 = (u8)(vring_dbg.qh_write_dma_open_cnt + 1);
-        vring_dbg.qh_write_dma_open_cnt = r3;
-        uc_log_emit2(0, 0x1000704, r2b, r3);
-    }
-    qh_write_by_flags(q->qid, q->flags, (u32)q->win, q->desc_arg);
-    qh_dma_open = 0;
-}
-
-void sched_cfg_merge_update(const struct lmac_cmd_write_qh *sr)   /* тело LMAC 0x45 */
-{
-    struct qh_write_cmd *q = &fsched_peers.qh_pend;
-    u8 flags = sr->flags;
-    if (qh_dma_open == 0) {
-        memcpy_uc(q, sr, sizeof(*q));
-        qh_dma_open = 1;
-        return;
-    }
-    if (flags & 0x10) {
-        q->desc_arg = sr->n;                    /* L_9268d8: stw [r14,0x3a] */
-        memcpy_uc(q->desc_b, sr->desc + 0x40, sizeof(q->desc_b));
-    }
-    if (flags & 0x21)
-        memcpy_uc(q->win[0], sr->desc, 0x10);
-    if (flags & 0x2)
-        memcpy_uc(q->win[1], sr->desc + 0x10, 0x10);
-    if (flags & 0x4)
-        memcpy_uc(q->win[2], sr->desc + 0x20, 0x10);
-    if (flags & 0x8)
-        memcpy_uc(q->win[3], sr->desc + 0x30, 0x10);
-    q->flags |= flags;
-}
-
 void evt_queue_take_locked(struct uc_mbox_ctx *a, u32 a1, u32 a2, u32 a3)
 {
     (void)a, (void)a2, (void)a3;
@@ -569,17 +519,6 @@ u32 queue_sel_get_qset4(u32 a)
     arc_nops(3);
     *(u32 *)a = MAC_QSET4_QID_OF(mac_queue_sel());
     return MAC_QSET4_VALID_OF(mac_queue_sel());
-}
-
-void fsched_bf_req_trigger(u32 a)
-{
-    uc_mac_cmd(0x80aaab20);
-    fsched_slot_clear_miss_cnt(&fsched_peers);
-    if (bf_ctrl.triggers & (1u << 2)) {
-        u8 b = VOL(link_stat[a].bf_reasons);
-        VOL(link_stat[a].bf_reasons) = b | (1u << 2);
-    }
-    handle_bf_triggers(a, 3);
 }
 
 void rx_meas_ctx_reset(struct rx_meas_ctx *m)
@@ -773,34 +712,6 @@ void rx_meas_ctx_init(struct rx_meas_ctx *m)
     memset0_words_uc(m->sample_88306c, sizeof(m->sample_88306c));
     m->n = 0;
     memset0_words_uc(&m->plcp, sizeof(m->plcp));
-}
-
-void macq_hw_enable_queue(u32 a, u32 b, u32 c)
-{
-    macq_hw_set_ctrl_bit(a);
-    u32 base = a * 7 * 128;   /* (a*8 - a) << 7 */
-
-    u32 r1 = (base + 0x4409980) >> 3;
-    r1 &= ~3u;
-    *(u32 *)r1 = b;
-
-    u32 r2 = base + 0x44099c0;
-    u32 r0 = (r2 >> 3) & ~3u;
-    u32 r8 = *(u32 *)r0;
-    u32 bit = (u32)(1u << (r2 & 0x1f));
-    *(u32 *)r0 = (r8 & ~bit) | bit;
-
-    *(u32 *)((base + 0x44096c0) >> 3) = ((c << 16) & 0x1f0000u) | 0xf;
-    arc_sync();
-    arc_nops_nop(2);   /* vendor L_928eec: 2×nop + mov 0,0 */
-    *(u32 *)((base + 0x4409700) >> 3) = 1;
-    arc_sync();
-    arc_nops(3);     /* vendor L_928f18: 3×nop */
-    *(u32 *)((base + 0x4409700) >> 3) = 0;
-    arc_sync();
-    arc_nops(3);     /* vendor L_928f38: 3×nop */
-    *(u32 *)((base + 0x44096c0) >> 3) = ((c << 16) & 0x1f0000u) | 0x1f;
-    arc_sync();
 }
 
 void mac_program_lmac0_timing(u32 a)
@@ -1401,158 +1312,6 @@ void config_brp_rf(u32 a, u32 b)
 }
 
 
-/* Сброс 4 DMA-каналов 0x886a38/44/3c/48: 0, затем 0x40000000 (sync после каждой записи). */
-static void vring_dma_ch_reset(void)
-{
-    *(volatile u32 *)HW_TXQ_FIFO_SM_A = 0;
-    *(volatile u32 *)HW_TXQ_FIFO_SM_C = 0;
-    *(volatile u32 *)HW_TXQ_FIFO_SM_B = 0;
-    *(volatile u32 *)HW_TXQ_PTP_SM = 0;
-    arc_sync();
-    *(volatile u32 *)HW_TXQ_FIFO_SM_A = 0x40000000;
-    arc_sync();
-    *(volatile u32 *)HW_TXQ_FIFO_SM_C = 0x40000000;
-    arc_sync();
-    *(volatile u32 *)HW_TXQ_FIFO_SM_B = 0x40000000;
-    arc_sync();
-    *(volatile u32 *)HW_TXQ_PTP_SM = 0x40000000;
-    arc_sync();
-}
-
-/* vring_disconnect_flush (6.2 asm 0x925c8c): слив очереди a / DMA-кольца b
- * перед отключением vring. Цикл, пока dma_is_tx_pipe_idle(a,b,10)==0
- * (не более 15 итераций), затем отчёт и flush. */
-void vring_disconnect_flush(u32 a, u32 b, u32 c, u32 d)
-{
-    u32 r17 = c;
-    u32 r13 = 0, r19 = 1, r16 = 0, r18 = 0, r15 = 0;
-    uc_log_emit1(0x21, 0x1001b5c, a);
-    dump_mac_buffer_bases(a, r17);
-    struct tx_ctx_s *r20 = tx_ctx_alloc_next(1);
-    r20->qid = r17;
-
-    while (dma_is_tx_pipe_idle(a, b, 0xa) == 0) {          /* L_92600a */
-        if (r16 >= 0xf)
-            break;
-        u32 busy = macq_is_idle(a);                          /* L_925cce */
-        r16++;
-        if (busy != 0 && dma_is_idle_uc(b, 1) == 0) {
-            /* L_925d02: DMA-кольцо не пусто */
-            r18++;
-            if (r18 < 8) {
-                arc_zol_nops2_shl(0x7d, 6);   /* vendor L_925e54→L_92607c: mov_s 0x7d; asl_s 6; lp × 2×nop_s */
-                continue;
-            }
-            /* Выдержка перед L_925e52 (vendor L_925e44: mov lp_count,r0; lp × 2×nop_s): после
-             * commit_rptr — 0x7d << 6 (L_925e40), после сброса PTP — 0x5dc0 (r0 из L_925da6),
-             * после сброса DMA-канала — нет (b_s L_925e52). Загрузки — в своих ветвях, как у
-             * vendor (иначе gcc держит константу в регистре и выдержка короче vendor). */
-            if (dump_pring_hw(b) != 0) {
-                vring_dbg.pring_idle_cnt += 1;
-                uc_log_emit1(1, 0x1001b6c, b);
-                macq_hw_commit_rptr(b);                      /* L_925e3a */
-                arc_zol_nops2_shl(0x7d, 6);
-            } else {
-                /* L_925d32: PRING рассинхронизирован — проверить канал 0x886a48 */
-                *(volatile u32 *)HW_TXQ_PTP_SM = 0x80000000;
-                arc_sync();
-                u32 st = *(volatile u32 *)HW_TXQ_PTP_SM & 7;
-                uc_log_emit1(1, 0x1001bc4, st);
-                if (st == 5) {
-                    vring_dbg.ptp_reset_cnt += 1;
-                    *(volatile u32 *)HW_TXQ_PTP_SM = 0;
-                    arc_sync();
-                    *(volatile u32 *)HW_TXQ_PTP_SM = 0x40000000;
-                    arc_sync();
-                    arc_zol_nops2(0x50);   /* vendor L_925d7e: lp 0x50 × 2×nop_s */
-                    *(volatile u32 *)HW_TXQ_PTP_SM = 0x80000000;
-                    arc_sync();
-                    uc_log_emit1(1, 0x1001bf4, *(volatile u32 *)HW_TXQ_PTP_SM & 7);
-                    r13++;
-                    arc_zol_nops2(0x5dc0);   /* vendor mov_s r0,0x5dc0 → L_925e44: lp × 2×nop_s */
-                } else if (txq_fifo_ptp_idle_snapshot() == 0) {   /* L_925db4 */
-                    u32 n = ++vring_dbg.ptp_stuck_on_sm_other;
-                    uc_log_emit1(1, 0x1001c38, n);
-                    vring_dma_ch_reset();
-                    arc_zol_nops2(0x5dc0);   /* vendor L_925e0c: lp 0x5dc0 × 2×nop_s */
-                    r13++;
-                } else {                                     /* L_925e24 */
-                    vring_dbg.pring_idle_ptp_cnt += 1;
-                    uc_log_emit2(1, 0x1001c84, b, r13);
-                    macq_hw_commit_rptr(b);
-                    arc_zol_nops2_shl(0x7d, 6);
-                }
-            }
-            r15 = 1;                                         /* L_925e52 */
-            arc_zol_nops2_shl(0x7d, 6);   /* vendor L_925e54 (mov_s 0x7d; b.d; asl_s 6) → L_92607c: lp × 2×nop_s */
-            continue;
-        }
-
-        /* L_925cec */
-        if (macq_is_idle(a) == 0) {
-            /* L_925e5c: очередь пуста — перепрограммировать MAC-очередь */
-            if (*(volatile u32 *)HW_TX_ENGINE_STATE & 0xf)
-                uc_assert((u32)__builtin_return_address(0), 3);
-            uc_mac_cmd(0x1c000006);
-            uc_mac_cmd((r17 << 4) | (r19 << 3) | 0x46000003u | (1u << 14));
-            uc_stats.macq_ppdu += 1;
-            while (!(mac_bap_if() & MAC_BAP_REL_DONE))
-                ;
-            u32 g = mac_sel_shadow & 0xfff0ffffu;
-            mac_sel_shadow = g | (1u << 16);
-            uc_mac_cmd(g | 0x1d010000u);
-            arc_nops(3);
-            while (mac_txctl_sel() & MAC_CNT_IF_BUSY)
-                ;
-            uc_mac_cmd((d << 8) | r17 | (1u << 19) | (1u << 21) | (1u << 26) | (1u << 30));
-            uc_mac_cmd(0x45000001);
-            uc_mac_cmd(0x460001f1);
-            mac_program_tx_with_qid(r20->qid);
-            while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
-                ;
-            u32 v = mac_mtp_desc();
-            mtp_desc_lo = v & 0xf;
-            mtp_desc_hi = v >> 4;
-            while (!(mac_mtp_perm() & MAC_MTP_PERM_VALID))
-                ;
-            for (u32 k = 0; k < 10; k++) {
-                arc_zol_nops2(800);   /* vendor L_925f4c: lp 0x320 × 2×nop_s */
-                u32 s0 = macq_hw_read_state0(b);
-                if (s0 == macq_hw_read_state1(b))
-                    break;
-            }
-            r19 = 0;
-            continue;
-        }
-        if (r13 == 0) {                                      /* L_926078 */
-            arc_zol_nops2(800);   /* vendor L_926078: lp 0x320 × 2×nop_s */
-            continue;
-        }
-        while (txq_fifo_ptp_idle_snapshot() == 0) {          /* L_926002 */
-            vring_dma_ch_reset();                            /* L_925f78 */
-            r13++;
-            vring_dbg.dma_ch_reset_cnt += 1;
-            dump_pring_hw(b);
-            uc_mac_cmd(r13);
-            uc_mac_cmd(0xff22);
-        }
-    }
-
-    /* L_92601a */
-    if (r16 >= 0xf)
-        uc_assert((u32)__builtin_return_address(0), 0x158f);
-    if (vring_dbg.max_flush_tries < r16)
-        vring_dbg.max_flush_tries = (u8)r16;
-    u32 r13b = vring_dbg.flush_wa_cnt;
-    if (r15 != 0)
-        vring_dbg.flush_wa_cnt = ++r13b;
-    uc_log_emit3(0x11, 0x1001cec, r16, vring_dbg.max_flush_tries, r13b);
-    dump_mac_buffer_bases(a, r17);
-    macq_flush_queue(a, b, r17);
-    uc_log_emit_snapshot(0x11, 0x1001d2c);
-    dump_mac_buffer_bases(a, r17);
-}
-
 void direct_tx_ssw_feedback(struct sls_peer_rec *a)
 {
     UC_PAD(PAD_SSWFB_ABFT);
@@ -1593,339 +1352,6 @@ void direct_tx_ssw_feedback(struct sls_peer_rec *a)
     uc_spin_until_event(MAC_EVT1_TX_END);
 }
 
-void l1_fixed_sched_ap_sm(u32 a) {
-    /* 6.2 asm 0x92c66c. Состояние — значение аргумента; таблица 0x8017e0 по (r14 - 1):
-     * 1 → 0x92c694, 2 → 0x92c6d0, 3 → assert, 4 → 0x92c710, 5 → 0x92c77c.
-     * Следующее состояние после вызова помощника — его возврат (L_92c76c: r14 = r0). */
-    volatile u32 *st = &fsched_ctx.state;
-    u32 r14 = a;
-    u32 r13 = 1;
-    for (;;) {
-        fsched_log_phase(r14, 0);
-        switch (r14) {
-        case 1:
-            r13 = 0;
-            peer_masks_apply_op(&pm_ctx, 1, 0);
-            if (*st == 4 || *st == 7) {
-                fsched_log[fsched_log_idx].step = 9;
-                fsched_ctx.engaged = 1;
-            }
-            *st = 0;
-            fsched_ctx.slot_cnt = 0;
-            r14 = 0;
-            break;
-        case 2:
-            if (*st == 1) {
-                fsched_ctx.rx_slot_active = 1;
-                rx_flow_run_and_check_bf_abort(1);
-                fsched_ctx.rx_slot_active = 0;
-                r13 = 0; r14 = 0;
-            } else if (*st == 6) {
-                r14 = fsched_rx_slot();
-                r13 = 0;
-            } else {
-                fsched_log[fsched_log_idx].step = 0xf;
-                fsched_ctx.rx_slot_active = 0;
-                rx_flow_run_and_check_bf_abort(fsched_log_idx);
-                r13 = 0; r14 = 0;
-            }
-            break;
-        case 4:
-            r14 = 4;
-            if (rx_on_state == 0) {                  /* ldw_s [gp,148] */
-                fsched_log[fsched_log_idx].step = 0xa;
-                r13 = 0;
-                sxd_hal_write_qset_field(0, 0x9ab);
-                r14 = 0;
-                break;
-            }
-            switch (*st) {
-            case 2: r14 = l1_fixed_sched_ap_start_slot(2); r13 = 0; break;
-            case 4: r14 = l1_fixed_sched_ap_run_slot(4); r13 = 0; break;
-            case 0: r14 = fsched_arm_slot_from_cfg(); r13 = 0; break;
-            case 1:
-                if (fsched_ctx.engaged != 0) {
-                    *st = 4;
-                    fsched_ctx.engaged = 0;
-                } else {
-                    *st = 2;
-                }
-                r14 = 4; r13 = 0;
-                break;
-            case 6:
-                *st = 2;
-                r14 = l1_fixed_sched_ap_start_slot(2); r13 = 0;
-                break;
-            case 7:
-                fsched_run_tx_slot_twice();
-                r14 = 0; r13 = 0;                          /* возврат fsched_run_tx_slot_twice = 0 */
-                break;
-            default:
-                break;                                     /* r13 прежний → assert */
-            }
-            break;
-        case 5:
-            r14 = 5;
-            if (rx_on_state == 0) {
-                r13 = 0;
-                sxd_hal_write_qset_field(0, 0x9ab);
-                r14 = 0;
-            } else if (*st == 5) {
-                r14 = fsched_ap_start_slot();
-                r13 = 0;
-            }
-            break;
-        default:
-            break;                                         /* 3 и вне диапазона → assert */
-        }
-        /* L_92c7a6 */
-        if (r13 != 0) {
-            uc_log_emit2(0, 0x10007b8, r14, *st);
-            uc_assert((u32)__builtin_return_address(0), 0x1578);
-        } else {
-            r13 = 1;
-        }
-        u32 c = (u8)(fsched_log_idx + 1);
-        fsched_log_idx = (u8)c;
-        if (!((s32)c < 0x10))
-            fsched_log_idx = 0;
-        if (r14 == 0)
-            return;
-    }
-}
-
-
-void l1_fixed_sched_sta_sm(u32 a) {
-    /* 6.2 asm 0x92c840. Состояние — значение аргумента; таблица 0x8017e8 по (r13 - 1):
-     * 1 → 0x92c86c, 2 → 0x92c872, 3 → 0x92c8cc, 4 → 0x92c8e2. r15 = «ошибка» (assert). */
-    volatile u32 *st = &fsched_ctx.state;
-    u32 r13 = a;
-    u32 r15 = 1;
-    for (;;) {
-        fsched_log_phase(r13, 0);
-        u32 idx;
-        switch (r13) {
-        case 1:
-            r15 = 0;
-            *st = 0;
-            r13 = r15;
-            break;
-        case 2:
-            if (*st == 2) {
-                fsched_ctx.rx_slot_active = 1;                    /* слот bl.d */
-                idx = rx_flow_run_and_check_bf_abort(1);
-                fsched_ctx.rx_slot_active = 0;
-            } else {
-                fsched_ctx.rx_slot_active = 0;
-                fsched_log[fsched_log_idx].step = 0xf;
-                idx = rx_flow_run_and_check_bf_abort(fsched_log_idx);
-            }
-            if (idx != 2) {
-                r13 = 0;
-                r15 = 0;
-            } else {
-                *st = 4;
-                fsched_log[fsched_log_idx].step = 1;
-                uc_mac_cmd(0x20d2800);
-                r15 = 0;
-                r13 = 3;
-            }
-            break;
-        case 3:
-            r13 = 3;
-            if (*st == 4) {
-                r15 = 0;
-                fixed_sched_sta_tx_delayed();
-                r13 = 0;                                /* возврат fixed_sched_sta_tx_delayed = 0 */
-                *st = 2;
-            }
-            break;
-        case 4:
-            r13 = 4;
-            if (*st == 0) {
-                r15 = 0;
-                u32 v = fsched_assoc_slot_us();
-                sxd_hal_write_qset_field(0, (v - 200) * DMG_CLK_PER_US);
-                *st = 1;
-                r13 = r15;
-            } else if (*st == 1 || *st == 2) {
-                r15 = 0;
-                *st = 2;
-                r13 = r15;
-            }
-            break;
-        default:
-            break;
-        }
-        /* L_92c91a */
-        if (r15 != 0) {
-            uc_log_emit2(0, 0x10007f4, r13, *st);
-            uc_assert((u32)__builtin_return_address(0), 0x1579);
-        } else {
-            r15 = 1;
-        }
-        u32 c = (u8)(fsched_log_idx + 1);              /* [gp,-238] */
-        fsched_log_idx = (u8)c;
-        if (!((s32)c < 0x10))
-            fsched_log_idx = 0;
-        uc_mac_cmd(dti_qset_mode | (1u << 22) | (1u << 23) | (r13 << 4) | (1u << 31));
-        if (r13 == 0)
-            return;
-    }
-}
-
-
-u32 l1_fixed_sched_ap_start_slot(u32 a) {
-    /* 6.2 asm 0x935e74. */
-    (void)a;
-    qh_write_while_dma_open_check(0);
-    fixed_sched_complete_peer_off(&fsched_peers);
-    u32 sp_buf[4];                            /* vendor: кадр 16 Б, буфер sp+4..sp+0xc */
-    u32 r0 = fsched_pick_ready_queue((u32)&sp_buf[1]);
-    if (r0 != 0) {
-        mac_set_sector_arg_and_select_all(0xbb8);
-        tx_non_data_flow_fixed_scheduling(sp_buf[1]);
-        fsched_log[fsched_log_idx].step = 4;
-        fsched_arm_slot_timer(0xf);
-        return 0;
-    }
-    if (fsched_ap_next_station(&fsched_peers) != 0) {
-        u32 r17 = fsched_time_left_class(1);
-        if (r17 == 2) {
-            fsched_log[fsched_log_idx].step = 7;
-            fsched_ctx.state = 0;
-            return 0;
-        }
-        u8 r15 = fsched_get_cur_idx(&fsched_peers);
-        u32 sp0 = fsched_cur_entry_qid(&fsched_peers);
-        fsched_cur_entry_cfg_idx(&fsched_peers);
-        u8 r13v = (u8)r15;
-        fsched_log[fsched_log_idx].arg = r15;
-        if (fsched_bf_req_mask_bit(&fsched_peers, r13v) != 0) {
-            fsched_bf_req_trigger(r15);
-            fsched_bf_req_clear(&fsched_peers, r13v);
-            fsched_arm_slot_timer(0xf);
-            return 0;
-        }
-        u32 *r13 = &fsched_ctx.state;
-        fsched_ctx.slot_cnt += 1;
-        rx_cfg_set_sta_omni_sector(r15);
-        fsched_slot_inc_slot_cnt(&fsched_peers);
-        u32 r18 = vring_hw_is_empty(sp0);
-        u32 r0b = fsched_ap_station_done(&fsched_peers);
-        if (r18 != 0 || r0b != 0) {
-            fsched_log[fsched_log_idx].step = 8;
-            fsched_slot_clear_slot_cnt(&fsched_peers);
-            *r13 = 5;
-            if (r18 != 0) {
-                u32 mask = 1u << r15;
-                if (FWSH(ll_ctx, fsched_flush_mask) & mask) {
-                    u8 *p = &fsched_ctx.flush_cnt[r15];
-                    u8 c = (u8)*p;
-                    if (c >= 1) {
-                        c = (u8)(c + 1);
-                        *p = (u8)c;
-                        if (c >= fsched_ctx.max_cnt)
-                            FWSH(ll_ctx, fsched_flush_over) |= mask;
-                    }
-                }
-            }
-            return 5;
-        }
-        u32 hw = macq_read_hw_queue_word(sp0);
-        fsched_flush_stats.qword_start = hw;
-        fixed_sched_kick_slot_queue(&fsched_peers);
-        fsched_ctx.slot_start_tsf = uc_read_tsf_lo();
-        sxd_hal_write_qset_field(0, fsched_slot_time_before_tx_us(&fsched_peers) * DMG_CLK_PER_US);
-        *r13 = (r17 == 1) ? 7 : 4;                       /* cmp 1; mov 7; mov.ne 4 */
-        return 0;
-    }
-    if (fsched_time_left_class(0) == 2) {
-        fsched_log[fsched_log_idx].step = 7;
-        fsched_ctx.state = 0;
-        return 0;
-    }
-    fsched_log[fsched_log_idx].step = 5;
-    mac_set_sector_arg_and_select_all(0xbb8);
-    fixed_sched_run_tx_slot();
-    return fsched_arm_slot_timer(fsched_virtual_slot_us());   /* r0 = возврат get_mem */
-}
-
-
-u32 l1_fixed_sched_ap_run_slot(u32 a) {
-    /* 6.2 asm 0x938880. */
-    (void)a;
-    u32 sp_buf[3];
-    mac_read_tsf64_uc(&sp_buf[1]);
-    u8 r15 = fsched_get_cur_idx(&fsched_peers);
-    fsched_ap_poll_station(&fsched_peers);
-    fsched_log[fsched_log_idx].arg = r15;
-    u16 r16 = fsched_slot_flush_to_us(&fsched_peers);
-    mac_set_sector_arg_and_select_all(r16);
-    fsched_ap_init_slot_rd_counter(&fsched_peers);
-    fixed_sched_run_tx_slot();
-    fsched_flush_stats.slots += 1;
-    u32 sp0 = fsched_cur_entry_qid(&fsched_peers);
-    if (fsched_peers.slot_kicked != 0)
-        fixed_sched_slot_setup(&fsched_peers);
-    u32 r17;
-    for (;;) {
-        if (dma_is_tx_pipe_idle(sp0, 0, 0xf) != 0) {
-            r17 = 0;
-            break;
-        }
-        u32 d = (u32)bi_tsf_delta64(sp_buf[1], sp_buf[2]);
-        if (d >= (u32)r16 - 100) {             /* sub2 r0,r16,0x19 = r16 - (0x19 << 2) */
-            r16 = 1;
-            mac_select_rf_module_cmd31(0, sp0);
-            r17 = r16;
-            break;
-        }
-        mac_set_sector_arg_and_select_all(r16 - d);
-        fixed_sched_run_tx_slot();
-    }
-    u32 hw = macq_read_hw_queue_word(sp0);
-    fsched_flush_stats.qword_end = (u16)hw;
-    u32 r16v = (u32)(u16)((u16)hw - fsched_flush_stats.qword_start);
-    fsched_flush_stats.sum_sent += (u16)r16v;
-    if (r17 != 0) {
-        u8 b0 = fsched_cur_entry_qid(&fsched_peers);
-        qid_agg_mask |= 1u << b0;
-        fsched_flush_stats.last_sent = (u16)r16v;           /* stw [0x800814,8] */
-        fsched_log[fsched_log_idx].step = 0xb;
-        u16 qw = fsched_flush_stats.qword_end;
-        vring_disconnect_flush(sp0, 0, sp0, r15);
-        u32 hw2 = macq_read_hw_queue_word(sp0);
-        fsched_flush_stats.flushes += 1;
-        u16 d2 = (u16)((u16)hw2 - qw);
-        fsched_flush_stats.last_flushed = (u16)d2;
-        fsched_flush_stats.sum_flushed += (u16)d2;
-        if (r16v == 0) {
-            u32 mask = 1u << r15;
-            FWSH(ll_ctx, fsched_flush_mask) |= mask;
-            u8 *p = &fsched_ctx.flush_cnt[r15];
-            u8 c = (u8)(*p + 1);
-            *p = (u8)c;
-            if (c >= fsched_ctx.max_cnt)
-                FWSH(ll_ctx, fsched_flush_over) |= mask;
-        } else {
-            fsched_drop_station(r15);
-        }
-    } else {
-        fsched_drop_station(r15);
-        fixed_sched_slot_prepare(sp0);
-    }
-    u32 tsf = uc_read_tsf_lo();
-    fsched_ctx.slot_end_tsf = tsf;
-    u32 r2 = fsched_ctx.slot_start_tsf;
-    u32 d = (tsf > r2) ? (tsf - r2) : (tsf + (0xffffffff - r2));
-    /* fwsh_sets.fsched_airtime[r15] (0x857748). Запись — целым адресом (FWSH_AT): с индексом gcc даёт
-     * ld.aw [r13,0x857748] вместо (r15 + 0x215dd2) << 2 — код меняется (codecmp). */
-    FWSH_AT(fwsh_sets, fsched_airtime, r15) += d;
-    return fsched_arm_slot_timer(0);
-}
-
-
 /* Групповой ключ (запись SPARRAW_PEER_UNKNOWN — широковещательное кольцо точки) — до пуска группового кадра.
  * ХРУПКО: отдельная функция (noipa — без встраивания): вызов 4 Б вместо 26 Б встроенной проверки, спины r43/r45 пути
  * «CCA → 0x19000001» в tx_bcast_flow — по адресам ≡ 0 mod 4 (как у прежнего пути, bti.c abft_ssw_burst). */
@@ -1960,12 +1386,12 @@ static __attribute__((noipa)) void tx_bcast_flow_once(void) {
         v0 = (sta_tab[r15].tx_sel >> 8) & 0x7fff;   /* bmsk_s 0xe */
     }
     bcast.tx_sector = v0;
-    if (macq_probe_empty(fsched_peer_id) == 0) {
+    if (macq_probe_empty(bcast_qid) == 0) {
         bcast.x0c = 0;
         tx_bcast_desc_id = 0;
         struct tx_ctx_s *ctx = tx_ctx_alloc_next(1);
-        ctx->qid = fsched_peer_id;
-        mac_program_tx_with_qid(fsched_peer_id);
+        ctx->qid = bcast_qid;
+        mac_program_tx_with_qid(bcast_qid);
         while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
             ;
         u32 r51 = mac_mtp_desc();
@@ -2004,8 +1430,8 @@ static __attribute__((noipa)) void tx_bcast_flow_once(void) {
      * режим 5 (как tx_cca_check_and_send), не 1 (ответ/продолжение после своего кадра). Duration кадра очереди
      * ставит MAC по остатку лимита TXOP — на время вызова лимит 0 (tx_bcast_flow ниже, H-DURLIM0).
      * ХРУПКО (СРОК, H-TXVEC5): программа TX (mac_program_tx_vector(5)) — первой командой после проверки CCA, как в
-     * рабочих путях (vendor-путь CTS-to-self здесь же, tx_cca_check_and_send, internal_tx_keepalive_flow,
-     * direct_tx_send_from_desc). Доказательство — стенд 2026-11-06 (образ bnc.fw, точка, групповые данные):
+     * рабочих путях (vendor-путь CTS-to-self здесь же, tx_cca_check_and_send, internal_tx_keepalive_flow).
+     * Доказательство — стенд 2026-11-06 (образ bnc.fw, точка, групповые данные):
      * между CCA и программой TX стояли загрузка ключа и запрос MTP с ожиданием r43 — uc assert 0x26 «поздняя команда»
      * (MAC_HW_ICR б4/б5) у точки 4 раза в test_ap_no_fw_error/test_ap_stop, FWERR 8 на 15 широковещательных ping, 1 под
      * iperf. Ключ и запрос MTP — после программы TX: так у vendor (ключ — после пуска CTS-to-self, запрос MTP кадра — до
@@ -2013,7 +1439,7 @@ static __attribute__((noipa)) void tx_bcast_flow_once(void) {
     mac_program_tx_vector(5, (rf_chain_cfg | 0x30) | (bcast.tx_sector << 8), r2);
     bcast_load_group_key();
     uc_mac_cmd(0x14000000);
-    MTP_REQUEST(MTP_W16_Q(fsched_peer_id, 1u), MTP_W17(0));
+    MTP_REQUEST(MTP_W16_Q(bcast_qid, 1u), MTP_W17(0));
     while (!(mac_mtp_resp() & MAC_MTP_RESP_VALID))
         ;
     u32 r51c = mac_mtp_desc();
@@ -2039,7 +1465,7 @@ static __attribute__((noipa)) void tx_bcast_flow_once(void) {
     if (m != 0) {
         if (tx_bcast_desc_id == 0) {                 /* ldw_s [gp,136] */
             u32 sp_buf[4];
-            qh_read_desc_window((u32)sp_buf, fsched_peer_id, 2, 0, 1);   /* r4 = r13 = 1 */
+            qh_read_desc_window((u32)sp_buf, bcast_qid, 2, 0, 1);   /* r4 = r13 = 1 */
             tx_bcast_desc_id = (sp_buf[2] >> 12) & 0xfff;               /* bmsk 0xb; sth.as [gp,68] */
         }
         u32 d = macq_desc_read_uc(tx_bcast_desc_id, 0);
@@ -2048,13 +1474,13 @@ static __attribute__((noipa)) void tx_bcast_flow_once(void) {
     }
     tx_bcast_desc_id = 0;
     struct tx_ctx_s *ctx2 = tx_ctx_alloc_next(1);
-    ctx2->qid = fsched_peer_id;
-    if (macq_probe_empty(fsched_peer_id) == 0)
+    ctx2->qid = bcast_qid;
+    if (macq_probe_empty(bcast_qid) == 0)
         uc_assert((u32)__builtin_return_address(0), 7);
     if (*(volatile u32 *)HW_TX_ENGINE_STATE & 0xf)
         uc_assert((u32)__builtin_return_address(0), 3);
     uc_mac_cmd(0x1c000006);
-    uc_mac_cmd((fsched_peer_id << 4) | 0x46000008);
+    uc_mac_cmd((bcast_qid << 4) | 0x46000008);
     uc_stats.macq_ppdu += 1;
     while (!(mac_bap_if() & MAC_BAP_REL_DONE))
         ;
@@ -2064,7 +1490,7 @@ static __attribute__((noipa)) void tx_bcast_flow_once(void) {
     arc_nops(3);
     while (mac_txctl_sel() & MAC_CNT_IF_BUSY)
         ;
-    uc_mac_cmd(fsched_peer_id | 0x44280800);
+    uc_mac_cmd(bcast_qid | 0x44280800);
     uc_mac_cmd(0x45000001);
     uc_mac_cmd(0x460001f1);
     mac_program_tx_with_qid(ctx2->qid);
@@ -2115,111 +1541,6 @@ u32 cf_end_send_frame(struct tx_ctx_s *a, u32 b, u32 c, u32 d, u32 e) {
         uc_mac_cmd(0x18000000);
     direct_tx_send_after_delay(a->sta, c, 0);
     return (((u8)mac_mtp_perm() & a->ack_mask) == 0) ? 1 : 0;
-}
-
-
-void tx_initiator_flow_fixed_scheduling(u32 a) {
-    /* 6.2 asm 0x938f10. */
-    (void)a;
-    struct tx_ctx_s *r13 = tx_ctx_alloc_next(1);
-    u32 sp_buf[4];                            /* vendor: кадр 16 Б, буфер sp+4..sp+0xc */
-    u32 r1 = fsched_pick_any_ready_queue((u32)sp_buf);
-    if (uc_role_ap == 0 && r1 == 0 && fsched_ctx.state == 4) {   /* ld_s [gp,0x124] — байты */
-        u32 g = mac_sel_shadow & ~MAC_SEL_FIELD;
-        mac_sel_shadow = g | (1u << 12) | (1u << 13);
-        uc_mac_cmd(g | MAC_CMD_STATUS_SEL | MAC_SEL_REM_TIME);
-        arc_nops(3);
-        u32 r0 = (u32)(u16)mac_status_sel();
-        if (r0 > 0xb)
-            tx_cca_check_and_send(r13, 1, 0, 1);
-        txr.awaiting = 1;
-        fsched_log[fsched_log_idx].step = 2;
-        return;
-    }
-    if (r1 != 0) {
-        uc_log_emit_snapshot(0x21, 0x1001808);
-        mac_select_all_sectors_and_wait();
-        if (mac_evt1() & MAC_EVT1_BUSY2) {
-            uc_stats.txop_fail = uc_stats.txop_fail + 1;
-            txrx_state2 = 0x800;
-            mac_mon_report.fs_evt14_cnt = mac_mon_report.fs_evt14_cnt + 1;
-            fsched_log[fsched_log_idx].step = 0xc;
-            uc_log_emit_snapshot(0x21, 0x1001738);
-            return;
-        }
-        u32 r1v = sp_buf[0];
-        r13->qid = r1v;
-        r13->flags |= 1u;
-        if (qid_agg_mask & (1u << r1v))
-            txrx_state2 |= 1u << 30;
-        u32 r1b = r13->qid;
-        if (r1b == 0x1f) {
-            uc_mac_cmd(0x80 | (1u << 25));
-            fsched_log[fsched_log_idx].step = 0xd;
-            uc_log_emit_snapshot(0x21, 0x1001874);
-            uc_mac_cmd(0xeeee03);
-            internal_tx_isr();
-            uc_mac_cmd(mac_evt_en_shadow | 0x27003f00);
-            mac_mon_report.fs_no_slot_cnt = mac_mon_report.fs_no_slot_cnt + 1;
-            return;
-        }
-        if (r1b == fsched_peer_id && fsched_peer_id != 0xff) {
-            fsched_log[fsched_log_idx].step = 0xe;
-            uc_log_emit_snapshot(0x21, 0x1001840);
-            tx_bcast_flow(0);
-            return;
-        }
-        u32 spc = 0;
-        u8 sv = qid_cfg_get_sta((u8)sp_buf[0], (u32)&spc);
-        struct sta_entry *r0 = &sta_tab[sv];
-        if (r0->key_valid != 0 && (r0->qid_mask_q6 & (1u << sp_buf[0])))   /* bbit0 → пропуск */
-            r13->flags |= 1u << 11;
-        tx_sta_run_txop(r13);
-        return;
-    }
-    uc_stats.tx_no_queue = uc_stats.tx_no_queue + 1;
-    fsched_log[fsched_log_idx].step = 3;
-    uc_mac_cmd(0xeeee01);
-}
-
-
-void tx_non_data_flow_fixed_scheduling(u32 a) {
-    /* 6.2 asm 0x939594. */
-    u32 r14 = a;
-    uc_mac_cmd(0x14000100);
-    struct tx_ctx_s *r13 = tx_ctx_alloc_next(1);
-    mac_select_all_sectors_and_wait();
-    if (mac_evt1() & MAC_EVT1_BUSY2) {
-        uc_stats.txop_fail = uc_stats.txop_fail + 1;
-        txrx_state2 = 0x800;
-        mac_mon_report.fs_evt14_cnt = mac_mon_report.fs_evt14_cnt + 1;
-        uc_log_emit_snapshot(0x21, 0x1001738);
-        return;
-    }
-    r13->qid = r14;
-    r13->flags |= 1u;
-    if (r14 == 0x1f) {
-        uc_mac_cmd(0x80 | (1u << 25));
-        uc_log_emit_snapshot(0x21, 0x10017cc);
-        uc_mac_cmd(0xeeee03);
-        internal_tx_isr();
-        uc_mac_cmd(mac_evt_en_shadow | 0x27003f00);
-        mac_mon_report.fs_no_slot_cnt = mac_mon_report.fs_no_slot_cnt + 1;
-        return;
-    }
-    if (r14 == fsched_peer_id && fsched_peer_id != 0xff) {
-        uc_log_emit_snapshot(0x21, 0x1001798);
-        tx_bcast_flow(0);
-        return;
-    }
-    tx_sta_run_txop(r13);
-    if (!(txrx_state2 & (1u << 9)))
-        uc_mac_cmd(0x14000100);
-    mac_wait_mode_ack_if_idle();
-    txrx_state1 = 0;
-    txrx_state2 = 0;
-    tx_ctx_pool.slot[0].flags = 0;
-    tx_ctx_pool.slot[1].flags = 0;
 }
 
 
@@ -2441,16 +1762,8 @@ u32 txop_initiator_open_txop_flow(struct tx_ctx_s *a) {
         /* L_93a39a */
         if (r0 == 0)
             goto rts_txop_fail;
-        rts_txop_start:   /* L_93a39e */
-        if (dti_qset_mode != 0 && (r13->flags & (1u << 11))) {
-            mac_load_tx_key((const u32 *)sta_tab[r13->sta].tx_key);
-            tx_crypto_ctl_arm();
-            r13->flags &= ~(1u << 11);
-        }
-        u32 f = (mtp_desc_lo & 2u) ? 1 : 0;      /* bic r,r,-3 == & 2 */
-        uc_mac_cmd((f << 6) | 0x19000b00 | (mtp_desc_hi << 14));
-        if (dti_qset_mode == 1)
-            rx_mode_configure(0, r13->sta);
+        rts_txop_start:   /* L_93a39e; бит 1 mtp_desc_lo → б6 команды (bic r,r,-3 == & 2) */
+        uc_mac_cmd((((mtp_desc_lo & 2u) ? 1u : 0u) << 6) | 0x19000b00 | (mtp_desc_hi << 14));
         if (txop_await_cts_ppdu(r13, (u32)&sp_buf[1]) != 0) {
             /* L_93a47a */
             uc_mac_cmd(mac_evt_en_shadow | 0x27004000);
@@ -3235,20 +2548,6 @@ u32 pm_idle_try_enter(void)
     return r14;
 }
 
-void fsched_slot_resetup_if_time_left(struct fsched_peer_ctx *p, u32 b) {
-    if (fsched_ctx.state != 4)
-        return;
-    if (p->slot_kicked == 0)
-        return;
-    u32 r2 = fsched_slot_flush_to_us(p) - fixed_sched_slot_stop_vring_us(p);
-    if (b >= r2)
-        return;
-    fixed_sched_slot_setup(p);
-    handle_pmc_triggers(-1, 0);
-    uc_mac_cmd(0x80aaab02);
-}
-
-
 void phy_params_snapshot(u32 a, u32 b)
 {
     u32 r17 = a, r16 = b;
@@ -3393,8 +2692,6 @@ void mtp_get_tx_permission(struct tx_ctx_s *a, u32 b) {
     if (txrx_state1 & (1u << 1)) {
         /* RDG не даём (б11 — RDG/More PPDU, vendor: RD_SUPP r43): RD отключён намеренно, см. txop_await_cts_ppdu и
          * rx_flow_handle_frame («RD отключён»), MAC-STAND «Ответчик RD глохнет». */
-        if (dti_qset_mode != 0 && fsched_slot_rd_counter_nonzero(&fsched_peers) != 0)
-            fixed_sched_manager_decrement_curr_sta_rd_counter(&fsched_peers);
         uc_mac_cmd((1u << 14) | (1u << 27) | (1u << 28));
     } else {
         uc_mac_cmd(0x18000000);

@@ -90,17 +90,6 @@ void uc_spin_until_event4(u32 a)
     } while (!(v & a));
 }
 
-/* Диспетчер L1-события по режиму 0x8004f4 (0x92cd0c, зовётся из l1_task_entry(2)):
- * 0 → l1_task_on_evt4, 1/2 → l1_fixed_sched_event_entry (хвостовые переходы), иначе ничего. */
-void l1_task_dispatch_evt4(void)
-{
-    u32 v = dti_qset_mode;
-    if (v == 0)
-        l1_task_on_evt4();
-    else if (v == 1 || v == 2)
-        l1_fixed_sched_event_entry();
-}
-
 /* Установка evt-id 0x5c (0x921724): a==0 → 0xffffffff, иначе 0x39, в 0x800584
  * под блокировкой IRQ. */
 void uc_set_bg_task_mask(u32 a)
@@ -275,16 +264,6 @@ void uc_wait_direct_tx_ready(void)
     do {
         v = mac_txctl_sel();
     } while (!(v & MAC_DTX_CMD_READY));
-}
-
-/* Инициализация глобалов (0x92094c). */
-void uc_init_globals(struct fsched_peer_ctx *p)
-{
-    /* 6.2 asm 0x92094c */
-    memset0_words_uc(p->ent, sizeof(p->ent));
-    p->cur_idx = 0;
-    p->active_mask = 0;
-    p->pend_off_qid = 0xff;
 }
 
 /* memset: gcc сам вставляет вызов для инициализации локальных массивов/структур.

@@ -529,20 +529,11 @@ void lmac_if_ucode_event_dispatch(struct lmac_mbox *mb, u8 *evt)
         uc_evt_log(0x1004794, 0x2c, tsf);
         fw_sysapi_mgr_complete_pending_request(&fw_sysapi_mgr, 1, body);
         break;
-    case 0x2e:                                                       /* BA: таймаут из ucode */
-        ba_on_uc_timeout_evt((const struct lmac_evt_ba_timeout *)body);
-        break;
-    case 0x2f:
-        uc_evt_log(0x10047d4, 0x2f, tsf);
-        fw_sysapi_mgr_complete_pending_request(&fw_sysapi_mgr, 1, body);
-        break;
-    case 0x30:                                                       /* EVT_FIXED_SCHEDULING_ENABLED */
-        uc_evt_log(0x1004820, 0x30, tsf);
-        evt_fixed_scheduling_enabled((const struct lmac_evt_typed *)body);
-        break;
     default:    /* в т. ч. 0x15/0x18/0x19/0x25 (shallow sleep, отсрочка трафика, пробуждение PCIe,
                  * UPM) — ucode их больше не шлёт: энергосбережение вырезано (см. fw/action.c
-                 * psc_req_reject и fw/vectors.c pcie_pm_event_unsupported) */
+                 * psc_req_reject и fw/vectors.c pcie_pm_event_unsupported); 0x2e (SSN кольца пира
+                 * слота), 0x2f (статистика flush), 0x30 (EVT_FIXED_SCHEDULING_ENABLED) — фиксированное
+                 * расписание vendor удалено */
         fw_log_emit3(0, LS_FW(UC_EVT_UNKNOWN), type, tsf[1], tsf[0]);
         fw_sysassert_fatal((void *)__builtin_return_address(0), 0x47 | (1u << 12));
         break;

@@ -41,14 +41,14 @@ __attribute__((section(".textlate"))) u32 conn_is_secured(struct conn *conn)
 
 /* ut_hw_cmd_008__params (0x8e6f94, 62 Б): дескриптор кольца entry (как ADDBA-параметры,
  * флаг f) с индексом ключа key_idx в битах 24..25 слова +0x10 (bits__set32_s24_w2
- * 0x8ed460) — LMAC-команда 2 через qh__write_or_conn_alloc. */
+ * 0x8ed460) — команда 2 в MACQ (qh__write_by_flags_fw). */
 __attribute__((section(".textlate"))) void vring_key_program_desc(const struct vring_tbl_entry *entry,
                                                                   u32 flag, u32 key_idx)
 {
     struct macq_qdesc buf;
     tx_macq_build_sector_desc(entry, &buf, entry->sector_mode, (entry->ctl >> 1) & 1u, entry->to_res, flag);
     buf.sector.w0 = (buf.sector.w0 & ~(3u << 24)) | ((key_idx & 3u) << 24);
-    macq_qh_write(entry->macq, 2, &buf, 0);
+    macq_qh_write_by_flags(entry->macq, 2, &buf, 0);
 }
 
 /* 0x8eacb0 (28 Б; в NAMES-EXTRA ut_hw_cmd_0x008): ключ для кольца стрима s —
@@ -792,14 +792,11 @@ tail:
 }
 
 /* --- sub-хелперы scan_mngr__prob_done --- */
-/* conn__abort (0x8f0444, 103 Б): снять биты cid в bitmap + teardown + link-loss-off. */
+/* conn__abort (0x8f0444, 103 Б): teardown + link-loss-off (vendor ещё снимал биты cid фиксированного расписания —
+ * удалено). */
 __attribute__((section(".textlate"))) void conn_abort(struct conn *conn, u32 flag)
 {
     fw_log_emit1(0x2b, 0x1010330, conn->cid);
-    u32 cid = conn->cid;
-    ll_ctx.fsched_flush_over &= ~(1u << cid);                /* 0x85724c */
-    ll_ctx.fsched_flush_mask &= ~(1u << cid);                 /* 0x857248 */
-    fwsh_sets.fsched_airtime[cid] = 0;
     if (flag == 0) {
         conn_teardown_mac_rules(conn);
         conn_msm_event(&conn->msm, 0xa, 0, 0, 0);

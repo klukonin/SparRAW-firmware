@@ -110,8 +110,7 @@ _Static_assert(sizeof(struct lm_sm) == 0xa4, "lm_sm");
 /* Экземпляр — символ fw/fw.ld (рабочая память, не DCCM). */
 extern struct lm_sm lm_sm_recs[SPARRAW_MAX_STA];  /* 0x841c28 */
 
-/* fw_data (fw/link_sm.c): период долгосрочного BF по MCS 0..12 (мкс; WMI_BF_CONTROL и
- * fixed_sched_start переписывают). */
+/* fw_data (fw/link_sm.c): период долгосрочного BF по MCS 0..12 (мкс; WMI_BF_CONTROL переписывает). */
 #define MAINTAIN_LT_PERIOD_N 13
 extern volatile u32 maintain_lt_period[MAINTAIN_LT_PERIOD_N];   /* 0x801448 */
 

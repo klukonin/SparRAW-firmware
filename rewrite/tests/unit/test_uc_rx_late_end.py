@@ -122,9 +122,9 @@ def test_tick_busy_dispatch_only_with_rx_on(uc, rx_on):
     загрузка, uc_assert 0x27 из тика на обоих узлах). RX ON: вызывается — приём раньше остальных шагов тика."""
     uc.w16(RX_ON_STATE, rx_on)
     uc.ext[42] = lambda n, k: 1 << 19
-    # вход в l1_task_dispatch_evt1 — по PC: из функции проверки он хвостовой (b), заглушка ucemu его не ловит;
+    # вход в l1_task_on_evt1 — по PC: из функции проверки он хвостовой (b), заглушка ucemu его не ловит;
     # дальше — выход, как из заглушки (blink — в тик)
-    at = uc.sym['l1_task_dispatch_evt1'] & 0x1ffff
+    at = uc.sym['l1_task_on_evt1'] & 0x1ffff
     c, n, step = uc.cpu, [0], uc.cpu.step
 
     def watch():

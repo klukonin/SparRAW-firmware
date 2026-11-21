@@ -37,8 +37,7 @@
  *     точка — SP станции к ней, следующий за своим SP к этой станции: rx_tail_us записи своей таблицы), приём
  *     слушает источник его направленным сектором (sta_tab[].rx_sel), а не квази-omni простоя — без RTS иначе нечем
  *     навести приём под первый PPDU (стенд, docs/MAC-STAND.md «Режим доступа очереди данных»).
- * Только при расписании: без него, у точки без строгого TDMA и при фиксированном расписании vendor (dti_qset_mode) —
- * ничего не делается. Порт 6.4 (uc/new/ese_dti.cpp) + строгий TDMA точки. */
+ * Только при расписании: без него и у точки без строгого TDMA ничего не делается. Порт 6.4 (uc/new/ese_dti.cpp) + строгий TDMA точки. */
 #include "../include/types.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
@@ -74,8 +73,6 @@ static inline u32 ese_dti_tbl_cap(const volatile ese_tbl_t *t)
 
 static u32 ese_dti_scheduled(void)
 {
-    if (dti_qset_mode != 0)
-        return 0;
     if (uc_role_ap == 1)
         return FWSH(ese_slot_tbl, mode) == ESE_TBL_MODE_OWN;
     return FWSH(fwsh_diag, ese_dti_sched) != 0;
@@ -315,7 +312,7 @@ u32 ese_dti_tx_gate(void)
 /* Конец обмена источника в своём SP (рычаг 3; tx_send_and_await_rx_frame — вместо запроса итога и CF-End): TXOP CBAP
  * здесь не было, закрывать нечего. План TXOP MAC (лимит, урезанный ese_dti_tx_gate до остатка окна) кончается сам и
  * внутри своего SP: Duration кадров обмена (остаток TXOP) — NAV третьих станций, которым в чужом SP передавать нельзя
- * и так (10.39.6.2). Ожидания txop_event нет (fixed_sched_run_tx_slot): событие MAC дало бы только конец этого плана —
+ * и так (10.39.6.2). Ожидания txop_event нет (sp_run_tx_slot): событие MAC дало бы только конец этого плана —
  * до 2 мс глухоты uc в своём SP (эмулятор 2026-11-07). 1 — обмен закончен так (своё SP), 0 — обычное закрытие. */
 u32 ese_dti_sp_src_end(u32 sta)
 {
@@ -340,7 +337,7 @@ void ese_dti_sp_src_cycle(void)
     for (u32 n = 0; n < ESE_SRC_ROUNDS && FWSH(fwsh_sp_gate, src_more) != 0; n++) {
         FWSH(fwsh_sp_gate, src_more) = 0;
         FWSH(fwsh_sp_gate, src_rounds) += 1;
-        fixed_sched_run_tx_slot();
+        sp_run_tx_slot();
     }
     FWSH(fwsh_sp_gate, src_more) = 0;
 }

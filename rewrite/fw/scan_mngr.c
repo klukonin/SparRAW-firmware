@@ -409,20 +409,18 @@ void scan_mngr_connect_task(u32 a0, u32 a1)
 /* scan_mngr__dband_beacon_ind (0x8c7f9c, 584 Б): DMG-бикон во время пребывания на
  * канале (автомат каналов в DWELLING, dwell_stopped != 1). Новый BSS (нет ни в
  * кандидатах pend, ни в scanned; кандидатов < 8) — запись dband-инфо (BSSID,
- * RX-сектор, SSID профиля mid; own_bss — BSSID совпал с BSS соединения mid). a2 ≠ 0
- * (бикон чужого PCP/AP по флагу ei+0x84) — в dband-инфо, иначе в кандидаты и: ACS —
- * вернуть 1 (кадр хосту); соединение — проба; нет — задача scan_mngr::connect.
+ * RX-сектор, SSID профиля mid; own_bss — BSSID совпал с BSS соединения mid) — в кандидаты и: ACS —
+ * вернуть 1 (кадр хосту); соединение — проба; нет — задача scan_mngr::connect. (vendor a2 ≠ 0 — маяк
+ * «не свой» при фиксированном расписании — сразу в просмотренные; фиксированное расписание удалено.)
  * Остальное — 0 (кадр хосту не передаётся: BSS сообщается ответом на пробу).
  * Прежний порт: обратная проверка [scan+0x1e0], всегда 1, SSID из 0x800000. */
 __attribute__((section(".textlate"))) u32 scan_mngr_dband_beacon_ind(struct scan_mngr *scan,
-                                                                     struct rx_pkt *pkt, u32 a2)
+                                                                     struct rx_pkt *pkt)
 {
     u32 it;
     u8 ssid[0x20];
     const union mac_addr *bssid = &pkt->hdr->addr1;
     u32 r23 = *pkt->ei->bi_ctrl >> 1;
-    if (a2 != 0 && dband_info_find_by_bssid(&scan->scanned, bssid->b) != 0)
-        return 0;
     if (scan->cs->hdr.state != CS_ST_DWELLING)
         return 0;
     if (scan->dwell_stopped == 1)
@@ -477,11 +475,6 @@ __attribute__((section(".textlate"))) u32 scan_mngr_dband_beacon_ind(struct scan
      * копии — тот же байт. Прежде (s8)len ≥ 1 и полная длина. */
     if ((u8)len != 0)
         memcpy_fw(e->ssid, ssid, (u8)len);
-    if (a2 != 0) {
-        fw_log_emit2(0x29, 0x101594c, e->bssid_hi, e->bssid_lo);
-        llist_append(&scan->scanned, e);
-        return 0;
-    }
     llist_append(&scan->pend, e);
     scan_stats.bss_added += 1;
     fw_log_emit3(0x29, 0x10159bc, e->bssid_hi, e->bssid_lo, r23 & 1);
@@ -556,8 +549,7 @@ u32 bss_bi_cache_get(const u8 *bssid)
  * кадр передать хосту. Поиск (find_mngr [obj+0x4c]) — detect_discovery_bcon; иначе скан:
  * dband_beacon_ind, если идёт discovery-скан, или e+0x48 в состоянии 2/3, или в
  * Beacon Interval Control (ei->bi_ctrl, байт 5) биты 3 / 4..5 (принудительно при бите 9
- * [0x803c20] или [0x803c0c]). a2 = бикон с другим битом 2 DMG Parameters (ei->dmg_params)
- * чем у нас (0x847ae1).
+ * [0x803c20] или [0x803c0c]).
  * Затем бикон своего BSS (e+0x48 в состоянии 2, BSSID e+0x54): проверка окна времени
  * ([0x800338]: BI цели в мкс на RX-сектор, multi_omni_period), расписание, событие соединению,
  * PS-событие 5, перевзвод u_schd.
@@ -586,16 +578,9 @@ __attribute__((section(".textlate"))) u32 dmg_bcon_rx_handler(struct mid_disc *o
         r1 = 1;
         r2 = 1;
     }
-    u32 other = 0;
-    const u8 *p = ei->dmg_params;
-    if (p != 0) {
-        /* Маяк не свой только при включённом фиксированном расписании и CBAP Only = 1.
-         * Vendor (0x8c9458..0x8c9464): «CBAP Only = 0 ⇔ фиксированное расписание» — маяк
-         * точки с ESE (CBAP Only = 0, 802.11-2020 10.39.6.3) станция без фиксированного
-         * расписания отбрасывала целиком: ни разбора ESE, ни BCON_RX, ни сторожа маяков. */
-        u32 cbap_only = (*p >> 2) & 1u;
-        other = (*(volatile u8 *)&fixed_sched.enabled != 0 && cbap_only != 0) ? 1u : 0u;
-    }
+    /* Vendor (0x8c9458..0x8c9464) считал маяк «не своим» по CBAP Only в DMG Parameters и флагу фиксированного
+     * расписания (удалено): маяк точки с ESE (CBAP Only = 0, 802.11-2020 10.39.6.3) станция без фиксированного
+     * расписания отбрасывала целиком — ни разбора ESE, ни BCON_RX, ни сторожа маяков. */
     u32 r16;
     if (obj->find.active != 0) {
         r16 = find_mngr_detect_discovery_bcon(&obj->find, pkt);
@@ -610,10 +595,8 @@ __attribute__((section(".textlate"))) u32 dmg_bcon_rx_handler(struct mid_disc *o
             u32 st = lm->mode;
             go = !(st == 2 || st == 3) && (r1 != 0 || r2 != 0);
         }
-        r16 = go ? scan_mngr_dband_beacon_ind(scan, pkt, other) : 0;
+        r16 = go ? scan_mngr_dband_beacon_ind(scan, pkt) : 0;
     }
-    if (other != 0)
-        return r16;
     if (lm->state != 2)
         return r16;
     if (memcmp_fw(e->bss.bssid, pkt->hdr->addr1.b, 6) != 0)

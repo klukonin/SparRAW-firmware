@@ -113,7 +113,7 @@ void bi_dispatch_by_role(struct bi_ctx_s *c)
 void bi_dti_start_tx_slot(void)
 {
     /* vendor: при своём расписании PS (psc.state ≠ 0) — особый путь; PS вырезан */
-    fixed_sched_run_tx_slot();
+    sp_run_tx_slot();
     ese_dti_sp_src_cycle();                         /* своё SP: следующие доступы без отсрочки (uc/ese_dti.c) */
 }
 
@@ -153,11 +153,7 @@ u32 bi_remaining_time_us(void)
 void bi_dti_step(void)
 {
     pm_wake_sequence();
-    if (dti_qset_mode == 0) {
-        uc_mac_cmd(0x5a000000);
-    } else {
-        sxd_hal_write_qset_field(0, 0);
-    }
+    uc_mac_cmd(0x5a000000);
     ese_dti_on_dti_start();                        /* расписание ESE: DTI закрыт вне разрешённых окон */
 }
 
@@ -368,7 +364,7 @@ void bi_bti_end_update_counters(struct bi_ctx_s *c)
         }
         MMIO32(HW_PRS_BSSID_HI) |= (1u << 31);
     }
-    if (uc_read_bi_sync() != 0 && fsched_enabled == 0)
+    if (uc_read_bi_sync() != 0)
         rx_nav_arm_flag_if_enabled();
     memset0_words_uc(&bcn_rx, 0x1c);            /* до x1c */
 }

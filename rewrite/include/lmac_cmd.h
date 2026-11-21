@@ -452,24 +452,11 @@ struct lmac_cmd_meas_filter {
 LMAC_OFF(struct lmac_cmd_meas_filter, count, 0x08);
 _Static_assert(sizeof(struct lmac_cmd_meas_filter) == 0xc, "lmac_cmd_meas_filter");
 
-/* LMAC 0x45 — запись QH станции (lmac_if_send_write_qh → fwif_write_qh), 0x74 Б. */
-struct lmac_cmd_write_qh {
-    u8   q;                             /* 0x00 */
-    u8   flags;                         /* 0x01 */
-    u16  n;                             /* 0x02 */
-    u8   desc[0x70];                    /* 0x04 */
-};
-LMAC_OFF(struct lmac_cmd_write_qh, desc, 0x04);
-_Static_assert(sizeof(struct lmac_cmd_write_qh) == 0x74, "lmac_cmd_write_qh");
+/* LMAC 0x45 (запись QH через uc), 0x47 (пир в слоте), 0x3e (пуск), 0x48 (статистика flush), 0x4a (размер слота) —
+ * фиксированное расписание vendor, удалено 2026-11-21. */
 
-/* LMAC 0x47 — бит станции в fsched_peers (lmac_if_send_fsched_peer → ucode_cmd_0x47_handler), 2 Б. */
-struct lmac_cmd_fsched_peer {
-    u8   vr;                            /* 0x00 */
-    u8   on;                            /* 0x01 */
-};
-
-/* Однословные команды: 0x3b (brp_snr_cfg_enable), 0x4a (l1_time_thresh >> 4), lmac_if_send_cmd_u32
- * (тип задаёт вызывающий); 0x3e, 0x41, 0x48 — тело ucode не читает. */
+/* Однословные команды: 0x3b (brp_snr_cfg_enable), lmac_if_send_cmd_u32 (тип задаёт вызывающий); 0x41 — тело
+ * ucode не читает. */
 struct lmac_cmd_u32 {
     u32  val;                           /* 0x00 */
 };
@@ -589,8 +576,8 @@ struct lmac_evt_ps_peer {
 LMAC_OFF(struct lmac_evt_ps_peer, type, 0x08);
 _Static_assert(sizeof(struct lmac_evt_ps_peer) == 0xc, "lmac_evt_ps_peer");
 
-/* LMAC 0x30 EVT_FIXED_SCHEDULING_ENABLED — {TSF/слово, значение}, 8 Б (у vendor так же 0x18
- * PS_TRAFFIC_DEFERRAL_CFG — отсрочка трафика вырезана). */
+/* Событие {TSF/слово, значение}, 8 Б (uc_send_evt_tsf_val; у vendor так же 0x30 EVT_FIXED_SCHEDULING_ENABLED —
+ * фиксированное расписание удалено — и 0x18 PS_TRAFFIC_DEFERRAL_CFG — отсрочка трафика вырезана). */
 struct lmac_evt_typed {
     u32  w0;                            /* 0x00 TSF (мл.) у uc_send_evt_tsf_val */
     u32  val;                           /* 0x04 */
@@ -610,13 +597,6 @@ _Static_assert(sizeof(struct lmac_evt_sysapi) == 0x24, "lmac_evt_sysapi");
 
 
 
-/* LMAC 0x2e — таймаут BA (uc_evt_send_vring_ssn → ba_on_uc_timeout_evt), 4 Б. */
-struct lmac_evt_ba_timeout {
-    u8   vr;                            /* 0x00 */
-    u8   kind;                          /* 0x01 0 — обновить SSN */
-    u16  ssn;                           /* 0x02 */
-};
-_Static_assert(sizeof(struct lmac_evt_ba_timeout) == 4, "lmac_evt_ba_timeout");
 
 /* Байты общей памяти fwsh_n_rx_ant / fwsh_total_sectors / fwsh_long_range — include/fwsh.h. */
 

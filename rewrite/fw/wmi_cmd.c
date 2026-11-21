@@ -1754,10 +1754,6 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
             HOST_CMD_LOG(0x1006ab8);
             wmi_set_high_power_table_params(body, mid, mb);
             break;
-        case 0x85f:                                 /* WMI_FIXED_SCHEDULING_UL_CONFIG */
-            HOST_CMD_LOG(0x1007738);
-            wmi_fixed_scheduling_ul_config(mb, body, mid);
-            break;
         case 0x862:                                 /* WMI_BF_CTRL (журнала нет) */
             host_if_bf_ctrl_hal(mb, body, mid);
             break;
@@ -1922,14 +1918,9 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
             HOST_CMD_LOG(0x10069bc);
             wmi_ese_cfg(body, mid, mb);
             break;
-        case 0xa02:                                 /* WMI_FIXED_SCHEDULING_CONFIG */
-            HOST_CMD_LOG(0x1007704);
-            wmi_fixed_scheduling_config(mb, body, mid);
-            break;
-        case 0xa03:                                 /* WMI_ENABLE_FIXED_SCHEDULING */
-            HOST_CMD_LOG(0x1007770);
-            wmi_enable_fixed_scheduling(mb, body, mid);
-            break;
+        /* WMI_FIXED_SCHEDULING_UL_CONFIG (0x85f), WMI_FIXED_SCHEDULING_CONFIG (0xa02), WMI_ENABLE_FIXED_SCHEDULING
+         * (0xa03), WMI_SET_AP_SLOT_SIZE (0xa0f) — фиксированное расписание vendor удалено 2026-11-21 (собственная схема
+         * опроса vendor, не 802.11-2020; драйвер её не включал): default — «команда не поддерживается». */
         case 0xa04:                                 /* WMI_SET_MULTI_DIRECTED_OMNIS_CONFIG */
             HOST_CMD_LOG(0x10069e0);
             wmi_set_multi_directed_omnis_config(mb, body, mid);
@@ -1952,10 +1943,6 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
         case 0xa0e:                                 /* WMI_SET_GRANT_MCS */
             HOST_CMD_LOG(0x1007978);
             wmi_set_grant_mcs(mb, ((const struct wmi_set_grant_mcs_cmd *)body)->mcs);
-            break;
-        case 0xa0f:                                 /* WMI_SET_AP_SLOT_SIZE */
-            HOST_CMD_LOG(0x10079a4);
-            wmi_set_ap_slot_size(mb, ((const struct wmi_echo_cmd *)body)->value);   /* {slot_size} */
             break;
         case 0xf003:                                /* WMI_SET_MAC_ADDRESS (переход 0x8ece1c) */
             HOST_CMD_LOG(0x1006ec0);

@@ -241,7 +241,6 @@ HOLDER_STUBS = {n: 0 for n in (
     'cf_end_send_frame', 'uc_sleep_until_event', 'gp0_timer_arm_usec', 'uc_spin_until_event', 'mac_set_rf_chain_state',
     'uc_wait_one_event', 'tx_await_rx_or_timeout', 'rx_mode_configure', 'mac_program_tx_vector', 'uc_wait_txop_end')}
 TX_CTX0 = 0x802978
-DTI_QSET_MODE = 0x8004f4
 ITX_KA_PENDING = 0x800570
 
 
@@ -258,13 +257,12 @@ def air_duration(cmd, txtime_us):
     return max(0, cmd - ceil_us(txtime_us))
 
 
-def holder_cf_end(uc, rem_us, peer_flags=0, qset_mode=0):
+def holder_cf_end(uc, rem_us, peer_flags=0):
     """CF-End после TXOP в CBAP: остаток REMAINING_TIME_RD (r40) rem_us. Возвращает (значения 0x15, MCS CF-End —
     аргумент rate cf_end_send_frame, срок ответа GP0 в мкс или None, если CF-End не ушёл)."""
     lmac_mac_cfg(uc)
     uc.w32(TX_CTX0, 0)                          # tx_ctx_s.sta = 0
     uc.w16(STA_TAB + 2, peer_flags)             # sta_tab[0].flags: б1 = 0 — CF-End на SC MCS 1, б1 = 1 — control
-    uc.w32(DTI_QSET_MODE, qset_mode)
     uc.ext.update({40: rem_us, 42: 1 << 14})    # busy2 (подтверждение передачи), txop_event не поднят
     k = len(uc.calls)                           # журнал вызовов заглушек копится между вызовами
     uc.call('tx_send_and_await_rx_frame', TX_CTX0, 0, 0, 0, stub=HOLDER_STUBS)
@@ -307,11 +305,6 @@ def test_cf_end_holder_nonzero_needs_room_for_response(uc):
     assert holder_cf_end(uc, 10, 2)[2] is None
 
 
-def test_cf_end_fixed_schedule_zero(uc):
-    """Усечение SP (фиксированное расписание): CF-End с Duration 0 (i = 1, ответа нет)."""
-    assert holder_cf_end(uc, 1000, qset_mode=1) == ([0], 1, 1)
-
-
 # ---- RTS keep-alive (internal_tx_keepalive_flow) ---------------------------------------------------------------
 
 def test_keepalive_rts_duration_on_air(uc):
@@ -322,7 +315,6 @@ def test_keepalive_rts_duration_on_air(uc):
     uc.w8(0x800442, 8)                  # itx_rr_b — обход с 8
     uc.w32(ITX_KA_PENDING, 1)           # keep-alive ждёт станция 0
     uc.w32(STA_TAB + 0x18, 1)           # sta_tab[0].qid_mask_q6
-    uc.w32(DTI_QSET_MODE, 0)
     uc.ext.update({40: 0, 42: 0, 43: 1 << 31, 45: 1 << 31})       # CCA занят — RTS не пускается, 0x15 уже записан
     uc.call('internal_tx_keepalive_flow', 0, stub={n: 0 for n in (
         'direct_tx_send_after_delay', 'mac_select_all_sectors_and_wait', 'mac_cmd_29000001', 'gp0_timer_arm_usec')})

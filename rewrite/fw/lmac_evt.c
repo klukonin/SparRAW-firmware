@@ -600,32 +600,3 @@ void evt_set_selected_rf_sector_index_done(struct rf_sector_sel_req *r, u8 *e)
     wmi_evt_post((struct wmi_mbox *)r->mbox, buf, 0, 0x19a3, 4, 0, 0, 0);
     r->mbox = 0;
 }
-
-/* ======================= 0x2e/0x30 ======================= */
-
-/* ba__schedule_timeout_update (0x8ead48): при b == 0 — [vring+92] (u16) = c и задача
- * stream_mgr__ready_for_modify(a) с приоритетом 1. */
-static void ba_schedule_timeout_update(u32 a, u32 b, u32 c)
-{
-    if (b != 0)
-        return;
-    vring_tbl_ptr_by_index(a)->ssn = (u16)c;
-    u_schd_add(stream_mgr_ready_for_modify, a, 0, 1);
-}
-
-/* ba__on_uc_timeout_evt (0x8dc430). */
-void ba_on_uc_timeout_evt(const struct lmac_evt_ba_timeout *e)
-{
-    ba_schedule_timeout_update(e->vr, e->kind, e->ssn);
-}
-
-/* evt_fixed_scheduling_enabled (0x8db7bc): при val == 0, станции cid 0 и MID 0 не в
- * состоянии 2/3 — maintain_sm: параметры RS (1, 0) записи lm_sm соединения. */
-void evt_fixed_scheduling_enabled(const struct lmac_evt_typed *e)
-{
-    struct conn *conn = conn_mgr_by_cid(0);
-    if (e->val != 0 || conn == 0)
-        return;
-    if (mid_is_pcp_or_ap(0) == 0)
-        maintain_sm_set_rs_params(conn->lm.lm_sm, 1, 0);   /* 0x8c6cbc */
-}

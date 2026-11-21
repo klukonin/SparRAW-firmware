@@ -7,8 +7,6 @@
 #include "../include/arc.h"
 #include "../include/macq_desc.h"
 
-__attribute__((section(".textlate"))) static u32 macq_fixed_sched_active(void) { return sched_fixed_active; } /* [gp,0xb2] = fixed_sched_active (vendor: 0 в STA, 1 в AP) */
-
 /* bf__insert_field (0x8edc10): вставить бит-поле (shift, width бит). */
 __attribute__((section(".textlate"))) u32 bf_insert_field(u32 word, u32 value, u32 shift, u32 width)
 {
@@ -32,21 +30,17 @@ __attribute__((section(".textlate"))) u32 bits_set32_s0_w12(u32 w, u32 v) { retu
  * Путь удержания ~30–60 инструкций на дескриптор (vendor ~ так же); запас: зависит от того,
  * где uc ждёт окно (открытый вопрос). Кроме того, «проверить бит 31 → писать CMD/ADDR/DATA →
  * взвести бит 31» не атомарно (~10 инструкций у fw): uc, занявший окно в этом промежутке,
- * получит смешанные CMD/ADDR — у vendor так же. При sched_fixed_active (AP) fw окно не
- * удерживает (0x40000000) — только STA. */
+ * получит смешанные CMD/ADDR — у vendor так же. (vendor при запущенном фиксированном расписании —
+ * [gp,0xb2] — окно не удерживал, 0x40000000; фиксированное расписание удалено.) */
 __attribute__((section(".textlate"))) void macq_desc_wait_window_free(void)
 {
-    if (macq_fixed_sched_active() == 0) {
-        HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1f);   /* vendor — без предела */
-    }
+    HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1f);   /* vendor — без предела */
 }
 
 /* Освободить окно: [0x886608] = 0. */
 __attribute__((section(".textlate"))) void macq_desc_release_window(void)
 {
-    if (macq_fixed_sched_active() == 0) {
-        MMIO32(HW_QDESC_WIN_CTRL) = 0;
-    }
+    MMIO32(HW_QDESC_WIN_CTRL) = 0;
 }
 
 /* macq_desc__write (0x8c5010): записать дескриптор в MACQ (0x886600). */
@@ -83,7 +77,7 @@ __attribute__((section(".textlate"))) void macq_desc_write(const void *desc, u32
                 off += 4;
             }
 
-            MMIO32(HW_QDESC_WIN_CTRL) = (macq_fixed_sched_active() == 0) ? 0xc0000000u : 0x40000000u;
+            MMIO32(HW_QDESC_WIN_CTRL) = 0xc0000000u;
             arc_sync();
             HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1d);
 
@@ -121,7 +115,7 @@ __attribute__((section(".textlate"))) void mac_bringup_init_rx_desc(void)
 /* macq_desc__write_type6 (0x8c51c0, 120 Б): запись дескриптора MACQ типа 6 через окно
  * 0x886600: заголовок [0x88660c] = (u16 поле << 16) | бит 31 (запись), адрес/индекс
  * [0x886610] = arg, 4 слова desc → 0x886614.., старт [0x886608] = 0xc0000000 (окно
- * захвачено; при fixed_sched [gp+0xb2] — 0x40000000 без захвата), sync, ожидание сброса
+ * захвачено), sync, ожидание сброса
  * бита 29, освобождение окна (0x8c5238). Перед записью — ожидание свободного окна
  * (0x8c50e4, бит 31).
  * Поле — младшее полуслово (ldh) локального слова: биты 0..1 = 0 (0x8ed358, s0_w2),
@@ -142,7 +136,7 @@ __attribute__((section(".textlate"))) void macq_desc_write_type6(const void *des
     MMIO32(HW_QDESC_WIN_ADDR) = arg;
     for (i = 0; i < 4; i++)                    /* lp 4: ld.ab [desc], st [0x886614 + i·4] */
         MMIO32(HW_QDESC_WIN_DATA0 + i * 4) = w[i];
-    MMIO32(HW_QDESC_WIN_CTRL) = (macq_fixed_sched_active() == 0) ? 0xc0000000u : 0x40000000u;
+    MMIO32(HW_QDESC_WIN_CTRL) = 0xc0000000u;
     arc_sync();
     HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 0x1d);
     macq_desc_release_window();

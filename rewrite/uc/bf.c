@@ -215,11 +215,6 @@ void txss_resp_flow(u32 a)
         txss_ifs_restore = 0;
     }
 }
-void fsched_bf_req_set(struct fsched_peer_ctx *p, u32 idx)
-{
-    /* 6.2 asm 0x9351f8 */
-    p->bf_req_mask |= (u8)(1u << idx);
-}
 void rx_mode_configure(u32 a, u32 b)
 {
     u32 r16 = a, r17 = b;
@@ -236,97 +231,52 @@ void rx_mode_configure(u32 a, u32 b)
     rx_mode_hist[r0] = 0xff;
 
     if (r16 == 2 || r16 == 3) {
-        /* ---- режимы 2/3 ---- */
-        r1 = 0;
-        r15 = 8;
-        r0 = dti_qset_mode;
-        r18 = 0;
-        if (r0 == 2) {
-            r0 = maint_sta_mask;
-            if (r0 != 0) {
-                /* norm + rsub 0x1e -> индекс старшего бита */
-                r15 = (30 - arc_norm(r0));
-                r0 = VOL(link_stat[r15].bf_reasons);   /* asl 2 + add2_s = *20 */
-                r18 = (r0 == 0) ? 1u : 0u;
-            }
-        }
-
-        if (r18 == 0) {
-            /* ---- L_92f554: путь по sta-таблице ---- */
-            if (r17 < 8) {
-                struct sta_entry *sta = &sta_tab[r17];
-                r1 = sta->flags;
-                if (r1 & 1u) {
-                    r3 = sta->omni_rx_sel;
-                    /* SP, где узел назначение, а пир — источник (uc/ese_dti.c, рычаг 4): слушать его направленным
-                     * сектором до конца SP (10.39.6.2 «should be in the receive state … to receive transmissions from
-                     * the source») — первый PPDU источника идёт без RTS */
-                    if (FWSH(fwsh_sp_gate, rx_peer) == r17 + 1u &&
-                        (s32)(FWSH(fwsh_sp_gate, rx_end_tsf) - uc_read_tsf_lo()) > 0)
-                        r3 = sta->rx_sel;
-                    r1 = r3 & 0x7fff00;
-                    if (r1 == 0x7fff00) {
-                        /* три установки бит-полей в [0x801024]
-                         * (регистры: r0=ptr=0x801024, r1=значение) */
-                        bf_set32_lo_hi((u32)&rf_chain_word, 8, 15, bti_sweep_set);
-                        bf_set32_lo_hi((u32)&rf_chain_word, 4, 4, (r3 >> 4) & 0xf);
-                        bf_set32_lo_hi((u32)&rf_chain_word, 0, 4, r3 & 0xf);
-                    } else {
-                        rf_chain_word = r3;
-                    }
+        /* ---- режимы 2/3: путь по sta-таблице (L_92f554; путь по цепочке L_92f5c2 — только фиксированное
+         * расписание vendor, удалено) ---- */
+        if (r17 < 8) {
+            struct sta_entry *sta = &sta_tab[r17];
+            r1 = sta->flags;
+            if (r1 & 1u) {
+                r3 = sta->omni_rx_sel;
+                /* SP, где узел назначение, а пир — источник (uc/ese_dti.c, рычаг 4): слушать его направленным
+                 * сектором до конца SP (10.39.6.2 «should be in the receive state … to receive transmissions from
+                 * the source») — первый PPDU источника идёт без RTS */
+                if (FWSH(fwsh_sp_gate, rx_peer) == r17 + 1u &&
+                    (s32)(FWSH(fwsh_sp_gate, rx_end_tsf) - uc_read_tsf_lo()) > 0)
+                    r3 = sta->rx_sel;
+                r1 = r3 & 0x7fff00;
+                if (r1 == 0x7fff00) {
+                    /* три установки бит-полей в [0x801024]
+                     * (регистры: r0=ptr=0x801024, r1=значение) */
+                    bf_set32_lo_hi((u32)&rf_chain_word, 8, 15, bti_sweep_set);
+                    bf_set32_lo_hi((u32)&rf_chain_word, 4, 4, (r3 >> 4) & 0xf);
+                    bf_set32_lo_hi((u32)&rf_chain_word, 0, 4, r3 & 0xf);
+                } else {
+                    rf_chain_word = r3;
                 }
             }
-            /* L_92f5a0 */
-            r19 = (u32)brp_rf.omni_offset;
-            r17 = FWSH(fwsh_sets, rx_gain_ofs_lo_mcs);
-            r0 = rx_mode_flags;
-            r0 |= 1u;
-            rx_mode_flags = r0;
-        } else {
-            /* ---- L_92f5c2: путь по цепочке r15 ---- */
-            if (r15 >= 8)
-                uc_assert((u32)__builtin_return_address(0), 0x12f0);
-            r19 = (u32)brp_rf.module_byte[r15];
-            r0 = rate_search_current_mcs_try(r15);
-            if ((s32)r0 < 9)
-                r0 = FWSH(fwsh_sets, rx_gain_ofs_lo_mcs);
-            else
-                r0 = 0;
-            r17 = r0;
-            r0 = rx_mode_flags;
-            r0 &= ~1u;
-            rx_mode_flags = r0;
-            r1 = sta_tab[r15].rx_sel;
-            tx_ctx_pool.cur->rf_word = r1;
         }
+        /* L_92f5a0 */
+        r19 = (u32)brp_rf.omni_offset;
+        r17 = FWSH(fwsh_sets, rx_gain_ofs_lo_mcs);
+        r0 = rx_mode_flags;
+        r0 |= 1u;
+        rx_mode_flags = r0;
 
         /* ---- L_92f618 ---- */
         if (r16 == 2)
             (void)mac_switch_rx_to_tx(r0);
 
-        if (r18 == 0) {
-            /* L_92f624 */
-            hwd_phy_rx_set_agc_start_val_and_gain_array_uc(agc_cfg.agc_start,
-                                                           agc_cfg.gain_arr);
-            r0 = calib_gain_ofs + agc_cfg.agc_start;
-            if (r0 >= 0x3f)                  /* mov.cc -> clamp down */
-                r0 = 0x3f;
-            phy_set_rx_agc_row(r0);
-            r2 = rf_gain_cb;
-            ((void (*)(u32, u32))r2)(r19, r17);
-            r0 = rf_chain_word;
-        } else {
-            /* L_92f650 */
-            hwd_phy_rx_set_agc_start_val_and_gain_array_uc(agc_cfg.agc_start_b,
-                                                           agc_cfg.gain_arr_b);
-            r0 = calib_gain_ofs + agc_cfg.agc_start_b;
-            if (r0 >= 0x3f)
-                r0 = 0x3f;
-            phy_set_rx_agc_row(r0);
-            r2 = rf_gain_cb;
-            ((void (*)(u32, u32))r2)(r19, r17);
-            r0 = sta_tab[r15].rx_sel;
-        }
+        /* L_92f624 */
+        hwd_phy_rx_set_agc_start_val_and_gain_array_uc(agc_cfg.agc_start,
+                                                       agc_cfg.gain_arr);
+        r0 = calib_gain_ofs + agc_cfg.agc_start;
+        if (r0 >= 0x3f)                  /* mov.cc -> clamp down */
+            r0 = 0x3f;
+        phy_set_rx_agc_row(r0);
+        r2 = rf_gain_cb;
+        ((void (*)(u32, u32))r2)(r19, r17);
+        r0 = rf_chain_word;
 
         /* ---- L_92f67e ---- */
         (void)rf_set_cur_sector_word(r0);
@@ -827,8 +777,6 @@ void bf_sm_prepare_state_entry(u32 sta, u32 state)
 /* bf_sm_set_sta_state: запись состояния станции (0x92b220). */
 void bf_sm_set_sta_state(u32 sta, u32 state)
 {
-    if (dti_qset_mode == 1 && state == 0x11)   /* ld_s [gp,-52] — байты */
-        fsched_bf_req_set(&fsched_peers, (u8)sta);
     struct bf_sta_s *e = &bf_sta[sta];
     e->state = state;
     e->flow_status = 0;
@@ -1204,10 +1152,6 @@ void bf_sm_process_request_fifo(void)
     bf_req_dequeue_head(r15, 0);
     BF_SEG(4);
     bf_res.diag = e->state | (e->flow_status << 4);
-    if (dti_qset_mode == 2 && maint_sta_mask != 0 && r16 == 1) {
-        rx_mode_configure(2, sta);
-        mac_read_tsf64_uc(fsched_peers.rx_tsf);
-    }
     goto reprog;
 
 pick:                                           /* 0x921e08 */

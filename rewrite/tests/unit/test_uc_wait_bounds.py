@@ -18,7 +18,7 @@ SIFS_CLK = 3 * CLK
 UC_WAIT_MARKER = 0x800628
 EVT_BUSY2, EVT_PPDU_REPORT = 1 << 14, 1 << 16
 
-RX_RESP_SKIP_CNT, DTI_QSET_MODE, RXF_STA = 0x800480, 0x8004f4, 0x802288
+RX_RESP_SKIP_CNT, RXF_STA = 0x800480, 0x802288
 RX_BAP_RX_UP = 0x800544
 PPDU_EVT_CNT = 0x800578                # тень r40 PHY_SIGNALS [13:8]
 TX_CTX, OUT = 0x806900, 0x806a00
@@ -62,7 +62,6 @@ def test_spin_tmo_bounded(uc, clk):
 def _qos_data_for_us(uc, bap):
     """Принят QoS Data «для нас», не A-MPDU, Ack Policy Normal (r38 [17:16] = 0), тип ≠ ATIM: ветка ожидания BAP."""
     uc.w32(RX_RESP_SKIP_CNT, 0)
-    uc.w32(DTI_QSET_MODE, 0)
     uc.w32(RXF_STA, 0)
     uc.ext.update({36: 1 << 1, 37: 0, 38: 0xe0000800, 39: 0x08002c50, 53: bap})
 

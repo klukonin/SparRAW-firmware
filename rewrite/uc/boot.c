@@ -31,7 +31,6 @@ void uc_init(void)
 /* Инициализация структур boot (0x920114). */
 void boot_uc_init_structs(void)
 {
-    uc_list_insert_by_prio((u32)&init_desc_globals);
     uc_list_insert_by_prio((u32)&uc_init_desc_key);
     uc_list_insert_by_prio((u32)&init_desc_cmdq);
     uc_list_insert_by_prio((u32)&init_desc_801aec);
@@ -44,7 +43,7 @@ void boot_uc_init_structs(void)
 void uc_main(void)
 {
     if (uc_cold_boot != 0) {
-        memset0_words_uc((void *)&fsched_peers, (u32)&uc_log - (u32)&fsched_peers);   /* весь BSS 0x801be8..0x803234 */
+        memset0_words_uc((void *)UC_BSS_START, (u32)&uc_log - UC_BSS_START);   /* весь BSS 0x801be8..0x803234 */
         memset0_words_uc((void *)0, 0);
     }
     /* Доступ по расписанию DTI (uc/ese_dti.c, SparRAW): наш fw обнуляет блок при загрузке, vendor-fw (гибрид) память
@@ -205,12 +204,6 @@ u32 uc_evt_write_slot(struct uc_mbox_ctx *m)
 
 /* Колбэки init-дескрипторов из uc_data (поле +4; вызываются timer_list_init).
  * vendor хранил их 0-базовыми адресами; tools/build_fw.py перенаправляет на эти. */
-
-/* 0x92097c (дескриптор 0x8007c8). */
-void uc_init_cb_globals(void)
-{
-    uc_init_globals(&fsched_peers);
-}
 
 /* 0x920968 (дескриптор 0x800fe0). */
 void uc_init_cb_copy_rf_mask(void)

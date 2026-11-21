@@ -751,7 +751,7 @@ void l2mgr_send_host_event(u32 mid, u32 cid)
     /* AP с SME прошивки: conn->aid = 0, станции в Assoc Response ушёл cid + 1 (mgmt_tx_build_assoc_resp) — хосту тот же
      * (исправлено, vendor: aid 0) */
     p[0x14] = sta ? e->aid : (conn->aid != 0 ? conn->aid : (u8)(cid + 1u));
-    /* AP/PCP: AID станции — uc в Source AID кадра Grant фиксированного расписания (9.5.2, fsched_tx_ctrl_frame) */
+    /* AP/PCP: AID станции — для uc (кадры Grant/SPR/Poll динамического выделения, 9.5.2; include/fwsh.h) */
     if (!sta && cid < SPARRAW_MAX_STA)
         fwsh_peer_aid.aid[cid] = p[0x14];
     p[0x11] = 0;

@@ -40,12 +40,6 @@ void mac_install_rf_gain_cb(void)
     rf_gain_cb = VENDOR_CB(935748);       /* rf_gain_adjust_cb */
 }
 
-void mac_set_sector_arg_and_select_all(u32 a)
-{
-    MMIO32(HW_MAC_TIMED_WAIT_US) = a;
-    mac_select_all_sectors_and_wait();
-}
-
 u32 mac_read_ext_window_remain(void)
 {
     return MMIO32(HW_MAC_EXT_WINDOW_REMAIN) & 0xffffff; /* bmsk 0x17 — 24 бита */
@@ -80,13 +74,6 @@ u16 mac_get_beacon_interval_tu_uc(void)
     return (u16)MMIO32(HW_MAC_BEACON_INTERVAL); /* extw — беззнаковое */
 }
 
-u32 macq_read_hw_queue_word(u32 q)
-{
-    u32 addr = ((q << 8) + 0x440c0c0) >> 3;
-    addr &= ~3u;
-    return MMIO32(addr);
-}
-
 void mac_clk_div_us(u32 a, u32 out)
 {
     /* 0x936b94 (vendor: делитель 165): код {такты, мкс} регистров IFS MAC — out[0] = a % f, out[1] = a / f (по байту),
@@ -115,42 +102,6 @@ u32 mac_read_usec_to_tbtt_uc(u32 a)
     }
     return MMIO32(HW_MAC_USEC_TO_TBTT) & 0x3ffffff; /* bmsk 0x19 — 26 бит */
 }
-
-u32 macq_hw_read_wptr(u32 q)
-{
-    u32 raw = ((q * 7) << 7) + 0x44098c0;
-    return (u16)(MMIO32((raw >> 3) & ~3u) >> (raw & 0x1f));
-}
-
-u32 macq_hw_read_rptr(u32 q)
-{
-    u32 raw = ((q * 7) << 7) + 0x4409880;
-    return (u16)(MMIO32((raw >> 3) & ~3u) >> (raw & 0x1f));   /* lsr по биту, extw */
-}
-
-void macq_hw_clear_2d8(u32 q)
-{
-    u32 addr = (((q * 7) << 7) + 0x44096c0) >> 3;
-    MMIO32(addr & ~3u) = 0;
-    arc_sync();
-}
-
-u32 macq_hw_read_state0(u32 q)
-{
-    u32 raw = (q * 7) << 7;
-    u32 addr = (raw + 0x4409800) >> 3;
-    u32 shift = (raw + 0x4409800) & 0x1f;
-    return (MMIO32(addr) >> shift) & 0xf;
-}
-
-u32 macq_hw_read_state1(u32 q)
-{
-    u32 raw = (q * 7) << 7;
-    u32 addr = (raw + 0x4409820) >> 3;
-    u32 shift = (raw + 0x4409820) & 0x1f;
-    return (MMIO32(addr) >> shift) & 0xf;
-}
-
 
 void aw_set_new_tbtt_clear_ps(struct pm_ctx_s *p)
 {
@@ -227,14 +178,6 @@ void clk_gate_vec2_enable(u32 a)
         MMIO32(HW_CLKS_CTL_SW_CLK_VEC_2) &= 0x43ffffffu;
 }
 
-void macq_hw_set_ctrl_bit(u32 q)
-{
-    u32 raw = ((q * 7) << 7) + 0x44099c3;
-    u32 addr = (raw >> 3) & ~3u;
-    u32 mask = 1u << (raw & 0x1f);
-    u32 val = MMIO32(addr);
-    MMIO32(addr) = (val & ~mask) | mask;
-}
 /* СРОК: при wait ≠ 0 — ожидание 0x886eb4.31 (готовность снимка начала BI) без ограничения
  * (аппаратный); vendor 0x9374e8 так же. Срыв — зависание uc. */
 void mac_read_bi_start_tsf64_uc(u32 a, u32 *out, u32 wait)
@@ -263,23 +206,6 @@ void mac_rx_off_seq(void)
     uc_mac_cmd(0x29000002);
 }
 
-void mac_set_slot_mask_924000(void)
-{
-    mac_chain_mask = 0x924000;
-    uc_mac_cmd(0x8924000);
-    mac_rf_switch_wait_idle(1);
-    uc_mac_cmd(0x81u << 18);
-}
-
-void mac_set_chain_mask_924f00(void)
-{
-    mac_chain_mask = 0x924f00;
-    u32 r0 = (rx_nav.ev_mask & 0x924f00) | (1u << 27);
-    uc_mac_cmd(r0);
-    uc_mac_cmd(0x81u << 18);
-    mac_rf_switch_wait_idle(1);
-}
-
 /* СРОК: 0x27007e00 → 0x02004002 → 3 nop → ждать r42 (slot_event | busy2_event) без тайм-аута; MAC
  * должен применить маску до первого опроса (аппаратный, ~3 такта): между mov r32 и опросом 5
  * инструкций + переход в uc_wait_event_busy (vendor 0x936870 так же); запас — единицы инструкций.
@@ -299,17 +225,6 @@ void mac_program_gp_timer0(u32 a, u32 b)
     uc_mac_cmd(a | 0x4f000000u);
     uc_mac_cmd((b << 8) | 0x52000008u);
 }
-
-void macq_hw_sync_dma_wptr(u32 a, u32 q, u32 dma)
-{
-    (void)dma;   /* 3-й аргумент (r2) перезаписывается в asm, не используется */
-    u32 raw = ((q * 7) << 7) + 0x44098c0;
-    u32 wptr = (u16)(MMIO32((raw >> 3) & ~3u) >> (raw & 0x1f));   /* extw */
-    u32 dma_addr = (((a << 8) + 0x440c140) >> 3) & ~3u;
-    MMIO32(dma_addr) = wptr;
-    MMIO32(dma_addr) = wptr | (1u << 31);
-}
-
 
 /* СРОК: 0x27 (разрешение события) → 0x02004000 → 3 nop → ждать MAC_EVT1_BUSY2 (busy2_event — подтверждение)
  * без ограничения; MAC должен обновить MAC_EVT1_BUSY2 до первого опроса (аппаратный, ~3 такта): между mov r32
@@ -380,24 +295,6 @@ void mac_wait_mode_ack_if_idle(void)
     if (!(mac_evt1() & MAC_EVT1_BUSY2))
         uc_assert((u32)__builtin_return_address(0), 0x3f);
 }
-/* СРОК: 0x49000040 квитирует MAC_EVT4_GP0_END (gp0_end_ind), и уже через ~8 инструкций (вызов
- * uc_wait_event1_or_event4) MAC_EVT4_GP0_END опрашивается снова — без паузы, как vendor 0x93e084; запас —
- * единицы инструкций (аппаратная задержка квитирования не измерена). Срыв: устаревший MAC_EVT4_GP0_END —
- * ложный возврат 0 (тайм-аут вместо busy2). */
-u32 mac_wait_busy2_or_gp0_timeout(void)
-{
-    /* 0x93e084: 1 — событие r42 bit14, 0 — r54 bit6. */
-    uc_mac_cmd(mac_evt_en_shadow | 0x27000c00);
-    uc_mac_cmd(0x2004000);
-    uc_mac_cmd(0x49000040);
-    for (;;) {
-        uc_wait_event1_or_event4(MAC_EVT1_BUSY2, MAC_EVT4_GP0_END, 0);
-        if (mac_evt1() & MAC_EVT1_BUSY2)
-            return 1;
-        if (mac_evt4() & MAC_EVT4_GP0_END)
-            return 0;
-    }
-}
 
 void mac_ifs_restore_sifs(void)
 {
@@ -409,26 +306,6 @@ void mac_ifs_restore_sifs(void)
         uc_mac_cmd(0x38000200);
     }
     uc_mac_cmd(0x3d000400);
-}
-u32 macq_hw_trigger_read_state(u32 q)
-{
-    /* 0x928fcc */
-    u32 base = q * 0x380;
-    MMIO32((base + 0x44097a0) >> 3) = 1u << ((base + 0x44097bf) & 0x1f);
-    arc_sync();
-    return MMIO32(((base + 0x44097a0) >> 3) & ~3u) & 7;
-}
-
-void macq_hw_commit_rptr(u32 q)
-{
-    /* 0x92a640: прочитать 16-бит rptr очереди q и записать его на 0x60 бит (0xc Б) дальше — DESCQ+0x44 (затем с bit31). */
-    u32 raw = ((q * 7) << 7) + 0x4409880;
-    u32 rptr = (u16)(MMIO32((raw >> 3) & ~3u) >> (raw & 0x1f));
-    u32 addr = (((q * 7) << 7) + 0x44098e0) >> 3;
-    MMIO32(addr) = rptr;
-    arc_sync();
-    MMIO32(addr) = rptr | (1u << 31);
-    arc_sync();
 }
 
 u32 mac_build_qset_mask(const struct lmac_mac_regs *a)
@@ -452,16 +329,6 @@ u32 mac_build_qset_mask(const struct lmac_mac_regs *a)
     m = (r0 << 22) | m;
     mac_cmd35_mask = m;   /* st.as [gp,0xb] */
     return m;
-}
-void macq_hw_disable_queue(u32 q)
-{
-    /* 0x9292a8: сбросить бит очереди в двух регистрах (адрес/бит из битового смещения). */
-    u32 raw = q * 0x380 + 0x44099c0;
-    MMIO32((raw >> 3) & ~3u) &= ~(1u << (raw & 0x1f));
-    arc_sync();
-    raw = q * 0x380 + 0x44096c4;
-    MMIO32((raw >> 3) & ~3u) &= ~(1u << (raw & 0x1f));
-    arc_sync();
 }
 /* СРОК: запрос MTP 0x1b/0x16/0x17 → 3 инструкции (2×nop + mov 0,0, vendor 0x92dafc) → ждать MAC_MTP_PERM_VALID
  * без ограничения (аппаратный: до обработки запроса r45 держит прошлый ответ с valid = 1). Запас —
@@ -745,7 +612,7 @@ u32 uc_spin_until_event(u32 mask)
 }
 
 /* Ожидание конца TXOP у MAC (txop_event, r42 б7) после своего обмена: tx_send_and_await_rx_frame (после CF-End)
- * и fixed_sched_run_tx_slot (после TXOP с ответом). Прежде — uc_spin_until_event(MAC_EVT1_TXOP) без срока (vendor
+ * и sp_run_tx_slot (после TXOP с ответом). Прежде — uc_spin_until_event(MAC_EVT1_TXOP) без срока (vendor
  * так же). Событие поднимает MAC, когда кончается его TXOP (H-TXOPEVT-CFEND, по коду uc, на стенде не снято); если
  * TXOP у MAC нет (не открыт или уже кончился, а защёлка события снята сбросом r42 в rx_flow_main), события нет —
  * основной поток uc висел навсегда: команды LMAC (прерывание) ещё обслуживались, а приём, Ack, TXOP и сброс очередей

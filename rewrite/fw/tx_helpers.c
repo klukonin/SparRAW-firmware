@@ -123,17 +123,6 @@ void tx_dma_build_desc(void *dst, const u16 *s0, const u16 *s1, u8 a3, u8 a4, u8
     dma_l2_offload_tx_ctl_set_bit1();
 }
 
-/* conn__alloc_and_fill (0x8dc43c, 54 Б): LMAC-команда 0x45 {q, flags, n, desc[0x70]}. */
-void lmac_if_send_write_qh(u32 a0, u32 a1, const struct macq_qdesc *a2, u32 a3)
-{
-    struct lmac_cmd_write_qh *r = lmac_cmd_pool_alloc();
-    r->q = (u8)a0;
-    r->flags = (u8)a1;
-    r->n = (u16)a3;
-    memcpy_fw(r->desc, a2, sizeof(*a2));
-    lmac_if_post_cmd(r, 0x45, 0x74, 0);
-}
-
 /* qh__write_by_flags_fw (0x8dd90c, 348 Б): по флагам записать/прочитать MACQ-дескрипторы
  * очереди a: 0x10 — окно (+0x40), 0x1..0x8 — четыре под-дескриптора, 0x20 — типизированный.
  * Поля 12-битные (bits__set32_*_w12; прежде маска 0x7ff). */
@@ -172,18 +161,6 @@ void macq_qh_write_by_flags(u32 a, u32 b, struct macq_qdesc *c, u32 d)
         bitfield_set32(&buf[3], 16, 12, (c->win.w3 >> 16) & 0xfffu);
         macq_desc_write(buf, a, 2, 0, 0, 0, 0, 1);
     }
-}
-
-/* qh__write_or_conn_alloc (0x8ea5b0, 62 Б): при активном режиме fixed_sched.enabled и MID 0 в
- * состоянии 2/3 — через LMAC (0x45), иначе прямо в MACQ. */
-u32 macq_qh_write(u32 a, u32 b, struct macq_qdesc *c, u32 d)
-{
-    if (*(volatile u8 *)&fixed_sched.enabled != 0 && mid_is_pcp_or_ap(0) != 0) {
-        lmac_if_send_write_qh(a, b, c, d);
-        return 0;
-    }
-    macq_qh_write_by_flags(a, b, c, d);
-    return 0;
 }
 
 /* ba_sm__addba_at_10 (0x8c7edc, 20 Б): секторный дескриптор очереди e в буфер +0x10. */
@@ -268,7 +245,7 @@ void macq_desc_read(void *d,u32 b,u32 c,u32 count,u32 e)
         do {
             sp0 = (sp0 & ~3u) | (r13 & 3u);         /* bits_set32_s0_w2(r13&3) */
             MMIO32(HW_QDESC_WIN_ADDR) = sp0;
-            MMIO32(HW_QDESC_WIN_CTRL) = (sched_fixed_active == 0) ? 0xc0000000u : 0x40000000u;
+            MMIO32(HW_QDESC_WIN_CTRL) = 0xc0000000u;
             arc_sync();
             /* Порт-баг (исправлен 2026-10-20): чтение было без volatile — gcc читал регистр
              * один раз и крутился на ветке (бит 29 при первом чтении → вечный цикл); vendor
@@ -319,7 +296,7 @@ void macq_desc_read_typed(void *d,u32 b,u32 c,u32 dd,u32 e,u32 f,u32 g)
             else
                 sp0 = r1;
             MMIO32(HW_QDESC_WIN_ADDR) = sp0;
-            MMIO32(HW_QDESC_WIN_CTRL) = (sched_fixed_active == 0) ? 0xc0000000u : 0x40000000u;
+            MMIO32(HW_QDESC_WIN_CTRL) = 0xc0000000u;
             arc_sync();
             HW_POLL_WHILE_SET(HW_QDESC_WIN_CTRL, 1u << 29);
             for (u32 i = 0; i < g; i++)

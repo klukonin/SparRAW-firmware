@@ -11,7 +11,7 @@ static const void *const uc_keep[] = {
     bf_req_report_energy_cb, bf_req_report_plcp_cb, bf_req_report_phystat_cb,
     bf_req_report_pkt_cb, bf_req_report_chest_cb, rf_gain_adjust_cb,
     abft_send_ssw_feedback, direct_tx_short_frame0_cb, direct_tx_short_frame2_cb,
-    uc_init_cb_globals, uc_init_cb_copy_rf_mask, uc_init_cb_rx_meas, uc_init_cb_bi_sm_name,
+    uc_init_cb_copy_rf_mask, uc_init_cb_rx_meas, uc_init_cb_bi_sm_name,
     uc_init_cb_cmdq, ucode_cmdq_handler, bf_done_report_build_send,
     /* основа PP/GP (uc/dynalloc.c, docs/TDMA.md §6): обмен в эфир ещё не подключён, расчёт сверяет
      * tests/unit/test_tdma_dynalloc.py */

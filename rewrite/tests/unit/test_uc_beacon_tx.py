@@ -187,7 +187,6 @@ def bti_sweep(uc, psdu_len=34):
     d = math.ceil(ctrl_txtime(psdu_len))       # r47: длительность кадра MAC в целых мкс вверх
     uc.ext.update({47: (1 << 31) | d, 43: 1 << 31, 42: MacTimeline(uc)})
     uc.w32(HW_MAC_IFS_RIFS_SBIFS, SBIFS << 24)
-    uc.w8(0x800449, 0)                         # fsched_enabled
     uc.w32(0x800714, 0)                        # bti_defer_active
     uc.w8(0x800431, 0)                         # bti_sweep_set
     uc.w8(MAINT_STA_MASK, 0)

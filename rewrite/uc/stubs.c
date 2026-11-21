@@ -107,12 +107,7 @@ struct tx_ctx_s *tx_ctx_alloc_next(u32 a)
                 rf_chain_word = r2;
         }
     }
-    u32 r0v;
-    if (dti_qset_mode != 0)
-        r0v = sta_tab[fsched_get_cur_idx(&fsched_peers)].rx_sel;
-    else
-        r0v = rf_chain_word;
-    c->rf_word = r0v;
+    c->rf_word = rf_chain_word;
     c->x30 = 0;
     c->x1c = 0xf;
     c->x34 = 0;

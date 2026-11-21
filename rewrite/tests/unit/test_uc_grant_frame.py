@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Кадр Grant (uc/misc.c frame_hdr_init, fsched_tx_ctrl_frame) и Grant Ack (rx_send_grant_ack) против 802.11-2020:
+"""Кадр Grant / SPR (uc/misc.c frame_hdr_init, uc/dynalloc.c) и Grant Ack (rx_send_grant_ack) против 802.11-2020:
 поле Dynamic Allocation Info 9.5.2 (рис. 9-847) — TID B0..B3, AllocationType B4..B6, Source AID B7..B14,
 Destination AID B15..B22, Allocation Duration B23..B38 (младший бит — B23), B39 Reserved; BF Control 9.5.5
 (рис. 9-851/9-852: B0 Beamforming Training; при 0 прочие подполя зарезервированы). Тело кадра с +0x10 (struct
@@ -8,8 +8,6 @@ import pytest
 
 DST = 0x807e00                      # struct dtx_ctrl_frame (0x18 Б) — свободная область стека в эмуляторе
 SRC = 0x807f00                      # struct dtx_grant_req (0x0c Б)
-FSCHED_CUR_IDX = 0x801be8 + 0x28    # fsched_peers.cur_idx
-PEER_AID = 0x857964                 # fwsh_peer_aid.aid[cid] (include/fwsh.h)
 RX_BUF = 0x804010                   # принятый кадр
 
 
@@ -37,27 +35,6 @@ def test_grant_dynamic_allocation_info(uc, dur, typ, src, dst):
     f = dyn_alloc(int.from_bytes(uc.rbytes(DST + 0x10, 5), 'little'))
     assert f == dict(tid=0, type=1 if typ == 1 else 0, src=src, dst=dst, dur=dur, rsv=0)
     assert uc.rbytes(DST + 0x15, 2) == bytes(2)         # BF Control: без обучения — все подполя 0
-
-
-@pytest.mark.parametrize('cid, aid', [(0, 1), (3, 4), (7, 0x2a)])
-def test_fsched_grant_fields(uc, cid, aid):
-    """Grant фиксированного расписания — передача TXOP станции (10.39.7.3): Source AID — AID станции (ответчика),
-    Destination AID — AID AP (держателя TXOP, 0 по 9.4.1.8), AllocationType CBAP (табл. 9-257: B4 = 1),
-    Allocation Duration 32768 (9.5.2 b), Beamforming Training = 0 (обучение в начале выделения не планируется — BF
-    Control целиком 0, 9.5.5). Duration — длительность слота."""
-    uc.w8(FSCHED_CUR_IDX, cid)
-    for i in range(8):
-        uc.w8(PEER_AID + i, 0xc0 + i)
-    uc.w8(PEER_AID + cid, aid)
-    uc.call('fsched_tx_ctrl_frame', stub={'gp0_timer_arm_usec': 0, 'fsched_virtual_slot_us': 700,
-                                          'direct_tx_send_from_desc': 0})
-    args = [a for n, a in uc.calls if n == 'direct_tx_send_from_desc']
-    assert len(args) == 1 and args[0][1] == cid
-    d = args[0][0]
-    assert uc.r16(d) == 0x464 and uc.r16(d + 2) == 700
-    f = dyn_alloc(int.from_bytes(uc.rbytes(d + 0x10, 5), 'little'))
-    assert f == dict(tid=0, type=1, src=aid, dst=0, dur=32768, rsv=0), f
-    assert uc.rbytes(d + 0x15, 2) == bytes(2)
 
 
 def test_grant_ack_body_reserved(uc):

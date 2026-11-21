@@ -158,41 +158,6 @@ void fw_sysapi_send_measure_evt(struct fw_sysapi_mgr *mgr, const volatile struct
     fw_sysapi_mgr_send_evt2host(mgr, mgr->status, s, 0x8c, (const u32 *)mgr->ut.w);
 }
 
-/* ===================== сброс статистики (7) ===================== */
-
-/* [0x8f3538]: ответ 0xe Б и останов команды 7. */
-static void flush_stats_done(struct fw_sysapi_mgr *mgr, const void *body)
-{
-    fw_sysapi_mgr_send_evt2host(mgr, mgr->status, body, 0xe,
-                                (const u32 *)mgr->ut.w);
-    fw_sysapi_mgr_stop_sysapi_cmd(mgr, 7);
-}
-
-/* [0x8f3558]: колбэк ответа ucode (+0x34) — статус в +0x20. */
-static void flush_stats_cb(struct fw_sysapi_mgr *mgr, u32 status, const void *body)
-{
-    mgr->status = status;
-    flush_stats_done(mgr, body);
-}
-
-/* fw_sysapi_mgr::get_flush_statistics_cmd_start (0x8f34fc, 60 Б): команда 7 → LMAC 0x48
- * (4 Б). Тело vendor не заполняет (у vendor — остаток слота пула), у нас нули (mem_pool_alloc_locked обнуляет). */
-void fw_sysapi_mgr_get_flush_statistics_cmd_start(struct fw_sysapi_mgr *mgr, const u32 *ctx)
-{
-    if (fw_sysapi_mgr_start_sysapi_cmd(mgr, 7, ctx) == 0) {
-        fw_log_emit2(0x20, 0x10129c0, mgr->request_type, 7);
-        return;
-    }
-    mgr->completion_cb = flush_stats_cb;
-    lmac_if_post_cmd(lmac_cmd_pool_alloc(), 0x48, 4, 0);
-}
-
-/* ut_sysapi__flush_stats_start (0x8ebbbc, 12 Б). */
-void ut_sysapi_flush_stats_start(const u32 *ctx)
-{
-    fw_sysapi_mgr_get_flush_statistics_cmd_start(&fw_sysapi_mgr, ctx);
-}
-
 /* ===================== аргументы UT (8) ===================== */
 
 /* sysapi_mgr__apply_ut_args (0x8cdd60, 26 Б): тело UT с +4 → команда 8. */
@@ -589,10 +554,8 @@ void ut_module_hw_flows_sysapi_cmd_handler(struct wmi_mbox *mb, const struct ut_
         hw_sysapi_channel_estimation((u32)c->arg8[0], (u32)c->arg8[4], (u32)c->arg8[8], (u32)c->arg8[12], (u32)c->arg8[16], c->arg[5],
                                         ctx[0], ctx[1]);
         break;
-    case 26:                                           /* 0x8fb2e8 */
-        fw_log_emit0(0x20, 0x101b1e0);
-        ut_sysapi_flush_stats_start(ctx);
-        break;
+    /* case 26 (0x8fb2e8, статистика flush фиксированного расписания → ucode LMAC 0x48) — фиксированное расписание
+     * vendor удалено; здесь default. */
     case 32:                                           /* 0x8fb278 */
         fw_log_emit0(0x20, 0x101b110);
         buf = ut_begin_response(mb, 0xa, sub);
