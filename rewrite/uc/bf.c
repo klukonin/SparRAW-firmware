@@ -461,6 +461,11 @@ void bf_clear_all_sta(void)
     while (bf_req.head < bf_req.tail) {
         u32 v = bf_req.pending_mask;
         uc_log_emit3(0x20, 0x1000d3c, bf_req.tail, bf_req.head, v);
+        if (v == 0) {                   /* исправлено (vendor): FIFO не пуста, а маска пуста — bf_reset_sta(−1) писал перед
+                                         * bf_sta и цикл не кончался; рассинхрон — сбросить FIFO */
+            bf_req.head = bf_req.tail;
+            break;
+        }
         bf_reset_sta(30 - arc_norm(v), 0);           /* norm + rsub 0x1e */
     }
 }

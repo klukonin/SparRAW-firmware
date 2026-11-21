@@ -63,3 +63,32 @@ def test_lmac_index_out_of_range_halts_without_write(uc, fn, body, code):
     after = bytes(uc.cpu.read(a, 1) for a in range(DCCM_LO, DCCM_HI))
     diff = [hex(DCCM_LO + i) for i in range(len(before)) if before[i] != after[i]]
     assert not diff, diff[:8]
+
+
+BF_REQ = 0x8020b0                        # struct bf_req_q_s: pending_mask, fifo[8], head (+0xc), tail (+0x10)
+
+
+def test_bf_clear_all_sta_empty_mask_resyncs(uc):
+    """FIFO запросов BF не пуста, а маска пуста (рассинхрон): vendor bf_reset_sta(30 − norm(0) = −1) — запись перед
+    bf_sta, и цикл не кончался. Теперь FIFO сбрасывается."""
+    uc.w32(BF_REQ, 0)
+    uc.w32(BF_REQ + 0xc, 3)
+    uc.w32(BF_REQ + 0x10, 5)
+    uc.call('bf_clear_all_sta', max_steps=200_000)
+    assert uc.r32(BF_REQ + 0xc) == uc.r32(BF_REQ + 0x10)
+
+
+@pytest.mark.parametrize('ac,ecw_min,ecw_max,aifsn', [(4, 4, 10, 3), (0, 24, 10, 3), (0, 4, 32, 3), (0, 4, 10, 16)])
+def test_edca_fields_out_of_range_halt(uc, ac, ecw_min, ecw_max, aifsn):
+    """LMAC 0x04: индекс AC < 4, ECWmin/ECWmax/AIFSN — 4-битные поля (9.4.2.28). vendor: ECW ≥ 24 — маска в коде
+    команды MAC, ≥ 32 — сдвиг за слово. Теперь — останов 0x15ac до записи регистров EDCA."""
+    import struct
+    uc.cpu.write(SCRATCH, struct.pack('<IHHH2x', ac, ecw_min, ecw_max, aifsn))
+    lo = uc.sym['txrx_api_program_edca_ac'] & 0x1ffff
+    uc.cpu.func_range = (lo, min(a & 0x1ffff for a in uc.sym.values() if (a & 0x1ffff) > lo))
+    uc.calls.clear()
+    try:
+        uc.call('txrx_api_program_edca_ac', ac, SCRATCH, stub={'uc_assert': 0})
+    finally:
+        uc.cpu.func_range = None
+    assert [c[1][1] for c in uc.calls if c[0] == 'uc_assert'] == [0x15ac]

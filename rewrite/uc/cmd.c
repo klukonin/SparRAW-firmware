@@ -693,6 +693,11 @@ void txrx_api_program_edca_ac(u32 a, u32 b)
 {
     const struct lmac_edca_ac *e = (const void *)b;
     u32 i = a;
+    /* ECWmin/ECWmax и AIFSN — 4-битные поля (9.4.2.28); vendor не проверял: ECW ≥ 24 — маска в коде команды MAC, ≥ 32 —
+     * сдвиг за слово; индекс AC — < 4 (регистры по AC) */
+    if (lmac_idx_bad(i, 4, 0x15ac) || lmac_idx_bad(e->ecw_min, 16, 0x15ac) || lmac_idx_bad(e->ecw_max, 16, 0x15ac) ||
+        lmac_idx_bad(e->aifsn, 16, 0x15ac))
+        return;
     u32 mask = (1u << e->ecw_min) - 1;
     MMIO32(HW_MAC_EDCA_AIFS + i * 4) = ((u32)e->aifsn << 28) | 0x201ff;   /* add2 = ×4 */
     /* Затравка ГПСЧ отсрочки AC (гипотеза о смысле регистра — hw_regs.h). исправлено (vendor: 0xc0adc0ad << AC —
@@ -826,6 +831,11 @@ void ucode_cmd_0x01_handler(const struct lmac_cmd_rx_on *c)
         uc_assert((u32)__builtin_return_address(0), 0x7d);
 
     u8 v = c->rf_mask;
+    if (v == 0) {                           /* исправлено (vendor): маска RF 0 — индекс 30 − norm(0) = −1 в таблицы по RF
+                                             * (rf_gain_adjust_cb писал rf_rx_gain_lo[255]); нужен хотя бы один модуль */
+        uc_assert((u32)__builtin_return_address(0), 0x15ab);
+        return;
+    }
     rf_modules.cur = v;
     u32 r13b = v;
     u32 r15b = 0;
