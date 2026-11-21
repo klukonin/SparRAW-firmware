@@ -552,7 +552,7 @@ class FW:
         run — затем выполнить готовые задачи u_schd. Возврат — события WMI этого шага."""
         n0 = len(self.wmi_evts)
         body = bytes(body)
-        hdr = struct.pack('<HHHHBBHI', 0, len(body), 0, 0, mid, 0, cmd_id, 0)
+        hdr = struct.pack('<HHHHBBHI', 0, 8 + len(body), 0, 0, mid, 0, cmd_id, 0)   # len — WMI-заголовок + тело (wil6210 wmi_send)
         for i in range(0x800):
             self.cpu.mem[self.WMI_BUF + i] = 0
         self.wbytes(self.WMI_BUF, hdr + body)

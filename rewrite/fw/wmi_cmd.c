@@ -1585,6 +1585,20 @@ void wmi_host_cmd_dispatch(struct wmi_mbox *mb, u8 *cmd)
     const struct mbox_hdr *hdr = (const struct mbox_hdr *)cmd;
     u32 mid = hdr->mid;
     void *body = (void *)(hdr + 1);                 /* тело — struct wmi_*_cmd (include/wmi.h) */
+    /* Длина записи хоста — WMI-заголовок (8 Б) + тело (драйвер wil6210 wmi_send: sizeof(wmi_cmd_hdr) + len).
+     * исправлено (vendor не читал длину): обработчики читают поля по размеру своей структуры, и короткая команда
+     * читала остаток прошлых команд того же слота (ключ ADD_CIPHER_KEY, пароль — в кадры SW_TX_REQ/SET_APPIE; аудит
+     * границ 2026-11-21). Хвост слота за длиной — нули; длина вне слота — «не поддерживается». */
+    {
+        u32 n = hdr->len, slot = mb->rx_entry_size;
+        if (n < 8u || n + 8u > slot) {
+            fw_log_emit2(0, LS_FW(WMI_BAD_LEN), hdr->id, n);
+            wmi_evt_send_command_not_supported(mb, hdr->id, 0, mid);
+            return;
+        }
+        for (u8 *p = cmd + 8u + n; p < cmd + slot; p++)
+            *p = 0;
+    }
     if (hdr->flags & 2)
         fw_sysassert_fatal(__builtin_return_address(0), 0x1036);
     if (hdr->flags & 4)

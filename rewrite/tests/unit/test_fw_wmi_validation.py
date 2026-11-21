@@ -429,3 +429,31 @@ def test_splitmac_assoc_resp_long_ies_fit_tx_buffer(splitmac_ap):
     evts = _sw_tx(fw, fw.mgmt_frame(1, F.STA_MAC, own, own, struct.pack('<HHH', 0x10, 0, 0xc001) + ies))
     assert [e.body[0] for e in evts if e.id == WMI_SW_TX_COMPLETE] == [1]
     _sw_tx(fw, fw.mgmt_frame(1, F.STA_MAC, own, own, struct.pack('<HHH', 0x10, 0, 0xc001) + ies[:0x3ef - 0x1e]))
+
+
+def _wmi_raw(fw, cmd_id, body, rec_len, fill=0xa5):
+    """Команда хоста с длиной записи rec_len (WMI-заголовок 8 Б + тело) в слоте, заполненном fill (остаток прошлых
+    команд)."""
+    for i in range(0x800):
+        fw.cpu.mem[fw.WMI_BUF + i] = fill
+    fw.wbytes(fw.WMI_BUF, struct.pack('<HHHHBBHI', 0, rec_len, 0, 0, 0, 0, cmd_id, 0) + body)
+    fw.call('wmi_host_cmd_dispatch', fw.a('operational_mbox'), fw.WMI_BUF)
+    fw.run_tasks()
+    F.settle(fw)
+
+
+def test_short_command_reads_zeros_not_previous(fw):
+    """Короткая запись хоста: SET_APPIE с ie_len = 40, но длиной записи на 4 Б тела. vendor длину записи не читал —
+    40 Б IE брались из остатка прошлых команд слота (ключи, пароли — в кадры). Теперь хвост слота — нули."""
+    f = F.Fw(fw)
+    _wmi_raw(fw, WMI_SET_APPIE, struct.pack('<BBH', 2, 0, 40), 8 + 4)
+    blk = fw.call('mid_app_ie_block', f.mid0 + F.MID_BSS, 2)
+    buf, n = fw.r32(blk), fw.r16(blk + 4)
+    assert n == 0 or set(fw.rbytes(buf, n)) <= {0}, fw.rbytes(buf, n).hex()
+
+
+@pytest.mark.parametrize('rec_len', [0, 7, 0x2000])
+def test_record_length_outside_slot_rejected(fw, rec_len):
+    """Длина записи меньше WMI-заголовка или больше слота ящика — «не поддерживается», обработчик не вызывается."""
+    _wmi_raw(fw, WMI_SET_SSID, struct.pack('<I', 4) + b'abcd', rec_len, fill=0)
+    assert fw.logged('WMI_BAD_LEN')
