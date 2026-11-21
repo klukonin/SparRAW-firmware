@@ -31,3 +31,33 @@ def test_ap_drops_assoc_response(fw):
         _rx(fw, f, 1, struct.pack('<HHH', 0x10, status, 0xc001))       # Capability, Status Code, AID
     assert _rx_used(fw) == used
     _rx(fw, f, 0, struct.pack('<HH', 0x10, 1))                         # следующий кадр управления разбирается
+
+
+def _dispatch(fw, frame):
+    fw.call('rx_pkt_srvs_dispatch', fw.a('rx_pkt_srvs'), fw.rx_pkt(frame))
+    fw.run_tasks()
+    F.settle(fw)
+
+
+def test_unhandled_mgmt_subtypes_freed(fw):
+    """Подтипы управления, которые fw не разбирает (Beacon 8, ATIM 9, Authentication 11, Deauthentication 12,
+    Timing Advertisement 6, резерв 7, 15): буфер приёма освобождается. vendor только писал журнал — пул приёма (12)
+    кончался, кольцо кадров управления вставало до перезагрузки."""
+    f = F.Fw(fw)
+    f.ap_start()
+    own = f.own_mac()
+    used = _rx_used(fw)
+    for stype in (6, 7, 8, 9, 11, 12, 15) * 3:
+        _dispatch(fw, fw.mgmt_frame(stype, own, F.STA_MAC, own, bytes(8)))
+    assert _rx_used(fw) == used
+
+
+def test_extension_subtypes_other_than_dmg_beacon_freed(fw):
+    """Кадр Extension (тип 3) подтипа ≠ 0 (не DMG Beacon; 9.2.4.1.3 — резерв): буфер освобождается."""
+    f = F.Fw(fw)
+    f.ap_start()
+    used = _rx_used(fw)
+    for stype in range(1, 16):
+        fc = (3 << 2) | (stype << 4)
+        _dispatch(fw, struct.pack('<HH', fc, 0) + bytes(F.STA_MAC) * 3 + bytes(10))
+    assert _rx_used(fw) == used

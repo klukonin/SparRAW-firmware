@@ -146,7 +146,11 @@ __attribute__((section(".textlate"))) void rx_mgmt_srvs_distribute(struct rx_pkt
         rx_mgmt_action_no_ack(pkt);
         break;
     default:
+        /* исправлено (vendor: только журнал): Beacon, ATIM, Authentication, Deauthentication, Timing Advertisement и
+         * резервные подтипы не освобождались — ~12 кадров на свой адрес (без ассоциации) исчерпывали пул приёма, и
+         * кольцо кадров управления вставало до перезагрузки (аудит границ 2026-11-21). */
         fw_log_emit1(0x1d, 0x1013f80, sub);
+        mem_pool_free_thunk(pkt);
         break;
     }
 }
@@ -182,6 +186,8 @@ __attribute__((section(".textlate"))) void rx_pkt_mid_accepts(struct rx_pkt_srvs
     (void)obj;
     if ((pkt->hdr->fc & 0xf0u) == 0)
         e->vt->rx_pkt(e, pkt);
+    else
+        mem_pool_free_thunk(pkt);       /* исправлено (vendor): подтипы Extension, кроме DMG Beacon, не освобождались */
 }
 
 /* rx_pkt_srvs__dispatch (0x8e3c70, 152 Б): диспетчер по типу кадра. */
