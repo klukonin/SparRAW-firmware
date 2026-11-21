@@ -92,3 +92,20 @@ def test_edca_fields_out_of_range_halt(uc, ac, ecw_min, ecw_max, aifsn):
     finally:
         uc.cpu.func_range = None
     assert [c[1][1] for c in uc.calls if c[0] == 'uc_assert'] == [0x15ac]
+
+
+RS_STATS_MCS_MEAS = 0x1b             # struct rs_sta_stats: tx_cnt[13] +0, fail_cnt[13] +0xd, mcs_meas +0x1b, warmup +0x1f
+
+
+def test_per_counters_halve_on_overflow(uc):
+    """Счётчики PER выбора скорости (u8): BlockAck приносит до 127 MPDU — vendor складывал с переворотом (tx < fail,
+    PER > 100 %, ложный откат MCS). Теперь при переполнении оба делятся пополам — доля ошибок сохраняется."""
+    st = RS_STATS                                     # станция 0
+    for i in range(RS_STATS_SZ):
+        uc.w8(st + i, 0)
+    uc.w8(st + RS_STATS_MCS_MEAS, 4)
+    uc.w8(st + 4, 200)                                # tx_cnt[4]
+    uc.w8(st + 0xd + 4, 40)                           # fail_cnt[4]: PER 20 %
+    uc.call('bap_q_avail_check', 0, 100, 20)          # ещё 100 MPDU, 20 без Ack
+    tx, fail = uc.r8(st + 4), uc.r8(st + 0xd + 4)
+    assert (tx, fail) == (150, 30), (tx, fail)

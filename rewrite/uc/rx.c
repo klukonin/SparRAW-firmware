@@ -2719,8 +2719,9 @@ static __attribute__((noinline)) u32 rx_dispatch_mode2(u32 r14)
     ba_stats.ba_cnt += 1;
     if (r14 >= 1)
         ba_stats.active = 1;
-    u32 r7 = rs_state[rxf.sta].active;
-    if (r7 != 0)
+    /* rxf.sta обновляется только при ADDR2_VALID — без него может остаться 8 (неизвестный пир) от прошлого кадра:
+     * rs_state[8] = rs_stats[0] (аудит границ 2026-11-21, M6) */
+    if (rxf.sta < SPARRAW_MAX_STA && rs_state[rxf.sta].active != 0)
         bap_q_avail_check(rxf.sta, r1, r3);
     if (!(txrx_state2 & (1u << 30)))
         return 1;                           /* vendor: L_9336c8 — r0 = r13 (= 1 с L_933592) */

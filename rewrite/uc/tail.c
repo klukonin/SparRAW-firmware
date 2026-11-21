@@ -2866,8 +2866,15 @@ void bap_q_avail_check(u32 a, u32 b, u32 c) {
         else
             rs->warmup = 0;
     } else {
-        rs->tx_cnt[rs->mcs_meas] += b;
-        rs->fail_cnt[rs->mcs_meas] += c;
+        /* исправлено (vendor: u8 += до 127 за BlockAck — переворот счётчиков, PER > 100 % и ложный откат MCS):
+         * переполнение байта — оба пополам, доля ошибок сохраняется (скользящее окно; аудит границ 2026-11-21, M5) */
+        u32 m = rs->mcs_meas, t = rs->tx_cnt[m] + b, f = rs->fail_cnt[m] + c;
+        if (t > 0xffu) {
+            t >>= 1;
+            f >>= 1;
+        }
+        rs->tx_cnt[m] = (u8)t;
+        rs->fail_cnt[m] = (u8)(f > 0xffu ? 0xffu : f);
     }
 }
 
