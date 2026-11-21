@@ -864,6 +864,9 @@ static u32 dmg_bcon_ie_rank(u32 eid)
 }
 
 #define DMG_BCON_IE_MAX 31u                 /* + свой DMG Operation — не больше 32 (маска done) */
+/* PSDU DMG-бикона (control PHY) — не длиннее 1023 октетов: поле Length заголовка — 10 бит (20.4.3.2.1); с FCS. */
+#define DMG_BCON_PSDU_MAX 1023u
+#define DMG_FCS_LEN       4u
 
 /* tx_mgmt_srvs__build_dmg_beacon (0x8e9ccc, 124 Б): тело DMG-бикона (tx_mgmt_build_dmg_bcon_fixed 0x8d7df4 — ниже) +
  * IE хоста для бикона. исправлено (vendor): блок IE копировался как есть — ESE (TDMA точки, расписание хоста)
@@ -893,7 +896,9 @@ __attribute__((section(".textlate"))) void tx_mgmt_srvs_build_dmg_beacon(u32 pay
         cnt++;
     }
     if (cnt > DMG_BCON_IE_MAX) {
-        /* больше элементов, чем помещается в таблицу порядка, — блок как есть (порядок хоста) */
+        /* больше элементов, чем помещается в таблицу порядка, — блок как есть (порядок хоста), в пределах PSDU */
+        if (len + n + DMG_FCS_LEN > DMG_BCON_PSDU_MAX)
+            n = DMG_BCON_PSDU_MAX - DMG_FCS_LEN - len;
         memcpy_fw((void *)(payload + len), ie, n);
         len += n;
         cnt = 0;
@@ -917,6 +922,13 @@ __attribute__((section(".textlate"))) void tx_mgmt_srvs_build_dmg_beacon(u32 pay
                 }
             }
             done |= 1u << best;
+            /* исправлено (vendor: без предела — IE хоста до 1024 Б и ESE TDMA до 257 Б писались за буфер TX 0x500 и
+             * давали бикон длиннее PSDU control PHY; аудит границ 2026-11-21): элемент, не помещающийся в PSDU, и все
+             * после него (младшие по табл. 9-45, Vendor Specific — последние) — не в бикон */
+            if (len + 2u + el[best][1] + DMG_FCS_LEN > DMG_BCON_PSDU_MAX) {
+                fw_log_emit2(0x2d, LS_FW(BCON_IE_DROPPED), el[best][0], len);
+                break;
+            }
             memcpy_fw((void *)(payload + len), el[best], 2u + el[best][1]);
             len += 2u + el[best][1];
         }

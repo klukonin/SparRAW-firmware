@@ -295,3 +295,23 @@ def test_beacon_host_ies_table_order(fw):
     host_beacon_ies(fw, host)
     ids = [e for e, _ in bcn_elements(last_beacon(fw, t0))]
     assert ids == [e for e in order if e != 144], ids
+
+
+def test_beacon_fits_control_phy_psdu(fw):
+    """IE хоста маяка до предела WMI_SET_APPIE (1024 Б) и TDMA точки при SPARRAW_MAX_STA станциях (ESE до 257 Б):
+    vendor собирал бикон без предела — запись за буфер TX 0x500 (указатель done следующего буфера) и бикон длиннее
+    PSDU control PHY. PSDU бикона с FCS — не длиннее 1023 октетов (20.4.3.2.1: Length — 10 бит); не поместившиеся
+    элементы — младшие по табл. 9-45 (Vendor Specific — последние); RSN и DMG Operation остаются."""
+    w = ap(fw)
+    vs = b''.join(bytes([221, 0xfd, 0x00, 0x50, 0xf2, i]) + bytes(0xf9) for i in range(3))   # 3 × 255 Б
+    ies = RSN + vs
+    ies += bytes([221, 1024 - len(ies) - 2]) + bytes(1024 - len(ies) - 2)
+    assert len(ies) == 1024
+    host_beacon_ies(fw, ies)
+    for i in range(Fl.SPARRAW_MAX_STA):
+        w.ap_sta_join(peer=sta_mac(i + 1), cid=i)
+    bcn = last_beacon(fw)
+    assert len(bcn) + 4 <= 1023, len(bcn)
+    ids = [e for e, _ in bcn_elements(bcn)]
+    assert 48 in ids and 151 in ids, ids
+    assert not fw.wild

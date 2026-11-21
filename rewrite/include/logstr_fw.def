@@ -28,3 +28,4 @@ X(PRING_STOP_FORCED, "pring stop: vring %u DMA not idle after %u polls, MACQ emp
 X(TDMA_SP_SCHED, "tdma: strict SP schedule, %u stations, SP %u us, guard %u us")
 X(TDMA_CFG, "tdma cfg: enable %u, min_sta %u, mode %u")
 X(P2P_PROBE_NO_CONN, "p2p find: probe request cid %u without connection, dropped")
+X(BCON_IE_DROPPED, "beacon: element %u does not fit (len %u), dropped")

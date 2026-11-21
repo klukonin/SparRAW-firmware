@@ -24,6 +24,7 @@
  *    C = aDMGTSFAccuracy = 20 ppm, D = BI, + aSIFSTime 3 мкс + aAirPropagationTime 0,1 мкс + aTSFResolution 1 мкс.
  * ESE добавляется в блок IE маяка (тип 0) к IE хоста, а не вместо них (vendor-сборщик блок заменял). */
 #include "../include/types.h"
+#include "../include/fwq_tx.h"
 #include "../include/ieee80211.h"
 #include "../include/hw.h"
 #include "../include/arc.h"
@@ -143,8 +144,12 @@ void mid_set_beacon_ese(struct mid *mid, const u8 *ese, u32 len)
         memcpy_fw(d + n, old + i, 2u + old[i + 1]);
         n += 2u + old[i + 1];
     }
-    memcpy_fw(d + n, ese, len);
-    n += len;
+    if (n + len <= sizeof(((struct tx_pkt *)0)->payload)) {   /* исправлено: IE хоста до 1024 Б + ESE до 257 Б — за буфер */
+        memcpy_fw(d + n, ese, len);
+        n += len;
+    } else {
+        fw_log_emit2(0x2b, LS_FW(BCON_IE_DROPPED), EID_EXT_SCHED_IE, n);
+    }
     if (n == 0) {
         TX_API_free_memory(buf);
         buf = 0;
