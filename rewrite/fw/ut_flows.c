@@ -145,11 +145,15 @@ void ut_hw_flows_operational_cmd_handler(struct wmi_mbox *mbox, const struct ut_
         u32 rf = c->arg[0], addr = c->arg[1], n = c->arg[2];
 
         fw_log_emit3(0x21, 0x101bfc4, rf, addr, n);
-        if (xpm_block_check_inputs(rf, addr, n, (void *)buf->data, mb->tx_entry_size - 8, 0) == 1)
+        /* исправлено (vendor: предел tx_entry_size − 8 на 16 Б больше данных ответа — запись в соседний элемент пула
+         * событий; при отказе len = n + 8 — фатальный ассерт 0x10ce в wmi_evt_send_words; как WMI_RF_XPM_READ) */
+        len = 8;
+        if (xpm_block_check_inputs(rf, addr, n, (void *)buf->data, sizeof(buf->data), 0) == 1) {
             st = hwf_rf_xpm_read_block(rf, addr, n, (void *)buf->data);
-        else
+            len = (u16)(n + 8);
+        } else {
             fw_log_emit0(1, 0x101c038);
-        len = (u16)(n + 8);
+        }
         break;
     }
     case 0x98c: {                                      /* 0x8fab3a: прожиг бита */

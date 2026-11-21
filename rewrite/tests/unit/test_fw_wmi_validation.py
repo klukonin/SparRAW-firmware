@@ -457,3 +457,14 @@ def test_record_length_outside_slot_rejected(fw, rec_len):
     """Длина записи меньше WMI-заголовка или больше слота ящика — «не поддерживается», обработчик не вызывается."""
     _wmi_raw(fw, WMI_SET_SSID, struct.pack('<I', 4) + b'abcd', rec_len, fill=0)
     assert fw.logged('WMI_BAD_LEN')
+
+
+@pytest.mark.parametrize('n', [0xf0, 0xf8, 0x1000])
+def test_ut_xpm_read_block_len_limit(fw, n):
+    """UT 9/0x98b (чтение блока XPM): длина больше данных ответа (0xe8 Б) — отказ, ответ только с заголовком. vendor:
+    предел tx_entry_size − 8 (на 16 Б больше — запись в соседний элемент пула событий), при отказе длина ответа n + 8
+    (> 0x100 — фатальный ассерт 0x10ce)."""
+    evts = send(fw, WMI_UNIT_TEST, struct.pack('<HHIII', 9, 0x98b, 0, 0, n) + bytes(0x50))
+    rsp = [e for e in evts if e.id == 0x1900]
+    assert rsp and all(len(e.body) <= 8 + 0xe8 for e in rsp), [len(e.body) for e in rsp]
+

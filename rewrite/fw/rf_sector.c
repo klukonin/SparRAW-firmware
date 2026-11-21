@@ -400,7 +400,9 @@ u32 hw_sysapi_rfc_fetch_rgf_util(struct rfc_rgf_req *o)
         if (o->read != 0) {
             fw_log_emit0(0x25, 0x101abf0);
             ok = 1;
-            for (i = 0; i < o->count; i++) {
+            /* исправлено (vendor: count от хоста до 255, nres копится по всем RF маски): адресов не больше regs[],
+             * результатов — не больше out[] по всем RF (аудит границ 2026-11-21) */
+            for (i = 0; i < o->count && i < ARRAY_SIZE(o->regs) && o->nres < ARRAY_SIZE(o->out); i++) {
                 u32 v = hwd_rfc_read_rgf(bit, o->regs[i]);
                 u32 k = o->nres;
                 o->out[k] = v;
@@ -416,7 +418,7 @@ u32 hw_sysapi_rfc_fetch_rgf_util(struct rfc_rgf_req *o)
         } else {
             fw_log_emit0(0x25, 0x101ac68);
             ok = 1;
-            for (i = 0; i < o->count * 2; i += 2) {
+            for (i = 0; i < o->count * 2 && i + 1 < ARRAY_SIZE(o->regs); i += 2) {   /* пары — в пределах regs[] */
                 if (hwd_rfc_write_verify(bit, o->regs[i], o->regs[i + 1], 6) == 0) {
                     fw_log_emit0(0x25, 0x101ac84);
                     ok = 0;
